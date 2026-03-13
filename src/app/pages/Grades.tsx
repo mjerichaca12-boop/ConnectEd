@@ -1,0 +1,301 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Sidebar } from '@/app/components/Sidebar';
+import { CustomSelect } from '@/app/components/admin/CustomSelect';
+import { 
+  Bell, 
+  TrendingUp, 
+  TrendingDown,
+  Award,
+  Filter,
+  Download,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  Target
+} from 'lucide-react';
+
+interface Grade {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  grade: number;
+  remarks: string;
+  dateRecorded: string;
+  gradeType: 'Midterm' | 'Final' | 'Quiz' | 'Project';
+  maxGrade: number;
+}
+
+export function Grades() {
+  const navigate = useNavigate();
+  const [studentName, setStudentName] = useState('');
+  const [schoolName, setSchoolName] = useState('');
+  const [notifications, setNotifications] = useState(3);
+  const [loading, setLoading] = useState(true);
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+
+  // Mock data
+  const [grades] = useState<Grade[]>([
+    { id: '1', subjectCode: 'MATH101', subjectName: 'Advanced Mathematics', grade: 92, remarks: 'Excellent', dateRecorded: '2026-01-14', gradeType: 'Midterm', maxGrade: 100 },
+    { id: '2', subjectCode: 'MATH101', subjectName: 'Advanced Mathematics', grade: 95, remarks: 'Outstanding', dateRecorded: '2026-01-10', gradeType: 'Quiz', maxGrade: 100 },
+    { id: '3', subjectCode: 'ENG101', subjectName: 'English Literature', grade: 88, remarks: 'Very Good', dateRecorded: '2026-01-13', gradeType: 'Midterm', maxGrade: 100 },
+    { id: '4', subjectCode: 'ENG101', subjectName: 'English Literature', grade: 90, remarks: 'Excellent', dateRecorded: '2026-01-08', gradeType: 'Project', maxGrade: 100 },
+    { id: '5', subjectCode: 'SCI101', subjectName: 'General Science', grade: 95, remarks: 'Outstanding', dateRecorded: '2026-01-12', gradeType: 'Midterm', maxGrade: 100 },
+    { id: '6', subjectCode: 'SCI101', subjectName: 'General Science', grade: 93, remarks: 'Excellent', dateRecorded: '2026-01-05', gradeType: 'Quiz', maxGrade: 100 },
+    { id: '7', subjectCode: 'FIL101', subjectName: 'Filipino Language', grade: 87, remarks: 'Very Good', dateRecorded: '2026-01-11', gradeType: 'Midterm', maxGrade: 100 },
+    { id: '8', subjectCode: 'PE101', subjectName: 'Physical Education', grade: 94, remarks: 'Excellent', dateRecorded: '2026-01-09', gradeType: 'Final', maxGrade: 100 },
+    { id: '9', subjectCode: 'CS101', subjectName: 'Computer Science Fundamentals', grade: 96, remarks: 'Outstanding', dateRecorded: '2026-01-15', gradeType: 'Project', maxGrade: 100 },
+  ]);
+
+  useEffect(() => {
+    const userData = localStorage.getItem('currentUser');
+    const schoolData = localStorage.getItem('selectedSchool');
+
+    if (!userData) {
+      navigate('/school-selection');
+      return;
+    }
+
+    const user = JSON.parse(userData);
+    if (user.role !== 'student') {
+      navigate('/school-selection');
+      return;
+    }
+
+    setStudentName(user.name);
+    if (schoolData) {
+      const school = JSON.parse(schoolData);
+      setSchoolName(school.name);
+    }
+
+    setTimeout(() => setLoading(false), 600);
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('currentUser');
+    navigate('/school-selection');
+  };
+
+  // Calculate statistics
+  const averageGrade = grades.length > 0
+    ? Math.round(grades.reduce((sum, g) => sum + g.grade, 0) / grades.length)
+    : 0;
+
+  const highestGrade = grades.length > 0
+    ? Math.max(...grades.map(g => g.grade))
+    : 0;
+
+  const lowestGrade = grades.length > 0
+    ? Math.min(...grades.map(g => g.grade))
+    : 0;
+
+  // Group grades by subject
+  const gradesBySubject = grades.reduce((acc, grade) => {
+    if (!acc[grade.subjectCode]) {
+      acc[grade.subjectCode] = {
+        subjectName: grade.subjectName,
+        grades: []
+      };
+    }
+    acc[grade.subjectCode].grades.push(grade);
+    return acc;
+  }, {} as Record<string, { subjectName: string; grades: Grade[] }>);
+
+  const getGradeColor = (grade: number) => {
+    if (grade >= 90) return 'text-emerald-600 bg-emerald-50';
+    if (grade >= 80) return 'text-blue-600 bg-blue-50';
+    if (grade >= 75) return 'text-blue-500 bg-blue-50';
+    return 'text-red-600 bg-red-50';
+  };
+
+  const getRemarksBadge = (remarks: string) => {
+    const colors: Record<string, string> = {
+      'Outstanding': 'bg-emerald-100 text-emerald-700',
+      'Excellent': 'bg-blue-100 text-blue-700',
+      'Very Good': 'bg-emerald-50 text-emerald-600',
+      'Good': 'bg-emerald-50 text-emerald-600',
+      'Fair': 'bg-blue-50 text-blue-600'
+    };
+    return colors[remarks] || 'bg-gray-100 text-gray-700';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading grades...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar studentName={studentName} onLogout={handleLogout} />
+
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* Top Bar */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Grades</h2>
+                <p className="text-sm text-gray-600">{schoolName}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <Bell className="w-6 h-6 text-gray-600" />
+                  {notifications > 0 && (
+                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      {notifications}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Header Section */}
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
+            <h1 className="text-3xl font-bold mb-2">Academic Performance</h1>
+            <p className="text-emerald-50">1st Quarter 2026</p>
+          </div>
+
+          {/* Statistics Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-3 bg-emerald-50 rounded-lg">
+                  <Award className="w-6 h-6 text-emerald-600" />
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm mb-1">Average Grade</p>
+              <p className="text-3xl font-bold text-gray-900">{averageGrade}%</p>
+              <p className="text-emerald-600 text-sm mt-2 flex items-center gap-1">
+                <TrendingUp className="w-4 h-4" />
+                Excellent performance
+              </p>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <TrendingUp className="w-6 h-6 text-blue-600" />
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm mb-1">Highest Grade</p>
+              <p className="text-3xl font-bold text-gray-900">{highestGrade}%</p>
+              <p className="text-gray-500 text-sm mt-2">Outstanding achievement</p>
+            </div>
+
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-3 bg-red-50 rounded-lg">
+                  <TrendingDown className="w-6 h-6 text-red-600" />
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm mb-1">Lowest Grade</p>
+              <p className="text-3xl font-bold text-gray-900">{lowestGrade}%</p>
+              <p className="text-gray-500 text-sm mt-2">Room for improvement</p>
+            </div>
+          </div>
+
+          {/* Filter and Export */}
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="w-72">
+              <CustomSelect
+                value={selectedFilter}
+                onChange={setSelectedFilter}
+                options={[
+                  { value: 'all', label: 'All Grades', icon: <FileText className="w-5 h-5 text-gray-500" /> },
+                  { value: 'midterm', label: 'Midterm', icon: <CheckCircle className="w-5 h-5 text-blue-500" /> },
+                  { value: 'final', label: 'Final', icon: <Target className="w-5 h-5 text-emerald-500" /> },
+                  { value: 'quiz', label: 'Quiz', icon: <AlertCircle className="w-5 h-5 text-blue-500" /> },
+                  { value: 'project', label: 'Project', icon: <Award className="w-5 h-5 text-emerald-500" /> }
+                ]}
+                icon={<Filter className="w-5 h-5" />}
+                placeholder="Filter grades"
+              />
+            </div>
+
+            <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm hover:shadow-md">
+              <Download className="w-4 h-4" />
+              Export Report
+            </button>
+          </div>
+
+          {/* Grades by Subject */}
+          <div className="space-y-6">
+            {Object.entries(gradesBySubject).map(([subjectCode, data]) => {
+              const subjectAverage = Math.round(
+                data.grades.reduce((sum, g) => sum + g.grade, 0) / data.grades.length
+              );
+
+              return (
+                <div key={subjectCode} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{data.subjectName}</h3>
+                        <p className="text-sm text-gray-600">{subjectCode}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-gray-600">Subject Average</p>
+                        <p className="text-2xl font-bold text-emerald-600">{subjectAverage}%</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Recorded</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.grades.map((grade) => (
+                          <tr key={grade.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-sm font-medium text-gray-900">{grade.gradeType}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-3 py-1 rounded-full text-sm font-bold ${getGradeColor(grade.grade)}`}>
+                                  {grade.grade}/{grade.maxGrade}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRemarksBadge(grade.remarks)}`}>
+                                {grade.remarks}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {new Date(grade.dateRecorded).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric' 
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
