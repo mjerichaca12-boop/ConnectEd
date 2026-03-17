@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sidebar } from '@/app/components/Sidebar';
+import { Sidebar } from '../components/Sidebar';
 import { 
   Bell, 
   Search, 
@@ -422,14 +422,13 @@ export function VideoConferencing() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar ml-0 lg:ml-72">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
         {/* Top Header */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Video Conferencing</h2>
-                <p className="text-sm text-gray-600">Virtual Classes & Meetings</p>
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />
