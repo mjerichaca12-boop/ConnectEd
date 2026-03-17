@@ -53,6 +53,7 @@ export function AdminAnnouncements() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; announcementId: string; announcementTitle: string }>({
     isOpen: false,
     announcementId: '',
@@ -115,22 +116,39 @@ export function AdminAnnouncements() {
   const handleCreateAnnouncement = () => {
     if (!validateForm()) return;
 
-    const newAnnouncement: Announcement = {
-      id: String(announcements.length + 1),
-      title: formData.title.trim(),
-      content: formData.content.trim(),
-      targetAudience: formData.targetAudience,
-      priority: formData.priority,
-      datePosted: new Date().toISOString().split('T')[0],
-      author: adminName || 'Admin Office'
-    };
+    if (editingId) {
+      setAnnouncements((prev) =>
+        prev.map((a) =>
+          a.id === editingId
+            ? {
+                ...a,
+                title: formData.title.trim(),
+                content: formData.content.trim(),
+                targetAudience: formData.targetAudience,
+                priority: formData.priority,
+              }
+            : a
+        )
+      );
+    } else {
+      const newAnnouncement: Announcement = {
+        id: String(announcements.length + 1),
+        title: formData.title.trim(),
+        content: formData.content.trim(),
+        targetAudience: formData.targetAudience,
+        priority: formData.priority,
+        datePosted: new Date().toISOString().split('T')[0],
+        author: adminName || 'Admin Office',
+      };
+      setAnnouncements([newAnnouncement, ...announcements]);
+    }
 
-    setAnnouncements([newAnnouncement, ...announcements]);
     handleCloseModal();
   };
 
   const handleCloseModal = () => {
     setShowCreateModal(false);
+    setEditingId(null);
     setFormData({
       title: '',
       content: '',
@@ -229,7 +247,19 @@ export function AdminAnnouncements() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
-                      <button className="p-2 hover:bg-emerald-50 rounded-lg transition-colors">
+                      <button
+                        className="p-2 hover:bg-emerald-50 rounded-lg transition-colors"
+                        onClick={() => {
+                          setEditingId(announcement.id);
+                          setFormData({
+                            title: announcement.title,
+                            content: announcement.content,
+                            targetAudience: announcement.targetAudience,
+                            priority: announcement.priority || 'Medium',
+                          });
+                          setShowCreateModal(true);
+                        }}
+                      >
                         <Edit className="w-4 h-4 text-emerald-600" />
                       </button>
                       <button

@@ -6,7 +6,6 @@ import { Bell, FileText, Download, TrendingUp, Users, BookOpen, Calendar } from 
 export function Reports() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [notifications, setNotifications] = useState(8);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,6 +20,24 @@ export function Reports() {
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     navigate('/login');
+  };
+
+  const handleGenerateReport = (name: string) => {
+    const header = ['Report Name', 'Generated At'];
+    const row = [name, new Date().toISOString()];
+    const csv = [header, row]
+      .map((r) => r.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name.replace(/\s+/g, '_').toLowerCase()}_report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const reportCategories = [
@@ -90,9 +107,6 @@ export function Reports() {
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{notifications}</span>
-                )}
               </button>
             </div>
           </div>
@@ -130,7 +144,10 @@ export function Reports() {
                           <h4 className="font-medium text-gray-900 group-hover:text-emerald-700">{report.name}</h4>
                           <p className="text-sm text-gray-600 mt-1">{report.description}</p>
                         </div>
-                        <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors ml-4">
+                        <button
+                          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors ml-4"
+                          onClick={() => handleGenerateReport(report.name)}
+                        >
                           <Download className="w-4 h-4" />
                           Generate
                         </button>

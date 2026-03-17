@@ -85,11 +85,11 @@ export function DashboardCalendar() {
           title={holidayLabel || undefined}
           className={`h-10 flex flex-col items-center justify-center text-sm rounded-lg transition-colors cursor-default
             ${isToday ? 'bg-emerald-600 text-white font-bold' : ''}
-            ${!isToday && isHoliday ? 'bg-amber-100 text-amber-800 font-medium' : ''}
+            ${!isToday && isHoliday ? 'bg-red-100 text-red-700 font-medium' : ''}
             ${!isToday && !isHoliday ? 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-600' : ''}`}
         >
           <span>{day}</span>
-          {isHoliday && !isToday && <span className="w-1 h-1 rounded-full bg-amber-500 mt-0.5" />}
+          {isHoliday && !isToday && <span className="w-1 h-1 rounded-full bg-red-500 mt-0.5" />}
         </div>
       );
     }
@@ -148,11 +148,13 @@ export function DashboardCalendar() {
           <div className="space-y-2">
             {currentMonthHolidays.length > 0 ? (
               currentMonthHolidays.map(({ day, label }) => (
-                <div key={`${day}-${label}`} className="flex items-start gap-3 p-2 bg-amber-50 rounded-lg">
-                  <div className="w-1.5 h-1.5 bg-amber-500 rounded-full mt-1.5" />
+                <div key={`${day}-${label}`} className="flex items-start gap-3 p-2 bg-red-50 rounded-lg">
+                  <div className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5" />
                   <div>
                     <p className="text-xs font-medium text-gray-900">{label}</p>
-                    <p className="text-[10px] text-gray-500">{monthNames[month]} {day}, {year}</p>
+                    <p className="text-[10px] text-gray-500">
+                      {monthNames[month]} {day}, {year}
+                    </p>
                   </div>
                 </div>
               ))

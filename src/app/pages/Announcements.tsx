@@ -59,7 +59,6 @@ interface FileResource {
 export function Announcements() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
@@ -340,9 +339,9 @@ export function Announcements() {
               <div className="flex items-center gap-4">
                 <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
+                  {unreadCount > 0 && (
                     <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
+                      {unreadCount}
                     </span>
                   )}
                 </button>
