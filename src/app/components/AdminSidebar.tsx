@@ -98,7 +98,7 @@ export function AdminSidebar({ adminName, onLogout }: AdminSidebarProps) {
                   key={item.path}
                   to={item.path}
                   onClick={() => setIsMobileOpen(false)}
-                  className={`
+                  className={`cursor-pointer 
                     group flex items-center justify-between px-4 py-3 rounded-xl
                     transition-all duration-200
                     ${active
@@ -122,7 +122,7 @@ export function AdminSidebar({ adminName, onLogout }: AdminSidebarProps) {
         <div className="flex-shrink-0 p-4 border-t border-gray-200">
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors group"
+            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors group cursor-pointer"
           >
             <LogOut className="w-5 h-5" />
             <span className="font-medium text-sm">Logout</span>

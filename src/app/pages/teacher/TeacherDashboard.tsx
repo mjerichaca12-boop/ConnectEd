@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TeacherSidebar } from '@/app/components/TeacherSidebar';
 import { 
-  Bell, 
   BookOpen, 
   Users,
   Megaphone,
@@ -13,6 +12,7 @@ import {
   ClipboardCheck
 } from 'lucide-react';
 import { DashboardCalendar } from '@/app/components/DashboardCalendar';
+import { NotificationDropdown, type NotificationItem } from '@/app/components/NotificationDropdown';
 
 interface ClassSummary {
   id: string;
@@ -39,8 +39,11 @@ interface RecentAnnouncement {
 export function TeacherDashboard() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
-  const [notifications, setNotifications] = useState(5);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>([
+    { id: '1', title: 'Grade submission reminder', message: 'Final grades for MATH101 are due by Jan 28.', path: '/teacher/grades', isRead: false, timestamp: '2 hours ago' },
+    { id: '2', title: 'New message from student', message: 'Juan Dela Cruz sent you a message.', path: '/teacher/messages', isRead: false, timestamp: '1 day ago' },
+    { id: '3', title: 'Attendance report ready', message: 'Monthly attendance report is available.', path: '/teacher/attendance', isRead: true, timestamp: '2 days ago' },
+  ]);
   const [loading, setLoading] = useState(true);
 
   // Mock data
@@ -63,31 +66,25 @@ export function TeacherDashboard() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
-
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'teacher') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setTeacherName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
 
     setTimeout(() => setLoading(false), 800);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const totalStudents = classes.reduce((sum, c) => sum + c.studentCount, 0);
@@ -120,17 +117,13 @@ export function TeacherDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Dashboard</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <div className="flex items-center gap-4">
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>
-                  )}
-                </button>
+                <NotificationDropdown
+                  notifications={notificationList}
+                  onMarkAsRead={(id) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                  onNotificationsChange={setNotificationList}
+                />
               </div>
             </div>
           </div>

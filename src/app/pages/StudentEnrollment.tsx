@@ -49,13 +49,13 @@ export function StudentEnrollment() {
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
@@ -64,7 +64,7 @@ export function StudentEnrollment() {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleFileSelect = (fileType: string, event: React.ChangeEvent<HTMLInputElement>) => {

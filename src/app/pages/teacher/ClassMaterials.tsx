@@ -116,13 +116,13 @@ export function ClassMaterials() {
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'teacher') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
@@ -131,7 +131,7 @@ export function ClassMaterials() {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const getFileIcon = (fileType: string) => {

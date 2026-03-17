@@ -23,7 +23,6 @@ interface EnrollmentFormData {
 export function EnrollmentManagement() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(8);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,18 +61,16 @@ export function EnrollmentManagement() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
-    if (!userData) { navigate('/school-selection'); return; }
+    if (!userData) { navigate('/login'); return; }
     const user = JSON.parse(userData);
-    if (user.role !== 'admin') { navigate('/school-selection'); return; }
+    if (user.role !== 'admin') { navigate('/login'); return; }
     setAdminName(user.name);
-    if (schoolData) { setSchoolName(JSON.parse(schoolData).name); }
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleEnrollStudent = () => {
@@ -168,7 +165,6 @@ export function EnrollmentManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Enrollment Management</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />

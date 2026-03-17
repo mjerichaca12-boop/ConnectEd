@@ -1,7 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { LandingPage } from '@/app/pages/LandingPage';
-import { SchoolSelection } from '@/app/pages/SchoolSelection';
-import { SchoolRequest } from '@/app/pages/SchoolRequest';
 import { TermsAndPrivacy } from '@/app/pages/TermsAndPrivacy';
 import { Login } from '@/app/pages/Login';
 import { SignUp } from '@/app/pages/SignUp';
@@ -43,14 +41,12 @@ import { SystemSettings } from '@/app/pages/admin/SystemSettings';
  * 
  * Authentication Flow:
  * 1. Landing Page (/) - Public
- * 2. School Selection (/school-selection) - Required before login/signup
- * 3. Login (/login) - Students and Teachers only, redirects based on role:
+ * 2. Login (/login) - Students, Teachers, and Admins (role-based redirect):
  *    - Student → /dashboard
  *    - Teacher → /teacher/dashboard
- * 4. Admin Login (/admin) - Separate admin-only login portal
  *    - Admin → /admin/dashboard
- * 5. Sign Up (/signup) - Only for Students and Teachers (Admins are system-created)
- * 6. Forgot Password (/forgot-password) - Password reset for all users
+ * 3. Sign Up (/signup) - Students, Teachers, and Admins
+ * 4. Forgot Password (/forgot-password) - Password reset for all users
  * 
  * Student Routes (prefix: /)
  * - /dashboard - Main dashboard
@@ -94,8 +90,6 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/school-selection" element={<SchoolSelection />} />
-        <Route path="/school-request" element={<SchoolRequest />} />
         <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />

@@ -120,13 +120,13 @@ export function StudentMaterials() {
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
@@ -135,7 +135,7 @@ export function StudentMaterials() {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleDownload = (material: ClassMaterial) => {

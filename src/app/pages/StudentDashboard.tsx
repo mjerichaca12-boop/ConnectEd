@@ -2,12 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/app/components/Sidebar';
 import { 
-  Bell, 
   BookOpen, 
   TrendingUp, 
   Calendar, 
   Megaphone,
-  Clock,
   CheckCircle,
   XCircle,
   AlertCircle,
@@ -15,6 +13,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { DashboardCalendar } from '@/app/components/DashboardCalendar';
+import { NotificationDropdown, type NotificationItem } from '@/app/components/NotificationDropdown';
 
 // Mock data types
 interface Subject {
@@ -49,8 +48,11 @@ interface Announcement {
 export function StudentDashboard() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
-  const [notifications, setNotifications] = useState(3);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>([
+    { id: '1', title: 'Mid-term Examinations Schedule', message: 'The mid-term examinations will be held from January 20-24, 2026.', path: '/announcements', isRead: false, timestamp: '2 hours ago' },
+    { id: '2', title: 'Library Hours Extended', message: 'Starting next week, library hours will be extended until 8:00 PM.', path: '/announcements', isRead: false, timestamp: '1 day ago' },
+    { id: '3', title: 'New grade posted', message: 'Your Mathematics midterm grade has been posted.', path: '/grades', isRead: true, timestamp: '2 days ago' },
+  ]);
   const [loading, setLoading] = useState(true);
 
   // Mock data
@@ -83,24 +85,18 @@ export function StudentDashboard() {
   useEffect(() => {
     // Check if user is logged in
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
-
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setStudentName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
 
     // Simulate loading
     setTimeout(() => setLoading(false), 800);
@@ -108,7 +104,7 @@ export function StudentDashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   // Calculate statistics
@@ -178,17 +174,13 @@ export function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Dashboard</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <div className="flex items-center gap-4">
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>
-                  )}
-                </button>
+                <NotificationDropdown
+                  notifications={notificationList}
+                  onMarkAsRead={(id) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                  onNotificationsChange={setNotificationList}
+                />
               </div>
             </div>
           </div>

@@ -1,36 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MapPin, ArrowLeft, Mail, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Mail, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
-
-interface School {
-  id: string;
-  name: string;
-  location: string;
-}
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Get selected school from localStorage
-    const schoolData = localStorage.getItem('selectedSchool');
-    if (schoolData) {
-      setSelectedSchool(JSON.parse(schoolData));
-    } else {
-      // If no school selected, redirect to school selection
-      navigate('/school-selection');
-    }
-  }, [navigate]);
-
-  const handleChangeSchool = () => {
-    navigate('/school-selection');
-  };
 
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -69,38 +47,21 @@ export function ForgotPassword() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* School Header Badge */}
-      {selectedSchool && (
-        <div className="w-full bg-white border-b border-gray-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-lg">
-                  <MapPin className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <div className="font-semibold text-gray-900">{selectedSchool.name}</div>
-                  <div className="text-sm text-gray-500">{selectedSchool.location}</div>
-                </div>
-              </div>
-              <button 
-                onClick={handleChangeSchool}
-                className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 transition-colors font-medium text-sm"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Change School
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
       <div className="w-full py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             {/* LEFT COLUMN */}
             <div className="w-full flex flex-col justify-center">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="mb-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Landing Page
+              </button>
+
               <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
                 Reset your password
               </h1>

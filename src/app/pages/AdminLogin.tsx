@@ -73,13 +73,13 @@ export function AdminLogin() {
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Back to Main Login */}
+        {/* Back to Landing Page */}
         <button
-          onClick={() => navigate('/school-selection')}
+          onClick={() => navigate('/')}
           className="flex items-center gap-2 text-emerald-200 hover:text-white transition-colors mb-8 group"
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-          Back to School Portal
+          Back to Landing Page
         </button>
 
         {/* Admin Login Card */}

@@ -55,7 +55,6 @@ interface FileResource {
 export function StudentContent() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'announcements' | 'assignments' | 'files'>('announcements');
@@ -185,31 +184,25 @@ export function StudentContent() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
 
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setStudentName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
-
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const getPriorityColor = (priority: string) => {
@@ -264,7 +257,6 @@ export function StudentContent() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Academic Content</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />

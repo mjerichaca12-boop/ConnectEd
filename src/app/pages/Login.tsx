@@ -1,35 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { RoleSelector } from '@/app/components/RoleSelector';
-import { MapPin, ArrowLeft } from 'lucide-react';
-
-interface School {
-  id: string;
-  name: string;
-  location: string;
-}
+import { ArrowLeft } from 'lucide-react';
 
 export function Login() {
   const [formData, setFormData] = useState({
-    emailOrId: '',
+    usernameOrEmail: '',
     password: '',
-    role: 'student'
+    role: 'student',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Get selected school from localStorage
-    const schoolData = localStorage.getItem('selectedSchool');
-    if (schoolData) {
-      setSelectedSchool(JSON.parse(schoolData));
-    } else {
-      // If no school selected, redirect to school selection
-      navigate('/school-selection');
-    }
-  }, [navigate]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
@@ -42,18 +24,14 @@ export function Login() {
   const handleRoleChange = (role: string) => {
     setFormData({
       ...formData,
-      role
+      role,
     });
-  };
-
-  const handleChangeSchool = () => {
-    navigate('/school-selection');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.emailOrId || !formData.password) {
+    if (!formData.usernameOrEmail || !formData.password) {
       setError('Please fill in all fields');
       return;
     }
@@ -65,9 +43,14 @@ export function Login() {
     setTimeout(() => {
       // Save user data to localStorage
       const userData = {
-        name: formData.role === 'student' ? 'Juan Dela Cruz' : formData.role === 'teacher' ? 'Sarah Rodriguez' : 'System Administrator',
-        email: formData.emailOrId,
-        role: formData.role
+        name:
+          formData.role === 'student'
+            ? 'Juan Dela Cruz'
+            : formData.role === 'teacher'
+            ? 'Sarah Rodriguez'
+            : 'System Administrator',
+        email: formData.usernameOrEmail,
+        role: formData.role,
       };
       localStorage.setItem('currentUser', JSON.stringify(userData));
       
@@ -93,38 +76,21 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* School Header Badge */}
-      {selectedSchool && (
-        <div className="w-full bg-white border-b border-gray-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-lg">
-                  <MapPin className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <div className="font-semibold text-gray-900">{selectedSchool.name}</div>
-                  <div className="text-sm text-gray-500">{selectedSchool.location}</div>
-                </div>
-              </div>
-              <button 
-                onClick={handleChangeSchool}
-                className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 transition-colors font-medium text-sm"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Change School
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
       <div className="w-full py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             {/* LEFT COLUMN */}
             <div className="w-full flex flex-col justify-center">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="mb-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Landing Page
+              </button>
+
               <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
                 Welcome back to ConnectEd
               </h1>
@@ -160,23 +126,23 @@ export function Login() {
                   <RoleSelector
                     value={formData.role}
                     onChange={handleRoleChange}
-                    label="Select Role"
+                    label="Select role"
                     accentColor="emerald"
-                    allowedRoles={['student', 'teacher']}
+                    allowedRoles={['student', 'teacher', 'admin']}
                   />
 
-                  {/* Email or School ID */}
+                  {/* Username or Email */}
                   <div>
-                    <label htmlFor="emailOrId" className="block text-sm font-medium text-gray-700 mb-2">
-                      Email or School ID
+                    <label htmlFor="usernameOrEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                      Username / Email
                     </label>
                     <input
                       type="text"
-                      id="emailOrId"
-                      name="emailOrId"
-                      value={formData.emailOrId}
+                      id="usernameOrEmail"
+                      name="usernameOrEmail"
+                      value={formData.usernameOrEmail}
                       onChange={handleInputChange}
-                      placeholder="Enter your email or school ID"
+                      placeholder="Enter your username or email"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     />
                   </div>

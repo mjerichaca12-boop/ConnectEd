@@ -37,7 +37,6 @@ interface ClassData {
 export function GradesManagement() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(5);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState('1');
@@ -111,31 +110,25 @@ export function GradesManagement() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
 
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'teacher') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setTeacherName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
-
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleGradeChange = (studentId: string, field: keyof StudentGrade, value: number) => {
@@ -196,7 +189,6 @@ export function GradesManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Grades Management</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <div className="flex items-center gap-4">
                 {hasUnsavedChanges && (

@@ -81,25 +81,25 @@ export function Navigation() {
           <div className="hidden md:flex items-center gap-8">
             <button 
               onClick={() => scrollToSection('hero')}
-              className="text-gray-700 hover:text-emerald-600 transition-colors"
+              className="text-gray-700 hover:text-emerald-600 transition-colors cursor-pointer"
             >
               Home
             </button>
             <button 
               onClick={() => scrollToSection('features')}
-              className="text-gray-700 hover:text-emerald-600 transition-colors"
+              className="text-gray-700 hover:text-emerald-600 transition-colors cursor-pointer"
             >
               Features
             </button>
             <button 
               onClick={() => scrollToSection('roles')}
-              className="text-gray-700 hover:text-emerald-600 transition-colors"
+              className="text-gray-700 hover:text-emerald-600 transition-colors cursor-pointer"
             >
               Roles
             </button>
             <button 
               onClick={() => scrollToSection('about')}
-              className="text-gray-700 hover:text-emerald-600 transition-colors"
+              className="text-gray-700 hover:text-emerald-600 transition-colors cursor-pointer"
             >
               About
             </button>
@@ -119,15 +119,15 @@ export function Navigation() {
               </button>
             )}
             
-            <Link 
-              to="/school-selection"
-              className="text-gray-700 hover:text-emerald-600 transition-colors px-4 py-2"
+<Link
+              to="/login"
+              className="text-gray-700 hover:text-emerald-600 transition-colors px-4 py-2 cursor-pointer"
             >
               Login
             </Link>
             <Link 
-              to="/school-selection"
-              className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+              to="/signup"
+              className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors cursor-pointer"
             >
               Sign Up
             </Link>

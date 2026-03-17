@@ -108,7 +108,7 @@ export function Sidebar({ studentName, onLogout }: SidebarProps) {
                   key={item.path}
                   to={item.path}
                   onClick={() => setIsMobileOpen(false)}
-                  className={`group flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 relative
+                  className={`group flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl transition-all duration-200 relative cursor-pointer
                     ${active 
                       ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-600/30' 
                       : 'text-gray-700 hover:bg-gray-50 hover:text-emerald-600'
@@ -135,7 +135,7 @@ export function Sidebar({ studentName, onLogout }: SidebarProps) {
         <div className="p-4 border-t border-gray-100 bg-gray-50">
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="group w-full flex items-center gap-3 px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 hover:shadow-md"
+            className="group w-full flex items-center gap-3 px-4 py-3.5 text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 hover:shadow-md cursor-pointer"
           >
             <div className="p-2 bg-red-50 group-hover:bg-red-100 rounded-lg transition-colors">
               <LogOut className="w-5 h-5" />

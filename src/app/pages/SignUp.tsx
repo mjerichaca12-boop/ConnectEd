@@ -1,43 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { RoleSelector } from '@/app/components/RoleSelector';
-import { Info, MapPin, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 type PasswordStrength = 'weak' | 'medium' | 'strong' | '';
-
-interface School {
-  id: string;
-  name: string;
-  location: string;
-}
 
 export function SignUp() {
   const [formData, setFormData] = useState({
     role: 'student',
-    fullName: '',
-    emailOrId: '',
-    contactNumber: '',
+    usernameOrEmail: '',
     password: '',
     confirmPassword: '',
-    agreedToTerms: false
+    agreedToTerms: false,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>('');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Get selected school from localStorage
-    const schoolData = localStorage.getItem('selectedSchool');
-    if (schoolData) {
-      setSelectedSchool(JSON.parse(schoolData));
-    } else {
-      // If no school selected, redirect to school selection
-      navigate('/school-selection');
-    }
-  }, [navigate]);
 
   const calculatePasswordStrength = (password: string): PasswordStrength => {
     if (!password) return '';
@@ -70,20 +50,14 @@ export function SignUp() {
   const handleRoleChange = (role: string) => {
     setFormData({
       ...formData,
-      role
+      role,
     });
-  };
-
-  const handleChangeSchool = () => {
-    navigate('/school-selection');
   };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
-    if (!formData.emailOrId.trim()) newErrors.emailOrId = 'Email or School ID is required';
-    if (!formData.contactNumber.trim()) newErrors.contactNumber = 'Contact number is required';
+    if (!formData.usernameOrEmail.trim()) newErrors.usernameOrEmail = 'Username or email is required';
     if (!formData.password) newErrors.password = 'Password is required';
     if (formData.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
     if (formData.password !== formData.confirmPassword) {
@@ -109,13 +83,13 @@ export function SignUp() {
     setTimeout(() => {
       // Save user data to localStorage
       const userData = {
-        name: formData.fullName,
-        email: formData.emailOrId,
-        role: formData.role
+        name: formData.usernameOrEmail,
+        email: formData.usernameOrEmail,
+        role: formData.role,
       };
       localStorage.setItem('currentUser', JSON.stringify(userData));
       
-      setSuccessMessage(`Account created successfully for ${formData.fullName}!`);
+      setSuccessMessage(`Account created successfully for ${formData.usernameOrEmail}!`);
       setLoading(false);
       
       // Redirect to dashboard after short delay based on role
@@ -124,6 +98,8 @@ export function SignUp() {
           navigate('/dashboard');
         } else if (formData.role === 'teacher') {
           navigate('/teacher/dashboard');
+        } else if (formData.role === 'admin') {
+          navigate('/admin/dashboard');
         }
       }, 1500);
     }, 1500);
@@ -156,38 +132,21 @@ export function SignUp() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* School Header Badge */}
-      {selectedSchool && (
-        <div className="w-full bg-white border-b border-gray-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-50 rounded-lg">
-                  <MapPin className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <div className="font-semibold text-gray-900">{selectedSchool.name}</div>
-                  <div className="text-sm text-gray-500">{selectedSchool.location}</div>
-                </div>
-              </div>
-              <button 
-                onClick={handleChangeSchool}
-                className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 transition-colors font-medium text-sm"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Change School
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
       <div className="w-full py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-start">
             {/* LEFT COLUMN */}
             <div className="w-full flex flex-col justify-start">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="mb-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back to Landing Page
+              </button>
+
               <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
                 Create your ConnectEd account
               </h1>
@@ -219,80 +178,55 @@ export function SignUp() {
                   </div>
                 )}
 
+                <div className="flex flex-col gap-2 mb-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = 'https://accounts.google.com';
+                    }}
+                    className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    Connect with Google account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/')}
+                    className="w-full flex items-center justify-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Landing Page
+                  </button>
+                </div>
+
                 <form onSubmit={handleSubmit} className="space-y-5">
                   {/* Role Selector - Only Students and Teachers */}
                   <RoleSelector
                     value={formData.role}
                     onChange={handleRoleChange}
-                    label="Select Role"
+                    label="Select role"
                     required
-                    allowedRoles={['student', 'teacher']}
+                    allowedRoles={['student', 'teacher', 'admin']}
                     accentColor="emerald"
                   />
-
-                  {/* Administrator Notice */}
-                  <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-100 rounded-lg">
-                    <Info className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-emerald-700">
-                      Administrator accounts are created by the school system.
-                    </p>
-                  </div>
-
-                  {/* Full Name */}
+                  {/* Username / Email */}
                   <div>
-                    <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-2">
-                      Full Name *
+                    <label htmlFor="usernameOrEmail" className="block text-sm font-medium text-gray-700 mb-2">
+                      Username / Email *
                     </label>
                     <input
                       type="text"
-                      id="fullName"
-                      name="fullName"
-                      value={formData.fullName}
+                      id="usernameOrEmail"
+                      name="usernameOrEmail"
+                      value={formData.usernameOrEmail}
                       onChange={handleInputChange}
-                      placeholder="Enter your full name"
+                      placeholder="Enter your username or email"
                       className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                        errors.fullName ? 'border-red-500' : 'border-gray-300'
+                        errors.usernameOrEmail ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
-                    {errors.fullName && <p className="text-red-500 text-sm mt-1">{errors.fullName}</p>}
-                  </div>
-
-                  {/* Email or School ID */}
-                  <div>
-                    <label htmlFor="emailOrId" className="block text-sm font-medium text-gray-700 mb-2">
-                      Email or School ID *
-                    </label>
-                    <input
-                      type="text"
-                      id="emailOrId"
-                      name="emailOrId"
-                      value={formData.emailOrId}
-                      onChange={handleInputChange}
-                      placeholder="Enter your email or school ID"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                        errors.emailOrId ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.emailOrId && <p className="text-red-500 text-sm mt-1">{errors.emailOrId}</p>}
-                  </div>
-
-                  {/* Contact Number */}
-                  <div>
-                    <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700 mb-2">
-                      Contact Number *
-                    </label>
-                    <input
-                      type="tel"
-                      id="contactNumber"
-                      name="contactNumber"
-                      value={formData.contactNumber}
-                      onChange={handleInputChange}
-                      placeholder="Enter your contact number"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all ${
-                        errors.contactNumber ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.contactNumber && <p className="text-red-500 text-sm mt-1">{errors.contactNumber}</p>}
+                    {errors.usernameOrEmail && (
+                      <p className="text-red-500 text-sm mt-1">{errors.usernameOrEmail}</p>
+                    )}
                   </div>
 
                   {/* Password */}

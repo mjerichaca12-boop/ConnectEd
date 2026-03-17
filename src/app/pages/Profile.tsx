@@ -24,7 +24,6 @@ interface StudentProfile {
   fullName: string;
   email: string;
   contactNumber: string;
-  schoolName: string;
   grade: string;
   section: string;
   enrollmentDate: string;
@@ -37,7 +36,6 @@ interface StudentProfile {
 export function Profile() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -56,7 +54,6 @@ export function Profile() {
     fullName: 'Juan Dela Cruz',
     email: 'juan.delacruz@student.connected.edu',
     contactNumber: '+63 912 345 6789',
-    schoolName: 'Springfield High School',
     grade: 'Grade 11',
     section: 'STEM-A',
     enrollmentDate: '2025-08-15',
@@ -76,33 +73,25 @@ export function Profile() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
 
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setStudentName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-      setProfile(prev => ({ ...prev, schoolName: school.name }));
-      setEditedProfile(prev => ({ ...prev, schoolName: school.name }));
-    }
-
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleEdit = () => {
@@ -236,7 +225,6 @@ export function Profile() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Profile</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <div className="flex items-center gap-4">
                 <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -426,14 +414,6 @@ export function Profile() {
                   <h3 className="text-lg font-semibold text-gray-900">Academic Information</h3>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">School</p>
-                    <div className="flex items-center gap-2">
-                      <School className="w-4 h-4 text-emerald-600" />
-                      <p className="font-medium text-gray-900">{profile.schoolName}</p>
-                    </div>
-                  </div>
-
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Grade Level</p>
                     <p className="font-medium text-gray-900">{profile.grade}</p>

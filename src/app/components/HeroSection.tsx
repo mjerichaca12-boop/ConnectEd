@@ -52,14 +52,14 @@ export function HeroSection() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12">
               <button 
                 onClick={handleCreateAccount}
-                className="bg-emerald-600 text-white px-8 py-4 rounded-lg font-medium hover:bg-emerald-700 transition-all hover:scale-105 shadow-lg hover:shadow-xl text-lg flex items-center justify-center gap-2"
+                className="bg-emerald-600 text-white px-8 py-4 rounded-lg font-medium hover:bg-emerald-700 transition-all hover:scale-105 shadow-lg hover:shadow-xl text-lg flex items-center justify-center gap-2 cursor-pointer"
               >
                 <GraduationCap className="w-5 h-5" />
                 Get Started Free
               </button>
               <button 
                 onClick={() => scrollToSection('how-it-works')}
-                className="bg-white text-emerald-600 border-2 border-emerald-600 px-8 py-4 rounded-lg font-medium hover:bg-emerald-50 transition-all text-lg"
+                className="bg-white text-emerald-600 border-2 border-emerald-600 px-8 py-4 rounded-lg font-medium hover:bg-emerald-50 transition-all text-lg cursor-pointer"
               >
                 Learn More
               </button>

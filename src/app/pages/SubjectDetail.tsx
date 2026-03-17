@@ -53,7 +53,6 @@ export function SubjectDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [studentName, setStudentName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'modules' | 'grades'>('overview');
@@ -120,30 +119,25 @@ export function SubjectDetail() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
-    
+
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'student') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setStudentName(user.name);
-    if (schoolData) {
-      setSchoolName(JSON.parse(schoolData).name);
-    }
-
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const getModuleIcon = (type: string) => {
@@ -177,7 +171,6 @@ export function SubjectDetail() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Subject Details</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />

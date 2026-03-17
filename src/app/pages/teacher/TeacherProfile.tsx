@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TeacherSidebar } from '@/app/components/TeacherSidebar';
-import { Bell, User, Mail, Phone, School, Edit, Save, X, Lock } from 'lucide-react';
+import { Bell, User, Mail, Phone, Edit, Save, X, Lock } from 'lucide-react';
 
 export function TeacherProfile() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
   const [notifications, setNotifications] = useState(5);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -16,7 +15,6 @@ export function TeacherProfile() {
     fullName: 'Ms. Sarah Rodriguez',
     email: 'sarah.rodriguez@teacher.connected.edu',
     contactNumber: '+63 912 345 6789',
-    schoolName: 'Springfield High School',
     department: 'Mathematics Department',
     specialization: 'Advanced Mathematics'
   });
@@ -25,31 +23,25 @@ export function TeacherProfile() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
 
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'teacher') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setTeacherName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
-
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const handleSave = () => {
@@ -78,7 +70,6 @@ export function TeacherProfile() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Profile</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />
@@ -171,14 +162,6 @@ export function TeacherProfile() {
                     <span className="text-gray-900">{profile.contactNumber}</span>
                   </div>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">School</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <School className="w-5 h-5 text-gray-400" />
-                  <span className="text-gray-900">{profile.schoolName}</span>
-                </div>
               </div>
             </div>
           </div>

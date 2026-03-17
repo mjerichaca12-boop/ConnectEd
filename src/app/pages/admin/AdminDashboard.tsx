@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AdminSidebar } from '@/app/components/AdminSidebar';
 import { 
-  Bell, 
   Users, 
   UserCog,
   BookOpen,
@@ -15,6 +14,7 @@ import {
   Settings
 } from 'lucide-react';
 import { DashboardCalendar } from '@/app/components/DashboardCalendar';
+import { NotificationDropdown, type NotificationItem } from '@/app/components/NotificationDropdown';
 
 interface ActivityLog {
   id: string;
@@ -27,8 +27,11 @@ interface ActivityLog {
 export function AdminDashboard() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [schoolName, setSchoolName] = useState('');
-  const [notifications, setNotifications] = useState(8);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>([
+    { id: '1', title: 'New student enrollment', message: '5 new enrollment requests pending approval.', path: '/admin/enrollment', isRead: false, timestamp: '1 hour ago' },
+    { id: '2', title: 'System backup complete', message: 'Nightly backup completed successfully.', path: '/admin/settings', isRead: false, timestamp: '3 hours ago' },
+    { id: '3', title: 'Teacher account created', message: 'Maria Santos was added to the system.', path: '/admin/teachers', isRead: true, timestamp: '1 day ago' },
+  ]);
   const [loading, setLoading] = useState(true);
 
   // Mock data
@@ -52,31 +55,25 @@ export function AdminDashboard() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    const schoolData = localStorage.getItem('selectedSchool');
-
     if (!userData) {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     const user = JSON.parse(userData);
     if (user.role !== 'admin') {
-      navigate('/school-selection');
+      navigate('/login');
       return;
     }
 
     setAdminName(user.name);
-    if (schoolData) {
-      const school = JSON.parse(schoolData);
-      setSchoolName(school.name);
-    }
 
     setTimeout(() => setLoading(false), 800);
   }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    navigate('/school-selection');
+    navigate('/login');
   };
 
   const getActivityIcon = (type: string) => {
@@ -153,17 +150,13 @@ export function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Admin Dashboard</h2>
-                <p className="text-sm text-gray-600">{schoolName}</p>
               </div>
               <div className="flex items-center gap-4">
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>
-                  )}
-                </button>
+                <NotificationDropdown
+                  notifications={notificationList}
+                  onMarkAsRead={(id) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                  onNotificationsChange={setNotificationList}
+                />
               </div>
             </div>
           </div>
