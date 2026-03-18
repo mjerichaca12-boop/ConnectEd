@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AdminSidebar } from '@/app/components/AdminSidebar';
+import { AdminSidebar } from '../../components/AdminSidebar';
 import { 
   Users, 
   UserCog,
@@ -13,9 +13,8 @@ import {
   ShieldCheck,
   Settings
 } from 'lucide-react';
-import { DashboardCalendar } from '@/app/components/DashboardCalendar';
-import { NotificationDropdown, type NotificationItem } from '@/app/components/NotificationDropdown';
-
+import { DashboardCalendar } from '../../components/DashboardCalendar';
+import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
 interface ActivityLog {
   id: string;
   action: string;
@@ -154,7 +153,7 @@ export function AdminDashboard() {
               <div className="flex items-center gap-4">
                 <NotificationDropdown
                   notifications={notificationList}
-                  onMarkAsRead={(id) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                  onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
                   onNotificationsChange={setNotificationList}
                 />
               </div>

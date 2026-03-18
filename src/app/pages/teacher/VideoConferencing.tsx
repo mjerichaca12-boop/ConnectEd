@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TeacherSidebar } from '@/app/components/TeacherSidebar';
-import { CustomSelect } from '@/app/components/admin/CustomSelect';
+import { TeacherSidebar } from '../../components/TeacherSidebar';
+import { CustomSelect } from '../../components/admin/CustomSelect';
 import { 
   Bell, 
   Search, 
@@ -443,7 +443,7 @@ export function VideoConferencing() {
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar ml-0 lg:ml-72">
+      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
         {/* Top Header */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">

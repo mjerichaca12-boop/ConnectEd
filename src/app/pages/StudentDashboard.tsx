@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sidebar } from '@/app/components/Sidebar';
+import { Sidebar } from '../components/Sidebar';
 import { 
   BookOpen, 
   TrendingUp, 
@@ -12,8 +12,8 @@ import {
   ArrowRight,
   GraduationCap
 } from 'lucide-react';
-import { DashboardCalendar } from '@/app/components/DashboardCalendar';
-import { NotificationDropdown, type NotificationItem } from '@/app/components/NotificationDropdown';
+import { DashboardCalendar } from '../components/DashboardCalendar';
+import { NotificationDropdown, type NotificationItem } from '../components/NotificationDropdown';
 
 // Mock data types
 interface Subject {
@@ -167,7 +167,7 @@ export function StudentDashboard() {
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10 ml-0 lg:ml-72">
+      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
         {/* Top Bar */}
         <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
