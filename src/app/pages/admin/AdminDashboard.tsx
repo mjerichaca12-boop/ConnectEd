@@ -5,16 +5,16 @@ import {
   Users, 
   UserCog,
   BookOpen,
-  TrendingUp,
   Activity,
   UserPlus,
   FileText,
-  ChevronRight,
   ShieldCheck,
   Settings
 } from 'lucide-react';
 import { DashboardCalendar } from '../../components/DashboardCalendar';
 import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
+import { adminNotifications } from '../../components/NotificationDefault';
+
 interface ActivityLog {
   id: string;
   action: string;
@@ -26,14 +26,9 @@ interface ActivityLog {
 export function AdminDashboard() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [notificationList, setNotificationList] = useState<NotificationItem[]>([
-    { id: '1', title: 'New student enrollment', message: '5 new enrollment requests pending approval.', path: '/admin/enrollment', isRead: false, timestamp: '1 hour ago' },
-    { id: '2', title: 'System backup complete', message: 'Nightly backup completed successfully.', path: '/admin/settings', isRead: false, timestamp: '3 hours ago' },
-    { id: '3', title: 'Teacher account created', message: 'Maria Santos was added to the system.', path: '/admin/teachers', isRead: true, timestamp: '1 day ago' },
-  ]);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>(adminNotifications);
   const [loading, setLoading] = useState(true);
 
-  // Mock data
   const [stats] = useState({
     totalStudents: 1247,
     totalTeachers: 58,
@@ -54,19 +49,10 @@ export function AdminDashboard() {
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-    if (!userData) {
-      navigate('/login');
-      return;
-    }
-
+    if (!userData) { navigate('/login'); return; }
     const user = JSON.parse(userData);
-    if (user.role !== 'admin') {
-      navigate('/login');
-      return;
-    }
-
+    if (user.role !== 'admin') { navigate('/login'); return; }
     setAdminName(user.name);
-
     setTimeout(() => setLoading(false), 800);
   }, [navigate]);
 
@@ -77,31 +63,21 @@ export function AdminDashboard() {
 
   const getActivityIcon = (type: string) => {
     switch (type) {
-      case 'student':
-        return <Users className="w-4 h-4 text-blue-600" />;
-      case 'teacher':
-        return <UserCog className="w-4 h-4 text-emerald-600" />;
-      case 'subject':
-        return <BookOpen className="w-4 h-4 text-blue-600" />;
-      case 'enrollment':
-        return <FileText className="w-4 h-4 text-blue-600" />;
-      default:
-        return <Activity className="w-4 h-4 text-gray-600" />;
+      case 'student': return <Users className="w-4 h-4 text-blue-600" />;
+      case 'teacher': return <UserCog className="w-4 h-4 text-emerald-600" />;
+      case 'subject': return <BookOpen className="w-4 h-4 text-blue-600" />;
+      case 'enrollment': return <FileText className="w-4 h-4 text-blue-600" />;
+      default: return <Activity className="w-4 h-4 text-gray-600" />;
     }
   };
 
   const getActivityColor = (type: string) => {
     switch (type) {
-      case 'student':
-        return 'bg-blue-50 border-blue-200';
-      case 'teacher':
-        return 'bg-emerald-50 border-emerald-200';
-      case 'subject':
-        return 'bg-blue-50 border-blue-200';
-      case 'enrollment':
-        return 'bg-blue-50 border-blue-200';
-      default:
-        return 'bg-gray-50 border-gray-200';
+      case 'student': return 'bg-blue-50 border-blue-200';
+      case 'teacher': return 'bg-emerald-50 border-emerald-200';
+      case 'subject': return 'bg-blue-50 border-blue-200';
+      case 'enrollment': return 'bg-blue-50 border-blue-200';
+      default: return 'bg-gray-50 border-gray-200';
     }
   };
 
@@ -109,7 +85,6 @@ export function AdminDashboard() {
     const date = new Date(timestamp);
     const now = new Date();
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-
     if (diffInHours < 1) {
       const minutes = Math.floor(diffInHours * 60);
       return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
@@ -134,29 +109,25 @@ export function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
-      {/* Decorative Background Patterns */}
       <div className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2"></div>
         <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-600 rounded-full blur-[120px] translate-y-1/2 -translate-x-1/2"></div>
       </div>
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10 lg:ml-72">
+      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
         {/* Top Bar */}
-        <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
+        <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Admin Dashboard</h2>
-              </div>
-              <div className="flex items-center gap-4">
-                <NotificationDropdown
-                  notifications={notificationList}
-                  onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
-                  onNotificationsChange={setNotificationList}
-                />
-              </div>
+              <h2 className="text-xl font-semibold text-gray-900">Admin Dashboard</h2>
+              <NotificationDropdown
+                notifications={notificationList}
+                onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onNotificationsChange={setNotificationList}
+              />
             </div>
           </div>
         </div>
@@ -174,7 +145,6 @@ export function AdminDashboard() {
             <div className="lg:col-span-2 space-y-6">
               {/* Primary Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Total Students */}
                 <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-blue-50 rounded-lg">
@@ -185,7 +155,6 @@ export function AdminDashboard() {
                   <p className="text-3xl font-bold text-gray-900">{stats.totalStudents.toLocaleString()}</p>
                 </div>
 
-                {/* Total Teachers */}
                 <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-emerald-50 rounded-lg">
@@ -211,7 +180,6 @@ export function AdminDashboard() {
                       <UserPlus className="w-8 h-8 text-blue-600 mb-3" />
                       <p className="font-semibold text-gray-900 group-hover:text-emerald-700">Add Student</p>
                     </button>
-
                     <button
                       onClick={() => navigate('/admin/teachers')}
                       className="p-4 border-2 border-gray-200 rounded-lg hover:border-emerald-500 hover:bg-emerald-50 transition-all text-left group"
@@ -225,7 +193,7 @@ export function AdminDashboard() {
 
               {/* Recent Activity */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                <div className="p-6 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-emerald-600" />
                     Recent Activity
@@ -234,13 +202,11 @@ export function AdminDashboard() {
                 <div className="p-6">
                   <div className="space-y-3">
                     {recentActivity.map((activity) => (
-                      <div 
-                        key={activity.id} 
+                      <div
+                        key={activity.id}
                         className={`flex items-start gap-3 p-4 rounded-lg border ${getActivityColor(activity.type)} hover:shadow-sm transition-shadow`}
                       >
-                        <div className="mt-0.5">
-                          {getActivityIcon(activity.type)}
-                        </div>
+                        <div className="mt-0.5">{getActivityIcon(activity.type)}</div>
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{activity.action}</p>
                           <p className="text-sm text-gray-600">{activity.user}</p>
@@ -286,7 +252,7 @@ export function AdminDashboard() {
                     <h4 className="font-bold">System Console</h4>
                   </div>
                   <p className="text-sm text-gray-400 mb-4">Access global system configuration and administrative tools.</p>
-                  <button 
+                  <button
                     onClick={() => navigate('/admin/settings')}
                     className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition-colors"
                   >

@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AdminSidebar } from '@/app/components/AdminSidebar';
-import { CustomSelect } from '@/app/components/admin/CustomSelect';
+import { AdminSidebar } from '../../components/AdminSidebar';
+import { CustomSelect } from '../../components/admin/CustomSelect';
+import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
+import { adminNotifications } from '../../components/NotificationDefault';
 import { 
-  Bell, 
   Search, 
   Filter, 
   UserPlus, 
@@ -50,7 +51,7 @@ interface FormErrors {
 export function TeacherManagement() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [notifications, setNotifications] = useState(8);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -61,22 +62,14 @@ export function TeacherManagement() {
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [teacherToToggle, setTeacherToToggle] = useState<Teacher | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [teacherFormData, setTeacherFormData] = useState<TeacherFormData>({
-    name: '',
-    email: '',
-    phone: '',
-    subjects: '',
-    status: 'Active'
+    name: '', email: '', phone: '', subjects: '', status: 'Active'
   });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  
+
   const [editFormData, setEditFormData] = useState<TeacherFormData>({
-    name: '',
-    email: '',
-    phone: '',
-    subjects: '',
-    status: 'Active'
+    name: '', email: '', phone: '', subjects: '', status: 'Active'
   });
   const [editFormErrors, setEditFormErrors] = useState<FormErrors>({});
 
@@ -103,7 +96,7 @@ export function TeacherManagement() {
   };
 
   const filteredTeachers = teachers.filter(teacher => {
-    const matchesSearch = 
+    const matchesSearch =
       teacher.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       teacher.teacherId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       teacher.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -113,44 +106,24 @@ export function TeacherManagement() {
 
   const validateForm = (): boolean => {
     const errors: FormErrors = {};
-    
-    if (!teacherFormData.name.trim()) {
-      errors.name = 'Name is required';
-    }
-    
-    if (!teacherFormData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(teacherFormData.email)) {
-      errors.email = 'Invalid email format';
-    }
-    
-    if (!teacherFormData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^\+?[\d\s\-()]+$/.test(teacherFormData.phone)) {
-      errors.phone = 'Invalid phone number format';
-    }
-    
-    if (!teacherFormData.subjects.trim()) {
-      errors.subjects = 'At least one subject is required';
-    }
-    
+    if (!teacherFormData.name.trim()) errors.name = 'Name is required';
+    if (!teacherFormData.email.trim()) errors.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(teacherFormData.email)) errors.email = 'Invalid email format';
+    if (!teacherFormData.phone.trim()) errors.phone = 'Phone number is required';
+    else if (!/^\+?[\d\s\-()]+$/.test(teacherFormData.phone)) errors.phone = 'Invalid phone number format';
+    if (!teacherFormData.subjects.trim()) errors.subjects = 'At least one subject is required';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleAddTeacher = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-    
+    if (!validateForm()) return;
     setIsSubmitting(true);
-    
     setTimeout(() => {
       const subjectsArray = teacherFormData.subjects.split(',').map(s => s.trim()).filter(s => s);
       const newTeacher: Teacher = {
-        id: (teachers.length + 1).toString(),
+        id: String(Date.now()),
         teacherId: `TCH-2026-${String(teachers.length + 1).padStart(3, '0')}`,
         name: teacherFormData.name,
         email: teacherFormData.email,
@@ -159,15 +132,8 @@ export function TeacherManagement() {
         status: teacherFormData.status,
         hireDate: new Date().toISOString().split('T')[0]
       };
-      
       setTeachers([...teachers, newTeacher]);
-      setTeacherFormData({
-        name: '',
-        email: '',
-        phone: '',
-        subjects: '',
-        status: 'Active'
-      });
+      setTeacherFormData({ name: '', email: '', phone: '', subjects: '', status: 'Active' });
       setFormErrors({});
       setIsSubmitting(false);
       setShowAddModal(false);
@@ -177,13 +143,7 @@ export function TeacherManagement() {
 
   const handleCloseModal = () => {
     setShowAddModal(false);
-    setTeacherFormData({
-      name: '',
-      email: '',
-      phone: '',
-      subjects: '',
-      status: 'Active'
-    });
+    setTeacherFormData({ name: '', email: '', phone: '', subjects: '', status: 'Active' });
     setFormErrors({});
   };
 
@@ -206,56 +166,27 @@ export function TeacherManagement() {
 
   const validateEditForm = (): boolean => {
     const errors: FormErrors = {};
-    
-    if (!editFormData.name.trim()) {
-      errors.name = 'Name is required';
-    }
-    
-    if (!editFormData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editFormData.email)) {
-      errors.email = 'Invalid email format';
-    }
-    
-    if (!editFormData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^\+?[\d\s\-()]+$/.test(editFormData.phone)) {
-      errors.phone = 'Invalid phone number format';
-    }
-    
-    if (!editFormData.subjects.trim()) {
-      errors.subjects = 'At least one subject is required';
-    }
-    
+    if (!editFormData.name.trim()) errors.name = 'Name is required';
+    if (!editFormData.email.trim()) errors.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editFormData.email)) errors.email = 'Invalid email format';
+    if (!editFormData.phone.trim()) errors.phone = 'Phone number is required';
+    else if (!/^\+?[\d\s\-()]+$/.test(editFormData.phone)) errors.phone = 'Invalid phone number format';
+    if (!editFormData.subjects.trim()) errors.subjects = 'At least one subject is required';
     setEditFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleUpdateTeacher = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateEditForm() || !selectedTeacher) {
-      return;
-    }
-    
+    if (!validateEditForm() || !selectedTeacher) return;
     setIsSubmitting(true);
-    
     setTimeout(() => {
       const subjectsArray = editFormData.subjects.split(',').map(s => s.trim()).filter(s => s);
-      const updatedTeachers = teachers.map(teacher =>
+      setTeachers(teachers.map(teacher =>
         teacher.id === selectedTeacher.id
-          ? {
-              ...teacher,
-              name: editFormData.name,
-              email: editFormData.email,
-              phone: editFormData.phone,
-              subjects: subjectsArray,
-              status: editFormData.status
-            }
+          ? { ...teacher, name: editFormData.name, email: editFormData.email, phone: editFormData.phone, subjects: subjectsArray, status: editFormData.status }
           : teacher
-      );
-      
-      setTeachers(updatedTeachers);
+      ));
       setIsSubmitting(false);
       setShowEditModal(false);
       setSelectedTeacher(null);
@@ -271,62 +202,34 @@ export function TeacherManagement() {
 
   const handleConfirmToggleStatus = () => {
     if (!teacherToToggle) return;
-
     const newStatus = teacherToToggle.status === 'Active' ? 'Inactive' : 'Active';
     const action = newStatus === 'Active' ? 'activated' : 'deactivated';
-    
-    const updatedTeachers = teachers.map(t =>
+    setTeachers(teachers.map(t =>
       t.id === teacherToToggle.id ? { ...t, status: newStatus } : t
-    );
-    setTeachers(updatedTeachers);
-    
+    ));
     setShowConfirmModal(false);
     setTeacherToToggle(null);
-    
-    setTimeout(() => {
-      alert(`Teacher ${action} successfully!`);
-    }, 100);
+    setTimeout(() => alert(`Teacher ${action} successfully!`), 100);
   };
 
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setSelectedTeacher(null);
-    setEditFormData({
-      name: '',
-      email: '',
-      phone: '',
-      subjects: '',
-      status: 'Active'
-    });
+    setEditFormData({ name: '', email: '', phone: '', subjects: '', status: 'Active' });
     setEditFormErrors({});
   };
 
   const handleExportToCSV = () => {
-    // Prepare CSV headers
     const headers = ['Teacher ID', 'Name', 'Email', 'Phone', 'Subjects', 'Status', 'Hire Date'];
-    
-    // Prepare CSV rows
     const rows = filteredTeachers.map(teacher => [
-      teacher.teacherId,
-      teacher.name,
-      teacher.email,
-      teacher.phone,
-      teacher.subjects.join('; '),
-      teacher.status,
+      teacher.teacherId, teacher.name, teacher.email, teacher.phone,
+      teacher.subjects.join('; '), teacher.status,
       new Date(teacher.hireDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     ]);
-    
-    // Combine headers and rows
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-    
-    // Create blob and download
+    const csvContent = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
+    link.setAttribute('href', URL.createObjectURL(blob));
     link.setAttribute('download', `teachers_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -348,32 +251,32 @@ export function TeacherManagement() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar lg:ml-72">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* Top Bar */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Teacher Management</h2>
-              </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{notifications}</span>
-                )}
-              </button>
+              <h2 className="text-xl font-semibold text-gray-900">Teacher Management</h2>
+              <NotificationDropdown
+                notifications={notificationList}
+                onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onNotificationsChange={setNotificationList}
+              />
             </div>
           </div>
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Header */}
           <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Teacher Management</h1>
                 <p className="text-emerald-50">{teachers.length} teachers registered</p>
               </div>
-              <button 
+              <button
                 onClick={() => setShowAddModal(true)}
                 className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium"
               >
@@ -383,6 +286,7 @@ export function TeacherManagement() {
             </div>
           </div>
 
+          {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-600 text-sm mb-1">Total Teachers</p>
@@ -398,6 +302,7 @@ export function TeacherManagement() {
             </div>
           </div>
 
+          {/* Search and Filters */}
           <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
@@ -424,7 +329,7 @@ export function TeacherManagement() {
                   className="min-w-[180px]"
                 />
               </div>
-              <button 
+              <button
                 onClick={handleExportToCSV}
                 className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
               >
@@ -434,6 +339,7 @@ export function TeacherManagement() {
             </div>
           </div>
 
+          {/* Teachers Table */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -451,20 +357,16 @@ export function TeacherManagement() {
                   {filteredTeachers.map((teacher) => (
                     <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">{teacher.name}</p>
-                          <p className="text-sm text-gray-500">{teacher.teacherId}</p>
-                        </div>
+                        <p className="font-medium text-gray-900">{teacher.name}</p>
+                        <p className="text-sm text-gray-500">{teacher.teacherId}</p>
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Mail className="w-4 h-4" />
-                            {teacher.email}
+                            <Mail className="w-4 h-4" />{teacher.email}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Phone className="w-4 h-4" />
-                            {teacher.phone}
+                            <Phone className="w-4 h-4" />{teacher.phone}
                           </div>
                         </div>
                       </td>
@@ -489,34 +391,18 @@ export function TeacherManagement() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => handleViewTeacher(teacher)}
-                            className="p-2 hover:bg-blue-50 rounded-lg transition-colors" 
-                            title="View"
-                          >
+                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors" title="View">
                             <Eye className="w-4 h-4 text-blue-600" />
                           </button>
-                          <button 
-                            onClick={() => handleEditTeacher(teacher)}
-                            className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" 
-                            title="Edit"
-                          >
+                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit">
                             <Edit className="w-4 h-4 text-emerald-600" />
                           </button>
                           {teacher.status === 'Active' ? (
-                            <button 
-                              onClick={() => handleToggleStatus(teacher)}
-                              className="p-2 hover:bg-red-50 rounded-lg transition-colors" 
-                              title="Deactivate"
-                            >
+                            <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Deactivate">
                               <Ban className="w-4 h-4 text-red-600" />
                             </button>
                           ) : (
-                            <button 
-                              onClick={() => handleToggleStatus(teacher)}
-                              className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" 
-                              title="Activate"
-                            >
+                            <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Activate">
                               <CheckCircle className="w-4 h-4 text-emerald-600" />
                             </button>
                           )}
@@ -549,68 +435,38 @@ export function TeacherManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                    <input
-                      type="text"
-                      value={teacherFormData.name}
-                      onChange={(e) => setTeacherFormData({ ...teacherFormData, name: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" value={teacherFormData.name} onChange={(e) => setTeacherFormData({ ...teacherFormData, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {formErrors.name && <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={teacherFormData.email}
-                      onChange={(e) => setTeacherFormData({ ...teacherFormData, email: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="email" value={teacherFormData.email} onChange={(e) => setTeacherFormData({ ...teacherFormData, email: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input
-                      type="text"
-                      value={teacherFormData.phone}
-                      onChange={(e) => setTeacherFormData({ ...teacherFormData, phone: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" value={teacherFormData.phone} onChange={(e) => setTeacherFormData({ ...teacherFormData, phone: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
                       value={teacherFormData.status}
-                      onChange={(value) => setTeacherFormData({ ...teacherFormData, status: value as 'Active' | 'Inactive' })}
-                      options={[
-                        { value: 'Active', label: 'Active' },
-                        { value: 'Inactive', label: 'Inactive' }
-                      ]}
+                      onChange={(value: string) => setTeacherFormData({ ...teacherFormData, status: value as 'Active' | 'Inactive' })}
+                      options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
                       icon={<User className="w-5 h-5" />}
                       className="min-w-[180px]"
                     />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., MATH101, MATH102"
-                      value={teacherFormData.subjects}
-                      onChange={(e) => setTeacherFormData({ ...teacherFormData, subjects: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" placeholder="e.g., MATH101, MATH102" value={teacherFormData.subjects} onChange={(e) => setTeacherFormData({ ...teacherFormData, subjects: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {formErrors.subjects && <p className="text-red-500 text-sm mt-1">{formErrors.subjects}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                    disabled={isSubmitting}
-                  >
+                  <button onClick={handleCloseModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>
                     {isSubmitting ? 'Adding...' : 'Add Teacher'}
                   </button>
                 </div>
@@ -635,68 +491,38 @@ export function TeacherManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                    <input
-                      type="text"
-                      value={editFormData.name}
-                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {editFormErrors.name && <p className="text-red-500 text-sm mt-1">{editFormErrors.name}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={editFormData.email}
-                      onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                    <input
-                      type="text"
-                      value={editFormData.phone}
-                      onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" value={editFormData.phone} onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {editFormErrors.phone && <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
                       value={editFormData.status}
-                      onChange={(value) => setEditFormData({ ...editFormData, status: value as 'Active' | 'Inactive' })}
-                      options={[
-                        { value: 'Active', label: 'Active' },
-                        { value: 'Inactive', label: 'Inactive' }
-                      ]}
+                      onChange={(value: string) => setEditFormData({ ...editFormData, status: value as 'Active' | 'Inactive' })}
+                      options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
                       icon={<User className="w-5 h-5" />}
                       className="min-w-[180px]"
                     />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., MATH101, MATH102"
-                      value={editFormData.subjects}
-                      onChange={(e) => setEditFormData({ ...editFormData, subjects: e.target.value })}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                    />
+                    <input type="text" placeholder="e.g., MATH101, MATH102" value={editFormData.subjects} onChange={(e) => setEditFormData({ ...editFormData, subjects: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     {editFormErrors.subjects && <p className="text-red-500 text-sm mt-1">{editFormErrors.subjects}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                    disabled={isSubmitting}
-                  >
+                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>
                     {isSubmitting ? 'Updating...' : 'Update Teacher'}
                   </button>
                 </div>
@@ -731,7 +557,6 @@ export function TeacherManagement() {
                   </span>
                 </div>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
@@ -749,46 +574,34 @@ export function TeacherManagement() {
                     </div>
                   </div>
                 </div>
-
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Hire Date</label>
                     <p className="text-gray-900">
-                      {new Date(selectedTeacher.hireDate).toLocaleDateString('en-US', { 
-                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-                      })}
+                      {new Date(selectedTeacher.hireDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </p>
                   </div>
                 </div>
-
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-2">Assigned Subjects</label>
                   <div className="flex flex-wrap gap-2">
                     {selectedTeacher.subjects.map((subject, idx) => (
                       <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
-                        <BookOpen className="w-4 h-4" />
-                        {subject}
+                        <BookOpen className="w-4 h-4" />{subject}
                       </span>
                     ))}
                   </div>
                 </div>
               </div>
-
               <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
                 <button
-                  onClick={() => {
-                    setShowViewModal(false);
-                    handleEditTeacher(selectedTeacher);
-                  }}
+                  onClick={() => { setShowViewModal(false); handleEditTeacher(selectedTeacher); }}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
                 >
                   <Edit className="w-4 h-4" />
                   Edit Teacher
                 </button>
-                <button
-                  onClick={() => setShowViewModal(false)}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
+                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                   Close
                 </button>
               </div>
@@ -805,11 +618,10 @@ export function TeacherManagement() {
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
                 teacherToToggle.status === 'Active' ? 'bg-red-100' : 'bg-emerald-100'
               }`}>
-                {teacherToToggle.status === 'Active' ? (
-                  <Ban className="w-8 h-8 text-red-600" />
-                ) : (
-                  <CheckCircle className="w-8 h-8 text-emerald-600" />
-                )}
+                {teacherToToggle.status === 'Active'
+                  ? <Ban className="w-8 h-8 text-red-600" />
+                  : <CheckCircle className="w-8 h-8 text-emerald-600" />
+                }
               </div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
                 {teacherToToggle.status === 'Active' ? 'Deactivate Teacher?' : 'Activate Teacher?'}
@@ -817,9 +629,7 @@ export function TeacherManagement() {
               <p className="text-center text-gray-600 mb-1">
                 Are you sure you want to {teacherToToggle.status === 'Active' ? 'deactivate' : 'activate'}
               </p>
-              <p className="text-center font-medium text-gray-900">
-                {teacherToToggle.name}?
-              </p>
+              <p className="text-center font-medium text-gray-900">{teacherToToggle.name}?</p>
               {teacherToToggle.status === 'Active' && (
                 <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg w-full">
                   <div className="flex items-start gap-2">
@@ -834,10 +644,7 @@ export function TeacherManagement() {
             </div>
             <div className="px-6 pb-6 flex gap-3">
               <button
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setTeacherToToggle(null);
-                }}
+                onClick={() => { setShowConfirmModal(false); setTeacherToToggle(null); }}
                 className="flex-1 px-4 py-3 text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors font-medium"
               >
                 Cancel
@@ -845,9 +652,7 @@ export function TeacherManagement() {
               <button
                 onClick={handleConfirmToggleStatus}
                 className={`flex-1 px-4 py-3 text-white rounded-lg transition-colors font-medium ${
-                  teacherToToggle.status === 'Active'
-                    ? 'bg-red-600 hover:bg-red-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
+                  teacherToToggle.status === 'Active' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
                 }`}
               >
                 {teacherToToggle.status === 'Active' ? 'Deactivate' : 'Activate'}

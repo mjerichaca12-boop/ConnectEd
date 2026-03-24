@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AdminSidebar } from '@/app/components/AdminSidebar';
-import { Bell, FileText, Download, TrendingUp, Users, BookOpen, Calendar } from 'lucide-react';
+import { AdminSidebar } from '../../components/AdminSidebar';
+import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
+import { adminNotifications } from '../../components/NotificationDefault';
+import { FileText, Download, TrendingUp, Users, BookOpen, Calendar } from 'lucide-react';
 
 export function Reports() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [notifications, setNotifications] = useState(8);
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>(adminNotifications);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -80,30 +82,31 @@ export function Reports() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar lg:ml-72">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
+        {/* Top Bar */}
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Reports</h2>
-              </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{notifications}</span>
-                )}
-              </button>
+              <h2 className="text-xl font-semibold text-gray-900">Reports</h2>
+              <NotificationDropdown
+                notifications={notificationList}
+                onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onNotificationsChange={setNotificationList}
+              />
             </div>
           </div>
         </div>
 
         <div className="p-6 space-y-6">
+          {/* Header */}
           <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
             <h1 className="text-3xl font-bold mb-2">System Reports</h1>
             <p className="text-emerald-50">Generate and download various system reports</p>
           </div>
 
+          {/* Report Categories */}
           {reportCategories.map((category, idx) => {
             const Icon = category.icon;
             const colorClasses = {

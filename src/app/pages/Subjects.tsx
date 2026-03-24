@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sidebar } from '@/app/components/Sidebar';
+import { Sidebar } from '../components/Sidebar';
+import { NotificationDropdown, type NotificationItem } from '../components/NotificationDropdown';
 import { 
-  Bell, 
   BookOpen, 
   User,
   Calendar,
@@ -24,88 +24,30 @@ interface Subject {
 export function Subjects() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>([
+    { id: '1', title: 'New Assignment Posted', message: 'Mathematics chapter 5 assignment is now available', path: '/subjects', isRead: false, timestamp: '1 hour ago' },
+    { id: '2', title: 'Grade Updated', message: 'Your Mathematics grade has been recorded: 92%', path: '/grades', isRead: false, timestamp: '2 hours ago' },
+    { id: '3', title: 'Attendance Marked', message: 'You were marked Late for General Science on Jan 15', path: '/attendance', isRead: false, timestamp: '1 day ago' },
+    { id: '4', title: 'Live Class Starting', message: 'Mathematics - Algebra Basics is live now!', path: '/video-conference', isRead: false, timestamp: '5 mins ago' },
+    { id: '5', title: 'New Announcement', message: 'Mid-term examinations scheduled for January 20-24', path: '/announcements', isRead: false, timestamp: '2 days ago' },
+  ]);
 
-  // Mock data
   const [subjects] = useState<Subject[]>([
-    { 
-      id: '1', 
-      code: 'MATH101', 
-      name: 'Advanced Mathematics', 
-      teacher: 'Ms. Sarah Rodriguez', 
-      teacherId: 'T001',
-      description: 'Advanced topics in calculus and algebra',
-      credits: 3,
-      quarter: '1st Quarter 2026'
-    },
-    { 
-      id: '2', 
-      code: 'ENG101', 
-      name: 'English Literature', 
-      teacher: 'Mr. David Santos', 
-      teacherId: 'T002',
-      description: 'Introduction to classical and modern literature',
-      credits: 3,
-      quarter: '1st Quarter 2026'
-    },
-    { 
-      id: '3', 
-      code: 'SCI101', 
-      name: 'General Science', 
-      teacher: 'Dr. Maria Cruz', 
-      teacherId: 'T003',
-      description: 'Fundamentals of biology, chemistry, and physics',
-      credits: 4,
-      quarter: '1st Quarter 2026'
-    },
-    { 
-      id: '4', 
-      code: 'FIL101', 
-      name: 'Filipino Language', 
-      teacher: 'Mrs. Elena Reyes', 
-      teacherId: 'T004',
-      description: 'Filipino language and literature',
-      credits: 3,
-      quarter: '1st Quarter 2026'
-    },
-    { 
-      id: '5', 
-      code: 'PE101', 
-      name: 'Physical Education', 
-      teacher: 'Coach Robert Tan', 
-      teacherId: 'T005',
-      description: 'Physical fitness and sports activities',
-      credits: 2,
-      quarter: '1st Quarter 2026'
-    },
-    { 
-      id: '6', 
-      code: 'CS101', 
-      name: 'Computer Science Fundamentals', 
-      teacher: 'Mr. James Garcia', 
-      teacherId: 'T006',
-      description: 'Introduction to programming and computer systems',
-      credits: 4,
-      quarter: '1st Quarter 2026'
-    },
+    { id: '1', code: 'MATH101', name: 'Advanced Mathematics', teacher: 'Ms. Sarah Rodriguez', teacherId: 'T001', description: 'Advanced topics in calculus and algebra', credits: 3, quarter: '1st Quarter 2026' },
+    { id: '2', code: 'ENG101', name: 'English Literature', teacher: 'Mr. David Santos', teacherId: 'T002', description: 'Introduction to classical and modern literature', credits: 3, quarter: '1st Quarter 2026' },
+    { id: '3', code: 'SCI101', name: 'General Science', teacher: 'Dr. Maria Cruz', teacherId: 'T003', description: 'Fundamentals of biology, chemistry, and physics', credits: 4, quarter: '1st Quarter 2026' },
+    { id: '4', code: 'FIL101', name: 'Filipino Language', teacher: 'Mrs. Elena Reyes', teacherId: 'T004', description: 'Filipino language and literature', credits: 3, quarter: '1st Quarter 2026' },
+    { id: '5', code: 'PE101', name: 'Physical Education', teacher: 'Coach Robert Tan', teacherId: 'T005', description: 'Physical fitness and sports activities', credits: 2, quarter: '1st Quarter 2026' },
+    { id: '6', code: 'CS101', name: 'Computer Science Fundamentals', teacher: 'Mr. James Garcia', teacherId: 'T006', description: 'Introduction to programming and computer systems', credits: 4, quarter: '1st Quarter 2026' },
   ]);
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
-
-    if (!userData) {
-      navigate('/login');
-      return;
-    }
-
+    if (!userData) { navigate('/login'); return; }
     const user = JSON.parse(userData);
-    if (user.role !== 'student') {
-      navigate('/login');
-      return;
-    }
-
+    if (user.role !== 'student') { navigate('/login'); return; }
     setStudentName(user.name);
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
@@ -138,21 +80,18 @@ export function Subjects() {
 
       <main className="flex-1 overflow-y-auto custom-scrollbar">
         {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">My Subjects</h2>
               </div>
               <div className="flex items-center gap-4">
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>
-                  )}
-                </button>
+                <NotificationDropdown
+                  notifications={notificationList}
+                  onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                  onNotificationsChange={setNotificationList}
+                />
               </div>
             </div>
           </div>
@@ -234,7 +173,7 @@ export function Subjects() {
                     </div>
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => navigate(`/subject/${subject.id}`)}
                     className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all duration-300 shadow-sm hover:shadow-md"
                   >
