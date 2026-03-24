@@ -57,6 +57,30 @@ export function Subjects() {
     navigate('/login');
   };
 
+  const handleExportSubjects = () => {
+    const header = ['Code', 'Name', 'Teacher', 'Credits', 'Quarter'];
+    const rows = subjects.map((s) => [
+      s.code,
+      s.name,
+      s.teacher,
+      String(s.credits),
+      s.quarter,
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'subjects-report.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const filteredSubjects = subjects.filter(subject =>
     subject.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     subject.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -126,6 +150,15 @@ export function Subjects() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
               />
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={handleExportSubjects}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export Subjects
+              </button>
             </div>
           </div>
 

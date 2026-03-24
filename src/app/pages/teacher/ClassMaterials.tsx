@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TeacherSidebar } from '@/app/components/TeacherSidebar';
 import { 
@@ -45,6 +45,10 @@ export function ClassMaterials() {
   const [activeTab, setActiveTab] = useState<'materials' | 'activities'>('materials');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
+  const materialFileInputRef = useRef<HTMLInputElement | null>(null);
+  const activityFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [materialFileName, setMaterialFileName] = useState('');
+  const [activityFileName, setActivityFileName] = useState('');
 
   // Mock data
   const [materials] = useState<ClassMaterial[]>([
@@ -132,6 +136,24 @@ export function ClassMaterials() {
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     navigate('/login');
+  };
+
+  const handleMaterialFileClick = () => {
+    materialFileInputRef.current?.click();
+  };
+
+  const handleMaterialFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setMaterialFileName(file ? file.name : '');
+  };
+
+  const handleActivityFileClick = () => {
+    activityFileInputRef.current?.click();
+  };
+
+  const handleActivityFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setActivityFileName(file ? file.name : '');
   };
 
   const getFileIcon = (fileType: string) => {
@@ -365,9 +387,20 @@ export function ClassMaterials() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Upload File *</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                <input
+                  ref={materialFileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleMaterialFileChange}
+                />
+                <div
+                  onClick={handleMaterialFileClick}
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                >
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm text-gray-600 mb-1">Click to upload or drag and drop</p>
+                  <p className="text-sm text-gray-600 mb-1">
+                    {materialFileName || 'Click to upload or drag and drop'}
+                  </p>
                   <p className="text-xs text-gray-500">PDF, DOC, DOCX, PPT, PPTX (max 50MB)</p>
                 </div>
               </div>
@@ -446,6 +479,26 @@ export function ClassMaterials() {
                   type="date"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attach File (optional)</label>
+                <input
+                  ref={activityFileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleActivityFileChange}
+                />
+                <div
+                  onClick={handleActivityFileClick}
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600 mb-1">
+                    {activityFileName || 'Click to upload or drag and drop'}
+                  </p>
+                  <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 50MB)</p>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-4">

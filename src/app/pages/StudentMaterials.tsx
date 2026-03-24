@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '@/app/components/Sidebar';
 import { 
@@ -45,6 +45,8 @@ export function StudentMaterials() {
   const [activeTab, setActiveTab] = useState<'materials' | 'activities'>('materials');
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Mock data
   const [materials] = useState<ClassMaterial[]>([
@@ -146,7 +148,23 @@ export function StudentMaterials() {
 
   const handleSubmitActivity = (activity: Activity) => {
     setSelectedActivity(activity);
+    setSelectedFileName('');
     setShowSubmitModal(true);
+  };
+
+  const handleFileInputClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFileName(file.name);
+    } else {
+      setSelectedFileName('');
+    }
   };
 
   const getFileIcon = (fileType: string) => {
@@ -403,9 +421,20 @@ export function StudentMaterials() {
               {/* File Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Upload Your Work *</label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <div
+                  onClick={handleFileInputClick}
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                >
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm text-gray-600 mb-1">Click to upload or drag and drop</p>
+                  <p className="text-sm text-gray-600 mb-1">
+                    {selectedFileName ? selectedFileName : 'Click to upload or drag and drop'}
+                  </p>
                   <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 20MB)</p>
                 </div>
               </div>

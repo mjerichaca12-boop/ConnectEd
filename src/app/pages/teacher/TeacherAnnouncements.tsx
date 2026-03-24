@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TeacherSidebar } from '@/app/components/TeacherSidebar';
 import { CustomSelect } from '@/app/components/CustomSelect';
@@ -56,6 +56,10 @@ export function TeacherAnnouncements() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'announcements' | 'assignments' | 'files'>('announcements');
+  const assignmentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [assignmentFileNames, setAssignmentFileNames] = useState<string>('');
+  const [uploadFileName, setUploadFileName] = useState<string>('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -165,6 +169,36 @@ export function TeacherAnnouncements() {
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     navigate('/login');
+  };
+
+  const handleAssignmentFilesClick = () => {
+    assignmentFileInputRef.current?.click();
+  };
+
+  const handleAssignmentFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const names = Array.from(files).map((f) => f.name);
+      setAssignmentFormData({ ...assignmentFormData, attachments: names });
+      setAssignmentFileNames(names.join(', '));
+    } else {
+      setAssignmentFormData({ ...assignmentFormData, attachments: [] });
+      setAssignmentFileNames('');
+    }
+  };
+
+  const handleUploadFileClick = () => {
+    uploadFileInputRef.current?.click();
+  };
+
+  const handleUploadFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setFileFormData({ ...fileFormData, fileName: file.name });
+      setUploadFileName(file.name);
+    } else {
+      setUploadFileName('');
+    }
   };
 
   const handleSubmit = () => {
@@ -633,9 +667,21 @@ export function TeacherAnnouncements() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Attachments (Optional)</label>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                      <input
+                        ref={assignmentFileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={handleAssignmentFilesChange}
+                      />
+                      <div
+                        onClick={handleAssignmentFilesClick}
+                        className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                      >
                         <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                        <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
+                        <p className="text-sm text-gray-600">
+                          {assignmentFileNames || 'Click to upload or drag and drop'}
+                        </p>
                         <p className="text-xs text-gray-500 mt-1">PDF, DOC, DOCX up to 10MB</p>
                       </div>
                     </div>
@@ -655,9 +701,20 @@ export function TeacherAnnouncements() {
                   <>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">File Upload</label>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                      <input
+                        ref={uploadFileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={handleUploadFileChange}
+                      />
+                      <div
+                        onClick={handleUploadFileClick}
+                        className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                      >
                         <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                        <p className="text-gray-600 mb-1">Click to upload or drag and drop</p>
+                        <p className="text-gray-600 mb-1">
+                          {uploadFileName || 'Click to upload or drag and drop'}
+                        </p>
                         <p className="text-sm text-gray-500">PDF, DOC, DOCX, PPT, PPTX up to 25MB</p>
                       </div>
                     </div>

@@ -29,7 +29,6 @@ interface Grade {
 export function Grades() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState('');
-  const [notifications, setNotifications] = useState(3);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
 
@@ -67,6 +66,32 @@ export function Grades() {
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
     navigate('/login');
+  };
+
+  const handleExportGrades = () => {
+    const header = ['Subject Code', 'Subject Name', 'Type', 'Grade', 'Max Grade', 'Remarks', 'Date Recorded'];
+    const rows = grades.map((g) => [
+      g.subjectCode,
+      g.subjectName,
+      g.gradeType,
+      String(g.grade),
+      String(g.maxGrade),
+      g.remarks,
+      g.dateRecorded,
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'grades-report.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Calculate statistics
@@ -135,16 +160,7 @@ export function Grades() {
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Grades</h2>
               </div>
-              <div className="flex items-center gap-4">
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && (
-                    <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>
-                  )}
-                </button>
-              </div>
+              <div className="flex items-center gap-4" />
             </div>
           </div>
         </div>
@@ -214,7 +230,10 @@ export function Grades() {
               />
             </div>
 
-            <button className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm hover:shadow-md">
+            <button
+              onClick={handleExportGrades}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm hover:shadow-md"
+            >
               <Download className="w-4 h-4" />
               Export Report
             </button>
