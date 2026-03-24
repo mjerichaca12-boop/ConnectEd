@@ -30,22 +30,16 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   const [stats] = useState({
-    totalStudents: 1247,
-    totalTeachers: 58,
-    totalSubjects: 42,
-    totalEnrollments: 5486,
-    activeAnnouncements: 12,
-    newStudentsThisMonth: 34,
-    newTeachersThisMonth: 3
+    totalStudents: 0,
+    totalTeachers: 0,
+    totalSubjects: 0,
+    totalEnrollments: 0,
+    activeAnnouncements: 0,
+    newStudentsThisMonth: 0,
+    newTeachersThisMonth: 0
   });
 
-  const [recentActivity] = useState<ActivityLog[]>([
-    { id: '1', action: 'New student enrolled', user: 'Juan Dela Cruz', timestamp: '2026-01-19T10:30:00', type: 'student' },
-    { id: '2', action: 'Teacher account created', user: 'Maria Santos', timestamp: '2026-01-19T09:15:00', type: 'teacher' },
-    { id: '3', action: 'Subject updated', user: 'Advanced Mathematics - MATH101', timestamp: '2026-01-18T16:45:00', type: 'subject' },
-    { id: '4', action: 'Enrollment processed', user: 'Pedro Garcia enrolled in CS101', timestamp: '2026-01-18T14:20:00', type: 'enrollment' },
-    { id: '5', action: 'New student enrolled', user: 'Ana Reyes', timestamp: '2026-01-18T11:00:00', type: 'student' },
-  ]);
+  const [recentActivity] = useState<ActivityLog[]>([]);
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
@@ -200,21 +194,28 @@ export function AdminDashboard() {
                   </h3>
                 </div>
                 <div className="p-6">
-                  <div className="space-y-3">
-                    {recentActivity.map((activity) => (
-                      <div
-                        key={activity.id}
-                        className={`flex items-start gap-3 p-4 rounded-lg border ${getActivityColor(activity.type)} hover:shadow-sm transition-shadow`}
-                      >
-                        <div className="mt-0.5">{getActivityIcon(activity.type)}</div>
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900">{activity.action}</p>
-                          <p className="text-sm text-gray-600">{activity.user}</p>
+                  {recentActivity.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">No recent activity</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {recentActivity.map((activity) => (
+                        <div
+                          key={activity.id}
+                          className={`flex items-start gap-3 p-4 rounded-lg border ${getActivityColor(activity.type)}`}
+                        >
+                          <div className="mt-0.5">{getActivityIcon(activity.type)}</div>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{activity.action}</p>
+                            <p className="text-sm text-gray-600">{activity.user}</p>
+                          </div>
+                          <p className="text-xs text-gray-500 whitespace-nowrap">{formatTimestamp(activity.timestamp)}</p>
                         </div>
-                        <p className="text-xs text-gray-500 whitespace-nowrap">{formatTimestamp(activity.timestamp)}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

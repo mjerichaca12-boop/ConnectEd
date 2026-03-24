@@ -4,23 +4,7 @@ import { AdminSidebar } from '../../components/AdminSidebar';
 import { CustomSelect } from '../../components/admin/CustomSelect';
 import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
 import { adminNotifications } from '../../components/NotificationDefault';
-import { 
-  Search, 
-  Filter, 
-  UserPlus, 
-  MoreVertical, 
-  Eye, 
-  Edit, 
-  Ban, 
-  CheckCircle, 
-  Download, 
-  Mail, 
-  Phone, 
-  BookOpen,
-  X,
-  User,
-  AlertTriangle
-} from 'lucide-react';
+import { Search, Filter, UserPlus, MoreVertical, Eye, Edit, Ban, CheckCircle, Download, Mail, Phone, BookOpen, X, User, AlertTriangle } from 'lucide-react';
 
 interface Teacher {
   id: string;
@@ -62,24 +46,11 @@ export function TeacherManagement() {
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [teacherToToggle, setTeacherToToggle] = useState<Teacher | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [teacherFormData, setTeacherFormData] = useState<TeacherFormData>({
-    name: '', email: '', phone: '', subjects: '', status: 'Active'
-  });
+  const [teacherFormData, setTeacherFormData] = useState<TeacherFormData>({ name: '', email: '', phone: '', subjects: '', status: 'Active' });
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-
-  const [editFormData, setEditFormData] = useState<TeacherFormData>({
-    name: '', email: '', phone: '', subjects: '', status: 'Active'
-  });
+  const [editFormData, setEditFormData] = useState<TeacherFormData>({ name: '', email: '', phone: '', subjects: '', status: 'Active' });
   const [editFormErrors, setEditFormErrors] = useState<FormErrors>({});
-
-  const [teachers, setTeachers] = useState<Teacher[]>([
-    { id: '1', teacherId: 'TCH-2026-001', name: 'Sarah Rodriguez', email: 'sarah.r@school.edu', phone: '+63 912 345 6789', subjects: ['MATH101', 'MATH102'], status: 'Active', hireDate: '2024-06-01' },
-    { id: '2', teacherId: 'TCH-2026-002', name: 'David Santos', email: 'david.s@school.edu', phone: '+63 917 654 3210', subjects: ['ENG101'], status: 'Active', hireDate: '2024-06-01' },
-    { id: '3', teacherId: 'TCH-2026-003', name: 'Maria Cruz', email: 'maria.c@school.edu', phone: '+63 920 111 2222', subjects: ['SCI101', 'SCI102'], status: 'Active', hireDate: '2024-07-15' },
-    { id: '4', teacherId: 'TCH-2026-004', name: 'Elena Reyes', email: 'elena.r@school.edu', phone: '+63 915 333 4444', subjects: ['FIL101'], status: 'Active', hireDate: '2024-06-01' },
-    { id: '5', teacherId: 'TCH-2026-005', name: 'Robert Tan', email: 'robert.t@school.edu', phone: '+63 918 555 6666', subjects: ['PE101'], status: 'Inactive', hireDate: '2025-01-10' },
-  ]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
@@ -121,14 +92,13 @@ export function TeacherManagement() {
     if (!validateForm()) return;
     setIsSubmitting(true);
     setTimeout(() => {
-      const subjectsArray = teacherFormData.subjects.split(',').map(s => s.trim()).filter(s => s);
       const newTeacher: Teacher = {
         id: String(Date.now()),
         teacherId: `TCH-2026-${String(teachers.length + 1).padStart(3, '0')}`,
         name: teacherFormData.name,
         email: teacherFormData.email,
         phone: teacherFormData.phone,
-        subjects: subjectsArray,
+        subjects: teacherFormData.subjects.split(',').map(s => s.trim()).filter(s => s),
         status: teacherFormData.status,
         hireDate: new Date().toISOString().split('T')[0]
       };
@@ -147,20 +117,11 @@ export function TeacherManagement() {
     setFormErrors({});
   };
 
-  const handleViewTeacher = (teacher: Teacher) => {
-    setSelectedTeacher(teacher);
-    setShowViewModal(true);
-  };
+  const handleViewTeacher = (teacher: Teacher) => { setSelectedTeacher(teacher); setShowViewModal(true); };
 
   const handleEditTeacher = (teacher: Teacher) => {
     setSelectedTeacher(teacher);
-    setEditFormData({
-      name: teacher.name,
-      email: teacher.email,
-      phone: teacher.phone,
-      subjects: teacher.subjects.join(', '),
-      status: teacher.status
-    });
+    setEditFormData({ name: teacher.name, email: teacher.email, phone: teacher.phone, subjects: teacher.subjects.join(', '), status: teacher.status });
     setShowEditModal(true);
   };
 
@@ -181,10 +142,9 @@ export function TeacherManagement() {
     if (!validateEditForm() || !selectedTeacher) return;
     setIsSubmitting(true);
     setTimeout(() => {
-      const subjectsArray = editFormData.subjects.split(',').map(s => s.trim()).filter(s => s);
       setTeachers(teachers.map(teacher =>
         teacher.id === selectedTeacher.id
-          ? { ...teacher, name: editFormData.name, email: editFormData.email, phone: editFormData.phone, subjects: subjectsArray, status: editFormData.status }
+          ? { ...teacher, name: editFormData.name, email: editFormData.email, phone: editFormData.phone, subjects: editFormData.subjects.split(',').map(s => s.trim()).filter(s => s), status: editFormData.status }
           : teacher
       ));
       setIsSubmitting(false);
@@ -195,21 +155,15 @@ export function TeacherManagement() {
     }, 1000);
   };
 
-  const handleToggleStatus = (teacher: Teacher) => {
-    setTeacherToToggle(teacher);
-    setShowConfirmModal(true);
-  };
+  const handleToggleStatus = (teacher: Teacher) => { setTeacherToToggle(teacher); setShowConfirmModal(true); };
 
   const handleConfirmToggleStatus = () => {
     if (!teacherToToggle) return;
     const newStatus = teacherToToggle.status === 'Active' ? 'Inactive' : 'Active';
-    const action = newStatus === 'Active' ? 'activated' : 'deactivated';
-    setTeachers(teachers.map(t =>
-      t.id === teacherToToggle.id ? { ...t, status: newStatus } : t
-    ));
+    setTeachers(teachers.map(t => t.id === teacherToToggle.id ? { ...t, status: newStatus } : t));
     setShowConfirmModal(false);
     setTeacherToToggle(null);
-    setTimeout(() => alert(`Teacher ${action} successfully!`), 100);
+    setTimeout(() => alert(`Teacher ${newStatus === 'Active' ? 'activated' : 'deactivated'} successfully!`), 100);
   };
 
   const handleCloseEditModal = () => {
@@ -221,11 +175,7 @@ export function TeacherManagement() {
 
   const handleExportToCSV = () => {
     const headers = ['Teacher ID', 'Name', 'Email', 'Phone', 'Subjects', 'Status', 'Hire Date'];
-    const rows = filteredTeachers.map(teacher => [
-      teacher.teacherId, teacher.name, teacher.email, teacher.phone,
-      teacher.subjects.join('; '), teacher.status,
-      new Date(teacher.hireDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    ]);
+    const rows = filteredTeachers.map(teacher => [teacher.teacherId, teacher.name, teacher.email, teacher.phone, teacher.subjects.join('; '), teacher.status, new Date(teacher.hireDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })]);
     const csvContent = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -254,7 +204,6 @@ export function TeacherManagement() {
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
       <main className="flex-1 overflow-y-auto custom-scrollbar">
-        {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
@@ -269,24 +218,19 @@ export function TeacherManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Header */}
           <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Teacher Management</h1>
                 <p className="text-emerald-50">{teachers.length} teachers registered</p>
               </div>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium"
-              >
+              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium">
                 <UserPlus className="w-5 h-5" />
                 Add Teacher
               </button>
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-600 text-sm mb-1">Total Teachers</p>
@@ -302,44 +246,23 @@ export function TeacherManagement() {
             </div>
           </div>
 
-          {/* Search and Filters */}
           <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name, teacher ID, or email..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                />
+                <input type="text" placeholder="Search by name, teacher ID, or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
               </div>
               <div className="flex items-center gap-2">
                 <Filter className="w-5 h-5 text-gray-600" />
-                <CustomSelect
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  options={[
-                    { value: 'all', label: 'All Status' },
-                    { value: 'active', label: 'Active' },
-                    { value: 'inactive', label: 'Inactive' }
-                  ]}
-                  icon={<Filter className="w-5 h-5" />}
-                  className="min-w-[180px]"
-                />
+                <CustomSelect value={filterStatus} onChange={setFilterStatus} options={[{ value: 'all', label: 'All Status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} icon={<Filter className="w-5 h-5" />} className="min-w-[180px]" />
               </div>
-              <button
-                onClick={handleExportToCSV}
-                className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-              >
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
                 <Download className="w-4 h-4" />
                 Export
               </button>
             </div>
           </div>
 
-          {/* Teachers Table */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -362,53 +285,32 @@ export function TeacherManagement() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Mail className="w-4 h-4" />{teacher.email}
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Phone className="w-4 h-4" />{teacher.phone}
-                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600"><Mail className="w-4 h-4" />{teacher.email}</div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600"><Phone className="w-4 h-4" />{teacher.phone}</div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1">
                           {teacher.subjects.map((subject, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
-                              {subject}
-                            </span>
+                            <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">{subject}</span>
                           ))}
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          teacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                        }`}>
-                          {teacher.status}
-                        </span>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${teacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{teacher.status}</span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {new Date(teacher.hireDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors" title="View">
-                            <Eye className="w-4 h-4 text-blue-600" />
-                          </button>
-                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit">
-                            <Edit className="w-4 h-4 text-emerald-600" />
-                          </button>
-                          {teacher.status === 'Active' ? (
-                            <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Deactivate">
-                              <Ban className="w-4 h-4 text-red-600" />
-                            </button>
-                          ) : (
-                            <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Activate">
-                              <CheckCircle className="w-4 h-4 text-emerald-600" />
-                            </button>
-                          )}
-                          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="More">
-                            <MoreVertical className="w-4 h-4 text-gray-600" />
-                          </button>
+                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-blue-600" /></button>
+                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-emerald-600" /></button>
+                          {teacher.status === 'Active'
+                            ? <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Deactivate"><Ban className="w-4 h-4 text-red-600" /></button>
+                            : <button onClick={() => handleToggleStatus(teacher)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Activate"><CheckCircle className="w-4 h-4 text-emerald-600" /></button>
+                          }
+                          <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="More"><MoreVertical className="w-4 h-4 text-gray-600" /></button>
                         </div>
                       </td>
                     </tr>
@@ -416,6 +318,12 @@ export function TeacherManagement() {
                 </tbody>
               </table>
             </div>
+            {filteredTeachers.length === 0 && (
+              <div className="p-12 text-center">
+                <UserPlus className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No teachers found. Add your first teacher!</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -426,9 +334,7 @@ export function TeacherManagement() {
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Add New Teacher</h3>
-              <button onClick={handleCloseModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={handleCloseModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
             <div className="p-6">
               <form onSubmit={handleAddTeacher}>
@@ -450,13 +356,7 @@ export function TeacherManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <CustomSelect
-                      value={teacherFormData.status}
-                      onChange={(value: string) => setTeacherFormData({ ...teacherFormData, status: value as 'Active' | 'Inactive' })}
-                      options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
-                      icon={<User className="w-5 h-5" />}
-                      className="min-w-[180px]"
-                    />
+                    <CustomSelect value={teacherFormData.status} onChange={(value: string) => setTeacherFormData({ ...teacherFormData, status: value as 'Active' | 'Inactive' })} options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]} icon={<User className="w-5 h-5" />} className="min-w-[180px]" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
@@ -466,9 +366,7 @@ export function TeacherManagement() {
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
                   <button onClick={handleCloseModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>
-                    {isSubmitting ? 'Adding...' : 'Add Teacher'}
-                  </button>
+                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>{isSubmitting ? 'Adding...' : 'Add Teacher'}</button>
                 </div>
               </form>
             </div>
@@ -482,9 +380,7 @@ export function TeacherManagement() {
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Edit Teacher</h3>
-              <button onClick={handleCloseEditModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={handleCloseEditModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
             <div className="p-6">
               <form onSubmit={handleUpdateTeacher}>
@@ -506,13 +402,7 @@ export function TeacherManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <CustomSelect
-                      value={editFormData.status}
-                      onChange={(value: string) => setEditFormData({ ...editFormData, status: value as 'Active' | 'Inactive' })}
-                      options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
-                      icon={<User className="w-5 h-5" />}
-                      className="min-w-[180px]"
-                    />
+                    <CustomSelect value={editFormData.status} onChange={(value: string) => setEditFormData({ ...editFormData, status: value as 'Active' | 'Inactive' })} options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]} icon={<User className="w-5 h-5" />} className="min-w-[180px]" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subjects (comma-separated)</label>
@@ -522,9 +412,7 @@ export function TeacherManagement() {
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
                   <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>
-                    {isSubmitting ? 'Updating...' : 'Update Teacher'}
-                  </button>
+                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors" disabled={isSubmitting}>{isSubmitting ? 'Updating...' : 'Update Teacher'}</button>
                 </div>
               </form>
             </div>
@@ -538,123 +426,73 @@ export function TeacherManagement() {
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Teacher Details</h3>
-              <button onClick={() => setShowViewModal(false)} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={() => setShowViewModal(false)} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
             <div className="p-6">
               <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
-                <div className="w-20 h-20 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                  {selectedTeacher.name.charAt(0)}
-                </div>
+                <div className="w-20 h-20 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">{selectedTeacher.name.charAt(0)}</div>
                 <div>
                   <h4 className="text-2xl font-bold text-gray-900">{selectedTeacher.name}</h4>
                   <p className="text-gray-600">{selectedTeacher.teacherId}</p>
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${
-                    selectedTeacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {selectedTeacher.status}
-                  </span>
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${selectedTeacher.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{selectedTeacher.status}</span>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-emerald-600" />
-                      <p className="text-gray-900">{selectedTeacher.email}</p>
-                    </div>
+                    <div className="flex items-center gap-2"><Mail className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedTeacher.email}</p></div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Phone Number</label>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-emerald-600" />
-                      <p className="text-gray-900">{selectedTeacher.phone}</p>
-                    </div>
+                    <div className="flex items-center gap-2"><Phone className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedTeacher.phone}</p></div>
                   </div>
                 </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Hire Date</label>
-                    <p className="text-gray-900">
-                      {new Date(selectedTeacher.hireDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                    </p>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Hire Date</label>
+                  <p className="text-gray-900">{new Date(selectedTeacher.hireDate).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-2">Assigned Subjects</label>
                   <div className="flex flex-wrap gap-2">
                     {selectedTeacher.subjects.map((subject, idx) => (
-                      <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
-                        <BookOpen className="w-4 h-4" />{subject}
-                      </span>
+                      <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium"><BookOpen className="w-4 h-4" />{subject}</span>
                     ))}
                   </div>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
-                <button
-                  onClick={() => { setShowViewModal(false); handleEditTeacher(selectedTeacher); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                >
-                  <Edit className="w-4 h-4" />
-                  Edit Teacher
-                </button>
-                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                  Close
-                </button>
+                <button onClick={() => { setShowViewModal(false); handleEditTeacher(selectedTeacher); }} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"><Edit className="w-4 h-4" />Edit Teacher</button>
+                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Close</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Confirm Toggle Status Modal */}
+      {/* Confirm Toggle Status */}
       {showConfirmModal && teacherToToggle && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
             <div className="p-6 flex flex-col items-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
-                teacherToToggle.status === 'Active' ? 'bg-red-100' : 'bg-emerald-100'
-              }`}>
-                {teacherToToggle.status === 'Active'
-                  ? <Ban className="w-8 h-8 text-red-600" />
-                  : <CheckCircle className="w-8 h-8 text-emerald-600" />
-                }
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${teacherToToggle.status === 'Active' ? 'bg-red-100' : 'bg-emerald-100'}`}>
+                {teacherToToggle.status === 'Active' ? <Ban className="w-8 h-8 text-red-600" /> : <CheckCircle className="w-8 h-8 text-emerald-600" />}
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {teacherToToggle.status === 'Active' ? 'Deactivate Teacher?' : 'Activate Teacher?'}
-              </h3>
-              <p className="text-center text-gray-600 mb-1">
-                Are you sure you want to {teacherToToggle.status === 'Active' ? 'deactivate' : 'activate'}
-              </p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">{teacherToToggle.status === 'Active' ? 'Deactivate Teacher?' : 'Activate Teacher?'}</h3>
+              <p className="text-center text-gray-600 mb-1">Are you sure you want to {teacherToToggle.status === 'Active' ? 'deactivate' : 'activate'}</p>
               <p className="text-center font-medium text-gray-900">{teacherToToggle.name}?</p>
               {teacherToToggle.status === 'Active' && (
                 <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg w-full">
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm text-amber-800">
-                      <p className="font-medium mb-1">Warning</p>
-                      <p>Deactivating this teacher will restrict their access to the system and classes.</p>
-                    </div>
+                    <div className="text-sm text-amber-800"><p className="font-medium mb-1">Warning</p><p>Deactivating this teacher will restrict their access to the system and classes.</p></div>
                   </div>
                 </div>
               )}
             </div>
             <div className="px-6 pb-6 flex gap-3">
-              <button
-                onClick={() => { setShowConfirmModal(false); setTeacherToToggle(null); }}
-                className="flex-1 px-4 py-3 text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmToggleStatus}
-                className={`flex-1 px-4 py-3 text-white rounded-lg transition-colors font-medium ${
-                  teacherToToggle.status === 'Active' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
-              >
+              <button onClick={() => { setShowConfirmModal(false); setTeacherToToggle(null); }} className="flex-1 px-4 py-3 text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors font-medium">Cancel</button>
+              <button onClick={handleConfirmToggleStatus} className={`flex-1 px-4 py-3 text-white rounded-lg transition-colors font-medium ${teacherToToggle.status === 'Active' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
                 {teacherToToggle.status === 'Active' ? 'Deactivate' : 'Activate'}
               </button>
             </div>

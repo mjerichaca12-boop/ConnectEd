@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AdminSidebar } from '@/app/components/AdminSidebar';
-import { CustomSelect } from '@/app/components/admin/CustomSelect';
-import { CustomDropdown } from '@/app/components/admin/CustomDropdown';
-import { Bell, Search, Filter, UserPlus, MoreVertical, CheckCircle, XCircle, Clock, Download, BookOpen, FileCheck, Eye, X } from 'lucide-react';
+import { AdminSidebar } from '../../components/AdminSidebar';
+import { CustomSelect } from '../../components/admin/CustomSelect';
+import { CustomDropdown } from '../../components/admin/CustomDropdown';
+import { NotificationDropdown, type NotificationItem } from '../../components/NotificationDropdown';
+import { adminNotifications } from '../../components/NotificationDefault';
+import { Search, Filter, UserPlus, CheckCircle, XCircle, Clock, Download, X } from 'lucide-react';
 
 interface Enrollment {
   id: string;
@@ -23,7 +25,6 @@ interface EnrollmentFormData {
 export function EnrollmentManagement() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState('');
-  const [notifications, setNotifications] = useState(8);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -31,33 +32,11 @@ export function EnrollmentManagement() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [formData, setFormData] = useState<EnrollmentFormData>({ studentId: '', subjectCode: '' });
+  const [notificationList, setNotificationList] = useState<NotificationItem[]>(adminNotifications);
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
 
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([
-    { id: '1', studentName: 'Juan Dela Cruz', studentId: 'STU-2026-001', subjectCode: 'MATH101', subjectName: 'Advanced Mathematics', status: 'Approved', enrollmentDate: '2026-01-15' },
-    { id: '2', studentName: 'Maria Santos', studentId: 'STU-2026-002', subjectCode: 'ENG101', subjectName: 'English Literature', status: 'Approved', enrollmentDate: '2026-01-15' },
-    { id: '3', studentName: 'Pedro Garcia', studentId: 'STU-2026-003', subjectCode: 'CS101', subjectName: 'Computer Science Fundamentals', status: 'Pending', enrollmentDate: '2026-01-19' },
-    { id: '4', studentName: 'Ana Reyes', studentId: 'STU-2026-004', subjectCode: 'SCI101', subjectName: 'General Science', status: 'Pending', enrollmentDate: '2026-01-19' },
-    { id: '5', studentName: 'Carlos Lopez', studentId: 'STU-2026-005', subjectCode: 'MATH101', subjectName: 'Advanced Mathematics', status: 'Rejected', enrollmentDate: '2026-01-18' },
-  ]);
-
-  // Mock data for students and subjects
-  const availableStudents = [
-    { id: 'STU-2026-001', name: 'Juan Dela Cruz' },
-    { id: 'STU-2026-002', name: 'Maria Santos' },
-    { id: 'STU-2026-003', name: 'Pedro Garcia' },
-    { id: 'STU-2026-004', name: 'Ana Reyes' },
-    { id: 'STU-2026-005', name: 'Carlos Lopez' },
-    { id: 'STU-2026-006', name: 'Sofia Gonzales' },
-  ];
-
-  const availableSubjects = [
-    { code: 'MATH101', name: 'Advanced Mathematics' },
-    { code: 'ENG101', name: 'English Literature' },
-    { code: 'CS101', name: 'Computer Science Fundamentals' },
-    { code: 'SCI101', name: 'General Science' },
-    { code: 'HIS101', name: 'Philippine History' },
-    { code: 'PE101', name: 'Physical Education' },
-  ];
+  const availableStudents: { id: string; name: string }[] = [];
+  const availableSubjects: { code: string; name: string }[] = [];
 
   useEffect(() => {
     const userData = localStorage.getItem('currentUser');
@@ -78,14 +57,12 @@ export function EnrollmentManagement() {
       alert('Please select both student and subject');
       return;
     }
-
     const student = availableStudents.find(s => s.id === formData.studentId);
     const subject = availableSubjects.find(s => s.code === formData.subjectCode);
-
     if (!student || !subject) return;
 
     const newEnrollment: Enrollment = {
-      id: String(enrollments.length + 1),
+      id: String(Date.now()),
       studentName: student.name,
       studentId: student.id,
       subjectCode: subject.code,
@@ -93,16 +70,13 @@ export function EnrollmentManagement() {
       status: 'Pending',
       enrollmentDate: new Date().toISOString().split('T')[0]
     };
-
     setEnrollments([...enrollments, newEnrollment]);
     setShowEnrollModal(false);
     setFormData({ studentId: '', subjectCode: '' });
   };
 
   const handleStatusChange = (enrollmentId: string, newStatus: 'Approved' | 'Rejected') => {
-    setEnrollments(enrollments.map(e => 
-      e.id === enrollmentId ? { ...e, status: newStatus } : e
-    ));
+    setEnrollments(enrollments.map(e => e.id === enrollmentId ? { ...e, status: newStatus } : e));
   };
 
   const handleOpenStatusModal = (enrollment: Enrollment) => {
@@ -112,14 +86,14 @@ export function EnrollmentManagement() {
 
   const handleUpdateStatus = (newStatus: 'Pending' | 'Approved' | 'Rejected') => {
     if (selectedEnrollment) {
-      handleStatusChange(selectedEnrollment.id, newStatus);
+      setEnrollments(enrollments.map(e => e.id === selectedEnrollment.id ? { ...e, status: newStatus } : e));
       setShowStatusModal(false);
       setSelectedEnrollment(null);
     }
   };
 
   const filteredEnrollments = enrollments.filter(enrollment => {
-    const matchesSearch = 
+    const matchesSearch =
       enrollment.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       enrollment.subjectCode.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterStatus === 'all' || enrollment.status.toLowerCase() === filterStatus;
@@ -158,20 +132,18 @@ export function EnrollmentManagement() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar lg:ml-72">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Enrollment Management</h2>
-              </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && (
-                  <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{notifications}</span>
-                )}
-              </button>
+              <h2 className="text-xl font-semibold text-gray-900">Enrollment Management</h2>
+              <NotificationDropdown
+                notifications={notificationList}
+                onMarkAsRead={(id: string) => setNotificationList(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))}
+                onNotificationsChange={setNotificationList}
+              />
             </div>
           </div>
         </div>
@@ -183,10 +155,7 @@ export function EnrollmentManagement() {
                 <h1 className="text-3xl font-bold mb-2">Enrollment Management</h1>
                 <p className="text-emerald-50">{enrollments.length} enrollment requests</p>
               </div>
-              <button 
-                onClick={() => setShowEnrollModal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium"
-              >
+              <button onClick={() => setShowEnrollModal(true)} className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium">
                 <UserPlus className="w-5 h-5" />
                 Enroll Student
               </button>
@@ -212,28 +181,11 @@ export function EnrollmentManagement() {
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by student name or subject..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                />
+                <input type="text" placeholder="Search by student name or subject..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
               </div>
               <div className="flex items-center gap-2">
                 <Filter className="w-5 h-5 text-gray-600" />
-                <CustomSelect
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  options={[
-                    { value: 'all', label: 'All Status' },
-                    { value: 'approved', label: 'Approved' },
-                    { value: 'pending', label: 'Pending' },
-                    { value: 'rejected', label: 'Rejected' }
-                  ]}
-                  icon={<Filter className="w-5 h-5" />}
-                  className="min-w-[180px]"
-                />
+                <CustomSelect value={filterStatus} onChange={setFilterStatus} options={[{ value: 'all', label: 'All Status' }, { value: 'approved', label: 'Approved' }, { value: 'pending', label: 'Pending' }, { value: 'rejected', label: 'Rejected' }]} icon={<Filter className="w-5 h-5" />} className="min-w-[180px]" />
               </div>
               <button className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
                 <Download className="w-4 h-4" />
@@ -258,21 +210,16 @@ export function EnrollmentManagement() {
                   {filteredEnrollments.map((enrollment) => (
                     <tr key={enrollment.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">{enrollment.studentName}</p>
-                          <p className="text-sm text-gray-500">{enrollment.studentId}</p>
-                        </div>
+                        <p className="font-medium text-gray-900">{enrollment.studentName}</p>
+                        <p className="text-sm text-gray-500">{enrollment.studentId}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">{enrollment.subjectName}</p>
-                          <p className="text-sm text-gray-500">{enrollment.subjectCode}</p>
-                        </div>
+                        <p className="font-medium text-gray-900">{enrollment.subjectName}</p>
+                        <p className="text-sm text-gray-500">{enrollment.subjectCode}</p>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(enrollment.status)}`}>
-                          {getStatusIcon(enrollment.status)}
-                          {enrollment.status}
+                          {getStatusIcon(enrollment.status)}{enrollment.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
@@ -282,26 +229,11 @@ export function EnrollmentManagement() {
                         <div className="flex items-center gap-2">
                           {enrollment.status === 'Pending' ? (
                             <>
-                              <button 
-                                onClick={() => handleStatusChange(enrollment.id, 'Approved')}
-                                className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-medium"
-                              >
-                                Approve
-                              </button>
-                              <button 
-                                onClick={() => handleStatusChange(enrollment.id, 'Rejected')}
-                                className="px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
-                              >
-                                Reject
-                              </button>
+                              <button onClick={() => handleStatusChange(enrollment.id, 'Approved')} className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-medium">Approve</button>
+                              <button onClick={() => handleStatusChange(enrollment.id, 'Rejected')} className="px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium">Reject</button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => handleOpenStatusModal(enrollment)}
-                              className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
-                            >
-                              Change Status
-                            </button>
+                            <button onClick={() => handleOpenStatusModal(enrollment)} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">Change Status</button>
                           )}
                         </div>
                       </td>
@@ -310,6 +242,12 @@ export function EnrollmentManagement() {
                 </tbody>
               </table>
             </div>
+            {filteredEnrollments.length === 0 && (
+              <div className="p-12 text-center">
+                <UserPlus className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No enrollments yet.</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -320,67 +258,16 @@ export function EnrollmentManagement() {
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Enroll Student</h3>
-              <button 
-                onClick={() => {
-                  setShowEnrollModal(false);
-                  setFormData({ studentId: '', subjectCode: '' });
-                }}
-                type="button" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={() => { setShowEnrollModal(false); setFormData({ studentId: '', subjectCode: '' }); }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
-            
             <div className="p-6">
               <div className="space-y-4">
-                <CustomDropdown
-                  label="Select Student"
-                  value={formData.studentId}
-                  onChange={(value) => setFormData({ ...formData, studentId: value })}
-                  options={[
-                    { value: '', label: 'Choose a student...' },
-                    ...availableStudents.map(student => ({
-                      value: student.id,
-                      label: student.name,
-                      sublabel: student.id
-                    }))
-                  ]}
-                  placeholder="Choose a student..."
-                />
-
-                <CustomDropdown
-                  label="Select Subject"
-                  value={formData.subjectCode}
-                  onChange={(value) => setFormData({ ...formData, subjectCode: value })}
-                  options={[
-                    { value: '', label: 'Choose a subject...' },
-                    ...availableSubjects.map(subject => ({
-                      value: subject.code,
-                      label: subject.name,
-                      sublabel: subject.code
-                    }))
-                  ]}
-                  placeholder="Choose a subject..."
-                />
+                <CustomDropdown label="Select Student" value={formData.studentId} onChange={(value: string) => setFormData({ ...formData, studentId: value })} options={[{ value: '', label: 'Choose a student...' }, ...availableStudents.map(student => ({ value: student.id, label: student.name, sublabel: student.id }))]} placeholder="Choose a student..." />
+                <CustomDropdown label="Select Subject" value={formData.subjectCode} onChange={(value: string) => setFormData({ ...formData, subjectCode: value })} options={[{ value: '', label: 'Choose a subject...' }, ...availableSubjects.map(subject => ({ value: subject.code, label: subject.name, sublabel: subject.code }))]} placeholder="Choose a subject..." />
               </div>
-
               <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowEnrollModal(false);
-                    setFormData({ studentId: '', subjectCode: '' });
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleEnrollStudent}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                >
-                  Enroll Student
-                </button>
+                <button onClick={() => { setShowEnrollModal(false); setFormData({ studentId: '', subjectCode: '' }); }} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                <button onClick={handleEnrollStudent} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">Enroll Student</button>
               </div>
             </div>
           </div>
@@ -393,18 +280,8 @@ export function EnrollmentManagement() {
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Change Enrollment Status</h3>
-              <button 
-                onClick={() => {
-                  setShowStatusModal(false);
-                  setSelectedEnrollment(null);
-                }}
-                type="button" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+              <button onClick={() => { setShowStatusModal(false); setSelectedEnrollment(null); }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
-            
             <div className="p-6">
               <div className="space-y-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-4">
@@ -412,60 +289,32 @@ export function EnrollmentManagement() {
                   <p className="font-medium text-gray-900">{selectedEnrollment.studentName}</p>
                   <p className="text-sm text-gray-500">{selectedEnrollment.studentId}</p>
                 </div>
-                
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-sm text-gray-600 mb-1">Subject</p>
                   <p className="font-medium text-gray-900">{selectedEnrollment.subjectName}</p>
                   <p className="text-sm text-gray-500">{selectedEnrollment.subjectCode}</p>
                 </div>
-
                 <div className="bg-gray-50 rounded-lg p-4">
                   <p className="text-sm text-gray-600 mb-2">Current Status</p>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedEnrollment.status)}`}>
-                    {getStatusIcon(selectedEnrollment.status)}
-                    {selectedEnrollment.status}
+                    {getStatusIcon(selectedEnrollment.status)}{selectedEnrollment.status}
                   </span>
                 </div>
               </div>
-
               <div className="space-y-3">
                 <p className="text-sm font-medium text-gray-700 mb-3">Select New Status:</p>
-                
-                <button
-                  onClick={() => handleUpdateStatus('Pending')}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border-2 border-blue-200"
-                >
-                  <Clock className="w-5 h-5" />
-                  <span className="font-medium">Pending</span>
+                <button onClick={() => handleUpdateStatus('Pending')} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border-2 border-blue-200">
+                  <Clock className="w-5 h-5" /><span className="font-medium">Pending</span>
                 </button>
-
-                <button
-                  onClick={() => handleUpdateStatus('Approved')}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors border-2 border-emerald-200"
-                >
-                  <CheckCircle className="w-5 h-5" />
-                  <span className="font-medium">Approved</span>
+                <button onClick={() => handleUpdateStatus('Approved')} className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors border-2 border-emerald-200">
+                  <CheckCircle className="w-5 h-5" /><span className="font-medium">Approved</span>
                 </button>
-
-                <button
-                  onClick={() => handleUpdateStatus('Rejected')}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors border-2 border-red-200"
-                >
-                  <XCircle className="w-5 h-5" />
-                  <span className="font-medium">Rejected</span>
+                <button onClick={() => handleUpdateStatus('Rejected')} className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors border-2 border-red-200">
+                  <XCircle className="w-5 h-5" /><span className="font-medium">Rejected</span>
                 </button>
               </div>
-
               <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowStatusModal(false);
-                    setSelectedEnrollment(null);
-                  }}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
+                <button onClick={() => { setShowStatusModal(false); setSelectedEnrollment(null); }} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
               </div>
             </div>
           </div>
