@@ -32,18 +32,8 @@ function VideoConferencing() {
   const [showParticipants, setShowParticipants] = useState(true);
   const [showChat, setShowChat] = useState(false);
   const [viewMode, setViewMode] = useState("speaker");
-  const [meetings] = useState([
-    { id: "1", title: "Mathematics - Algebra Basics", teacher: "Prof. Juan Santos", subject: "Mathematics", date: "2026-02-15", time: "09:00 AM", duration: "60 min", status: "Ongoing", meetingLink: "https://meet.connected.edu/math-algebra-001" },
-    { id: "2", title: "Science - Ecosystem Study", teacher: "Prof. Maria Garcia", subject: "Science", date: "2026-02-15", time: "02:00 PM", duration: "45 min", status: "Upcoming", meetingLink: "https://meet.connected.edu/science-eco-002" },
-    { id: "3", title: "English - Poetry Analysis", teacher: "Prof. Pedro Cruz", subject: "English", date: "2026-02-16", time: "10:30 AM", duration: "60 min", status: "Upcoming", meetingLink: "https://meet.connected.edu/eng-poetry-003" },
-    { id: "4", title: "History - World War II", teacher: "Prof. Ana Reyes", subject: "History", date: "2026-02-14", time: "11:00 AM", duration: "60 min", status: "Ended", meetingLink: "https://meet.connected.edu/hist-ww2-004" }
-  ]);
-  const [participants] = useState([
-    { id: "1", name: "Prof. Juan Santos", role: "Teacher", isMuted: false, isVideoOn: true, isHandRaised: false },
-    { id: "2", name: "Maria Cruz", role: "Student", isMuted: true, isVideoOn: true, isHandRaised: false },
-    { id: "3", name: "Pedro Reyes", role: "Student", isMuted: false, isVideoOn: false, isHandRaised: false },
-    { id: "4", name: "Ana Garcia", role: "Student", isMuted: true, isVideoOn: true, isHandRaised: false }
-  ]);
+  const [meetings] = useState([]);
+  const [participants] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

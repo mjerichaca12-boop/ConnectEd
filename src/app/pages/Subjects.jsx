@@ -15,21 +15,8 @@ function Subjects() {
   const [studentName, setStudentName] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [notificationList, setNotificationList] = useState([
-    { id: "1", title: "New Assignment Posted", message: "Mathematics chapter 5 assignment is now available", path: "/subjects", isRead: false, timestamp: "1 hour ago" },
-    { id: "2", title: "Grade Updated", message: "Your Mathematics grade has been recorded: 92%", path: "/grades", isRead: false, timestamp: "2 hours ago" },
-    { id: "3", title: "Attendance Marked", message: "You were marked Late for General Science on Jan 15", path: "/attendance", isRead: false, timestamp: "1 day ago" },
-    { id: "4", title: "Live Class Starting", message: "Mathematics - Algebra Basics is live now!", path: "/video-conference", isRead: false, timestamp: "5 mins ago" },
-    { id: "5", title: "New Announcement", message: "Mid-term examinations scheduled for January 20-24", path: "/announcements", isRead: false, timestamp: "2 days ago" }
-  ]);
-  const [subjects] = useState([
-    { id: "1", code: "MATH101", name: "Advanced Mathematics", teacher: "Ms. Sarah Rodriguez", teacherId: "T001", description: "Advanced topics in calculus and algebra", credits: 3, quarter: "1st Quarter 2026" },
-    { id: "2", code: "ENG101", name: "English Literature", teacher: "Mr. David Santos", teacherId: "T002", description: "Introduction to classical and modern literature", credits: 3, quarter: "1st Quarter 2026" },
-    { id: "3", code: "SCI101", name: "General Science", teacher: "Dr. Maria Cruz", teacherId: "T003", description: "Fundamentals of biology, chemistry, and physics", credits: 4, quarter: "1st Quarter 2026" },
-    { id: "4", code: "FIL101", name: "Filipino Language", teacher: "Mrs. Elena Reyes", teacherId: "T004", description: "Filipino language and literature", credits: 3, quarter: "1st Quarter 2026" },
-    { id: "5", code: "PE101", name: "Physical Education", teacher: "Coach Robert Tan", teacherId: "T005", description: "Physical fitness and sports activities", credits: 2, quarter: "1st Quarter 2026" },
-    { id: "6", code: "CS101", name: "Computer Science Fundamentals", teacher: "Mr. James Garcia", teacherId: "T006", description: "Introduction to programming and computer systems", credits: 4, quarter: "1st Quarter 2026" }
-  ]);
+  const [notificationList, setNotificationList] = useState([]);
+  const [subjects] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

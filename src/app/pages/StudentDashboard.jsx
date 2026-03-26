@@ -17,34 +17,12 @@ import { NotificationDropdown } from "../components/NotificationDropdown";
 function StudentDashboard() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
-  const [notificationList, setNotificationList] = useState([
-    { id: "1", title: "Mid-term Examinations Schedule", message: "The mid-term examinations will be held from January 20-24, 2026.", path: "/announcements", isRead: false, timestamp: "2 hours ago" },
-    { id: "2", title: "Library Hours Extended", message: "Starting next week, library hours will be extended until 8:00 PM.", path: "/announcements", isRead: false, timestamp: "1 day ago" },
-    { id: "3", title: "New grade posted", message: "Your Mathematics midterm grade has been posted.", path: "/grades", isRead: true, timestamp: "2 days ago" }
-  ]);
+  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [subjects] = useState([
-    { id: "1", code: "MATH101", name: "Mathematics", teacher: "Ms. Rodriguez" },
-    { id: "2", code: "ENG101", name: "English Literature", teacher: "Mr. Santos" },
-    { id: "3", code: "SCI101", name: "General Science", teacher: "Dr. Cruz" },
-    { id: "4", code: "FIL101", name: "Filipino", teacher: "Mrs. Reyes" }
-  ]);
-  const [recentGrades] = useState([
-    { id: "1", subjectName: "Mathematics", value: 92, dateRecorded: "2026-01-14" },
-    { id: "2", subjectName: "English Literature", value: 88, dateRecorded: "2026-01-13" },
-    { id: "3", subjectName: "General Science", value: 95, dateRecorded: "2026-01-12" }
-  ]);
-  const [recentAttendance] = useState([
-    { id: "1", subject: "Mathematics", status: "Present", date: "2026-01-16" },
-    { id: "2", subject: "English Literature", status: "Present", date: "2026-01-15" },
-    { id: "3", subject: "General Science", status: "Late", date: "2026-01-15" },
-    { id: "4", subject: "Filipino", status: "Present", date: "2026-01-14" }
-  ]);
-  const [announcements] = useState([
-    { id: "1", title: "Mid-term Examinations Schedule", preview: "The mid-term examinations will be held from January 20-24, 2026...", timestamp: "2 hours ago", isRead: false },
-    { id: "2", title: "Library Hours Extended", preview: "Starting next week, library hours will be extended until 8:00 PM...", timestamp: "1 day ago", isRead: false },
-    { id: "3", title: "Sports Fest Registration", preview: "Annual Sports Festival registration is now open. Sign up by...", timestamp: "2 days ago", isRead: true }
-  ]);
+  const [subjects] = useState([]);
+  const [recentGrades] = useState([]);
+  const [recentAttendance] = useState([]);
+  const [announcements] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

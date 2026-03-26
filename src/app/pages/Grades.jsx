@@ -18,17 +18,7 @@ function Grades() {
   const [studentName, setStudentName] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("all");
-  const [grades] = useState([
-    { id: "1", subjectCode: "MATH101", subjectName: "Advanced Mathematics", grade: 92, remarks: "Excellent", dateRecorded: "2026-01-14", gradeType: "Midterm", maxGrade: 100 },
-    { id: "2", subjectCode: "MATH101", subjectName: "Advanced Mathematics", grade: 95, remarks: "Outstanding", dateRecorded: "2026-01-10", gradeType: "Quiz", maxGrade: 100 },
-    { id: "3", subjectCode: "ENG101", subjectName: "English Literature", grade: 88, remarks: "Very Good", dateRecorded: "2026-01-13", gradeType: "Midterm", maxGrade: 100 },
-    { id: "4", subjectCode: "ENG101", subjectName: "English Literature", grade: 90, remarks: "Excellent", dateRecorded: "2026-01-08", gradeType: "Project", maxGrade: 100 },
-    { id: "5", subjectCode: "SCI101", subjectName: "General Science", grade: 95, remarks: "Outstanding", dateRecorded: "2026-01-12", gradeType: "Midterm", maxGrade: 100 },
-    { id: "6", subjectCode: "SCI101", subjectName: "General Science", grade: 93, remarks: "Excellent", dateRecorded: "2026-01-05", gradeType: "Quiz", maxGrade: 100 },
-    { id: "7", subjectCode: "FIL101", subjectName: "Filipino Language", grade: 87, remarks: "Very Good", dateRecorded: "2026-01-11", gradeType: "Midterm", maxGrade: 100 },
-    { id: "8", subjectCode: "PE101", subjectName: "Physical Education", grade: 94, remarks: "Excellent", dateRecorded: "2026-01-09", gradeType: "Final", maxGrade: 100 },
-    { id: "9", subjectCode: "CS101", subjectName: "Computer Science Fundamentals", grade: 96, remarks: "Outstanding", dateRecorded: "2026-01-15", gradeType: "Project", maxGrade: 100 }
-  ]);
+  const [grades] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

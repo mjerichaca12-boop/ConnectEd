@@ -22,74 +22,8 @@ function StudentMaterials() {
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState("");
   const fileInputRef = useRef(null);
-  const [materials] = useState([
-    {
-      id: "1",
-      title: "Chapter 5: Quadratic Equations",
-      description: "Complete lecture notes and practice problems",
-      fileType: "PDF",
-      fileName: "chapter-5-quadratic-equations.pdf",
-      fileSize: "2.5 MB",
-      subject: "Advanced Mathematics",
-      uploadDate: "2026-02-10",
-      teacherName: "Ms. Sarah Rodriguez"
-    },
-    {
-      id: "2",
-      title: "Physics Lab Guide",
-      description: "Laboratory procedures and safety guidelines",
-      fileType: "PDF",
-      fileName: "physics-lab-guide.pdf",
-      fileSize: "1.8 MB",
-      subject: "Physics",
-      uploadDate: "2026-02-08",
-      teacherName: "Mr. John Santos"
-    },
-    {
-      id: "3",
-      title: "Programming Basics Slides",
-      description: "Introduction to Python programming",
-      fileType: "PPTX",
-      fileName: "python-basics.pptx",
-      fileSize: "5.2 MB",
-      subject: "Computer Science",
-      uploadDate: "2026-02-05",
-      teacherName: "Ms. Maria Cruz"
-    }
-  ]);
-  const [activities] = useState([
-    {
-      id: "1",
-      title: "Quadratic Equations Problem Set",
-      description: "Solve 20 problems on quadratic equations. Show all work and submit before the deadline.",
-      subject: "Advanced Mathematics",
-      dueDate: "2026-02-20",
-      maxPoints: 50,
-      teacherName: "Ms. Sarah Rodriguez",
-      status: "pending"
-    },
-    {
-      id: "2",
-      title: "Physics Lab Report",
-      description: "Write a comprehensive lab report on the Newton's Laws experiment conducted in class.",
-      subject: "Physics",
-      dueDate: "2026-02-18",
-      maxPoints: 100,
-      teacherName: "Mr. John Santos",
-      status: "submitted",
-      submittedDate: "2026-02-17"
-    },
-    {
-      id: "3",
-      title: "Python Programming Assignment",
-      description: "Create a simple calculator program using Python. Include comments explaining your code.",
-      subject: "Computer Science",
-      dueDate: "2026-02-12",
-      maxPoints: 75,
-      teacherName: "Ms. Maria Cruz",
-      status: "late"
-    }
-  ]);
+  const [materials] = useState([]);
+  const [activities] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

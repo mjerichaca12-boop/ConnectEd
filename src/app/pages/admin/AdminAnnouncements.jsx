@@ -28,11 +28,7 @@ function AdminAnnouncements() {
     announcementId: "",
     announcementTitle: ""
   });
-  const [announcements, setAnnouncements] = useState([
-    { id: "1", title: "Mid-term Examinations Schedule Released", content: "The mid-term examinations will be held from January 20-24, 2026...", targetAudience: "School-wide", datePosted: "2026-01-16", author: "Admin Office", priority: "High" },
-    { id: "2", title: "Library Hours Extended for Exam Week", content: "Starting next week, the library will be open from 7:00 AM to 8:00 PM...", targetAudience: "Students", datePosted: "2026-01-15", author: "Admin Office", priority: "Medium" },
-    { id: "3", title: "Faculty Meeting This Friday", content: "All teaching staff are required to attend the faculty meeting...", targetAudience: "Teachers", datePosted: "2026-01-14", author: "Admin Office", priority: "High" }
-  ]);
+  const [announcements, setAnnouncements] = useState([]);
   const [formData, setFormData] = useState({
     title: "",
     content: "",

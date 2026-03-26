@@ -41,48 +41,7 @@ function Reports() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-  const reportCategories = [
-    {
-      title: "Academic Performance Reports",
-      icon: TrendingUp,
-      color: "emerald",
-      reports: [
-        { name: "Student Grade Summary", description: "Overview of student grades by subject" },
-        { name: "Class Performance Report", description: "Average grades per class and section" },
-        { name: "Honor Roll Report", description: "Students with outstanding academic performance" }
-      ]
-    },
-    {
-      title: "Attendance Reports",
-      icon: Calendar,
-      color: "blue",
-      reports: [
-        { name: "Student Attendance Summary", description: "Individual student attendance records" },
-        { name: "Class Attendance Report", description: "Attendance statistics by class" },
-        { name: "Monthly Attendance Trends", description: "Attendance patterns and trends" }
-      ]
-    },
-    {
-      title: "Enrollment Reports",
-      icon: Users,
-      color: "blue",
-      reports: [
-        { name: "Enrollment Statistics", description: "Overall enrollment numbers and trends" },
-        { name: "Subject Enrollment Report", description: "Student distribution across subjects" },
-        { name: "Enrollment History", description: "Historical enrollment data" }
-      ]
-    },
-    {
-      title: "Subject & Teacher Reports",
-      icon: BookOpen,
-      color: "emerald",
-      reports: [
-        { name: "Subject Load Report", description: "Teacher workload and subject assignments" },
-        { name: "Teacher Performance Summary", description: "Overview of teacher metrics" },
-        { name: "Subject Capacity Report", description: "Subject enrollment vs capacity" }
-      ]
-    }
-  ];
+  const reportCategories = [];
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

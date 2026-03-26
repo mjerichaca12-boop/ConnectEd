@@ -22,54 +22,7 @@ function AttendanceManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
-  const [sections] = useState([
-    {
-      id: "1",
-      gradeLevel: "Grade 11",
-      sectionName: "STEM-A",
-      studentCount: 35,
-      students: [
-        { id: "1", studentId: "STU-2026-001", name: "Juan Dela Cruz", status: null, remarks: "" },
-        { id: "2", studentId: "STU-2026-002", name: "Maria Santos", status: null, remarks: "" },
-        { id: "3", studentId: "STU-2026-003", name: "Pedro Garcia", status: null, remarks: "" },
-        { id: "4", studentId: "STU-2026-004", name: "Ana Rodriguez", status: null, remarks: "" },
-        { id: "5", studentId: "STU-2026-005", name: "Carlos Reyes", status: null, remarks: "" }
-      ]
-    },
-    {
-      id: "2",
-      gradeLevel: "Grade 11",
-      sectionName: "STEM-B",
-      studentCount: 32,
-      students: [
-        { id: "6", studentId: "STU-2026-006", name: "Lisa Tan", status: null, remarks: "" },
-        { id: "7", studentId: "STU-2026-007", name: "Miguel Cruz", status: null, remarks: "" },
-        { id: "8", studentId: "STU-2026-008", name: "Sofia Gomez", status: null, remarks: "" },
-        { id: "9", studentId: "STU-2026-009", name: "Robert Lee", status: null, remarks: "" }
-      ]
-    },
-    {
-      id: "3",
-      gradeLevel: "Grade 12",
-      sectionName: "STEM-A",
-      studentCount: 30,
-      students: [
-        { id: "10", studentId: "STU-2026-010", name: "Emma Wilson", status: null, remarks: "" },
-        { id: "11", studentId: "STU-2026-011", name: "David Chen", status: null, remarks: "" },
-        { id: "12", studentId: "STU-2026-012", name: "Sarah Johnson", status: null, remarks: "" }
-      ]
-    },
-    {
-      id: "4",
-      gradeLevel: "Grade 10",
-      sectionName: "Harmony",
-      studentCount: 28,
-      students: [
-        { id: "13", studentId: "STU-2026-013", name: "Alex Martinez", status: null, remarks: "" },
-        { id: "14", studentId: "STU-2026-014", name: "Jessica Brown", status: null, remarks: "" }
-      ]
-    }
-  ]);
+  const [sections] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

@@ -20,16 +20,7 @@ function StudentEnrollment() {
     reportCard: null,
     idPhoto: null
   });
-  const [enrollmentRequest] = useState({
-    id: "1",
-    status: "pending",
-    submittedDate: "2026-02-10",
-    documents: {
-      birthCertificate: "birth_certificate.pdf",
-      reportCard: "grade_10_report.pdf",
-      idPhoto: "student_photo.jpg"
-    }
-  });
+  const [enrollmentRequest, setEnrollmentRequest] = useState(null);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

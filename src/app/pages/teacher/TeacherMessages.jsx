@@ -6,24 +6,7 @@ function TeacherMessages() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
   const [loading, setLoading] = useState(true);
-  const [conversations, setConversations] = useState([
-    {
-      id: "1",
-      participantName: "Juan Dela Cruz",
-      participantRole: "Student",
-      lastMessage: "Thank you for the feedback on my project!",
-      lastMessageTime: "2026-01-16T10:30:00",
-      unreadCount: 1
-    },
-    {
-      id: "2",
-      participantName: "Admin Office",
-      participantRole: "Admin",
-      lastMessage: "Grade submission deadline is Friday",
-      lastMessageTime: "2026-01-15T14:20:00",
-      unreadCount: 0
-    }
-  ]);
+  const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");

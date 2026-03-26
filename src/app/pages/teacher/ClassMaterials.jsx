@@ -25,63 +25,8 @@ function ClassMaterials() {
   const activityFileInputRef = useRef(null);
   const [materialFileName, setMaterialFileName] = useState("");
   const [activityFileName, setActivityFileName] = useState("");
-  const [materials] = useState([
-    {
-      id: "1",
-      title: "Chapter 5: Quadratic Equations",
-      description: "Complete lecture notes and practice problems",
-      fileType: "PDF",
-      fileName: "chapter-5-quadratic-equations.pdf",
-      fileSize: "2.5 MB",
-      subject: "Advanced Mathematics",
-      uploadDate: "2026-02-10",
-      downloads: 24
-    },
-    {
-      id: "2",
-      title: "Physics Lab Guide",
-      description: "Laboratory procedures and safety guidelines",
-      fileType: "PDF",
-      fileName: "physics-lab-guide.pdf",
-      fileSize: "1.8 MB",
-      subject: "Physics",
-      uploadDate: "2026-02-08",
-      downloads: 18
-    },
-    {
-      id: "3",
-      title: "Programming Basics Slides",
-      description: "Introduction to Python programming",
-      fileType: "PPTX",
-      fileName: "python-basics.pptx",
-      fileSize: "5.2 MB",
-      subject: "Computer Science",
-      uploadDate: "2026-02-05",
-      downloads: 31
-    }
-  ]);
-  const [activities] = useState([
-    {
-      id: "1",
-      title: "Quadratic Equations Problem Set",
-      description: "Solve 20 problems on quadratic equations. Show all work.",
-      subject: "Advanced Mathematics",
-      dueDate: "2026-02-20",
-      maxPoints: 50,
-      submissions: 18,
-      totalStudents: 25
-    },
-    {
-      id: "2",
-      title: "Physics Lab Report",
-      description: "Write a lab report on the Newton's Laws experiment",
-      subject: "Physics",
-      dueDate: "2026-02-18",
-      maxPoints: 100,
-      submissions: 12,
-      totalStudents: 25
-    }
-  ]);
+  const [materials] = useState([]);
+  const [activities] = useState([]);
   const subjects = [
     { value: "math", label: "Advanced Mathematics" },
     { value: "physics", label: "Physics" },
