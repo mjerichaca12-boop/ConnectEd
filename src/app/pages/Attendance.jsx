@@ -19,20 +19,7 @@ function Attendance() {
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState("2026-01");
-  const [attendanceRecords] = useState([
-    { id: "1", subjectCode: "MATH101", subjectName: "Advanced Mathematics", date: "2026-01-16", status: "Present", timeIn: "7:55 AM" },
-    { id: "2", subjectCode: "ENG101", subjectName: "English Literature", date: "2026-01-16", status: "Present", timeIn: "9:58 AM" },
-    { id: "3", subjectCode: "MATH101", subjectName: "Advanced Mathematics", date: "2026-01-15", status: "Present", timeIn: "7:52 AM" },
-    { id: "4", subjectCode: "SCI101", subjectName: "General Science", date: "2026-01-15", status: "Late", timeIn: "1:15 PM", remarks: "Traffic delay" },
-    { id: "5", subjectCode: "ENG101", subjectName: "English Literature", date: "2026-01-15", status: "Present", timeIn: "10:00 AM" },
-    { id: "6", subjectCode: "FIL101", subjectName: "Filipino Language", date: "2026-01-14", status: "Present", timeIn: "7:58 AM" },
-    { id: "7", subjectCode: "MATH101", subjectName: "Advanced Mathematics", date: "2026-01-13", status: "Present", timeIn: "7:50 AM" },
-    { id: "8", subjectCode: "CS101", subjectName: "Computer Science Fundamentals", date: "2026-01-13", status: "Present", timeIn: "2:55 PM" },
-    { id: "9", subjectCode: "SCI101", subjectName: "General Science", date: "2026-01-13", status: "Present", timeIn: "1:00 PM" },
-    { id: "10", subjectCode: "PE101", subjectName: "Physical Education", date: "2026-01-12", status: "Absent", remarks: "Medical excuse" },
-    { id: "11", subjectCode: "ENG101", subjectName: "English Literature", date: "2026-01-09", status: "Present", timeIn: "10:02 AM" },
-    { id: "12", subjectCode: "MATH101", subjectName: "Advanced Mathematics", date: "2026-01-08", status: "Late", timeIn: "8:20 AM", remarks: "Overslept" }
-  ]);
+  const [attendanceRecords] = useState([]);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {

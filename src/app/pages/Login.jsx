@@ -163,7 +163,7 @@ function Login() {
     disabled={loading}
     className="w-full bg-emerald-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:bg-emerald-400 disabled:cursor-not-allowed"
   >
-                    {loading ? "Signing In..." : "Sign In"}
+                    {loading ? "Logging In..." : "Log In"}
                   </button>
 
                   {

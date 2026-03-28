@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 import {
   LayoutDashboard,
   BookOpen,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 function Sidebar({ studentName, onLogout }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -33,9 +35,7 @@ function Sidebar({ studentName, onLogout }) {
   ];
   const isActive = (path) => location.pathname === path;
   const handleLogoutClick = () => {
-    if (window.confirm("Are you sure you want to logout?")) {
-      onLogout();
-    }
+    setShowLogoutConfirm(true);
   };
   return <>
       {
@@ -137,6 +137,16 @@ function Sidebar({ studentName, onLogout }) {
           </button>
         </div>
       </aside>
+
+      <ConfirmDialog
+        isOpen={showLogoutConfirm}
+        onClose={() => setShowLogoutConfirm(false)}
+        onConfirm={onLogout}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+      />
     </>;
 }
 export {

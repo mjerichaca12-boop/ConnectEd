@@ -192,11 +192,11 @@ function SignUp() {
                   </button>
                   <button
     type="button"
-    onClick={() => navigate("/")}
+    onClick={() => navigate("/login")}
     className="w-full flex items-center justify-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium cursor-pointer"
   >
                     <ArrowLeft className="w-4 h-4" />
-                    Back to Landing Page
+                    Back to Log in Page
                   </button>
                 </div>
 
