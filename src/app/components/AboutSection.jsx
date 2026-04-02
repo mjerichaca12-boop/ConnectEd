@@ -1,190 +1,112 @@
-import { Target, Heart, Lightbulb, Globe, Award, Users2, School, GraduationCap, BookOpen, Zap } from "lucide-react";
+import { Target, Lightbulb, Globe, Users2, Award, Heart } from "lucide-react";
+import { useScrollReveal } from "@/app/hooks/useAnimations";
+
+const values = [
+  { icon: Globe,  title: "Accessibility", desc: "Free for all public schools. No expensive licensing or hardware required." },
+  { icon: Users2, title: "Collaboration",  desc: "Every role — students, teachers, admins — works in the same connected system." },
+  { icon: Award,  title: "Excellence",    desc: "Reliable, secure, and thoughtfully designed for real classroom workflows." },
+  { icon: Heart,  title: "Community",     desc: "Built with and for Dasmariñas public schools. Locally grounded, globally inspired." },
+];
+
+function RevealItem({ children, delay = 0, direction = "up" }) {
+  const [ref, visible] = useScrollReveal();
+  const fromY = direction === "up" ? "28px" : "-28px";
+  return (
+    <div
+      ref={ref}
+      style={{
+        transition: `opacity 0.65s ease ${delay}s, transform 0.65s ease ${delay}s`,
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : `translateY(${fromY})`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function AboutSection() {
-  return <section id="about" className="relative w-full max-w-full bg-white py-20 px-4 sm:px-6 overflow-hidden">
-      {
-    /* Background decoration */
-  }
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_20%_30%,rgba(16,185,129,0.03),transparent_50%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.03),transparent_50%)]" />
-        <div className="absolute top-20 right-1/4 w-96 h-96 bg-emerald-100/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 left-1/4 w-96 h-96 bg-blue-100/10 rounded-full blur-3xl" />
+  const [headerRef, headerVisible] = useScrollReveal();
+
+  return (
+    <section id="about" className="relative w-full bg-gray-950 py-24 px-6 overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
+
+      {/* Glow */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="w-[600px] h-[400px] bg-emerald-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative max-w-7xl mx-auto">
-        {
-    /* Header */
-  }
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full mb-6 border border-emerald-200">
-            <Heart className="w-4 h-4" />
-            <span className="text-sm font-medium">Our Mission & Vision</span>
-          </div>
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            About ConnectEd
+        {/* Header */}
+        <div
+          ref={headerRef}
+          className="text-center mb-16"
+          style={{
+            transition: "opacity 0.7s ease, transform 0.7s ease",
+            opacity: headerVisible ? 1 : 0,
+            transform: headerVisible ? "translateY(0)" : "translateY(24px)",
+          }}
+        >
+          <p className="text-emerald-400 text-sm font-semibold uppercase tracking-widest mb-3">About ConnectEd</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">
+            Built for Filipino<br />
+            <span className="text-gray-500">Public Schools</span>
           </h2>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-            Empowering education through innovative technology and seamless connectivity
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            ConnectEd was created to bridge the technology gap in public education — giving students and teachers access to tools previously available only in private institutions.
           </p>
         </div>
 
-        {
-    /* Main Content Grid */
-  }
-        <div className="grid lg:grid-cols-2 gap-12 mb-16">
-          {
-    /* Left: Story */
-  }
-          <div className="space-y-6">
-            <div className="bg-gradient-to-br from-emerald-50 to-white rounded-2xl p-8 border-2 border-emerald-100 shadow-lg">
-              <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center mb-4">
-                <Target className="w-7 h-7 text-white" />
+        {/* Mission / Vision */}
+        <div className="grid md:grid-cols-2 gap-5 mb-16">
+          <RevealItem delay={0}>
+            <div className="bg-gray-900/60 border border-white/8 rounded-3xl p-8 hover:border-emerald-500/25 transition-colors group h-full">
+              <div className="w-11 h-11 bg-emerald-500/15 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-500/25 group-hover:scale-110 transition-all duration-300">
+                <Target className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Our Mission</h3>
-              <p className="text-gray-600 leading-relaxed mb-4">
-                ConnectEd was born from a simple yet powerful vision: to bridge the gap between traditional education and modern technology in public schools across Dasmariñas, Cavite.
-              </p>
-              <p className="text-gray-600 leading-relaxed">
-                We believe that every student, teacher, and administrator deserves access to tools that make learning, teaching, and managing educational processes easier, more efficient, and more engaging.
+              <h3 className="text-xl font-bold text-white mb-3">Our Mission</h3>
+              <p className="text-gray-400 leading-relaxed">
+                To bridge the gap between traditional education and modern technology in public schools across Dasmariñas, Cavite — making essential academic tools accessible to every student and teacher.
               </p>
             </div>
-
-            <div className="bg-gradient-to-br from-blue-50 to-white rounded-2xl p-8 border-2 border-blue-100 shadow-lg">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mb-4">
-                <Lightbulb className="w-7 h-7 text-white" />
+          </RevealItem>
+          <RevealItem delay={0.12}>
+            <div className="bg-gray-900/60 border border-white/8 rounded-3xl p-8 hover:border-emerald-500/25 transition-colors group h-full">
+              <div className="w-11 h-11 bg-emerald-500/15 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-emerald-500/25 group-hover:scale-110 transition-all duration-300">
+                <Lightbulb className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Our Vision</h3>
-              <p className="text-gray-600 leading-relaxed">
-                To become the leading educational technology platform for public schools in the Philippines, fostering a connected community where education thrives through innovation, collaboration, and accessibility.
+              <h3 className="text-xl font-bold text-white mb-3">Our Vision</h3>
+              <p className="text-gray-400 leading-relaxed">
+                To become the leading educational platform for public schools in the Philippines — fostering a connected community where learning thrives through innovation, collaboration, and digital equity.
               </p>
             </div>
-          </div>
-
-          {
-    /* Right: Values */
-  }
-          <div>
-            <div className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-8 border-2 border-gray-200 shadow-lg h-full">
-              <h3 className="text-2xl font-bold text-gray-900 mb-6">Our Core Values</h3>
-              
-              <div className="space-y-5">
-                {[
-    {
-      icon: Globe,
-      title: "Accessibility",
-      description: "Making quality educational tools available to all public schools, regardless of resources.",
-      color: "emerald"
-    },
-    {
-      icon: Users2,
-      title: "Collaboration",
-      description: "Fostering meaningful connections between students, teachers, and administrators.",
-      color: "blue"
-    },
-    {
-      icon: Award,
-      title: "Excellence",
-      description: "Delivering reliable, secure, and high-quality solutions for educational success.",
-      color: "red"
-    },
-    {
-      icon: Heart,
-      title: "Community",
-      description: "Building a supportive ecosystem where every voice matters and everyone grows together.",
-      color: "emerald"
-    }
-  ].map((value, index) => {
-    const Icon = value.icon;
-    const iconColorClass = value.color === "blue" ? "text-blue-600 bg-blue-100" : value.color === "red" ? "text-red-600 bg-red-100" : "text-emerald-600 bg-emerald-100";
-    return <div key={index} className="flex gap-4 group">
-                      <div className={`flex-shrink-0 w-12 h-12 ${iconColorClass} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                        <Icon className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-gray-900 mb-1">{value.title}</h4>
-                        <p className="text-sm text-gray-600 leading-relaxed">{value.description}</p>
-                      </div>
-                    </div>;
-  })}
-              </div>
-            </div>
-          </div>
+          </RevealItem>
         </div>
 
-        {
-    /* Bottom: Impact Stats */
-  }
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-600 via-blue-600 to-red-600 rounded-3xl transform rotate-1" />
-          <div className="relative bg-white rounded-3xl shadow-2xl p-8 md:p-12 border-2 border-gray-100">
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-900 text-center mb-8">
-              Our Impact on Education
-            </h3>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-              {[
-    {
-      value: "5+",
-      label: "Partner Schools",
-      sublabel: "Across Dasmari\xF1as",
-      icon: School,
-      color: "emerald"
-    },
-    {
-      value: "1000+",
-      label: "Active Students",
-      sublabel: "Learning Daily",
-      icon: GraduationCap,
-      color: "blue"
-    },
-    {
-      value: "50+",
-      label: "Educators",
-      sublabel: "Teaching Excellence",
-      icon: BookOpen,
-      color: "blue"
-    },
-    {
-      value: "10K+",
-      label: "Tasks Completed",
-      sublabel: "This School Year",
-      icon: Zap,
-      color: "red"
-    }
-  ].map((stat, index) => {
-    const Icon = stat.icon;
-    const bgColorClass = stat.color === "blue" ? "bg-blue-100" : stat.color === "red" ? "bg-red-100" : "bg-emerald-100";
-    const textColorClass = stat.color === "blue" ? "text-blue-600" : stat.color === "red" ? "text-red-600" : "text-emerald-600";
-    return <div key={index} className="text-center group">
-                    <div className={`w-16 h-16 ${bgColorClass} rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform shadow-md`}>
-                      <Icon className={`w-8 h-8 ${textColorClass}`} />
+        {/* Core Values */}
+        <div>
+          <p className="text-emerald-400 text-sm font-semibold uppercase tracking-widest mb-8 text-center">Core Values</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {values.map((v, i) => {
+              const Icon = v.icon;
+              return (
+                <RevealItem key={v.title} delay={i * 0.1}>
+                  <div className="bg-gray-900/50 border border-white/8 rounded-2xl p-6 hover:border-emerald-500/25 transition-all duration-300 group hover:shadow-lg hover:shadow-emerald-900/20 h-full">
+                    <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-500/20 group-hover:scale-110 transition-all duration-300">
+                      <Icon className="w-5 h-5 text-emerald-400" />
                     </div>
-                    <div className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent group-hover:scale-110 transition-transform inline-block mb-2">
-                      {stat.value}
-                    </div>
-                    <div className="font-semibold text-gray-900 mb-1">{stat.label}</div>
-                    <div className="text-sm text-gray-500">{stat.sublabel}</div>
-                  </div>;
-  })}
-            </div>
-
-            {
-    /* Quote */
-  }
-            <div className="mt-12 pt-8 border-t border-gray-200">
-              <blockquote className="text-center">
-                <p className="text-lg text-gray-700 italic mb-4 max-w-3xl mx-auto">
-                  "ConnectEd is more than just a platform—it's a movement towards modernizing public education, making it more accessible, efficient, and connected for everyone in our community."
-                </p>
-                <footer className="text-sm text-gray-600 font-medium">
-                  — The ConnectEd Team
-                </footer>
-              </blockquote>
-            </div>
+                    <h4 className="text-white font-bold mb-2">{v.title}</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">{v.desc}</p>
+                  </div>
+                </RevealItem>
+              );
+            })}
           </div>
         </div>
       </div>
-    </section>;
+    </section>
+  );
 }
-export {
-  AboutSection
-};
+
+export { AboutSection };

@@ -1,156 +1,89 @@
-import { BookCheck, Settings, MessageSquare } from "lucide-react";
+import { BookCheck, MessageSquare, BarChart2, Calendar, Bell, Shield } from "lucide-react";
+import { useScrollReveal } from "@/app/hooks/useAnimations";
+
+const features = [
+  { icon: BookCheck,    title: "Class & Grade Management",        desc: "Teachers create classes, upload materials, post assignments, and record grades — all in a single organized space.",        tag: "Teachers" },
+  { icon: BarChart2,    title: "Academic Performance Tracking",    desc: "Students and parents see up-to-date grades, submission status, and learning progress at a glance.",                      tag: "Students" },
+  { icon: Calendar,     title: "Attendance Management",            desc: "Mark and monitor daily attendance per class. Automatically flags absences and generates reports for administrators.",    tag: "All Roles" },
+  { icon: Bell,         title: "Announcements & Notifications",    desc: "Post class-specific or school-wide announcements. Students receive real-time updates, no more missed information.",      tag: "All Roles" },
+  { icon: MessageSquare,title: "Direct Messaging",                 desc: "Teachers message individual students. Students reach their teachers. Secure, in-platform communication for everyone.",  tag: "Teachers · Students" },
+  { icon: Shield,       title: "Admin Control Panel",              desc: "Administrators manage users, monitor school-wide data, and control system access from a single dashboard.",             tag: "Admin" },
+];
+
+function RevealCard({ children, delay = 0 }) {
+  const [ref, visible] = useScrollReveal();
+  return (
+    <div
+      ref={ref}
+      style={{
+        transition: `opacity 0.6s ease ${delay}s, transform 0.6s ease ${delay}s`,
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : "translateY(32px)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function CoreModules() {
-  const modules = [
-    {
-      title: "Academic Hub",
-      description: "Access grades, track attendance, and manage assignments all in one place",
-      features: ["Grade Tracking", "Attendance Records", "Assignment Submission"],
-      Icon: BookCheck,
-      color: "blue"
-      // DepEd blue
-    },
-    {
-      title: "Admin Console",
-      description: "Streamline administrative tasks with powerful tools for enrollment, records, and school-wide communications",
-      features: ["Student Enrollment", "Academic Records", "School Announcements", "Report Generation"],
-      Icon: Settings,
-      color: "red"
-      // DepEd red
-    },
-    {
-      title: "Connect Hub",
-      description: "Stay connected with secure messaging, real-time notifications, and a community bulletin board",
-      features: ["Secure Messaging", "Push Notifications", "Bulletin Board", "Event Calendar"],
-      Icon: MessageSquare,
-      color: "emerald"
-      // Main green
-    }
-  ];
-  const getAccentColor = (color) => {
-    switch (color) {
-      case "blue":
-        return {
-          iconBg: "bg-blue-100",
-          iconInner: "bg-blue-600",
-          dot: "bg-blue-600",
-          gradient: "from-blue-500/10 to-transparent",
-          border: "border-blue-200",
-          hoverShadow: "hover:shadow-blue-200/50"
-        };
-      case "red":
-        return {
-          iconBg: "bg-red-100",
-          iconInner: "bg-red-600",
-          dot: "bg-red-600",
-          gradient: "from-red-500/10 to-transparent",
-          border: "border-red-200",
-          hoverShadow: "hover:shadow-red-200/50"
-        };
-      default:
-        return {
-          iconBg: "bg-emerald-100",
-          iconInner: "bg-emerald-600",
-          dot: "bg-emerald-600",
-          gradient: "from-emerald-500/10 to-transparent",
-          border: "border-emerald-200",
-          hoverShadow: "hover:shadow-emerald-200/50"
-        };
-    }
-  };
-  return <section id="features" className="relative w-full max-w-full bg-gradient-to-b from-gray-50 to-white py-20 px-4 sm:px-6 overflow-hidden">
-      {
-    /* Background Decoration */
-  }
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-100/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-100/20 rounded-full blur-3xl" />
-      </div>
+  const [headerRef, headerVisible] = useScrollReveal();
+
+  return (
+    <section id="features" className="relative w-full bg-gray-950 py-24 px-6 overflow-hidden">
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff06_1px,transparent_1px),linear-gradient(to_bottom,#ffffff06_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-500/20 to-transparent" />
+
+      {/* Subtle glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-emerald-500/4 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative max-w-7xl mx-auto">
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full mb-6 border border-emerald-200">
-            <span className="text-sm font-medium">Comprehensive Tools</span>
-          </div>
-          <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Core System Modules
+        {/* Header */}
+        <div
+          ref={headerRef}
+          className="text-center mb-16"
+          style={{
+            transition: "opacity 0.7s ease, transform 0.7s ease",
+            opacity: headerVisible ? 1 : 0,
+            transform: headerVisible ? "translateY(0)" : "translateY(24px)",
+          }}
+        >
+          <p className="text-emerald-400 text-sm font-semibold uppercase tracking-widest mb-3">Platform Features</p>
+          <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">
+            Everything a school needs.<br />
+            <span className="text-gray-500">Nothing it doesn't.</span>
           </h2>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-            Comprehensive tools designed to support every aspect of school life
+          <p className="text-gray-400 max-w-2xl mx-auto text-lg">
+            Built from the ground up for public school workflows — not adapted from corporate tools.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
-          {modules.map((module, index) => {
-    const colors = getAccentColor(module.color);
-    const Icon = module.Icon;
-    return <div
-      key={index}
-      className={`group relative bg-white rounded-2xl shadow-lg p-8 hover:shadow-2xl ${colors.hoverShadow} transition-all duration-300 border-2 ${colors.border} transform hover:-translate-y-2`}
-    >
-                {
-      /* Background gradient decoration */
-    }
-                <div className={`absolute inset-0 bg-gradient-to-br ${colors.gradient} rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity`} />
-                
-                <div className="relative">
-                  {
-      /* Icon with pulse effect */
-    }
-                  <div className={`w-16 h-16 ${colors.iconBg} rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-md`}>
-                    <Icon className={`w-8 h-8 ${colors.iconInner.replace("bg-", "text-")}`} />
+        {/* Feature grid — staggered reveal */}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {features.map((f, i) => {
+            const Icon = f.icon;
+            return (
+              <RevealCard key={f.title} delay={i * 0.08}>
+                <div className="group relative bg-gray-900/60 border border-white/5 hover:border-emerald-500/30 rounded-2xl p-7 transition-all duration-300 hover:bg-gray-900 hover:shadow-xl hover:shadow-emerald-900/20 cursor-default h-full">
+                  {/* Hover glow sweep */}
+                  <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-emerald-500/4 to-transparent pointer-events-none" />
+
+                  <div className="w-11 h-11 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-5 group-hover:bg-emerald-500/20 group-hover:scale-110 transition-all duration-300">
+                    <Icon className="w-5 h-5 text-emerald-400" />
                   </div>
-                  
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                    {module.title}
-                  </h3>
-                  
-                  <p className="text-gray-600 mb-6 leading-relaxed">
-                    {module.description}
-                  </p>
-                  
-                  <ul className="space-y-3">
-                    {module.features.map((feature, idx) => <li key={idx} className="flex items-center gap-3 text-gray-700">
-                        <div className={`w-2 h-2 ${colors.dot} rounded-full group-hover:scale-150 transition-transform`} />
-                        <span className="text-sm">{feature}</span>
-                      </li>)}
-                  </ul>
+                  <div className="inline-block text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
+                    {f.tag}
+                  </div>
+                  <h3 className="text-white font-bold text-lg mb-2">{f.title}</h3>
+                  <p className="text-gray-400 text-sm leading-relaxed">{f.desc}</p>
                 </div>
-
-                {
-      /* Corner decoration */
-    }
-                <div className={`absolute top-4 right-4 w-20 h-20 bg-gradient-to-br ${colors.gradient} rounded-full opacity-0 group-hover:opacity-30 transition-opacity blur-2xl`} />
-              </div>;
-  })}
-        </div>
-
-        {
-    /* Bottom CTA Banner */
-  }
-        <div className="mt-16 bg-gradient-to-r from-emerald-600 via-emerald-500 to-blue-600 rounded-2xl p-8 md:p-12 text-center relative overflow-hidden">
-          {
-    /* Background Pattern */
-  }
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff14_1px,transparent_1px),linear-gradient(to_bottom,#ffffff14_1px,transparent_1px)] bg-[size:3rem_3rem]" />
-          
-          <div className="relative">
-            <h3 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Ready to Transform Your School?
-            </h3>
-            <p className="text-emerald-50 text-lg mb-8 max-w-2xl mx-auto">
-              Join the growing community of schools using ConnectEd to enhance learning experiences
-            </p>
-            <button
-    onClick={() => window.location.href = "/signup"}
-    className="bg-white text-emerald-600 px-8 py-4 rounded-lg font-medium hover:bg-gray-50 transition-all shadow-lg hover:shadow-xl hover:scale-105 text-lg"
-  >
-              Start Your Journey
-            </button>
-          </div>
+              </RevealCard>
+            );
+          })}
         </div>
       </div>
-    </section>;
+    </section>
+  );
 }
-export {
-  CoreModules
-};
+
+export { CoreModules };

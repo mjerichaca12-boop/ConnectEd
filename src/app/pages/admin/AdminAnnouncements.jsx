@@ -22,7 +22,7 @@ function AdminAnnouncements() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
-  const [notificationList, setNotificationList] = useState(adminNotifications);
+  const [notificationList, setNotificationList] = useState([]);
   const [deleteConfirm, setDeleteConfirm] = useState({
     isOpen: false,
     announcementId: "",
@@ -153,25 +153,39 @@ function AdminAnnouncements() {
       </div>;
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading announcements...</p>
+          <div className="flex gap-1.5 justify-center mb-4">
+            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
+          </div>
+          <p className="text-gray-500">Loading announcements...</p>
         </div>
-      </div>;
+      </div>
+    );
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
+      </div>
+
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
         {
     /* Top Bar */
   }
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
+        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Announcements</h2>
+              <div>
+                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
+                <h2 className="text-lg font-bold text-white">Announcements</h2>
+              </div>
               <NotificationDropdown
     notifications={notificationList}
     onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
@@ -185,15 +199,21 @@ function AdminAnnouncements() {
           {
     /* Header */
   }
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
-            <div className="flex items-center justify-between">
+          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+            <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
+              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-blue-600" />
+              <div className="flex-1 bg-red-600" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="relative pl-4 flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">Announcements</h1>
-                <p className="text-emerald-50">{announcements.length} published announcements</p>
+                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Announcements</h1>
+                <p className="text-gray-400">{announcements.length} published announcements</p>
               </div>
               <button
     onClick={() => setShowCreateModal(true)}
-    className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium"
+    className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20"
   >
                 <Plus className="w-5 h-5" />
                 Create Announcement
@@ -204,7 +224,7 @@ function AdminAnnouncements() {
           {
     /* Search */
   }
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8 shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -212,7 +232,7 @@ function AdminAnnouncements() {
     placeholder="Search announcements..."
     value={searchQuery}
     onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+    className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50"
   />
             </div>
           </div>
@@ -221,35 +241,40 @@ function AdminAnnouncements() {
     /* Announcements List */
   }
           <div className="space-y-4">
-            {filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+            {filteredAnnouncements.length === 0 ? (
+              <div className="bg-gray-900/80 rounded-xl border border-white/10 p-16 text-center">
+                <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-400">No announcements found.</p>
+              </div>
+            ) : filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors">
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">{announcement.title}</h3>
-                      <p className="text-gray-600 mb-3">{announcement.content}</p>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-medium ${announcement.targetAudience === "School-wide" ? "bg-emerald-100 text-emerald-700" : announcement.targetAudience === "Students" ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>
+                      <h3 className="text-lg font-semibold text-white mb-2">{announcement.title}</h3>
+                      <p className="text-gray-400 mb-4">{announcement.content}</p>
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${announcement.targetAudience === "School-wide" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : announcement.targetAudience === "Students" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
                           {announcement.targetAudience === "School-wide" ? <School className="w-3 h-3" /> : <Users className="w-3 h-3" />}
                           {announcement.targetAudience}
                         </span>
                         <span>Posted: {new Date(announcement.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
-                        <span>By: {announcement.author}</span>
+                        <span>By: <span className="text-gray-300">{announcement.author}</span></span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-1.5 ml-4">
                       <button
     onClick={() => handleOpenEditModal(announcement)}
-    className="p-2 hover:bg-emerald-50 rounded-lg transition-colors"
+    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
     title="Edit"
   >
-                        <Edit className="w-4 h-4 text-emerald-600" />
+                        <Edit className="w-4 h-4 text-emerald-400" />
                       </button>
                       <button
-    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
     onClick={() => setDeleteConfirm({ isOpen: true, announcementId: announcement.id, announcementTitle: announcement.title })}
     title="Delete"
   >
-                        <Trash2 className="w-4 h-4 text-red-600" />
+                        <Trash2 className="w-4 h-4 text-red-500" />
                       </button>
                     </div>
                   </div>
@@ -268,7 +293,7 @@ function AdminAnnouncements() {
     /* Create Announcement Modal */
   }
       {showCreateModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Create Announcement</h3>
               <button onClick={handleCloseCreateModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -340,7 +365,7 @@ function AdminAnnouncements() {
     /* Edit Announcement Modal */
   }
       {showEditModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Edit Announcement</h3>
               <button onClick={handleCloseEditModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">

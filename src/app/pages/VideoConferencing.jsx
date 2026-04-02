@@ -22,7 +22,7 @@ import {
 function VideoConferencing() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
-  const [notifications, setNotifications] = useState(3);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isInMeeting, setIsInMeeting] = useState(false);
@@ -89,7 +89,7 @@ function VideoConferencing() {
             <div className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full text-sm">
               <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
               <span>Ongoing</span>
-              <span className="opacity-75">•</span>
+              <span className="opacity-75">â€¢</span>
               <span>45:32</span>
             </div>
           </div>
@@ -109,7 +109,7 @@ function VideoConferencing() {
           {
       /* Video Area */
     }
-          <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 p-4 overflow-y-auto scrollbar-hide">
             <div className="space-y-4 h-full">
               {
       /* Teacher Video - Main */
@@ -214,7 +214,7 @@ function VideoConferencing() {
                   <X className="w-5 h-5 text-gray-400" />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+              <div className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-2">
                 {
       /* Teacher */
     }
@@ -333,7 +333,7 @@ function VideoConferencing() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Header */
   }
@@ -345,9 +345,7 @@ function VideoConferencing() {
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {notifications}
-                  </span>}
+                
               </button>
             </div>
           </div>

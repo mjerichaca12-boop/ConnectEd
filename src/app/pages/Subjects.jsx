@@ -69,7 +69,7 @@ function Subjects() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
@@ -101,7 +101,7 @@ function Subjects() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Enrolled Subjects</h1>
-                <p className="text-emerald-50">1st Quarter 2026 • {subjects.length} Subjects</p>
+                <p className="text-emerald-50">1st Quarter 2026 â€¢ {subjects.length} Subjects</p>
               </div>
               <div className="hidden md:flex items-center gap-4">
                 <div className="text-right">

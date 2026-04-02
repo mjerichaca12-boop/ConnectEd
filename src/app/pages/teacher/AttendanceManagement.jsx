@@ -15,7 +15,7 @@ import {
 function AttendanceManagement() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
-  const [notifications, setNotifications] = useState(5);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedSection, setSelectedSection] = useState(null);
   const [selectedDate, setSelectedDate] = useState((/* @__PURE__ */ new Date()).toISOString().split("T")[0]);
@@ -108,33 +108,31 @@ function AttendanceManagement() {
   const lateCount = selectedSection?.students.filter((s) => s.status === "Late").length || 0;
   const unmarkedCount = selectedSection?.students.filter((s) => s.status === null).length || 0;
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return <div className="min-h-screen flex items-center justify-center bg-black/20">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading attendance...</p>
+          <p className="text-gray-400">Loading attendance...</p>
         </div>
       </div>;
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Attendance Management</h2>
+                <h2 className="text-xl font-semibold text-white">Attendance Management</h2>
               </div>
               <div className="flex items-center gap-4">
                 {hasUnsavedChanges && <span className="text-sm text-red-600 font-medium">Unsaved changes</span>}
-                <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                  <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>}
+                <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
+                  <Bell className="w-6 h-6 text-gray-400" />
+                  
                 </button>
               </div>
             </div>
@@ -157,10 +155,10 @@ function AttendanceManagement() {
               {
     /* Date Selection */
   }
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       <Calendar className="w-4 h-4 inline mr-2" />
                       Select Date
                     </label>
@@ -168,12 +166,12 @@ function AttendanceManagement() {
     type="date"
     value={selectedDate}
     onChange={(e) => setSelectedDate(e.target.value)}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       <Search className="w-4 h-4 inline mr-2" />
                       Search Section
                     </label>
@@ -182,7 +180,7 @@ function AttendanceManagement() {
     placeholder="Search by grade or section name..."
     value={searchQuery}
     onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   />
                   </div>
                 </div>
@@ -195,7 +193,7 @@ function AttendanceManagement() {
                 {filteredSections.map((section) => <div
     key={section.id}
     onClick={() => handleSelectSection(section)}
-    className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-emerald-500 transition-all duration-300 cursor-pointer group"
+    className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:shadow-lg hover:border-emerald-500 transition-all duration-300 cursor-pointer group"
   >
                     <div className="p-6">
                       <div className="flex items-start justify-between mb-4">
@@ -205,10 +203,10 @@ function AttendanceManagement() {
                         <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-emerald-600 transition-colors" />
                       </div>
 
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">{section.sectionName}</h3>
-                      <p className="text-sm text-gray-600 mb-4">{section.gradeLevel}</p>
+                      <h3 className="text-lg font-semibold text-white mb-1">{section.sectionName}</h3>
+                      <p className="text-sm text-gray-400 mb-4">{section.gradeLevel}</p>
 
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-2 text-sm text-gray-400">
                         <Users className="w-4 h-4" />
                         <span>{section.studentCount} students</span>
                       </div>
@@ -220,9 +218,9 @@ function AttendanceManagement() {
                   </div>)}
               </div>
 
-              {filteredSections.length === 0 && <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center">
+              {filteredSections.length === 0 && <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm p-12 text-center">
                   <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-gray-600">No sections found</p>
+                  <p className="text-gray-400">No sections found</p>
                 </div>}
             </> : <>
               {
@@ -233,7 +231,7 @@ function AttendanceManagement() {
     onClick={handleBackToSections}
     className="mb-4 flex items-center gap-2 text-emerald-100 hover:text-white transition-colors"
   >
-                  ← Back to Sections
+                  ÃƒÂ¢Ã¢â‚¬Â Ã‚Â Back to Sections
                 </button>
                 <h1 className="text-3xl font-bold mb-2">{selectedSection.gradeLevel} - {selectedSection.sectionName}</h1>
                 <p className="text-emerald-50">
@@ -250,50 +248,50 @@ function AttendanceManagement() {
     /* Summary Cards */
   }
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-emerald-50 rounded-lg">
                       <CheckCircle className="w-5 h-5 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="text-gray-600 text-xs">Present</p>
+                      <p className="text-gray-400 text-xs">Present</p>
                       <p className="text-2xl font-bold text-emerald-600">{presentCount}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-50 rounded-lg">
                       <XCircle className="w-5 h-5 text-red-600" />
                     </div>
                     <div>
-                      <p className="text-gray-600 text-xs">Absent</p>
+                      <p className="text-gray-400 text-xs">Absent</p>
                       <p className="text-2xl font-bold text-red-600">{absentCount}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-50 rounded-lg">
                       <AlertCircle className="w-5 h-5 text-red-600" />
                     </div>
                     <div>
-                      <p className="text-gray-600 text-xs">Late</p>
+                      <p className="text-gray-400 text-xs">Late</p>
                       <p className="text-2xl font-bold text-red-600">{lateCount}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 shadow-sm">
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                      <Calendar className="w-5 h-5 text-gray-600" />
+                    <div className="p-2 bg-black/20 rounded-lg">
+                      <Calendar className="w-5 h-5 text-gray-400" />
                     </div>
                     <div>
-                      <p className="text-gray-600 text-xs">Unmarked</p>
-                      <p className="text-2xl font-bold text-gray-600">{unmarkedCount}</p>
+                      <p className="text-gray-400 text-xs">Unmarked</p>
+                      <p className="text-2xl font-bold text-gray-400">{unmarkedCount}</p>
                     </div>
                   </div>
                 </div>
@@ -302,10 +300,10 @@ function AttendanceManagement() {
               {
     /* Actions */
   }
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
                       <Search className="w-4 h-4 inline mr-2" />
                       Search Student
                     </label>
@@ -314,7 +312,7 @@ function AttendanceManagement() {
     placeholder="Search by name or ID..."
     value={studentSearchQuery}
     onChange={(e) => setStudentSearchQuery(e.target.value)}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   />
                   </div>
 
@@ -340,25 +338,25 @@ function AttendanceManagement() {
               {
     /* Attendance Table */
   }
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-black/20">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredStudents.map((student) => <tr key={student.id} className="hover:bg-gray-50">
+                    <tbody className="bg-gray-900/60 divide-y divide-white/10">
+                      {filteredStudents.map((student) => <tr key={student.id} className="hover:bg-black/20">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-semibold">
                                 {student.name.charAt(0)}
                               </div>
                               <div>
-                                <p className="font-medium text-gray-900">{student.name}</p>
+                                <p className="font-medium text-white">{student.name}</p>
                                 <p className="text-xs text-gray-500">{student.studentId}</p>
                               </div>
                             </div>
@@ -367,21 +365,21 @@ function AttendanceManagement() {
                             <div className="flex items-center gap-2">
                               <button
     onClick={() => handleStatusChange(student.id, "Present")}
-    className={`p-2 rounded-lg transition-all ${student.status === "Present" ? "bg-emerald-600 text-white shadow-md" : "bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-600"}`}
+    className={`p-2 rounded-lg transition-all ${student.status === "Present" ? "bg-emerald-600 text-white shadow-md" : "bg-white/5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600"}`}
     title="Present"
   >
                                 <CheckCircle className="w-5 h-5" />
                               </button>
                               <button
     onClick={() => handleStatusChange(student.id, "Absent")}
-    className={`p-2 rounded-lg transition-all ${student.status === "Absent" ? "bg-red-600 text-white shadow-md" : "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"}`}
+    className={`p-2 rounded-lg transition-all ${student.status === "Absent" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-gray-400 hover:bg-red-50 hover:text-red-600"}`}
     title="Absent"
   >
                                 <XCircle className="w-5 h-5" />
                               </button>
                               <button
     onClick={() => handleStatusChange(student.id, "Late")}
-    className={`p-2 rounded-lg transition-all ${student.status === "Late" ? "bg-red-600 text-white shadow-md" : "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"}`}
+    className={`p-2 rounded-lg transition-all ${student.status === "Late" ? "bg-red-600 text-white shadow-md" : "bg-white/5 text-gray-400 hover:bg-red-50 hover:text-red-600"}`}
     title="Late"
   >
                                 <AlertCircle className="w-5 h-5" />
@@ -394,7 +392,7 @@ function AttendanceManagement() {
     placeholder="Add remarks..."
     value={student.remarks}
     onChange={(e) => handleRemarksChange(student.id, e.target.value)}
-    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-3 py-2 text-sm bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   />
                           </td>
                         </tr>)}
@@ -404,7 +402,7 @@ function AttendanceManagement() {
 
                 {filteredStudents.length === 0 && <div className="p-12 text-center">
                     <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                    <p className="text-gray-600">No students found</p>
+                    <p className="text-gray-400">No students found</p>
                   </div>}
               </div>
             </>}

@@ -99,7 +99,7 @@ function Grades() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }

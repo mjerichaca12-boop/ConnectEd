@@ -6,7 +6,7 @@ import { Bell, Calendar, Shield, Database, Globe, Save, Snowflake, Sun } from "l
 function SystemSettings() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState("");
-  const [notifications, setNotifications] = useState(8);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     academicYear: "2025-2026",
@@ -38,61 +38,82 @@ function SystemSettings() {
     alert("Settings saved successfully!");
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading system settings...</p>
+          <div className="flex gap-1.5 justify-center mb-4">
+            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
+          </div>
+          <p className="text-gray-500">Loading system settings...</p>
         </div>
-      </div>;
+      </div>
+    );
   }
-  return <div className="min-h-screen bg-gray-50 flex">
-      <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+  return <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
+      </div>
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar lg:ml-72">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+      <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
+
+      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
+        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">System Settings</h2>
+                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
+                <h2 className="text-lg font-bold text-white">System Settings</h2>
               </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">{notifications}</span>}
+              <button className="relative p-2 hover:bg-white/10 rounded-xl transition-colors border border-transparent hover:border-white/10">
+                <Bell className="w-6 h-6 text-gray-400 hover:text-emerald-400 transition-colors" />
+                
               </button>
             </div>
           </div>
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
-            <h1 className="text-3xl font-bold mb-2">System Settings</h1>
-            <p className="text-emerald-50">Configure system-wide settings and preferences</p>
+          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+            <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
+              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-blue-600" />
+              <div className="flex-1 bg-red-600" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="relative pl-4">
+              <h1 className="text-3xl font-bold mb-2 text-emerald-400">System Settings</h1>
+              <p className="text-gray-400">Configure system-wide settings and preferences</p>
+            </div>
           </div>
 
           {
     /* Academic Year Settings */
   }
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-white/5 bg-black/20">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-50 rounded-lg">
-                  <Calendar className="w-6 h-6 text-emerald-600" />
+                <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                  <Calendar className="w-6 h-6 text-emerald-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Academic Year Settings</h3>
+                <h3 className="text-lg font-semibold text-white">Academic Year Settings</h3>
               </div>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Academic Year</label>
+                <label className="block text-sm font-medium text-gray-400 mb-2">Academic Year</label>
                 <input
     type="text"
     value={settings.academicYear}
     onChange={(e) => setSettings({ ...settings, academicYear: e.target.value })}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50"
   />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
+                <label className="block text-sm font-medium text-gray-400 mb-2">Current Semester</label>
                 <CustomSelect
     value={settings.currentSemester}
     onChange={(value) => setSettings({ ...settings, currentSemester: value })}
@@ -100,12 +121,12 @@ function SystemSettings() {
       {
         value: "First Semester",
         label: "First Semester",
-        icon: <Snowflake className="w-5 h-5 text-blue-500" />
+        icon: <Snowflake className="w-5 h-5 text-blue-400" />
       },
       {
         value: "Second Semester",
         label: "Second Semester",
-        icon: <Sun className="w-5 h-5 text-blue-500" />
+        icon: <Sun className="w-5 h-5 text-blue-400" />
       }
     ]}
     icon={<Calendar className="w-5 h-5" />}
@@ -118,20 +139,20 @@ function SystemSettings() {
           {
     /* Enrollment Settings */
   }
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-white/5 bg-black/20">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <Database className="w-6 h-6 text-blue-600" />
+                <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                  <Database className="w-6 h-6 text-blue-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Enrollment Settings</h3>
+                <h3 className="text-lg font-semibold text-white">Enrollment Settings</h3>
               </div>
             </div>
             <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-white/10 bg-white/5 rounded-xl gap-4">
                 <div>
-                  <p className="font-medium text-gray-900">Enrollment Open</p>
-                  <p className="text-sm text-gray-600">Allow students to enroll in subjects</p>
+                  <p className="font-semibold text-gray-200">Enrollment Open</p>
+                  <p className="text-sm text-gray-500 mt-1">Allow students to enroll in subjects</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -140,14 +161,14 @@ function SystemSettings() {
     onChange={(e) => setSettings({ ...settings, enrollmentOpen: e.target.checked })}
     className="sr-only peer"
   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+                  <div className="w-14 h-7 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-500 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500 border border-white/10" />
                 </label>
               </div>
 
-              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-white/10 bg-white/5 rounded-xl gap-4">
                 <div>
-                  <p className="font-medium text-gray-900">Allow Self-Enrollment</p>
-                  <p className="text-sm text-gray-600">Students can enroll without admin approval</p>
+                  <p className="font-semibold text-gray-200">Allow Self-Enrollment</p>
+                  <p className="text-sm text-gray-500 mt-1">Students can enroll without admin approval</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -156,14 +177,14 @@ function SystemSettings() {
     onChange={(e) => setSettings({ ...settings, allowSelfEnrollment: e.target.checked })}
     className="sr-only peer"
   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+                  <div className="w-14 h-7 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-500 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500 border border-white/10" />
                 </label>
               </div>
 
-              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-white/10 bg-white/5 rounded-xl gap-4">
                 <div>
-                  <p className="font-medium text-gray-900">Require Enrollment Approval</p>
-                  <p className="text-sm text-gray-600">Admin must approve enrollment requests</p>
+                  <p className="font-semibold text-gray-200">Require Enrollment Approval</p>
+                  <p className="text-sm text-gray-500 mt-1">Admin must approve enrollment requests</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -172,7 +193,7 @@ function SystemSettings() {
     onChange={(e) => setSettings({ ...settings, requireApproval: e.target.checked })}
     className="sr-only peer"
   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600" />
+                  <div className="w-14 h-7 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-500 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500 border border-white/10" />
                 </label>
               </div>
             </div>
@@ -181,20 +202,20 @@ function SystemSettings() {
           {
     /* System Status */
   }
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="p-6 border-b border-gray-200">
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-white/5 bg-black/20">
               <div className="flex items-center gap-3">
-                <div className="p-3 bg-red-50 rounded-lg">
-                  <Shield className="w-6 h-6 text-red-600" />
+                <div className="p-3 bg-red-500/10 rounded-xl border border-red-500/20">
+                  <Shield className="w-6 h-6 text-red-500" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">System Status</h3>
+                <h3 className="text-lg font-semibold text-white">System Status</h3>
               </div>
             </div>
             <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-white/10 bg-white/5 rounded-xl gap-4">
                 <div>
-                  <p className="font-medium text-gray-900">Maintenance Mode</p>
-                  <p className="text-sm text-gray-600">Temporarily disable system access</p>
+                  <p className="font-semibold text-gray-200">Maintenance Mode</p>
+                  <p className="text-sm text-gray-500 mt-1">Temporarily disable system access</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
@@ -203,16 +224,18 @@ function SystemSettings() {
     onChange={(e) => setSettings({ ...settings, systemMaintenance: e.target.checked })}
     className="sr-only peer"
   />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600" />
+                  <div className="w-14 h-7 bg-black/40 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-500 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-500 border border-white/10" />
                 </label>
               </div>
 
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-emerald-600" />
-                  <p className="font-medium text-emerald-700">System Status: Online</p>
+              <div className="p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <Globe className="w-6 h-6 text-emerald-400" />
+                  <div>
+                    <p className="font-semibold text-emerald-400">System Status: Online</p>
+                    <p className="text-sm text-emerald-500/70 mt-0.5">All systems operational</p>
+                  </div>
                 </div>
-                <p className="text-sm text-emerald-600 mt-1">All systems operational</p>
               </div>
             </div>
           </div>
@@ -220,10 +243,10 @@ function SystemSettings() {
           {
     /* Save Button */
   }
-          <div className="flex justify-end">
+          <div className="flex justify-end pt-4">
             <button
     onClick={handleSaveSettings}
-    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all shadow-md hover:shadow-lg"
+    className="flex items-center gap-2 px-8 py-3.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-500 transition-colors shadow-lg shadow-emerald-500/20"
   >
               <Save className="w-5 h-5" />
               Save All Settings

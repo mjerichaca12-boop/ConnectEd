@@ -16,21 +16,21 @@ function ConfirmDialog({
   };
   const iconColor = type === "danger" ? "text-red-500" : type === "warning" ? "text-red-500" : "text-emerald-500";
   const confirmButtonClass = type === "danger" || type === "warning" ? "bg-red-600 hover:bg-red-700" : "bg-emerald-600 hover:bg-emerald-700";
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scaleIn">
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full transform animate-scaleIn border border-white/10 overflow-hidden">
         {
     /* Header */
   }
-        <div className="flex items-start justify-between p-6 border-b border-gray-200">
+        <div className="flex items-start justify-between p-6 border-b border-white/10 bg-black/20">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-full ${type === "danger" || type === "warning" ? "bg-red-100" : "bg-emerald-100"}`}>
+            <div className={`p-2 rounded-xl border ${type === "danger" || type === "warning" ? "bg-red-500/10 border-red-500/20" : "bg-emerald-500/10 border-emerald-500/20"}`}>
               <AlertTriangle className={`w-6 h-6 ${iconColor}`} />
             </div>
-            <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+            <h3 className="text-xl font-semibold text-white">{title}</h3>
           </div>
           <button
     onClick={onClose}
-    className="text-gray-400 hover:text-gray-600 transition-colors"
+    className="text-gray-400 hover:text-white transition-colors"
   >
             <X className="w-5 h-5" />
           </button>
@@ -40,22 +40,22 @@ function ConfirmDialog({
     /* Body */
   }
         <div className="p-6">
-          <p className="text-gray-600 leading-relaxed">{message}</p>
+          <p className="text-gray-300 leading-relaxed">{message}</p>
         </div>
 
         {
     /* Footer */
   }
-        <div className="flex items-center justify-end gap-3 p-6 bg-gray-50 rounded-b-2xl">
+        <div className="flex items-center justify-end gap-3 p-6 bg-black/40 rounded-b-2xl border-t border-white/5">
           <button
     onClick={onClose}
-    className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium"
+    className="px-6 py-2.5 text-gray-300 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all duration-200 font-medium"
   >
             {cancelText}
           </button>
           <button
     onClick={handleConfirm}
-    className={`px-6 py-2.5 text-white rounded-lg transition-all duration-200 font-medium shadow-lg ${confirmButtonClass}`}
+    className={`px-6 py-2.5 text-white rounded-xl transition-all duration-200 font-medium shadow-lg ${confirmButtonClass}`}
   >
             {confirmText}
           </button>

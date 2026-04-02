@@ -20,7 +20,7 @@ import {
 function TeacherAnnouncements() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState(teacherNotifications);
+  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState("announcements");
@@ -142,28 +142,28 @@ function TeacherAnnouncements() {
       case "Low":
         return "bg-emerald-100 text-emerald-700";
       default:
-        return "bg-gray-100 text-gray-700";
+        return "bg-white/5 text-gray-300";
     }
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return <div className="min-h-screen flex items-center justify-center bg-black/20">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-400">Loading...</p>
         </div>
       </div>;
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
+        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Announcements</h2>
+              <h2 className="text-xl font-semibold text-white">Announcements</h2>
               <NotificationDropdown
     notifications={notificationList}
     onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
@@ -182,7 +182,7 @@ function TeacherAnnouncements() {
               </div>
               <button
     onClick={() => setShowCreateModal(true)}
-    className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium shadow-sm"
+    className="flex items-center gap-2 px-6 py-3 bg-gray-900/60 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium shadow-sm"
   >
                 <Plus className="w-5 h-5" />
                 {activeTab === "announcements" && "New Announcement"}
@@ -195,12 +195,12 @@ function TeacherAnnouncements() {
           {
     /* Tabs */
   }
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="flex border-b border-gray-200">
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="flex border-b border-white/10">
               {["announcements", "assignments", "files"].map((tab) => <button
     key={tab}
     onClick={() => setActiveTab(tab)}
-    className={`flex-1 px-6 py-4 font-medium transition-all ${activeTab === tab ? "bg-emerald-50 text-emerald-600 border-b-2 border-emerald-600" : "text-gray-600 hover:bg-gray-50"}`}
+    className={`flex-1 px-6 py-4 font-medium transition-all ${activeTab === tab ? "bg-emerald-50 text-emerald-600 border-b-2 border-emerald-600" : "text-gray-400 hover:bg-black/20"}`}
   >
                   <div className="flex items-center justify-center gap-2">
                     {tab === "announcements" && <Megaphone className="w-5 h-5" />}
@@ -223,16 +223,16 @@ function TeacherAnnouncements() {
                       <Megaphone className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">No announcements yet</p>
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium">Create your first announcement</button>
-                    </div> : announcements.map((announcement) => <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    </div> : announcements.map((announcement) => <div key={announcement.id} className="bg-gray-900/60 rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between mb-3">
-                        <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                        <h3 className="text-lg font-semibold text-white">{announcement.title}</h3>
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(announcement.priority)}`}>{announcement.priority}</span>
                       </div>
-                      <p className="text-gray-700 mb-4">{announcement.content}</p>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
+                      <p className="text-gray-300 mb-4">{announcement.content}</p>
+                      <div className="flex items-center gap-4 text-sm text-gray-400">
                         <span>{announcement.targetAudience}</span>
-                        {announcement.subject && <span>• {announcement.subject}</span>}
-                        <span>• {new Date(announcement.datePosted).toLocaleDateString()}</span>
+                        {announcement.subject && <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {announcement.subject}</span>}
+                        <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {new Date(announcement.datePosted).toLocaleDateString()}</span>
                       </div>
                     </div>)}
                 </div>}
@@ -245,10 +245,10 @@ function TeacherAnnouncements() {
                       <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">No assignments yet</p>
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium">Create your first assignment</button>
-                    </div> : assignments.map((assignment) => <div key={assignment.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">{assignment.title}</h3>
-                      <p className="text-gray-700 mb-4">{assignment.description}</p>
-                      <div className="flex items-center gap-6 text-sm text-gray-600 mb-3">
+                    </div> : assignments.map((assignment) => <div key={assignment.id} className="bg-gray-900/60 rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-md transition-shadow">
+                      <h3 className="text-lg font-semibold text-white mb-1">{assignment.title}</h3>
+                      <p className="text-gray-300 mb-4">{assignment.description}</p>
+                      <div className="flex items-center gap-6 text-sm text-gray-400 mb-3">
                         <div className="flex items-center gap-2"><BookOpen className="w-4 h-4" /><span>{assignment.subject}</span></div>
                         <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span></div>
                         <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{assignment.totalPoints} points</span></div>
@@ -268,19 +268,19 @@ function TeacherAnnouncements() {
                       <Upload className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">No files uploaded yet</p>
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium">Upload your first file</button>
-                    </div> : files.map((file) => <div key={file.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    </div> : files.map((file) => <div key={file.id} className="bg-gray-900/60 rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-4 flex-1">
                           <div className="p-3 bg-emerald-50 rounded-lg">
                             <FileText className="w-5 h-5 text-emerald-600" />
                           </div>
                           <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-1">{file.fileName}</h3>
-                            <p className="text-gray-600 text-sm mb-3">{file.description}</p>
-                            <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <h3 className="text-lg font-semibold text-white mb-1">{file.fileName}</h3>
+                            <p className="text-gray-400 text-sm mb-3">{file.description}</p>
+                            <div className="flex items-center gap-4 text-sm text-gray-400">
                               <span>{file.subject}</span>
-                              <span>• {file.fileSize}</span>
-                              <span>• {new Date(file.uploadDate).toLocaleDateString()}</span>
+                              <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {file.fileSize}</span>
+                              <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {new Date(file.uploadDate).toLocaleDateString()}</span>
                             </div>
                           </div>
                         </div>
@@ -300,15 +300,15 @@ function TeacherAnnouncements() {
     /* Create Modal */
   }
       {showCreateModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+          <div className="bg-gray-900/60 rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="p-6 border-b border-white/10 sticky top-0 bg-gray-900/60 z-10">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 className="text-xl font-semibold text-white">
                   {activeTab === "announcements" && "Create Announcement"}
                   {activeTab === "assignments" && "Create Assignment"}
                   {activeTab === "files" && "Upload File"}
                 </h3>
-                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -320,24 +320,24 @@ function TeacherAnnouncements() {
   }
               {activeTab === "announcements" && <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Title</label>
-                    <input type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter announcement title" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Title</label>
+                    <input type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter announcement title" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Content</label>
-                    <textarea value={formData.content} onChange={(e) => setFormData({ ...formData, content: e.target.value })} rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter announcement content" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Content</label>
+                    <textarea value={formData.content} onChange={(e) => setFormData({ ...formData, content: e.target.value })} rows={4} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter announcement content" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
-                      <select value={formData.targetAudience} onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Target Audience</label>
+                      <select value={formData.targetAudience} onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
                         <option value="Subject-specific">Subject-specific</option>
                         <option value="School-wide">School-wide</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-                      <select value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Priority</label>
+                      <select value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
                         <option value="High">High</option>
@@ -345,8 +345,8 @@ function TeacherAnnouncements() {
                     </div>
                   </div>
                   {formData.targetAudience === "Subject-specific" && <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-                      <input type="text" value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Subject</label>
+                      <input type="text" value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
                     </div>}
                   <button onClick={handleSubmit} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all font-medium">
                     <Send className="w-4 h-4" />Post Announcement
@@ -358,33 +358,33 @@ function TeacherAnnouncements() {
   }
               {activeTab === "assignments" && <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Assignment Title</label>
-                    <input type="text" value={assignmentFormData.title} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, title: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter assignment title" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Assignment Title</label>
+                    <input type="text" value={assignmentFormData.title} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, title: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter assignment title" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                    <textarea value={assignmentFormData.description} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, description: e.target.value })} rows={4} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter assignment description" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                    <textarea value={assignmentFormData.description} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, description: e.target.value })} rows={4} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Enter assignment description" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-                      <input type="text" value={assignmentFormData.subject} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, subject: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Subject</label>
+                      <input type="text" value={assignmentFormData.subject} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, subject: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Total Points</label>
-                      <input type="number" value={assignmentFormData.totalPoints} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, totalPoints: parseInt(e.target.value) || 0 })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="100" />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Total Points</label>
+                      <input type="number" value={assignmentFormData.totalPoints} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, totalPoints: parseInt(e.target.value) || 0 })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="100" />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
-                    <input type="date" value={assignmentFormData.dueDate} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, dueDate: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Due Date</label>
+                    <input type="date" value={assignmentFormData.dueDate} onChange={(e) => setAssignmentFormData({ ...assignmentFormData, dueDate: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Attachments (Optional)</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Attachments (Optional)</label>
                     <input ref={assignmentFileInputRef} type="file" multiple className="hidden" onChange={handleAssignmentFilesChange} />
-                    <div onClick={handleAssignmentFilesClick} className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                    <div onClick={handleAssignmentFilesClick} className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer">
                       <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">{assignmentFileNames || "Click to upload or drag and drop"}</p>
+                      <p className="text-sm text-gray-400">{assignmentFileNames || "Click to upload or drag and drop"}</p>
                       <p className="text-xs text-gray-500 mt-1">PDF, DOC, DOCX up to 10MB</p>
                     </div>
                   </div>
@@ -398,30 +398,30 @@ function TeacherAnnouncements() {
   }
               {activeTab === "files" && <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">File Upload</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">File Upload</label>
                     <input ref={uploadFileInputRef} type="file" className="hidden" onChange={handleUploadFileChange} />
-                    <div onClick={handleUploadFileClick} className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer">
+                    <div onClick={handleUploadFileClick} className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer">
                       <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-600 mb-1">{uploadFileName || "Click to upload or drag and drop"}</p>
+                      <p className="text-gray-400 mb-1">{uploadFileName || "Click to upload or drag and drop"}</p>
                       <p className="text-sm text-gray-500">PDF, DOC, DOCX, PPT, PPTX up to 25MB</p>
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">File Name</label>
-                    <input type="text" value={fileFormData.fileName} onChange={(e) => setFileFormData({ ...fileFormData, fileName: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., Lecture_Notes_Week4.pdf" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">File Name</label>
+                    <input type="text" value={fileFormData.fileName} onChange={(e) => setFileFormData({ ...fileFormData, fileName: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., Lecture_Notes_Week4.pdf" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                    <textarea value={fileFormData.description} onChange={(e) => setFileFormData({ ...fileFormData, description: e.target.value })} rows={3} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Brief description of the file content" />
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                    <textarea value={fileFormData.description} onChange={(e) => setFileFormData({ ...fileFormData, description: e.target.value })} rows={3} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Brief description of the file content" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-                      <input type="text" value={fileFormData.subject} onChange={(e) => setFileFormData({ ...fileFormData, subject: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Subject</label>
+                      <input type="text" value={fileFormData.subject} onChange={(e) => setFileFormData({ ...fileFormData, subject: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="e.g., MATH101" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
-                      <select value={fileFormData.fileType} onChange={(e) => setFileFormData({ ...fileFormData, fileType: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                      <label className="block text-sm font-medium text-gray-300 mb-2">File Type</label>
+                      <select value={fileFormData.fileType} onChange={(e) => setFileFormData({ ...fileFormData, fileType: e.target.value })} className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500">
                         <option value="PDF">PDF Document</option>
                         <option value="DOCX">Word Document</option>
                         <option value="PPTX">PowerPoint</option>

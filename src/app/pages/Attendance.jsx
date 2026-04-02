@@ -15,7 +15,7 @@ import {
 function Attendance() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
-  const [notifications, setNotifications] = useState(3);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState("2026-01");
@@ -83,7 +83,7 @@ function Attendance() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
@@ -96,9 +96,7 @@ function Attendance() {
               <div className="flex items-center gap-4">
                 <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>}
+                  
                 </button>
               </div>
             </div>
@@ -114,7 +112,7 @@ function Attendance() {
   }
           <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
             <h1 className="text-3xl font-bold mb-2">Attendance Record</h1>
-            <p className="text-emerald-50">1st Quarter 2026 • Track your class attendance</p>
+            <p className="text-emerald-50">1st Quarter 2026 â€¢ Track your class attendance</p>
           </div>
 
           {

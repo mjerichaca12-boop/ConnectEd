@@ -21,7 +21,7 @@ function SubjectDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [studentName, setStudentName] = useState("");
-  const [notifications, setNotifications] = useState(3);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [subject] = useState({
@@ -123,7 +123,7 @@ function SubjectDetail() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Header */
   }
@@ -135,9 +135,7 @@ function SubjectDetail() {
               </div>
               <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {notifications}
-                  </span>}
+                
               </button>
             </div>
           </div>

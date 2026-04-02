@@ -83,7 +83,7 @@ function StudentEnrollment() {
 
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10">
+      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
         {
     /* Top Bar */
   }
@@ -265,7 +265,7 @@ function StudentEnrollment() {
     /* Upload Modal */
   }
       {showUploadModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Submit Enrollment Documents</h3>
               <button

@@ -46,7 +46,7 @@ function CustomSelect({ value, onChange, options, placeholder, label }) {
     /* Dropdown Menu */
   }
       {isOpen && <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-slideDown">
-          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+          <div className="max-h-60 overflow-y-auto scrollbar-hide">
             {options.map((option, index) => <button
     key={option.value}
     type="button"

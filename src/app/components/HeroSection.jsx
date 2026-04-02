@@ -1,178 +1,152 @@
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, Users, BookOpen, Award, TrendingUp, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { useTypewriter } from "@/app/hooks/useAnimations";
+
+/* Seeded particles so they don't re-randomize on each render */
+const PARTICLES = [
+  { id:0,  size:2.1, x:8,  y:15, delay:0,   dur:14, op:0.18 },
+  { id:1,  size:1.6, x:18, y:72, delay:2,   dur:11, op:0.12 },
+  { id:2,  size:2.8, x:28, y:38, delay:4,   dur:16, op:0.20 },
+  { id:3,  size:1.4, x:42, y:88, delay:1.5, dur:13, op:0.10 },
+  { id:4,  size:2.3, x:55, y:22, delay:3,   dur:15, op:0.15 },
+  { id:5,  size:1.8, x:63, y:62, delay:0.8, dur:12, op:0.14 },
+  { id:6,  size:3.0, x:74, y:45, delay:5,   dur:17, op:0.22 },
+  { id:7,  size:1.5, x:82, y:80, delay:2.5, dur:10, op:0.11 },
+  { id:8,  size:2.5, x:90, y:10, delay:1,   dur:18, op:0.17 },
+  { id:9,  size:1.9, x:96, y:55, delay:3.7, dur:13, op:0.13 },
+  { id:10, size:2.2, x:5,  y:90, delay:6,   dur:11, op:0.16 },
+  { id:11, size:1.3, x:35, y:6,  delay:0.5, dur:14, op:0.09 },
+  { id:12, size:2.7, x:50, y:50, delay:4.2, dur:16, op:0.19 },
+  { id:13, size:1.7, x:70, y:95, delay:2.8, dur:12, op:0.12 },
+  { id:14, size:2.0, x:88, y:30, delay:1.3, dur:15, op:0.14 },
+];
+
 function HeroSection() {
   const navigate = useNavigate();
-  const scrollToSection = (sectionId) => {
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
-  const handleCreateAccount = () => {
-    navigate("/signup");
-  };
-  return <section id="hero" className="relative w-full max-w-full bg-gradient-to-br from-emerald-50 via-white to-blue-50 py-20 sm:py-32 px-4 sm:px-6 overflow-hidden">
-      {
-    /* Decorative Background Elements */
-  }
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {
-    /* Floating Circles */
-  }
-        <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-200/20 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl animate-pulse delay-1000" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-br from-emerald-100/10 to-blue-100/10 rounded-full blur-3xl" />
-        
-        {
-    /* Grid Pattern */
-  }
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#10b98114_1px,transparent_1px),linear-gradient(to_bottom,#10b98114_1px,transparent_1px)] bg-[size:4rem_4rem]" />
+  const typed = useTypewriter(
+    ["Fully Connected.", "Built for DepEd.", "Built for Teachers.", "Free to Use."],
+    { speed: 75, deleteSpeed: 42, pause: 2200 }
+  );
+
+  return (
+    <section id="hero" className="relative w-full bg-gray-950 min-h-screen flex flex-col justify-center items-center overflow-hidden">
+
+      {/* Grid */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
+
+      {/* Particles */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {PARTICLES.map((p) => (
+          <div
+            key={p.id}
+            className="absolute rounded-full bg-emerald-400"
+            style={{
+              width: `${p.size}px`,
+              height: `${p.size}px`,
+              left: `${p.x}%`,
+              top: `${p.y}%`,
+              opacity: p.op,
+              animation: `particleDrift ${p.dur}s ease-in-out ${p.delay}s infinite alternate`,
+            }}
+          />
+        ))}
       </div>
 
-      <div className="relative max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row items-center gap-12">
-          {
-    /* Left Content */
-  }
-          <div className="flex-1 text-center lg:text-left">
-            {
-    /* Badge */
-  }
-            <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full mb-6 border border-emerald-200">
-              <Sparkles className="w-4 h-4" />
-              <span className="text-sm font-medium">Empowering Education in Dasmariñas</span>
-            </div>
+      {/* Glow blobs */}
+      <div className="absolute top-1/3 left-1/4 w-[600px] h-[600px] bg-emerald-600/8 rounded-full blur-[150px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-emerald-400/6 rounded-full blur-[120px] pointer-events-none" />
 
-            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 mb-6 leading-tight">
-              One Portal.<br />
-              One School.<br />
-              <span className="text-emerald-600">Connected Education.</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-gray-600 mb-10 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-              A unified academic and communication platform designed specifically for public schools. 
-              Connect students, teachers, and administrators in one seamless, accessible portal.
-            </p>
+      {/* Content — centered */}
+      <div className="relative max-w-4xl mx-auto px-6 py-24 text-center">
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-12">
-              <button
-    onClick={handleCreateAccount}
-    className="bg-emerald-600 text-white px-8 py-4 rounded-lg font-medium hover:bg-emerald-700 transition-all hover:scale-105 shadow-lg hover:shadow-xl text-lg flex items-center justify-center gap-2 cursor-pointer"
-  >
-                <GraduationCap className="w-5 h-5" />
-                Get Started Free
-              </button>
-              <button
-    onClick={() => scrollToSection("how-it-works")}
-    className="bg-white text-emerald-600 border-2 border-emerald-600 px-8 py-4 rounded-lg font-medium hover:bg-emerald-50 transition-all text-lg cursor-pointer"
-  >
-                Learn More
-              </button>
-            </div>
+        {/* Badge */}
+        <div
+          className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold px-4 py-1.5 rounded-full mb-10 tracking-wide uppercase relative overflow-hidden group"
+          style={{ animation: "fadeSlideDown 0.8s ease-out both" }}
+        >
+          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+          Designed for Public Schools · Dasmariñas, Cavite
+          <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+        </div>
 
-            {
-    /* Quick Stats */
-  }
-            <div className="flex flex-wrap justify-center lg:justify-start gap-6 text-sm text-gray-600">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-emerald-600 rounded-full" />
-                <span>5+ Schools</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-600 rounded-full" />
-                <span>1000+ Students</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-red-600 rounded-full" />
-                <span>99.9% Uptime</span>
-              </div>
-            </div>
+        {/* Headline */}
+        <h1
+          className="text-5xl md:text-7xl lg:text-8xl font-extrabold text-white leading-[1.05] tracking-tight mb-6"
+          style={{ animation: "fadeSlideUp 0.9s ease-out 0.15s both" }}
+        >
+          One Portal.<br />
+          Every Role.<br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-300">
+            {typed}
+            <span className="inline-block w-[4px] h-[0.82em] bg-emerald-400 ml-1 align-middle animate-[blink_0.9s_step-end_infinite]" />
+          </span>
+        </h1>
+
+        {/* Subtext */}
+        <p
+          className="text-gray-400 text-lg md:text-xl leading-relaxed mb-12 max-w-2xl mx-auto"
+          style={{ animation: "fadeSlideUp 0.9s ease-out 0.3s both" }}
+        >
+          ConnectEd unifies classroom management, grading, attendance, announcements,
+          and messaging — built specifically for DepEd public schools.
+        </p>
+
+        {/* CTAs */}
+        <div
+          className="flex flex-col sm:flex-row gap-4 justify-center"
+          style={{ animation: "fadeSlideUp 0.9s ease-out 0.45s both" }}
+        >
+          <button
+            onClick={() => navigate("/login")}
+            className="group relative flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold px-10 py-4 rounded-xl transition-all shadow-lg shadow-emerald-500/25 text-base overflow-hidden"
+          >
+            <span className="relative z-10 flex items-center gap-2">
+              Sign In to Portal
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </span>
+            <span className="absolute inset-0 bg-white/10 scale-0 group-hover:scale-100 rounded-xl transition-transform duration-500 origin-center" />
+          </button>
+        </div>
+
+        {/* Scroll hint */}
+        <div
+          className="mt-20 flex flex-col items-center gap-2 text-gray-600 text-xs"
+          style={{ animation: "fadeSlideUp 1s ease-out 0.8s both" }}
+        >
+          <div className="w-5 h-9 border-2 border-gray-700 rounded-full flex justify-center pt-1.5">
+            <div className="w-1 h-2.5 bg-emerald-400/60 rounded-full animate-[scrollDot_1.8s_ease-in-out_infinite]" />
           </div>
-
-          {
-    /* Right Visual Element */
-  }
-          <div className="flex-1 relative">
-            <div className="relative max-w-lg mx-auto">
-              {
-    /* Main Card with floating effect */
-  }
-              <div className="relative bg-white rounded-2xl shadow-2xl p-8 border-2 border-emerald-100">
-                {
-    /* Header */
-  }
-                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
-                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <GraduationCap className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-gray-900 text-lg">ConnectEd Portal</div>
-                    <div className="text-sm text-gray-500">All-in-One Platform</div>
-                  </div>
-                </div>
-
-                {
-    /* Feature Cards */
-  }
-                <div className="space-y-3">
-                  {[
-    { icon: BookOpen, label: "Academic Management", color: "blue" },
-    { icon: Users, label: "Real-time Communication", color: "emerald" },
-    { icon: TrendingUp, label: "Performance Tracking", color: "blue" },
-    { icon: Award, label: "Smart Analytics", color: "red" }
-  ].map((item, index) => {
-    const Icon = item.icon;
-    return <div
-      key={index}
-      className={`flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r ${item.color === "blue" ? "from-blue-50 to-blue-50/50 border border-blue-100" : item.color === "red" ? "from-red-50 to-red-50/50 border border-red-100" : "from-emerald-50 to-emerald-50/50 border border-emerald-100"} hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-0.5`}
-      style={{
-        animation: `float ${3 + index * 0.5}s ease-in-out infinite`,
-        animationDelay: `${index * 0.2}s`
-      }}
-    >
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.color === "blue" ? "bg-blue-100" : item.color === "red" ? "bg-red-100" : "bg-emerald-100"}`}>
-                          <Icon className={`w-5 h-5 ${item.color === "blue" ? "text-blue-600" : item.color === "red" ? "text-red-600" : "text-emerald-600"}`} />
-                        </div>
-                        <span className="font-medium text-gray-700 text-sm">{item.label}</span>
-                      </div>;
-  })}
-                </div>
-
-                {
-    /* Bottom Badge */
-  }
-                <div className="mt-6 pt-4 border-t border-gray-200 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Trusted by public schools</span>
-                  <div className="flex gap-1">
-                    {[...Array(5)].map((_, i) => <div key={i} className="w-1.5 h-1.5 rounded-full bg-emerald-600" />)}
-                  </div>
-                </div>
-              </div>
-
-              {
-    /* Floating Elements */
-  }
-              <div className="absolute -top-4 -right-4 w-20 h-20 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl opacity-20 blur-xl animate-pulse" />
-              <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-gradient-to-br from-blue-400 to-blue-600 rounded-2xl opacity-20 blur-xl animate-pulse delay-1000" />
-            </div>
-          </div>
+          <span>Scroll to explore</span>
         </div>
       </div>
 
-      {
-    /* CSS for animations */
-  }
+      {/* Bottom fade */}
+      <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-gray-950 to-transparent pointer-events-none" />
+
       <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
+        @keyframes fadeSlideUp {
+          from { opacity: 0; transform: translateY(28px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
-        .delay-1000 {
-          animation-delay: 1s;
+        @keyframes fadeSlideDown {
+          from { opacity: 0; transform: translateY(-16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0; }
+        }
+        @keyframes particleDrift {
+          0%   { transform: translate(0, 0); }
+          100% { transform: translate(18px, -24px); }
+        }
+        @keyframes scrollDot {
+          0%, 100% { transform: translateY(0); opacity: 1; }
+          80%       { transform: translateY(10px); opacity: 0; }
         }
       `}</style>
-    </section>;
+    </section>
+  );
 }
-export {
-  HeroSection
-};
+
+export { HeroSection };

@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { RoleSelector } from "../components/RoleSelector";
 import { ArrowLeft } from "lucide-react";
 function SignUp() {
   const [formData, setFormData] = useState({
-    role: "student",
     usernameOrEmail: "",
     password: "",
     confirmPassword: "",
@@ -39,9 +37,7 @@ function SignUp() {
     }
     setErrors({ ...errors, [name]: "" });
   };
-  const handleRoleChange = (role) => {
-    setFormData({ ...formData, role });
-  };
+
   const validateForm = () => {
     const newErrors = {};
     if (!formData.usernameOrEmail.trim()) newErrors.usernameOrEmail = "Username or email is required";
@@ -57,13 +53,7 @@ function SignUp() {
     return Object.keys(newErrors).length === 0;
   };
   const redirectToDashboard = (role) => {
-    if (role === "student") {
-      navigate("/dashboard");
-    } else if (role === "teacher") {
-      navigate("/teacher/dashboard");
-    } else if (role === "admin") {
-      navigate("/admin/dashboard");
-    }
+    navigate("/teacher/dashboard");
   };
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -71,16 +61,17 @@ function SignUp() {
     setLoading(true);
     setSuccessMessage("");
     setTimeout(() => {
+      const detectedRole = "teacher";
       const userData = {
         name: formData.usernameOrEmail,
         email: formData.usernameOrEmail,
-        role: formData.role
+        role: detectedRole
       };
       localStorage.setItem("currentUser", JSON.stringify(userData));
       setSuccessMessage(`Account created successfully for ${formData.usernameOrEmail}!`);
       setLoading(false);
       setTimeout(() => {
-        redirectToDashboard(formData.role);
+        redirectToDashboard(detectedRole);
       }, 1500);
     }, 1500);
   };
@@ -93,16 +84,17 @@ function SignUp() {
       setGoogleError("Enter a valid email address");
       return;
     }
+    const detectedRole = "teacher";
     const googleUser = {
       name: googleEmail.split("@")[0],
       email: googleEmail,
-      role: formData.role
+      role: detectedRole
     };
     localStorage.setItem("currentUser", JSON.stringify(googleUser));
     setShowGoogleModal(false);
     setGoogleEmail("");
     setGoogleError("");
-    redirectToDashboard(formData.role);
+    redirectToDashboard(detectedRole);
   };
   const getPasswordStrengthColor = () => {
     switch (passwordStrength) {
@@ -157,7 +149,7 @@ function SignUp() {
 
               <p className="text-lg text-gray-600 leading-relaxed mb-8">
                 Join thousands of students and teachers using ConnectEd.
-                Get instant access to academic records, communication tools, and school updates—all in one unified platform designed for your educational journey.
+                Get instant access to academic records, communication tools, and school updatesâ€”all in one unified platform designed for your educational journey.
               </p>
 
               <div className="relative h-64 hidden md:block">
@@ -201,14 +193,6 @@ function SignUp() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  <RoleSelector
-    value={formData.role}
-    onChange={handleRoleChange}
-    label="Select role"
-    required
-    allowedRoles={["student", "teacher", "admin"]}
-    accentColor="emerald"
-  />
 
                   {
     /* Username / Email */

@@ -12,8 +12,11 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  X
+  X,
+  Search,
+  Filter,
 } from "lucide-react";
+
 function StudentMaterials() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
@@ -21,338 +24,436 @@ function StudentMaterials() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterClass, setFilterClass] = useState("all");
   const fileInputRef = useRef(null);
-  const [materials] = useState([]);
-  const [activities] = useState([]);
+
+  const [materials, setMaterials] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [submittedIds, setSubmittedIds] = useState([]);
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
-    if (!userData) {
-      navigate("/login");
-      return;
-    }
+    if (!userData) { navigate("/login"); return; }
     const user = JSON.parse(userData);
-    if (user.role !== "student") {
-      navigate("/login");
-      return;
-    }
+    if (user.role !== "student") { navigate("/login"); return; }
     setStudentName(user.name);
+
+    // Read materials posted by teachers
+    const allMaterials = JSON.parse(localStorage.getItem("class_materials") || "[]");
+    setMaterials(allMaterials);
+
+    // Read assignments/activities posted by teachers
+    const allAssignments = JSON.parse(localStorage.getItem("class_assignments") || "[]");
+    setActivities(allAssignments);
+
+    // Read submitted ids
+    const submitted = JSON.parse(localStorage.getItem("student_submissions") || "[]");
+    setSubmittedIds(submitted);
   }, [navigate]);
+
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
+
   const handleDownload = (material) => {
-    console.log("Downloading:", material.fileName);
-    alert(`Downloading: ${material.fileName}`);
+    alert(`Downloading: ${material.fileName || material.title}`);
   };
+
   const handleSubmitActivity = (activity) => {
     setSelectedActivity(activity);
     setSelectedFileName("");
     setShowSubmitModal(true);
   };
-  const handleFileInputClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
+
   const handleFileChange = (event) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFileName(file.name);
-    } else {
-      setSelectedFileName("");
+    setSelectedFileName(file ? file.name : "");
+  };
+
+  const handleConfirmSubmit = () => {
+    if (!selectedFileName) return;
+    const updated = [...submittedIds, selectedActivity.id];
+    setSubmittedIds(updated);
+    localStorage.setItem("student_submissions", JSON.stringify(updated));
+    // Mark in activities list
+    setActivities((prev) =>
+      prev.map((a) =>
+        a.id === selectedActivity.id ? { ...a, status: "submitted", submittedDate: new Date().toISOString() } : a
+      )
+    );
+    setShowSubmitModal(false);
+    setSelectedActivity(null);
+  };
+
+  const getFileIcon = (fileType = "PDF") => {
+    const t = fileType.toUpperCase();
+    if (t === "PDF") return <FileText className="w-5 h-5 text-red-600" />;
+    if (t === "PPTX" || t === "PPT") return <File className="w-5 h-5 text-orange-500" />;
+    if (t === "DOCX" || t === "DOC") return <File className="w-5 h-5 text-blue-600" />;
+    return <File className="w-5 h-5 text-gray-600" />;
+  };
+
+  const getStatusBadge = (activity) => {
+    if (submittedIds.includes(activity.id) || activity.status === "submitted") {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+          <CheckCircle className="w-3 h-3" /> Submitted
+        </span>
+      );
     }
-  };
-  const getFileIcon = (fileType) => {
-    switch (fileType.toUpperCase()) {
-      case "PDF":
-        return <FileText className="w-5 h-5 text-red-600" />;
-      case "PPTX":
-      case "PPT":
-        return <File className="w-5 h-5 text-red-600" />;
-      case "DOCX":
-      case "DOC":
-        return <File className="w-5 h-5 text-blue-600" />;
-      default:
-        return <File className="w-5 h-5 text-gray-600" />;
+    const diff = Math.ceil((new Date(activity.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+    if (diff < 0) {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+          <AlertCircle className="w-3 h-3" /> Overdue
+        </span>
+      );
     }
+    return (
+      <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+        <Clock className="w-3 h-3" /> Pending
+      </span>
+    );
   };
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case "submitted":
-        return <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-            <CheckCircle className="w-3 h-3" />
-            Submitted
-          </span>;
-      case "late":
-        return <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
-            <AlertCircle className="w-3 h-3" />
-            Late
-          </span>;
-      default:
-        return <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-            <Clock className="w-3 h-3" />
-            Pending
-          </span>;
-    }
+
+  const getDaysLabel = (dueDate) => {
+    const diff = Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+    if (diff < 0) return { label: "Overdue", cls: "text-red-600" };
+    if (diff === 0) return { label: "Due today", cls: "text-orange-600" };
+    if (diff === 1) return { label: "Due tomorrow", cls: "text-yellow-600" };
+    return { label: `Due in ${diff} days`, cls: "text-gray-600" };
   };
-  const getDaysUntilDue = (dueDate) => {
-    const due = new Date(dueDate);
-    const now = /* @__PURE__ */ new Date();
-    const diffTime = due.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1e3 * 60 * 60 * 24));
-    if (diffDays < 0) return "Overdue";
-    if (diffDays === 0) return "Due today";
-    if (diffDays === 1) return "Due tomorrow";
-    return `Due in ${diffDays} days`;
-  };
-  return <div className="min-h-screen bg-gray-50 flex">
+
+  // All unique class codes for filter
+  const allClasses = [...new Set([...materials.map((m) => m.classCode), ...activities.map((a) => a.classCode)].filter(Boolean))];
+
+  const filteredMaterials = materials.filter((m) => {
+    const matchSearch = m.title?.toLowerCase().includes(searchQuery.toLowerCase()) || m.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchClass = filterClass === "all" || m.classCode === filterClass;
+    return matchSearch && matchClass;
+  });
+
+  const filteredActivities = activities.filter((a) => {
+    const matchSearch = a.title?.toLowerCase().includes(searchQuery.toLowerCase()) || a.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchClass = filterClass === "all" || a.classCode === filterClass;
+    return matchSearch && matchClass;
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
-        {
-    /* Top Bar */
-  }
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">My Learning Resources</h2>
-                <p className="text-sm text-gray-600">Access materials and submit activities</p>
+                <p className="text-sm text-gray-500">Access materials and submit activities from your teachers</p>
               </div>
             </div>
           </div>
         </div>
 
-        {
-    /* Content */
-  }
-        <div className="p-6">
-          {
-    /* Tabs */
-  }
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <div className="p-6 space-y-6">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white shadow-lg">
+            <div className="flex items-center gap-3 mb-3">
+              <FolderOpen className="w-8 h-8" />
+              <div>
+                <h1 className="text-2xl font-bold">Learning Resources</h1>
+                <p className="text-emerald-100 text-sm">{materials.length} materials â€¢ {activities.length} tasks</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="flex border-b border-gray-200">
               <button
-    onClick={() => setActiveTab("materials")}
-    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "materials" ? "text-emerald-600 border-b-2 border-emerald-600" : "text-gray-600 hover:text-gray-900"}`}
-  >
+                onClick={() => setActiveTab("materials")}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${activeTab === "materials" ? "text-emerald-600 border-emerald-600" : "text-gray-600 hover:text-gray-900 border-transparent"}`}
+              >
                 <div className="flex items-center justify-center gap-2">
                   <FolderOpen className="w-5 h-5" />
                   Class Materials
+                  {filteredMaterials.length > 0 && (
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-semibold">{filteredMaterials.length}</span>
+                  )}
                 </div>
               </button>
               <button
-    onClick={() => setActiveTab("activities")}
-    className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "activities" ? "text-emerald-600 border-b-2 border-emerald-600" : "text-gray-600 hover:text-gray-900"}`}
-  >
+                onClick={() => setActiveTab("activities")}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors border-b-2 ${activeTab === "activities" ? "text-emerald-600 border-emerald-600" : "text-gray-600 hover:text-gray-900 border-transparent"}`}
+              >
                 <div className="flex items-center justify-center gap-2">
                   <BookOpen className="w-5 h-5" />
-                  My Activities
+                  Assignments & Activities
+                  {filteredActivities.filter((a) => !submittedIds.includes(a.id) && a.status !== "submitted").length > 0 && (
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                      {filteredActivities.filter((a) => !submittedIds.includes(a.id) && a.status !== "submitted").length} pending
+                    </span>
+                  )}
                 </div>
               </button>
             </div>
+
+            {/* Search + Filter */}
+            <div className="p-4 border-b border-gray-100 flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={activeTab === "materials" ? "Search materials..." : "Search assignments..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                />
+              </div>
+              {allClasses.length > 0 && (
+                <select
+                  value={filterClass}
+                  onChange={(e) => setFilterClass(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                >
+                  <option value="all">All Classes</option>
+                  {allClasses.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+            </div>
           </div>
 
-          {
-    /* Class Materials Tab */
-  }
-          {activeTab === "materials" && <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                <Download className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-blue-900 font-medium mb-1">Download for Offline Access</p>
-                  <p className="text-xs text-blue-700">You can download any material to study offline. Click the download button on any item.</p>
+          {/* â”€â”€ CLASS MATERIALS TAB â”€â”€ */}
+          {activeTab === "materials" && (
+            <div className="space-y-4">
+              {filteredMaterials.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+                  <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <FolderOpen className="w-7 h-7 text-emerald-300" />
+                  </div>
+                  <h3 className="font-semibold text-gray-700 mb-2">No materials yet</h3>
+                  <p className="text-gray-500 text-sm">Your teachers haven't uploaded any materials yet.</p>
                 </div>
-              </div>
-
-              {
-    /* Materials List */
-  }
-              <div className="grid grid-cols-1 gap-4">
-                {materials.map((material) => <div key={material.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        {getFileIcon(material.fileType)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-1">{material.title}</h3>
-                        <p className="text-sm text-gray-600 mb-3">{material.description}</p>
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="w-4 h-4" />
-                            {material.subject}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <File className="w-4 h-4" />
-                            {material.fileType} · {material.fileSize}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(material.uploadDate).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-2">Uploaded by {material.teacherName}</p>
-                      </div>
-                      <button
-    onClick={() => handleDownload(material)}
-    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
-  >
-                        <Download className="w-4 h-4" />
-                        Download
-                      </button>
+              ) : (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                    <Download className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-blue-900 font-medium mb-1">Download for Offline Access</p>
+                      <p className="text-xs text-blue-700">You can download any material to study offline.</p>
                     </div>
-                  </div>)}
-              </div>
-            </div>}
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {filteredMaterials.map((material) => (
+                      <div key={material.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex items-start gap-4">
+                          <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                            {getFileIcon(material.fileType)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base font-semibold text-gray-900 mb-1">{material.title}</h3>
+                            {material.description && (
+                              <p className="text-sm text-gray-600 mb-3">{material.description}</p>
+                            )}
+                            <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                              {material.classCode && (
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="w-3.5 h-3.5" />
+                                  {material.classCode} {material.className && `â€“ ${material.className}`}
+                                </span>
+                              )}
+                              <span className="flex items-center gap-1">
+                                <File className="w-3.5 h-3.5" />
+                                {material.fileType}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {new Date(material.uploadDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </span>
+                            </div>
+                            {material.teacherName && (
+                              <p className="text-xs text-gray-400 mt-2">Uploaded by {material.teacherName}</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDownload(material)}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 text-sm"
+                          >
+                            <Download className="w-4 h-4" />
+                            Download
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
-          {
-    /* Activities Tab */
-  }
-          {activeTab === "activities" && <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm text-blue-900 font-medium mb-1">Submit Before Deadline</p>
-                  <p className="text-xs text-blue-700">Make sure to upload your completed activities before the due date to avoid late penalties.</p>
+          {/* â”€â”€ ACTIVITIES TAB â”€â”€ */}
+          {activeTab === "activities" && (
+            <div className="space-y-4">
+              {filteredActivities.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+                  <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <BookOpen className="w-7 h-7 text-blue-300" />
+                  </div>
+                  <h3 className="font-semibold text-gray-700 mb-2">No assignments yet</h3>
+                  <p className="text-gray-500 text-sm">Your teachers haven't posted any tasks yet.</p>
                 </div>
-              </div>
-
-              {
-    /* Activities List */
-  }
-              <div className="grid grid-cols-1 gap-4">
-                {activities.map((activity) => <div key={activity.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <h3 className="text-lg font-semibold text-gray-900">{activity.title}</h3>
-                          {getStatusBadge(activity.status)}
-                        </div>
-                        <p className="text-sm text-gray-600 mb-3">{activity.description}</p>
-                        <div className="flex flex-wrap gap-4 text-sm text-gray-500 mb-2">
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="w-4 h-4" />
-                            {activity.subject}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(activity.dueDate).toLocaleDateString()}
-                          </span>
-                          <span>Max Points: {activity.maxPoints}</span>
-                        </div>
-                        <p className="text-xs text-gray-500">Assigned by {activity.teacherName}</p>
-                        {activity.status === "submitted" && activity.submittedDate && <p className="text-xs text-green-600 mt-1">
-                            Submitted on {new Date(activity.submittedDate).toLocaleDateString()}
-                          </p>}
-                      </div>
+              ) : (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-blue-900 font-medium mb-1">Submit Before Deadline</p>
+                      <p className="text-xs text-blue-700">Upload your completed work before the due date to avoid late penalties.</p>
                     </div>
-                    
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-                      <span className={`text-sm font-medium ${getDaysUntilDue(activity.dueDate).includes("Overdue") ? "text-red-600" : "text-gray-700"}`}>
-                        {getDaysUntilDue(activity.dueDate)}
-                      </span>
-                      {activity.status !== "submitted" && <button
-    onClick={() => handleSubmitActivity(activity)}
-    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-  >
-                          <Upload className="w-4 h-4" />
-                          Submit Activity
-                        </button>}
-                    </div>
-                  </div>)}
-              </div>
-            </div>}
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    {filteredActivities.map((activity) => {
+                      const due = getDaysLabel(activity.dueDate);
+                      const isSubmitted = submittedIds.includes(activity.id) || activity.status === "submitted";
+                      return (
+                        <div key={activity.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between gap-4 mb-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize ${activity.type === "activity" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                                  {activity.type || "assignment"}
+                                </span>
+                                {getStatusBadge(activity)}
+                              </div>
+                              <h3 className="text-base font-semibold text-gray-900">{activity.title}</h3>
+                              {activity.description && (
+                                <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
+                              )}
+                              <div className="flex flex-wrap gap-4 text-xs text-gray-500 mt-2">
+                                {activity.classCode && (
+                                  <span className="flex items-center gap-1">
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                    {activity.classCode}{activity.className && ` â€“ ${activity.className}`}
+                                  </span>
+                                )}
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  {new Date(activity.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                </span>
+                                <span>Max Points: {activity.maxPoints}</span>
+                              </div>
+                              {activity.teacherName && (
+                                <p className="text-xs text-gray-400 mt-2">Posted by {activity.teacherName}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                            <span className={`text-sm font-medium ${due.cls}`}>{due.label}</span>
+                            {!isSubmitted && (
+                              <button
+                                onClick={() => handleSubmitActivity(activity)}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+                              >
+                                <Upload className="w-4 h-4" />
+                                Submit Work
+                              </button>
+                            )}
+                            {isSubmitted && (
+                              <span className="text-sm text-emerald-600 font-medium flex items-center gap-1">
+                                <CheckCircle className="w-4 h-4" /> Submitted
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
-      {
-    /* Submit Activity Modal */
-  }
-      {showSubmitModal && selectedActivity && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-gray-900">Submit Activity</h3>
+      {/* Submit Activity Modal */}
+      {showSubmitModal && selectedActivity && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h3 className="text-lg font-bold text-gray-900">Submit Work</h3>
               <button
-    onClick={() => {
-      setShowSubmitModal(false);
-      setSelectedActivity(null);
-    }}
-    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-  >
+                onClick={() => { setShowSubmitModal(false); setSelectedActivity(null); }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
             <div className="p-6 space-y-4">
-              {
-    /* Activity Info */
-  }
-              <div className="bg-gray-50 rounded-lg p-4">
+              {/* Activity Info */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${selectedActivity.type === "activity" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                    {selectedActivity.type || "assignment"}
+                  </span>
+                </div>
                 <h4 className="font-semibold text-gray-900 mb-2">{selectedActivity.title}</h4>
                 <div className="flex flex-wrap gap-3 text-sm text-gray-600">
-                  <span>Subject: {selectedActivity.subject}</span>
+                  {selectedActivity.classCode && <span>Class: {selectedActivity.classCode}</span>}
                   <span>Max Points: {selectedActivity.maxPoints}</span>
-                  <span>Due: {new Date(selectedActivity.dueDate).toLocaleDateString()}</span>
+                  <span>Due: {new Date(selectedActivity.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                 </div>
               </div>
 
-              {
-    /* File Upload */
-  }
+              {/* File Upload */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Upload Your Work *</label>
-                <input
-    ref={fileInputRef}
-    type="file"
-    className="hidden"
-    onChange={handleFileChange}
-  />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Upload Your Work <span className="text-red-500">*</span></label>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
                 <div
-    onClick={handleFileInputClick}
-    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
-  >
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-600 mb-1">
                     {selectedFileName ? selectedFileName : "Click to upload or drag and drop"}
                   </p>
-                  <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 20MB)</p>
+                  <p className="text-xs text-gray-400">PDF, DOC, DOCX, ZIP (max 20MB)</p>
                 </div>
               </div>
 
-              {
-    /* Comments */
-  }
+              {/* Comments */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Comments (Optional)</label>
                 <textarea
-    rows={3}
-    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-    placeholder="Any additional notes for your teacher..."
-  />
+                  rows={3}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm resize-none"
+                  placeholder="Any notes for your teacher..."
+                />
               </div>
 
-              {
-    /* Action Buttons */
-  }
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
-    onClick={() => {
-      setShowSubmitModal(false);
-      setSelectedActivity(null);
-    }}
-    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-  >
+                  onClick={() => { setShowSubmitModal(false); setSelectedActivity(null); }}
+                  className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+                >
                   Cancel
                 </button>
-                <button className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all">
-                  Submit Activity
+                <button
+                  onClick={handleConfirmSubmit}
+                  disabled={!selectedFileName}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Submit Work
                 </button>
               </div>
             </div>
           </div>
-        </div>}
-    </div>;
+        </div>
+      )}
+    </div>
+  );
 }
-export {
-  StudentMaterials
-};
+
+export { StudentMaterials };

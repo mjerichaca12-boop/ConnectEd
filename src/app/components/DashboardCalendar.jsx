@@ -78,12 +78,12 @@ function DashboardCalendar() {
           key={day}
           title={holidayLabel || void 0}
           className={`h-10 flex flex-col items-center justify-center text-sm rounded-lg transition-colors cursor-default
-            ${isToday ? "bg-emerald-600 text-white font-bold" : ""}
-            ${!isToday && isHoliday ? "bg-red-100 text-red-700 font-medium" : ""}
-            ${!isToday && !isHoliday ? "text-gray-700 hover:bg-emerald-50 hover:text-emerald-600" : ""}`}
+            ${isToday ? "bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20" : ""}
+            ${!isToday && isHoliday ? "bg-red-500/10 text-red-400 font-medium border border-red-500/20" : ""}
+            ${!isToday && !isHoliday ? "text-gray-300 hover:bg-white/10 hover:text-white" : ""}`}
         >
           <span>{day}</span>
-          {isHoliday && !isToday && <span className="w-1 h-1 rounded-full bg-red-500 mt-0.5" />}
+          {isHoliday && !isToday && <span className="w-1 h-1 rounded-full bg-red-400 mt-0.5" />}
         </div>
       );
     }
@@ -98,26 +98,26 @@ function DashboardCalendar() {
     }
     return list;
   }, [year, month, holidays]);
-  return <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+  return <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden h-full">
+      <div className="p-4 bg-black/20 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-emerald-100 rounded-lg">
-            <CalendarIcon className="w-4 h-4 text-emerald-600" />
+          <div className="p-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+            <CalendarIcon className="w-4 h-4 text-emerald-400" />
           </div>
-          <h3 className="font-semibold text-gray-900 text-sm">School Calendar</h3>
+          <h3 className="font-semibold text-white text-sm">School Calendar</h3>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={prevMonth} className="p-1 hover:bg-gray-200 rounded-md transition-colors cursor-pointer">
-            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          <button onClick={prevMonth} className="p-1 hover:bg-white/10 text-gray-400 hover:text-white rounded-md transition-colors cursor-pointer border border-transparent hover:border-white/10">
+            <ChevronLeft className="w-4 h-4" />
           </button>
-          <button onClick={nextMonth} className="p-1 hover:bg-gray-200 rounded-md transition-colors cursor-pointer">
-            <ChevronRight className="w-4 h-4 text-gray-600" />
+          <button onClick={nextMonth} className="p-1 hover:bg-white/10 text-gray-400 hover:text-white rounded-md transition-colors cursor-pointer border border-transparent hover:border-white/10">
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
       <div className="p-4">
         <div className="text-center mb-4">
-          <span className="text-sm font-bold text-gray-900">
+          <span className="text-sm font-bold text-white">
             {monthNames[month]} {year}
           </span>
         </div>
@@ -130,32 +130,32 @@ function DashboardCalendar() {
           {renderDays()}
         </div>
 
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">Philippines Holidays (this month)</p>
+        <div className="mt-4 pt-4 border-t border-white/5">
+          <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Philippines Holidays (this month)</p>
           <div className="space-y-2">
-            {currentMonthHolidays.length > 0 ? currentMonthHolidays.map(({ day, label }) => <div key={`${day}-${label}`} className="flex items-start gap-3 p-2 bg-red-50 rounded-lg">
-                  <div className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5" />
+            {currentMonthHolidays.length > 0 ? currentMonthHolidays.map(({ day, label }) => <div key={`${day}-${label}`} className="flex items-start gap-3 p-2 bg-red-500/5 rounded-lg border border-red-500/10">
+                  <div className="w-1.5 h-1.5 bg-red-400 rounded-full mt-1.5" />
                   <div>
-                    <p className="text-xs font-medium text-gray-900">{label}</p>
+                    <p className="text-xs font-medium text-gray-200">{label}</p>
                     <p className="text-[10px] text-gray-500">
                       {monthNames[month]} {day}, {year}
                     </p>
                   </div>
                 </div>) : <p className="text-xs text-gray-500">No holidays this month</p>}
           </div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase mb-2 mt-3">Upcoming Events</p>
+          <p className="text-[10px] font-bold text-gray-500 uppercase mb-2 mt-3">Upcoming Events</p>
           <div className="space-y-2">
-            <div className="flex items-start gap-3 p-2 bg-emerald-50 rounded-lg">
-              <div className="w-1.5 h-1.5 bg-emerald-600 rounded-full mt-1.5" />
+            <div className="flex items-start gap-3 p-2 bg-emerald-500/5 rounded-lg border border-emerald-500/10">
+              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full mt-1.5" />
               <div>
-                <p className="text-xs font-medium text-gray-900">Mid-term Exams</p>
+                <p className="text-xs font-medium text-gray-200">Mid-term Exams</p>
                 <p className="text-[10px] text-gray-500">Jan 20 - Jan 24</p>
               </div>
             </div>
-            <div className="flex items-start gap-3 p-2 bg-blue-50 rounded-lg">
-              <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-1.5" />
+            <div className="flex items-start gap-3 p-2 bg-blue-500/5 rounded-lg border border-blue-500/10">
+              <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mt-1.5" />
               <div>
-                <p className="text-xs font-medium text-gray-900">Sports Festival</p>
+                <p className="text-xs font-medium text-gray-200">Sports Festival</p>
                 <p className="text-[10px] text-gray-500">Feb 15 - Feb 18</p>
               </div>
             </div>

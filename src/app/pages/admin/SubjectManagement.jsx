@@ -7,7 +7,7 @@ import { Search, Plus, Eye, Edit, Trash2, Download, Clock, User, X, BookOpen, Us
 function SubjectManagement() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
+  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -34,6 +34,11 @@ function SubjectManagement() {
       return;
     }
     setAdminName(user.name);
+
+    // Initialize subjects from localStorage
+    const savedSubjects = localStorage.getItem("subjects");
+    if (savedSubjects) setSubjects(JSON.parse(savedSubjects));
+
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
   const handleLogout = () => {
@@ -73,13 +78,16 @@ function SubjectManagement() {
         capacity: Number(subjectFormData.capacity),
         enrolled: 0
       };
-      setSubjects([...subjects, newSubject]);
+      const updatedSubjects = [...subjects, newSubject];
+      setSubjects(updatedSubjects);
+      localStorage.setItem("subjects", JSON.stringify(updatedSubjects));
+
       setSubjectFormData({ code: "", name: "", description: "", credits: "", teacher: "", schedule: "", capacity: "" });
       setFormErrors({});
       setIsSubmitting(false);
       setShowAddModal(false);
       alert("Subject added successfully!");
-    }, 1e3);
+    }, 1000);
   };
   const handleCloseModal = () => {
     setShowAddModal(false);
@@ -114,15 +122,18 @@ function SubjectManagement() {
     if (!validateEditForm() || !selectedSubject) return;
     setIsSubmitting(true);
     setTimeout(() => {
-      setSubjects(subjects.map(
+      const updatedSubjects = subjects.map(
         (subject) => subject.id === selectedSubject.id ? { ...subject, code: editFormData.code, name: editFormData.name, description: editFormData.description, credits: Number(editFormData.credits), teacher: editFormData.teacher, schedule: editFormData.schedule, capacity: Number(editFormData.capacity) } : subject
-      ));
+      );
+      setSubjects(updatedSubjects);
+      localStorage.setItem("subjects", JSON.stringify(updatedSubjects));
+
       setIsSubmitting(false);
       setShowEditModal(false);
       setSelectedSubject(null);
       setEditFormErrors({});
       alert("Subject updated successfully!");
-    }, 1e3);
+    }, 1000);
   };
   const handleDeleteSubject = (subject) => {
     setSubjectToDelete(subject);
@@ -130,7 +141,10 @@ function SubjectManagement() {
   };
   const handleConfirmDelete = () => {
     if (!subjectToDelete) return;
-    setSubjects(subjects.filter((s) => s.id !== subjectToDelete.id));
+    const updatedSubjects = subjects.filter((s) => s.id !== subjectToDelete.id);
+    setSubjects(updatedSubjects);
+    localStorage.setItem("subjects", JSON.stringify(updatedSubjects));
+
     setShowDeleteConfirm(false);
     setSubjectToDelete(null);
     setTimeout(() => alert("Subject deleted successfully!"), 100);
@@ -155,22 +169,36 @@ function SubjectManagement() {
     document.body.removeChild(link);
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading subject management...</p>
+          <div className="flex gap-1.5 justify-center mb-4">
+            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
+          </div>
+          <p className="text-gray-500">Loading subject management...</p>
         </div>
-      </div>;
+      </div>
+    );
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
+      </div>
+
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
+      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
+        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Subject Management</h2>
+              <div>
+                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
+                <h2 className="text-lg font-bold text-white">Subject Management</h2>
+              </div>
               <NotificationDropdown
     notifications={notificationList}
     onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
@@ -181,13 +209,19 @@ function SubjectManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
-            <div className="flex items-center justify-between">
+          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+            <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
+              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-blue-600" />
+              <div className="flex-1 bg-red-600" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="relative pl-4 flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2">Subject Management</h1>
-                <p className="text-emerald-50">{subjects.length} subjects available</p>
+                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Subject Management</h1>
+                <p className="text-gray-400">{subjects.length} subjects available</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-white text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors font-medium">
+              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20">
                 <Plus className="w-5 h-5" />
                 Add Subject
               </button>
@@ -195,64 +229,69 @@ function SubjectManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-600 text-sm mb-1">Total Subjects</p>
-              <p className="text-3xl font-bold text-gray-900">{subjects.length}</p>
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+              <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
+              <p className="text-3xl font-bold text-white">{subjects.length}</p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-600 text-sm mb-1">Total Credits</p>
-              <p className="text-3xl font-bold text-emerald-600">{subjects.reduce((sum, s) => sum + s.credits, 0)}</p>
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+              <p className="text-gray-500 text-sm mb-1">Total Credits</p>
+              <p className="text-3xl font-bold text-emerald-400">{subjects.reduce((sum, s) => sum + s.credits, 0)}</p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-600 text-sm mb-1">Total Enrolled</p>
-              <p className="text-3xl font-bold text-blue-600">{subjects.reduce((sum, s) => sum + s.enrolled, 0)}</p>
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+              <p className="text-gray-500 text-sm mb-1">Total Enrolled</p>
+              <p className="text-3xl font-bold text-blue-400">{subjects.reduce((sum, s) => sum + s.enrolled, 0)}</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type="text" placeholder="Search by name, code, or teacher..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent" />
+                <input type="text" placeholder="Search by name, code, or teacher..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50" />
               </div>
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-colors border border-white/10">
                 <Download className="w-4 h-4" />
-                Export
+                Export CSV
               </button>
             </div>
           </div>
 
-          {filteredSubjects.length === 0 ? <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No subjects found. Add your first subject!</p>
+          {filteredSubjects.length === 0 ? <div className="bg-gray-900/80 rounded-xl border border-white/10 p-16 text-center">
+              <BookOpen className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-400">No subjects found.</p>
             </div> : <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {filteredSubjects.map((subject) => <div key={subject.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-4 border-b border-gray-200">
+              {filteredSubjects.map((subject) => <div key={subject.id} className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 p-4 border-b border-white/5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-sm text-emerald-600 font-medium">{subject.code}</p>
-                        <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
+                        <p className="text-sm text-emerald-400 font-medium">{subject.code}</p>
+                        <h3 className="text-lg font-bold text-white mt-1">{subject.name}</h3>
                       </div>
-                      <div className="px-3 py-1 bg-white rounded-full">
-                        <p className="text-sm font-medium text-gray-900">{subject.credits} Credits</p>
+                      <div className="px-3 py-1 bg-black/40 border border-white/10 rounded-full">
+                        <p className="text-sm font-medium text-gray-300">{subject.credits} Credits</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
-                    <p className="text-gray-600 text-sm">{subject.description}</p>
+                    <p className="text-gray-400 text-sm">{subject.description}</p>
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span className="text-gray-700">{subject.teacher}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-gray-400" /><span className="text-gray-700">{subject.schedule}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-emerald-500/70" /><span className="text-gray-300">{subject.teacher}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-emerald-500/70" /><span className="text-gray-300">{subject.schedule}</span></div>
                     </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                    <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5">
                       <div>
-                        <p className="text-xs text-gray-500">Enrollment</p>
-                        <p className="text-sm font-medium text-gray-900">{subject.enrolled}/{subject.capacity} students</p>
+                        <p className="text-xs text-gray-500 mb-1">Enrollment</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-emerald-400">{subject.enrolled}/{subject.capacity}</p>
+                          <div className="w-16 h-1.5 bg-black/40 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500" style={{ width: `${(subject.enrolled / subject.capacity) * 100}%` }} />
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-blue-50 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-blue-600" /></button>
-                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-emerald-600" /></button>
-                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4 text-red-600" /></button>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-400" /></button>
+                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-emerald-400" /></button>
+                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4 text-red-500" /></button>
                       </div>
                     </div>
                   </div>
@@ -265,7 +304,7 @@ function SubjectManagement() {
     /* Add Subject Modal */
   }
       {showAddModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Add New Subject</h3>
               <button onClick={handleCloseModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
@@ -322,7 +361,7 @@ function SubjectManagement() {
     /* Edit Subject Modal */
   }
       {showEditModal && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Edit Subject</h3>
               <button onClick={handleCloseEditModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
@@ -379,7 +418,7 @@ function SubjectManagement() {
     /* View Subject Modal */
   }
       {showViewModal && selectedSubject && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <h3 className="text-xl font-semibold text-gray-900">Subject Details</h3>
               <button onClick={() => setShowViewModal(false)} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>

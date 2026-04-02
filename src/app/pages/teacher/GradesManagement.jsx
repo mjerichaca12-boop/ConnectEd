@@ -17,7 +17,7 @@ import {
 function GradesManagement() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState(teacherNotifications);
+  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -75,25 +75,25 @@ function GradesManagement() {
   const lowestGrade = studentGrades.length > 0 ? Math.min(...studentGrades.map((s) => s.overallGrade)) : 0;
   const passingRate = studentGrades.length > 0 ? Math.round(studentGrades.filter((s) => s.overallGrade >= 75).length / studentGrades.length * 100) : 0;
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return <div className="min-h-screen flex items-center justify-center bg-black/20">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading grades...</p>
+          <p className="text-gray-400">Loading grades...</p>
         </div>
       </div>;
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
+        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-gray-900">Grades Management</h2>
+                <h2 className="text-xl font-semibold text-white">Grades Management</h2>
                 {hasUnsavedChanges && <span className="text-sm text-red-600 font-medium">Unsaved changes</span>}
               </div>
               <NotificationDropdown
@@ -121,31 +121,31 @@ function GradesManagement() {
     /* Grade Distribution Summary */
   }
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="w-5 h-5 text-emerald-600" />
-                <p className="text-gray-600 text-sm">Class Average</p>
+                <p className="text-gray-400 text-sm">Class Average</p>
               </div>
               <p className="text-3xl font-bold text-emerald-600">{classAverage}%</p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <Award className="w-5 h-5 text-blue-600" />
-                <p className="text-gray-600 text-sm">Highest Grade</p>
+                <p className="text-gray-400 text-sm">Highest Grade</p>
               </div>
               <p className="text-3xl font-bold text-blue-600">{highestGrade}%</p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingDown className="w-5 h-5 text-red-600" />
-                <p className="text-gray-600 text-sm">Lowest Grade</p>
+                <p className="text-gray-400 text-sm">Lowest Grade</p>
               </div>
               <p className="text-3xl font-bold text-red-600">{lowestGrade}%</p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <Target className="w-5 h-5 text-emerald-600" />
-                <p className="text-gray-600 text-sm">Passing Rate</p>
+                <p className="text-gray-400 text-sm">Passing Rate</p>
               </div>
               <p className="text-3xl font-bold text-emerald-600">{passingRate}%</p>
             </div>
@@ -162,19 +162,19 @@ function GradesManagement() {
           {
     /* Filters */
   }
-          <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
+          <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   <Filter className="w-4 h-4 inline mr-2" />
                   Select Class
                 </label>
-                {classes.length === 0 ? <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm">
+                {classes.length === 0 ? <div className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/10 rounded-lg bg-black/20 text-gray-400 text-sm">
                     No classes available
                   </div> : <select
     value={selectedClass}
     onChange={(e) => setSelectedClass(e.target.value)}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   >
                     <option value="">Select a class</option>
                     {classes.map((classItem) => <option key={classItem.id} value={classItem.id}>
@@ -183,7 +183,7 @@ function GradesManagement() {
                   </select>}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   <Search className="w-4 h-4 inline mr-2" />
                   Search Student
                 </label>
@@ -192,7 +192,7 @@ function GradesManagement() {
     placeholder="Search by name or ID..."
     value={searchQuery}
     onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
   />
               </div>
             </div>
@@ -201,13 +201,13 @@ function GradesManagement() {
           {
     /* Grades Table */
   }
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-white">
                   {selectedClassName || "Select a class to view grades"}
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">{filteredGrades.length} students</p>
+                <p className="text-sm text-gray-400 mt-1">{filteredGrades.length} students</p>
               </div>
               <button
     onClick={handleSave}
@@ -226,7 +226,7 @@ function GradesManagement() {
                 </p>
               </div> : <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-black/20">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Midterm</th>
@@ -237,23 +237,23 @@ function GradesManagement() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredGrades.map((student) => <tr key={student.id} className="hover:bg-gray-50">
+                  <tbody className="bg-gray-900/60 divide-y divide-white/10">
+                    {filteredGrades.map((student) => <tr key={student.id} className="hover:bg-black/20">
                         <td className="px-6 py-4">
-                          <p className="font-medium text-gray-900">{student.studentName}</p>
+                          <p className="font-medium text-white">{student.studentName}</p>
                           <p className="text-xs text-gray-500">{student.studentId}</p>
                         </td>
                         <td className="px-6 py-4">
-                          <input type="number" min="0" max="100" value={student.midtermGrade} onChange={(e) => handleGradeChange(student.id, "midtermGrade", Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                          <input type="number" min="0" max="100" value={student.midtermGrade} onChange={(e) => handleGradeChange(student.id, "midtermGrade", Number(e.target.value))} className="w-20 px-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </td>
                         <td className="px-6 py-4">
-                          <input type="number" min="0" max="100" value={student.finalGrade} onChange={(e) => handleGradeChange(student.id, "finalGrade", Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                          <input type="number" min="0" max="100" value={student.finalGrade} onChange={(e) => handleGradeChange(student.id, "finalGrade", Number(e.target.value))} className="w-20 px-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </td>
                         <td className="px-6 py-4">
-                          <input type="number" min="0" max="100" value={student.quizAverage} onChange={(e) => handleGradeChange(student.id, "quizAverage", Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                          <input type="number" min="0" max="100" value={student.quizAverage} onChange={(e) => handleGradeChange(student.id, "quizAverage", Number(e.target.value))} className="w-20 px-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </td>
                         <td className="px-6 py-4">
-                          <input type="number" min="0" max="100" value={student.projectGrade} onChange={(e) => handleGradeChange(student.id, "projectGrade", Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                          <input type="number" min="0" max="100" value={student.projectGrade} onChange={(e) => handleGradeChange(student.id, "projectGrade", Number(e.target.value))} className="w-20 px-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                         </td>
                         <td className="px-6 py-4">
                           <span className="px-3 py-1 rounded-full text-sm font-bold bg-emerald-50 text-emerald-600">{student.overallGrade}%</span>

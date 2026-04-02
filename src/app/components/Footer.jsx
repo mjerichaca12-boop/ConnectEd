@@ -1,38 +1,39 @@
 import { useNavigate } from "react-router-dom";
+
 function Footer() {
   const navigate = useNavigate();
-  return <footer className="w-full max-w-full bg-gray-900 py-12 px-4 sm:px-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-center md:text-left">
-            <h3 className="text-2xl font-bold text-white mb-2">ConnectEd</h3>
-            <p className="text-gray-400">Connecting Education, One Portal at a Time</p>
-          </div>
 
-          <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-400">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-white transition-colors">Contact Us</a>
-            <a href="#" className="hover:text-white transition-colors">Support</a>
-            {
-    /* Secret Admin Link */
-  }
-            <button
-    onClick={() => navigate("/admin")}
-    className="hover:text-white transition-colors opacity-50 hover:opacity-100"
-    title="System"
-  >
-              System
-            </button>
-          </div>
+  const links = [
+    { label: "Privacy Policy", href: "#" },
+    { label: "Terms of Service", href: "#" },
+    { label: "Contact Us", href: "#" },
+    { label: "Support", href: "#" },
+  ];
+
+  return (
+    <footer className="w-full bg-gray-950 border-t border-white/8 py-10 px-6">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        {/* Brand */}
+        <div>
+          <p className="text-white font-extrabold text-xl tracking-tight">
+            Connect<span className="text-emerald-400">Ed</span>
+          </p>
+          <p className="text-gray-500 text-sm mt-0.5">Connecting Education, One Portal at a Time</p>
         </div>
 
-        <div className="mt-8 pt-8 border-t border-gray-800 text-center text-gray-500 text-sm">
-          © {(/* @__PURE__ */ new Date()).getFullYear()} ConnectEd. All rights reserved.
+        {/* Links */}
+        <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-500">
+          {links.map((l) => (
+            <a key={l.label} href={l.href} className="hover:text-white transition-colors">{l.label}</a>
+          ))}
+          <button onClick={() => navigate("/admin")} className="hover:text-white transition-colors opacity-40 hover:opacity-70 text-sm">System</button>
         </div>
+
+        {/* Copyright */}
+        <p className="text-gray-600 text-sm">© {new Date().getFullYear()} ConnectEd. All rights reserved.</p>
       </div>
-    </footer>;
+    </footer>
+  );
 }
-export {
-  Footer
-};
+
+export { Footer };

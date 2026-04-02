@@ -5,7 +5,7 @@ import { Bell, User, Mail, Phone, Edit, Save, X } from "lucide-react";
 function TeacherProfile() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
-  const [notifications, setNotifications] = useState(5);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [profile, setProfile] = useState({
@@ -40,28 +40,26 @@ function TeacherProfile() {
     setIsEditing(false);
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return <div className="min-h-screen flex items-center justify-center bg-black/20">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading profile...</p>
+          <p className="text-gray-400">Loading profile...</p>
         </div>
       </div>;
   }
-  return <div className="min-h-screen bg-gray-50 flex">
+  return <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
-        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
+        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Profile</h2>
+                <h2 className="text-xl font-semibold text-white">Profile</h2>
               </div>
-              <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-600" />
-                {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {notifications}
-                  </span>}
+              <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
+                <Bell className="w-6 h-6 text-gray-400" />
+                
               </button>
             </div>
           </div>
@@ -81,14 +79,14 @@ function TeacherProfile() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Personal Information</h3>
               {!isEditing ? <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-4 py-2 text-emerald-600 hover:bg-emerald-50 rounded-lg">
                   <Edit className="w-4 h-4" />
                   Edit
                 </button> : <div className="flex gap-2">
-                  <button onClick={() => setIsEditing(false)} className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                  <button onClick={() => setIsEditing(false)} className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:bg-white/5 rounded-lg">
                     <X className="w-4 h-4" />
                     Cancel
                   </button>
@@ -101,32 +99,32 @@ function TeacherProfile() {
 
             <div className="p-6 space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Teacher ID</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Teacher ID</label>
+                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
                   <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-gray-900">{profile.teacherId}</span>
+                  <span className="text-white">{profile.teacherId}</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
+                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
                   <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-gray-900">{profile.fullName}</span>
+                  <span className="text-white">{profile.fullName}</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
                   <Mail className="w-5 h-5 text-gray-400" />
-                  <span className="text-gray-900">{profile.email}</span>
+                  <span className="text-white">{profile.email}</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
-                {isEditing ? <div className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg">
+                <label className="block text-sm font-medium text-gray-300 mb-2">Contact Number</label>
+                {isEditing ? <div className="flex items-center gap-3 px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg">
                     <Phone className="w-5 h-5 text-gray-400" />
                     <input
     type="tel"
@@ -134,9 +132,9 @@ function TeacherProfile() {
     onChange={(e) => setEditedProfile({ ...editedProfile, contactNumber: e.target.value })}
     className="flex-1 outline-none"
   />
-                  </div> : <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200">
+                  </div> : <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
                     <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-900">{profile.contactNumber}</span>
+                    <span className="text-white">{profile.contactNumber}</span>
                   </div>}
               </div>
             </div>

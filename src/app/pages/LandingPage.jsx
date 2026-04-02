@@ -6,20 +6,21 @@ import { CoreModules } from "@/app/components/CoreModules";
 import { UserRoles } from "@/app/components/UserRoles";
 import { FinalCTA } from "@/app/components/FinalCTA";
 import { Footer } from "@/app/components/Footer";
+
 function LandingPage() {
-  return <div className="min-h-screen bg-gray-50">
+  return (
+    <div className="min-h-screen bg-gray-950">
       <Navigation />
       <div className="w-screen max-w-full overflow-x-hidden">
         <HeroSection />
-        <AboutSection />
-        <HowItWorks />
         <CoreModules />
         <UserRoles />
+        <AboutSection />
         <FinalCTA />
         <Footer />
       </div>
-    </div>;
+    </div>
+  );
 }
-export {
-  LandingPage
-};
+
+export { LandingPage };

@@ -19,7 +19,7 @@ import {
 function Profile() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
-  const [notifications, setNotifications] = useState(3);
+  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -155,7 +155,7 @@ function Profile() {
   return <div className="min-h-screen bg-gray-50 flex">
       <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 overflow-y-auto scrollbar-hide">
         {
     /* Top Bar */
   }
@@ -168,9 +168,7 @@ function Profile() {
               <div className="flex items-center gap-4">
                 <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
                   <Bell className="w-6 h-6 text-gray-600" />
-                  {notifications > 0 && <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {notifications}
-                    </span>}
+                  
                 </button>
               </div>
             </div>

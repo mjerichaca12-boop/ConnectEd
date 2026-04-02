@@ -33,25 +33,25 @@ import { TeacherManagement } from "./pages/admin/TeacherManagement";
 import { SubjectManagement } from "./pages/admin/SubjectManagement";
 import { EnrollmentManagement } from "./pages/admin/EnrollmentManagement";
 import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
+import { AdminCalendar } from "./pages/admin/AdminCalendar";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
-function App() {
-  return <Router>
+
+export default function App() {
+  return (
+    <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/landing" element={<LandingPage />} />
         <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
 
-        {
-    /* Admin Login - Separate from regular login */
-  }
+        {/* Admin Login - Separate from regular login */}
         <Route path="/admin" element={<AdminLogin />} />
 
-        {
-    /* Student Routes */
-  }
+        {/* Student Routes */}
         <Route path="/dashboard" element={<StudentDashboard />} />
         <Route path="/subjects" element={<Subjects />} />
         <Route path="/subject/:id" element={<SubjectDetail />} />
@@ -65,9 +65,7 @@ function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/video-conference" element={<VideoConferencing />} />
 
-        {
-    /* Teacher Routes */
-  }
+        {/* Teacher Routes */}
         <Route path="/teacher/dashboard" element={<TeacherDashboard />} />
         <Route path="/teacher/classes" element={<Classes />} />
         <Route path="/teacher/class/:id" element={<ClassDetail />} />
@@ -79,20 +77,17 @@ function App() {
         <Route path="/teacher/profile" element={<TeacherProfile />} />
         <Route path="/teacher/video-conference" element={<TeacherVideoConferencing />} />
 
-        {
-    /* Admin Routes */
-  }
+        {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/admin/students" element={<StudentManagement />} />
         <Route path="/admin/teachers" element={<TeacherManagement />} />
         <Route path="/admin/subjects" element={<SubjectManagement />} />
         <Route path="/admin/enrollment" element={<EnrollmentManagement />} />
         <Route path="/admin/announcements" element={<AdminAnnouncements />} />
+        <Route path="/admin/calendar" element={<AdminCalendar />} />
         <Route path="/admin/reports" element={<Reports />} />
         <Route path="/admin/settings" element={<SystemSettings />} />
       </Routes>
-    </Router>;
+    </Router>
+  );
 }
-export {
-  App as default
-};

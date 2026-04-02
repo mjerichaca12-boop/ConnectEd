@@ -37,7 +37,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", l
       </button>
 
       {isOpen && <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-xl overflow-hidden animate-slideDown">
-          <div className="max-h-60 overflow-y-auto custom-scrollbar">
+          <div className="max-h-60 overflow-y-auto scrollbar-hide">
             {options.map((option) => <button
     key={option.value}
     type="button"
