@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { supabase } from "@/app/lib/supabaseClient";
 import {
   ArrowLeft,
   Users,
@@ -51,8 +52,13 @@ export function ClassDetail() {
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [showStudentModal, setShowStudentModal] = useState(false);
 
-  // Student form
-  const [stuForm, setStuForm] = useState({ studentId: "", name: "", email: "", phone: "", status: "Active" });
+  // Student assignment state
+  const [teacherProfileId, setTeacherProfileId] = useState("");
+  const [assignedStudents, setAssignedStudents] = useState([]);
+  const [availableStudents, setAvailableStudents] = useState([]);
+  const [studentPickerQuery, setStudentPickerQuery] = useState("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [isStudentSubmitting, setIsStudentSubmitting] = useState(false);
   const [stuError, setStuError] = useState("");
 
   // Material form
@@ -73,33 +79,209 @@ export function ClassDetail() {
   // Announcement form
   const [annForm, setAnnForm] = useState({ title: "", content: "", priority: "Medium" });
 
-  useEffect(() => {
-    const userData = localStorage.getItem("currentUser");
-    if (!userData) { navigate("/login"); return; }
-    const user = JSON.parse(userData);
-    if (user.role !== "teacher") { navigate("/login"); return; }
-    setTeacherName(user.name);
+  const getStudentFullName = (student) => {
+    const fullName = [student?.first_name, student?.middle_name, student?.last_name]
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(" ")
+      .trim();
 
-    // Load the specific class
-    const saved = localStorage.getItem("teacher_classes");
-    if (saved) {
-      const all = JSON.parse(saved);
-      const found = all.find((c) => c.id === id);
-      setClassData(found || null);
+    if (fullName) return fullName;
+    return String(student?.email || "").split("@")[0] || "Student";
+  };
+
+  const syncStudentsIntoClassData = (students) => {
+    setAssignedStudents(students);
+    setClassData((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        students,
+        studentCount: students.length
+      };
+    });
+  };
+
+  const loadAssignedStudents = async (teacherId, subjectId) => {
+    if (!supabase || !teacherId || !subjectId) {
+      syncStudentsIntoClassData([]);
+      return;
     }
 
-    // Load per-class data
-    const allMaterials = JSON.parse(localStorage.getItem("class_materials") || "[]");
-    setMaterials(allMaterials.filter((m) => m.classId === id));
+    const { data: assignmentRows, error: assignmentError } = await supabase
+      .from("teacher_student_assignments")
+      .select("id, student_id, status, assigned_at")
+      .eq("teacher_id", teacherId)
+      .eq("subject_id", subjectId)
+      .order("assigned_at", { ascending: false });
 
-    const allAssignments = JSON.parse(localStorage.getItem("class_assignments") || "[]");
-    setAssignments(allAssignments.filter((a) => a.classId === id));
+    if (assignmentError) {
+      console.error("Failed to load assigned students:", assignmentError);
+      syncStudentsIntoClassData([]);
+      return;
+    }
 
-    const allAnnouncements = JSON.parse(localStorage.getItem("class_announcements") || "[]");
-    setAnnouncements(allAnnouncements.filter((a) => a.classId === id));
+    const studentIds = [...new Set((assignmentRows ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
 
-    setTimeout(() => setLoading(false), 500);
+    if (studentIds.length === 0) {
+      syncStudentsIntoClassData([]);
+      return;
+    }
+
+    const { data: studentRows, error: studentError } = await supabase
+      .from("profiles")
+      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
+      .eq("role", "student")
+      .in("id", studentIds);
+
+    if (studentError) {
+      console.error("Failed to load student records:", studentError);
+      syncStudentsIntoClassData([]);
+      return;
+    }
+
+    const studentById = new Map((studentRows ?? []).map((student) => [String(student.id), student]));
+    const mapped = (assignmentRows ?? []).map((row) => {
+      const student = studentById.get(String(row.student_id || ""));
+      return {
+        assignmentId: row.id,
+        id: String(student?.id || row.student_id || ""),
+        studentId: String(student?.lrn || "N/A"),
+        name: getStudentFullName(student),
+        yearLevel: String(student?.year_level || ""),
+        email: String(student?.email || ""),
+        phone: String(student?.phone || ""),
+        status: String(row.status || student?.status || "Active")
+      };
+    });
+
+    syncStudentsIntoClassData(mapped);
+  };
+
+  const loadAvailableStudents = async () => {
+    if (!supabase) {
+      setAvailableStudents([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
+      .eq("role", "student")
+      .order("first_name", { ascending: true });
+
+    if (error) {
+      console.error("Failed to load students:", error);
+      setAvailableStudents([]);
+      return;
+    }
+
+    setAvailableStudents(data ?? []);
+  };
+
+  const resolveTeacherProfileId = async (email) => {
+    if (!supabase || !email) return "";
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .eq("role", "teacher")
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Failed to resolve teacher profile:", error);
+      return "";
+    }
+
+    return String(data?.id || "");
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const initialize = async () => {
+      const userData = localStorage.getItem("currentUser");
+      if (!userData) { navigate("/login"); return; }
+      const user = JSON.parse(userData);
+      if (user.role !== "teacher") { navigate("/login"); return; }
+      setTeacherName(user.name);
+
+      const saved = localStorage.getItem("teacher_classes");
+      if (saved) {
+        const all = JSON.parse(saved);
+        const found = all.find((c) => c.id === id);
+        if (isMounted) {
+          setClassData(found || null);
+        }
+      }
+
+      const allMaterials = JSON.parse(localStorage.getItem("class_materials") || "[]");
+      if (isMounted) {
+        setMaterials(allMaterials.filter((m) => m.classId === id));
+      }
+
+      const allAssignments = JSON.parse(localStorage.getItem("class_assignments") || "[]");
+      if (isMounted) {
+        setAssignments(allAssignments.filter((a) => a.classId === id));
+      }
+
+      const allAnnouncements = JSON.parse(localStorage.getItem("class_announcements") || "[]");
+      if (isMounted) {
+        setAnnouncements(allAnnouncements.filter((a) => a.classId === id));
+      }
+
+      const resolvedTeacherId = await resolveTeacherProfileId(user.email);
+      if (isMounted) {
+        setTeacherProfileId(resolvedTeacherId);
+      }
+
+      await Promise.all([
+        loadAvailableStudents(),
+        loadAssignedStudents(resolvedTeacherId, id)
+      ]);
+
+      if (isMounted) {
+        setLoading(false);
+      }
+    };
+
+    initialize();
+
+    return () => {
+      isMounted = false;
+    };
   }, [navigate, id]);
+
+  useEffect(() => {
+    if (!supabase || !teacherProfileId || !id) return;
+
+    const channel = supabase
+      .channel(`teacher-class-students-${teacherProfileId}-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "teacher_student_assignments",
+          filter: `teacher_id=eq.${teacherProfileId}`
+        },
+        (payload) => {
+          const newSubjectId = String(payload?.new?.subject_id || "");
+          const oldSubjectId = String(payload?.old?.subject_id || "");
+          if (newSubjectId === String(id) || oldSubjectId === String(id)) {
+            loadAssignedStudents(teacherProfileId, id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherProfileId, id]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -120,31 +302,108 @@ export function ClassDetail() {
     setter((prev) => prev.filter((item) => item.id !== itemId));
   };
 
-  // Add Student
-  const handleAddStudent = () => {
-    if (!stuForm.name.trim()) { setStuError("Student name is required."); return; }
-    if (!stuForm.studentId.trim()) { setStuError("Student ID is required."); return; }
-    const duplicate = classData.students?.find(s => s.studentId.toLowerCase() === stuForm.studentId.trim().toLowerCase());
-    if (duplicate) { setStuError("A student with this ID already exists in this class."); return; }
-    const newStudent = {
-      id: Date.now().toString(),
-      ...stuForm,
-      name: stuForm.name.trim(),
-      studentId: stuForm.studentId.trim(),
-      email: stuForm.email.trim(),
-      phone: stuForm.phone.trim(),
-      currentGrade: null,
-      attendance: null,
-      enrolledAt: new Date().toISOString(),
-    };
-    const updatedStudents = [...(classData.students || []), newStudent];
-    const updatedClass = { ...classData, students: updatedStudents, studentCount: updatedStudents.length };
-    setClassData(updatedClass);
-    const allClasses = JSON.parse(localStorage.getItem("teacher_classes") || "[]");
-    localStorage.setItem("teacher_classes", JSON.stringify(allClasses.map(c => c.id === id ? updatedClass : c)));
-    setStuForm({ studentId: "", name: "", email: "", phone: "", status: "Active" });
+  const handleOpenStudentModal = () => {
+    setSelectedStudentIds([]);
+    setStudentPickerQuery("");
     setStuError("");
-    setShowStudentModal(false);
+    setShowStudentModal(true);
+  };
+
+  const toggleStudentSelection = (studentId) => {
+    setSelectedStudentIds((current) => {
+      if (current.includes(studentId)) {
+        return current.filter((idValue) => idValue !== studentId);
+      }
+
+      return [...current, studentId];
+    });
+  };
+
+  const handleAddStudent = async () => {
+    if (!supabase) {
+      setStuError("Supabase client is not configured.");
+      return;
+    }
+
+    if (!teacherProfileId) {
+      setStuError("Teacher profile could not be resolved.");
+      return;
+    }
+
+    if (selectedStudentIds.length === 0) {
+      setStuError("Please select at least one valid student.");
+      return;
+    }
+
+    const alreadyAssigned = selectedStudentIds.some((studentId) => assignedStudents.some((student) => String(student.id) === String(studentId)));
+    if (alreadyAssigned) {
+      setStuError("This student is already assigned to this class.");
+      return;
+    }
+
+    const selectedStudents = selectedStudentIds
+      .map((studentId) => availableStudents.find((student) => String(student.id) === String(studentId)))
+      .filter(Boolean);
+
+    if (selectedStudents.length !== selectedStudentIds.length) {
+      setStuError("One or more selected students are invalid.");
+      return;
+    }
+
+    setIsStudentSubmitting(true);
+    setStuError("");
+
+    try {
+      const payload = selectedStudents.map((student) => ({
+        teacher_id: teacherProfileId,
+        student_id: student.id,
+        subject_id: id,
+        section: String(classData?.section || "").trim() || null,
+        status: "Active"
+      }));
+
+      const { error } = await supabase
+        .from("teacher_student_assignments")
+        .insert(payload);
+
+      if (error) {
+        if (error.code === "23505") {
+          setStuError("One or more selected students are already assigned to this class.");
+          return;
+        }
+
+        throw error;
+      }
+
+      await loadAssignedStudents(teacherProfileId, id);
+      setSelectedStudentIds([]);
+      setShowStudentModal(false);
+    } catch (error) {
+      setStuError(error instanceof Error ? error.message : "Unable to add student.");
+    } finally {
+      setIsStudentSubmitting(false);
+    }
+  };
+
+  const handleRemoveStudent = async (assignmentId) => {
+    if (!supabase || !assignmentId) return;
+
+    try {
+      const { error } = await supabase
+        .from("teacher_student_assignments")
+        .delete()
+        .eq("id", assignmentId)
+        .eq("teacher_id", teacherProfileId)
+        .eq("subject_id", id);
+
+      if (error) {
+        throw error;
+      }
+
+      await loadAssignedStudents(teacherProfileId, id);
+    } catch (error) {
+      setStuError(error instanceof Error ? error.message : "Unable to remove student.");
+    }
   };
 
   // Upload Material
@@ -214,11 +473,22 @@ export function ClassDetail() {
     setShowAnnouncementModal(false);
   };
 
-  const filteredStudents = (classData?.students || []).filter(
+  const filteredStudents = assignedStudents.filter(
     (s) =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.studentId?.toLowerCase().includes(searchQuery.toLowerCase())
+      s.studentId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.yearLevel || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const filteredAvailableStudents = availableStudents
+    .filter((student) => !assignedStudents.some((assigned) => String(assigned.id) === String(student.id)))
+    .filter((student) => {
+      const name = getStudentFullName(student).toLowerCase();
+      const lrn = String(student.lrn || "").toLowerCase();
+      const yearLevel = String(student.year_level || "").toLowerCase();
+      const query = studentPickerQuery.toLowerCase();
+      return name.includes(query) || lrn.includes(query) || yearLevel.includes(query);
+    });
 
   const getDaysUntilDue = (dueDate) => {
     const diff = Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24));
@@ -326,7 +596,7 @@ export function ClassDetail() {
                   <Users className="w-4 h-4 text-emerald-100" />
                   <p className="text-emerald-100 text-xs">Students</p>
                 </div>
-                <p className="text-2xl font-bold">{classData.students?.length ?? 0}</p>
+                <p className="text-2xl font-bold">{assignedStudents.length}</p>
               </div>
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-1">
@@ -395,7 +665,7 @@ export function ClassDetail() {
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
                     <div>
                       <h3 className="text-lg font-semibold text-white">Student List</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">{classData.students?.length ?? 0} students enrolled</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{assignedStudents.length} students enrolled</p>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
                       <div className="relative flex-1 md:w-64">
@@ -409,7 +679,7 @@ export function ClassDetail() {
                         />
                       </div>
                       <button
-                        onClick={() => { setStuForm({ studentId: "", name: "", email: "", phone: "", status: "Active" }); setStuError(""); setShowStudentModal(true); }}
+                        onClick={handleOpenStudentModal}
                         className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm whitespace-nowrap"
                       >
                         <Plus className="w-4 h-4" />
@@ -425,7 +695,7 @@ export function ClassDetail() {
                       <h4 className="font-semibold text-gray-300 mb-1">No students enrolled yet</h4>
                       <p className="text-gray-500 text-sm mb-4">Add students to this class so they can access materials and assignments.</p>
                       <button
-                        onClick={() => { setStuForm({ studentId: "", name: "", email: "", phone: "", status: "Active" }); setStuError(""); setShowStudentModal(true); }}
+                        onClick={handleOpenStudentModal}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
                       >
                         <Plus className="w-4 h-4" />
@@ -465,13 +735,7 @@ export function ClassDetail() {
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <button
-                                  onClick={() => {
-                                    const updatedStudents = classData.students.filter(s => s.id !== student.id);
-                                    const updatedClass = { ...classData, students: updatedStudents, studentCount: updatedStudents.length };
-                                    setClassData(updatedClass);
-                                    const allClasses = JSON.parse(localStorage.getItem("teacher_classes") || "[]");
-                                    localStorage.setItem("teacher_classes", JSON.stringify(allClasses.map(c => c.id === id ? updatedClass : c)));
-                                  }}
+                                  onClick={() => handleRemoveStudent(student.assignmentId)}
                                   className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -928,7 +1192,7 @@ export function ClassDetail() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ADD STUDENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-lg w-full shadow-2xl">
+          <div className="bg-gray-900/60 rounded-2xl max-w-3xl w-full shadow-2xl">
             <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-100 rounded-lg">
@@ -949,68 +1213,64 @@ export function ClassDetail() {
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{stuError}</div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Student ID <span className="text-red-500">*</span></label>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">Search Students</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="e.g. STU-2024-001"
-                    value={stuForm.studentId}
-                    onChange={(e) => setStuForm({ ...stuForm, studentId: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    placeholder="Search by Name, ID, or Year Level"
+                    value={studentPickerQuery}
+                    onChange={(e) => setStudentPickerQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Status</label>
-                  <select
-                    value={stuForm.status}
-                    onChange={(e) => setStuForm({ ...stuForm, status: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Dropped">Dropped</option>
-                  </select>
-                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Full Name <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Juan Dela Cruz"
-                  value={stuForm.name}
-                  onChange={(e) => setStuForm({ ...stuForm, name: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Email Address</label>
-                <input
-                  type="email"
-                  placeholder="e.g. juan@school.edu.ph"
-                  value={stuForm.email}
-                  onChange={(e) => setStuForm({ ...stuForm, email: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Phone Number</label>
-                <input
-                  type="tel"
-                  placeholder="e.g. +63 917 123 4567"
-                  value={stuForm.phone}
-                  onChange={(e) => setStuForm({ ...stuForm, phone: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                />
+              <div className="border border-white/10 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                <table className="w-full">
+                  <thead className="bg-black/20 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {filteredAvailableStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No available students found.</td>
+                      </tr>
+                    ) : (
+                      filteredAvailableStudents.map((student) => (
+                        <tr
+                          key={student.id}
+                          className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-emerald-500/10" : "hover:bg-white/5"}`}
+                          onClick={() => toggleStudentSelection(student.id)}
+                        >
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedStudentIds.includes(student.id)}
+                              onChange={() => toggleStudentSelection(student.id)}
+                              className="accent-emerald-500"
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-white">{getStudentFullName(student)}</td>
+                          <td className="px-4 py-3 text-sm text-emerald-400">{student.lrn || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-400">{student.year_level || "N/A"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             <div className="border-t border-white/10 px-6 py-4 flex gap-3">
               <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 text-sm font-medium">Cancel</button>
-              <button onClick={handleAddStudent} className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 text-sm font-semibold">Add Student</button>
+              <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">{isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}</button>
             </div>
           </div>
         </div>

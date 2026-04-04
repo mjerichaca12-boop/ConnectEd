@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Lock, User } from "lucide-react";
+import { supabase } from "../lib/supabaseClient";
+import {
+  STATIC_ADMIN_EMAIL,
+  getStaticAdminSessionUser,
+  normalizeEmail,
+  validateStaticAdminCredentials
+} from "../lib/staticAdminAuth";
 
 /* DepEd brand colors: Green (DasmariÃ±as) + Blue + Red */
 const GoogleLogo = () => (
@@ -17,23 +24,335 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [googleEmail, setGoogleEmail] = useState("");
   const [googleError, setGoogleError] = useState("");
+  const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
+
+  const resolveTeacherRecordByEmail = async (email) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const profileLookup = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("email", normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (!profileLookup.error && profileLookup.data) {
+      const profileRole = String(profileLookup.data.role || "").trim().toLowerCase();
+      if (profileRole === "teacher") {
+        return profileLookup.data;
+      }
+    }
+
+    const teacherLookup = await supabase
+      .from("teachers")
+      .select("*")
+      .ilike("email", normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (!teacherLookup.error && teacherLookup.data) {
+      const teacherRole = String(teacherLookup.data.role || "").trim().toLowerCase();
+      if (!teacherRole || teacherRole === "teacher") {
+        return teacherLookup.data;
+      }
+    }
+
+    return null;
+  };
+
+  const findProfileByEmail = async (email) => {
+    if (!supabase) return null;
+
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("email", normalizedEmail)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return null;
+    }
+
+    return data || null;
+  };
+
+  const getGoogleUserDisplayName = (sessionUser, email) => {
+    const metadata = sessionUser?.user_metadata || {};
+    const fullName = String(metadata.full_name || metadata.name || "").trim();
+    if (fullName) return fullName;
+
+    const givenName = String(metadata.given_name || "").trim();
+    const familyName = String(metadata.family_name || "").trim();
+    const combinedName = [givenName, familyName].filter(Boolean).join(" ").trim();
+    if (combinedName) return combinedName;
+
+    return String(email || "").split("@")[0] || "Teacher";
+  };
+
+  const splitFullName = (fullName, email) => {
+    const normalized = String(fullName || "").trim().replace(/\s+/g, " ");
+    const parts = normalized ? normalized.split(" ") : [];
+
+    if (parts.length === 0) {
+      return {
+        firstName: String(email || "").split("@")[0] || "Teacher",
+        middleName: null,
+        lastName: null
+      };
+    }
+
+    if (parts.length === 1) {
+      return {
+        firstName: parts[0],
+        middleName: null,
+        lastName: null
+      };
+    }
+
+    if (parts.length === 2) {
+      return {
+        firstName: parts[0],
+        middleName: null,
+        lastName: parts[1]
+      };
+    }
+
+    const firstName = parts[0];
+    const remaining = parts.slice(1);
+    const lastNameParticles = new Set(["de", "del", "dela", "la", "van", "von", "da", "dos", "di", "san", "st"]);
+    const secondToLast = remaining[remaining.length - 2]?.toLowerCase();
+    const useCompoundLastName = remaining.length >= 2 && lastNameParticles.has(secondToLast);
+    const lastNameParts = useCompoundLastName ? remaining.slice(-2) : remaining.slice(-1);
+    const middleNameParts = remaining.slice(0, remaining.length - lastNameParts.length);
+
+    return {
+      firstName,
+      middleName: middleNameParts.length > 0 ? middleNameParts.join(" ") : null,
+      lastName: lastNameParts.length > 0 ? lastNameParts.join(" ") : null
+    };
+  };
+
+  const createTeacherProfileFromGoogle = async (sessionUser, email) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const existingProfile = await findProfileByEmail(normalizedEmail);
+
+    if (existingProfile) {
+      const existingRole = String(existingProfile.role || "").trim().toLowerCase();
+      if (existingRole === "teacher") {
+        return existingProfile;
+      }
+
+      throw new Error("This email already exists with a non-teacher account.");
+    }
+
+    const displayName = getGoogleUserDisplayName(sessionUser, normalizedEmail);
+    const { firstName, middleName, lastName } = splitFullName(displayName, normalizedEmail);
+
+    const payload = {
+      id: String(sessionUser?.id || crypto.randomUUID()),
+      role: "teacher",
+      first_name: firstName,
+      middle_name: middleName,
+      last_name: lastName,
+      email: normalizedEmail,
+      status: "Active"
+    };
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    if (error) {
+      throw new Error(error.message || "Unable to create teacher profile.");
+    }
+
+    return data;
+  };
+
+  const ensureTeacherIsActive = async (teacherRecord, email) => {
+    if (!supabase || !teacherRecord) {
+      return teacherRecord;
+    }
+
+    const normalizedEmail = String(email || teacherRecord.email || "").trim().toLowerCase();
+    if (!normalizedEmail) {
+      return teacherRecord;
+    }
+
+    const currentStatus = String(teacherRecord.status || "").trim().toLowerCase();
+    if (currentStatus === "active") {
+      return {
+        ...teacherRecord,
+        status: "Active"
+      };
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ status: "Active" })
+      .eq("role", "teacher")
+      .ilike("email", normalizedEmail)
+      .select("*")
+      .maybeSingle();
+
+    if (!error && data) {
+      return data;
+    }
+
+    return {
+      ...teacherRecord,
+      status: "Active"
+    };
+  };
+
+  const resolveDisplayName = (record, fallbackEmail) => {
+    const firstName = String(record?.first_name || "").trim();
+    const middleName = String(record?.middle_name || "").trim();
+    const lastName = String(record?.last_name || "").trim();
+    const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+
+    if (fullName) return fullName;
+    if (String(record?.full_name || "").trim()) return String(record.full_name).trim();
+    if (String(record?.name || "").trim()) return String(record.name).trim();
+    if (String(record?.teacher_name || "").trim()) return String(record.teacher_name).trim();
+
+    const email = String(fallbackEmail || "").trim();
+    return email ? email.split("@")[0] : "Teacher";
+  };
+
+  const completeTeacherSession = (email, teacherRecord) => {
+    const nextUser = {
+      id: String(teacherRecord?.id || ""),
+      name: resolveDisplayName(teacherRecord, email),
+      email: String(email || "").trim().toLowerCase(),
+      role: "teacher"
+    };
+
+    localStorage.setItem("currentUser", JSON.stringify(nextUser));
+    navigate("/teacher/dashboard", { replace: true });
+  };
+
+  useEffect(() => {
+    if (!supabase) {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    const handleOAuthSession = async (session) => {
+      const sessionEmail = String(session?.user?.email || "").trim().toLowerCase();
+      if (!sessionEmail) {
+        await supabase.auth.signOut();
+        if (isMounted) {
+          setGoogleError("Google login failed because no email was returned.");
+          setGoogleLoading(false);
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setGoogleLoading(true);
+        setGoogleError("");
+      }
+
+      try {
+        let teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
+
+        if (!teacherRecord) {
+          teacherRecord = await createTeacherProfileFromGoogle(session?.user, sessionEmail);
+        }
+
+        teacherRecord = await ensureTeacherIsActive(teacherRecord, sessionEmail);
+
+        if (isMounted) {
+          completeTeacherSession(sessionEmail, teacherRecord);
+        }
+      } catch (authError) {
+        await supabase.auth.signOut();
+        localStorage.removeItem("currentUser");
+        if (isMounted) {
+          setGoogleError(authError instanceof Error ? authError.message : "Unable to complete Google login.");
+          setGoogleLoading(false);
+        }
+      }
+    };
+
+    const initializeSession = async () => {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) {
+        if (isMounted) {
+          setGoogleError(sessionError.message);
+        }
+        return;
+      }
+
+      if (data?.session?.user) {
+        await handleOAuthSession(data.session);
+      }
+    };
+
+    initializeSession();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await handleOAuthSession(session);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.subscription?.unsubscribe();
+    };
+  }, [navigate]);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError("");
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.usernameOrEmail || !formData.password) {
       setError("Please fill in all fields.");
       return;
     }
+
     setLoading(true);
+    setError("");
+
+    const normalizedEmail = normalizeEmail(formData.usernameOrEmail);
+
+    if (normalizedEmail === STATIC_ADMIN_EMAIL) {
+      const adminValidation = await validateStaticAdminCredentials(formData.usernameOrEmail, formData.password);
+      if (!adminValidation.ok) {
+        setError(adminValidation.message);
+        setLoading(false);
+        return;
+      }
+
+      localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser()));
+      setLoading(false);
+      navigate("/admin/dashboard", { replace: true });
+      return;
+    }
+
     setTimeout(() => {
       localStorage.setItem("currentUser", JSON.stringify({
         name: formData.usernameOrEmail.split("@")[0] || "Teacher",
@@ -41,20 +360,36 @@ function Login() {
         role: "teacher",
       }));
       setLoading(false);
-      navigate("/teacher/dashboard");
-    }, 1400);
+      navigate("/teacher/dashboard", { replace: true });
+    }, 900);
   };
 
-  const handleGoogleNext = () => {
-    if (!googleEmail.trim()) { setGoogleError("Enter an email address"); return; }
-    if (!googleEmail.includes("@")) { setGoogleError("Enter a valid email address"); return; }
-    localStorage.setItem("currentUser", JSON.stringify({
-      name: googleEmail.split("@")[0],
-      email: googleEmail,
-      role: "teacher",
-    }));
-    setShowGoogleModal(false);
-    navigate("/teacher/dashboard");
+  const handleGoogleSignIn = async () => {
+    if (!supabase) {
+      setGoogleError("Supabase client is not configured.");
+      return;
+    }
+
+    setGoogleError("");
+    setGoogleLoading(true);
+
+    // Clear any stale auth session so Google always shows account selection.
+    await supabase.auth.signOut();
+
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/login`,
+        queryParams: {
+          prompt: "select_account"
+        }
+      }
+    });
+
+    if (oauthError) {
+      setGoogleError(oauthError.message || "Unable to start Google login.");
+      setGoogleLoading(false);
+    }
   };
 
   const highlights = [
@@ -150,12 +485,14 @@ function Login() {
           {/* Google Sign In */}
           <button
             type="button"
-            onClick={() => { setShowGoogleModal(true); setGoogleEmail(""); setGoogleError(""); }}
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
             className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-700 font-medium px-4 py-3 rounded-xl border border-gray-200 transition-all shadow-sm mb-5 text-sm"
           >
             <GoogleLogo />
-            Continue with Google
+            {googleLoading ? "Connecting to Google..." : "Continue with Google"}
           </button>
+          {googleError && <p className="text-red-400 text-xs mb-4">{googleError}</p>}
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
@@ -226,36 +563,6 @@ function Login() {
           </div>
         </div>
       </div>
-
-      {/* â”€â”€ GOOGLE MODAL â”€â”€ */}
-      {showGoogleModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
-            <div className="flex justify-center mb-6"><GoogleLogo /></div>
-            <h3 className="text-xl font-bold text-gray-900 text-center mb-1">Sign in with Google</h3>
-            <p className="text-sm text-gray-500 text-center mb-6">to continue to ConnectEd</p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
-                <input
-                  type="email"
-                  value={googleEmail}
-                  onChange={(e) => { setGoogleEmail(e.target.value); setGoogleError(""); }}
-                  onKeyDown={(e) => e.key === "Enter" && handleGoogleNext()}
-                  placeholder="Enter your Gmail address"
-                  autoFocus
-                  className={`w-full px-4 py-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${googleError ? "border-red-400" : "border-gray-300"}`}
-                />
-                {googleError && <p className="text-red-500 text-xs mt-1">{googleError}</p>}
-              </div>
-              <div className="flex items-center justify-between pt-1">
-                <button type="button" onClick={() => setShowGoogleModal(false)} className="text-sm text-blue-600 hover:text-blue-700 font-medium">Cancel</button>
-                <button type="button" onClick={handleGoogleNext} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">Next</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

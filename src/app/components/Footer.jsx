@@ -1,8 +1,4 @@
-import { useNavigate } from "react-router-dom";
-
 function Footer() {
-  const navigate = useNavigate();
-
   const links = [
     { label: "Privacy Policy", href: "#" },
     { label: "Terms of Service", href: "#" },
@@ -26,7 +22,6 @@ function Footer() {
           {links.map((l) => (
             <a key={l.label} href={l.href} className="hover:text-white transition-colors">{l.label}</a>
           ))}
-          <button onClick={() => navigate("/admin")} className="hover:text-white transition-colors opacity-40 hover:opacity-70 text-sm">System</button>
         </div>
 
         {/* Copyright */}

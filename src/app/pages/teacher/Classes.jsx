@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+  import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "../../components/TeacherSidebar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
@@ -13,6 +13,7 @@ import {
   ChevronRight,
   GraduationCap,
 } from "lucide-react";
+import { supabase } from "../../lib/supabaseClient";
 
 function Classes() {
   const navigate = useNavigate();
@@ -21,6 +22,8 @@ function Classes() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [classes, setClasses] = useState([]);
+  const [teacherEmail, setTeacherEmail] = useState("");
+  const [teacherId, setTeacherId] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createError, setCreateError] = useState("");
   const [form, setForm] = useState({
@@ -32,31 +35,170 @@ function Classes() {
     semester: "First Semester 2026",
   });
 
+  const mapSubjectsToCards = (subjectRows, enrollmentBySubject = new Map()) => {
+    return (subjectRows ?? []).map((subject) => ({
+      id: String(subject.id),
+      code: String(subject.code || "").trim(),
+      name: String(subject.name || "Untitled Subject").trim(),
+      section: String(subject.section || "").trim() || "No section assigned",
+      schedule: String(subject.schedule || "").trim(),
+      room: "",
+      semester: "Current School Year",
+      studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
+      students: []
+    }));
+  };
+
+  const setClassesAndPersist = (nextClasses) => {
+    setClasses(nextClasses);
+    localStorage.setItem("teacher_classes", JSON.stringify(nextClasses));
+  };
+
+  const resolveTeacherIdByEmail = async (email) => {
+    if (!supabase || !email) {
+      return "";
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .eq("role", "teacher")
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Failed to resolve teacher profile:", error);
+      return "";
+    }
+
+    return String(data?.id || "");
+  };
+
+  const loadTeacherSubjects = async (id) => {
+    if (!supabase || !id) {
+      setClassesAndPersist([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("subjects")
+      .select("id, code, name, section, schedule, enrolled")
+      .eq("teacher_id", id)
+      .order("code", { ascending: true });
+
+    if (error) {
+      console.error("Failed to load teacher subjects:", error);
+      setClassesAndPersist([]);
+      return;
+    }
+
+    const subjectIds = (data ?? []).map((subject) => String(subject.id)).filter(Boolean);
+    const enrollmentBySubject = new Map();
+
+    if (subjectIds.length > 0) {
+      const { data: assignmentRows, error: assignmentError } = await supabase
+        .from("teacher_student_assignments")
+        .select("subject_id")
+        .eq("teacher_id", id)
+        .in("subject_id", subjectIds);
+
+      if (!assignmentError) {
+        (assignmentRows ?? []).forEach((row) => {
+          const key = String(row.subject_id || "");
+          if (!key) return;
+          enrollmentBySubject.set(key, (enrollmentBySubject.get(key) || 0) + 1);
+        });
+      }
+    }
+
+    setClassesAndPersist(mapSubjectsToCards(data, enrollmentBySubject));
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
     const user = JSON.parse(userData);
     if (user.role !== "teacher") { navigate("/login"); return; }
+
     setTeacherName(user.name);
+    const normalizedEmail = String(user.email || "").trim().toLowerCase();
+    setTeacherEmail(normalizedEmail);
 
-    // 1. Clear legacy dummy data if found
-    localStorage.removeItem("teacher_classes");
-
-    // 2. Load globally assigned subjects from Admin
-    const subjectsData = localStorage.getItem("subjects");
-    if (subjectsData) {
-      const allSubjects = JSON.parse(subjectsData);
-      // Filter by the current teacher's name
-      // cls.teacher is the name entered by Admin in Subject Management
-      const assignedClasses = allSubjects.filter(cls =>
-        cls.teacher.toLowerCase() === user.name.toLowerCase()
-      );
-      setClasses(assignedClasses);
-    }
-    setTimeout(() => setLoading(false), 600);
+    resolveTeacherIdByEmail(normalizedEmail)
+      .then((id) => {
+        setTeacherId(id);
+        return loadTeacherSubjects(id);
+      })
+      .finally(() => {
+      setLoading(false);
+    });
   }, [navigate]);
 
-  const handleLogout = () => {
+  useEffect(() => {
+    if (!supabase || !teacherId) return;
+
+    let isMounted = true;
+    let subjectsChannel;
+    let assignmentChannel;
+
+    const setupSubscription = async () => {
+      subjectsChannel = supabase
+        .channel(`teacher-subject-classes-${teacherId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "subjects"
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const newTeacherId = String(payload?.new?.teacher_id || "");
+            const oldTeacherId = String(payload?.old?.teacher_id || "");
+            if (newTeacherId === teacherId || oldTeacherId === teacherId) {
+              loadTeacherSubjects(teacherId);
+            }
+          }
+        )
+        .subscribe();
+
+      assignmentChannel = supabase
+        .channel(`teacher-subject-enrollment-${teacherId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "teacher_student_assignments",
+            filter: `teacher_id=eq.${teacherId}`
+          },
+          () => {
+            if (!isMounted) return;
+            loadTeacherSubjects(teacherId);
+          }
+        )
+        .subscribe();
+    };
+
+    setupSubscription();
+
+    return () => {
+      isMounted = false;
+      if (subjectsChannel) {
+        supabase.removeChannel(subjectsChannel);
+      }
+      if (assignmentChannel) {
+        supabase.removeChannel(assignmentChannel);
+      }
+    };
+  }, [teacherId]);
+
+  const handleLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
@@ -64,7 +206,8 @@ function Classes() {
   const filteredClasses = classes.filter(
     (c) =>
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.code.toLowerCase().includes(searchQuery.toLowerCase())
+      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.section.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleCreate = () => {
@@ -179,13 +322,17 @@ function Classes() {
                   className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 hover:bg-gray-800/80 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
                   <div className="bg-black/20 border-b border-white/5 p-6">
-                    <p className="text-emerald-400 text-sm font-medium tracking-wide">
-                      {cls.code}
-                    </p>
+                    {cls.code ? (
+                      <p className="text-emerald-400 text-sm font-medium tracking-wide">
+                        {cls.code}
+                      </p>
+                    ) : null}
                     <h3 className="text-white font-bold text-xl mt-1 line-clamp-1">
                       {cls.name}
                     </h3>
-                    <p className="text-gray-400 text-sm mt-1">{cls.section}</p>
+                    {cls.section && cls.section !== cls.name ? (
+                      <p className="text-gray-400 text-sm mt-1">{cls.section}</p>
+                    ) : null}
                   </div>
                   <div className="p-6 space-y-3">
                     {cls.schedule && (

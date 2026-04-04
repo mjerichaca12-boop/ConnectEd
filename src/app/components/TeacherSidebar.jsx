@@ -5,11 +5,26 @@ import {
   MessageSquare, User, Menu, X, LogOut, ChevronRight, Video
 } from "lucide-react";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { supabase } from "../lib/supabaseClient";
 
 export function TeacherSidebar({ teacherName, onLogout }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
+
+  const handleConfirmLogout = async () => {
+    try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch {
+      // Continue with local logout even if remote sign-out fails.
+    } finally {
+      setShowLogoutConfirm(false);
+      setIsMobileOpen(false);
+      onLogout?.();
+    }
+  };
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard",            path: "/teacher/dashboard" },
@@ -127,7 +142,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
       <ConfirmDialog
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
-        onConfirm={onLogout}
+        onConfirm={handleConfirmLogout}
         title="Logout"
         message="Are you sure you want to logout?"
         confirmText="Logout"

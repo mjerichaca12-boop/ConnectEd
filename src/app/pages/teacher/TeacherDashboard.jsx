@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { DashboardCalendar } from "../../components/DashboardCalendar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { supabase } from "../../lib/supabaseClient";
 
 const colorMap = {
   emerald: { icon: "text-emerald-400", bg: "bg-emerald-500/10", hover: "hover:border-emerald-500/40 hover:bg-emerald-500/5" },
@@ -20,8 +21,176 @@ export function TeacherDashboard() {
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [classes] = useState([]);
-  const [recentGrades] = useState([]);
+  const [recentGrades, setRecentGrades] = useState([]);
+  const [teacherId, setTeacherId] = useState("");
+  const [assignedSubjects, setAssignedSubjects] = useState([]);
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [gradesEncodedTotal, setGradesEncodedTotal] = useState(0);
+  const [teacherEmail, setTeacherEmail] = useState("");
+  const totalClasses = assignedSubjects.length;
+
+  const resolveTeacherIdByEmail = async (email) => {
+    if (!supabase || !email) return;
+
+    try {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .ilike("email", normalizedEmail)
+        .eq("role", "teacher")
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error resolving teacher profile:", error);
+        return;
+      }
+
+      if (data) {
+        setTeacherId(String(data.id || ""));
+      }
+    } catch (error) {
+      console.error("Failed to resolve teacher profile:", error);
+    }
+  };
+
+  const fetchTeacherSubjects = async (id) => {
+    if (!supabase || !id) {
+      setAssignedSubjects([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("subjects")
+      .select("id")
+      .eq("teacher_id", id);
+
+    if (error) {
+      console.error("Error fetching teacher subjects:", error);
+      return;
+    }
+
+    setAssignedSubjects(data ?? []);
+  };
+
+  const fetchTeacherStudentTotal = async (id) => {
+    if (!supabase || !id) {
+      setTotalStudents(0);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("teacher_student_assignments")
+      .select("student_id")
+      .eq("teacher_id", id);
+
+    if (error) {
+      console.error("Error fetching teacher student total:", error);
+      setTotalStudents(0);
+      return;
+    }
+
+    const uniqueStudentCount = new Set(
+      (data ?? []).map((row) => String(row.student_id || "")).filter(Boolean)
+    ).size;
+
+    setTotalStudents(uniqueStudentCount);
+  };
+
+  const fetchGradesEncodedTotal = async (id) => {
+    if (!supabase || !id) {
+      setGradesEncodedTotal(0);
+      return;
+    }
+
+    const { count, error } = await supabase
+      .from("teacher_student_grades")
+      .select("id", { count: "exact", head: true })
+      .eq("teacher_id", id);
+
+    if (error) {
+      console.error("Error fetching grades encoded total:", error);
+      setGradesEncodedTotal(0);
+      return;
+    }
+
+    setGradesEncodedTotal(Number(count || 0));
+  };
+
+  const fetchRecentGrades = async (id) => {
+    if (!supabase || !id) {
+      setRecentGrades([]);
+      return;
+    }
+
+    const { data: gradeRows, error: gradeError } = await supabase
+      .from("teacher_student_grades")
+      .select("id, student_id, subject_id, overall_grade, updated_at")
+      .eq("teacher_id", id)
+      .order("updated_at", { ascending: false })
+      .limit(5);
+
+    if (gradeError) {
+      console.error("Error fetching recent grades:", gradeError);
+      setRecentGrades([]);
+      return;
+    }
+
+    const rows = gradeRows ?? [];
+    if (rows.length === 0) {
+      setRecentGrades([]);
+      return;
+    }
+
+    const studentIds = [...new Set(rows.map((row) => String(row.student_id || "")).filter(Boolean))];
+    const subjectIds = [...new Set(rows.map((row) => String(row.subject_id || "")).filter(Boolean))];
+
+    const [{ data: students }, { data: subjects }] = await Promise.all([
+      studentIds.length
+        ? supabase
+          .from("profiles")
+          .select("id, first_name, middle_name, last_name")
+          .in("id", studentIds)
+        : Promise.resolve({ data: [] }),
+      subjectIds.length
+        ? supabase
+          .from("subjects")
+          .select("id, code, name")
+          .in("id", subjectIds)
+        : Promise.resolve({ data: [] })
+    ]);
+
+    const studentMap = new Map(
+      (students ?? []).map((student) => {
+        const fullName = [student.first_name, student.middle_name, student.last_name]
+          .map((part) => String(part || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Student";
+        return [String(student.id), fullName];
+      })
+    );
+
+    const subjectMap = new Map(
+      (subjects ?? []).map((subject) => {
+        const label = [String(subject.code || "").trim(), String(subject.name || "").trim()]
+          .filter(Boolean)
+          .join(" - ") || "Subject";
+        return [String(subject.id), label];
+      })
+    );
+
+    const mapped = rows.map((row) => ({
+      id: String(row.id),
+      studentName: studentMap.get(String(row.student_id || "")) || "Student",
+      subject: subjectMap.get(String(row.subject_id || "")) || "Subject",
+      dateRecorded: row.updated_at,
+      grade: Number(row.overall_grade || 0)
+    }));
+
+    setRecentGrades(mapped);
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -29,15 +198,106 @@ export function TeacherDashboard() {
     const user = JSON.parse(userData);
     if (user.role !== "teacher") { navigate("/login"); return; }
     setTeacherName(user.name);
+    setTeacherEmail(user.email || "");
+    resolveTeacherIdByEmail(user.email);
+    
     setTimeout(() => setLoading(false), 700);
   }, [navigate]);
 
-  const handleLogout = () => {
+  useEffect(() => {
+    if (!teacherId) return;
+    fetchTeacherSubjects(teacherId);
+    fetchTeacherStudentTotal(teacherId);
+    fetchGradesEncodedTotal(teacherId);
+    fetchRecentGrades(teacherId);
+  }, [teacherId]);
+
+  useEffect(() => {
+    if (!supabase || !teacherId) return;
+
+    let isMounted = true;
+    let subjectsChannel;
+    let assignmentsChannel;
+    let gradesChannel;
+
+    const setupSubscription = async () => {
+      try {
+        subjectsChannel = supabase
+          .channel(`teacher-dashboard-subjects-${teacherId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "subjects"
+            },
+            (payload) => {
+              if (!isMounted) return;
+              const newTeacherId = String(payload?.new?.teacher_id || "");
+              const oldTeacherId = String(payload?.old?.teacher_id || "");
+              if (newTeacherId === teacherId || oldTeacherId === teacherId) {
+                fetchTeacherSubjects(teacherId);
+              }
+            }
+          )
+          .subscribe();
+
+        assignmentsChannel = supabase
+          .channel(`teacher-dashboard-assignments-${teacherId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "teacher_student_assignments",
+              filter: `teacher_id=eq.${teacherId}`
+            },
+            () => {
+              if (!isMounted) return;
+              fetchTeacherStudentTotal(teacherId);
+            }
+          )
+          .subscribe();
+
+        gradesChannel = supabase
+          .channel(`teacher-dashboard-grades-${teacherId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "teacher_student_grades",
+              filter: `teacher_id=eq.${teacherId}`
+            },
+            () => {
+              if (!isMounted) return;
+              fetchGradesEncodedTotal(teacherId);
+              fetchRecentGrades(teacherId);
+            }
+          )
+          .subscribe();
+      } catch (error) {
+        console.error("Failed to set up real-time subscription:", error);
+      }
+    };
+
+    setupSubscription();
+
+    return () => {
+      isMounted = false;
+      if (subjectsChannel) supabase.removeChannel(subjectsChannel);
+      if (assignmentsChannel) supabase.removeChannel(assignmentsChannel);
+      if (gradesChannel) supabase.removeChannel(gradesChannel);
+    };
+  }, [teacherId]);
+
+  const handleLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
-
-  const totalStudents = classes.reduce((sum, c) => sum + c.studentCount, 0);
 
   const getGreeting = () => {
     const h = new Date().getHours();
@@ -112,12 +372,12 @@ export function TeacherDashboard() {
             </div>
           </div>
 
-          {/* Ã¢â€â‚¬Ã¢â€â‚¬ Stats Row Ã¢â€â‚¬Ã¢â€â‚¬ */}
+          {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Stats Row ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { icon: BookOpen,    label: "Total Classes",   value: classes.length,  color: "emerald" },
+              { icon: BookOpen,    label: "Total Classes",   value: totalClasses,  color: "emerald" },
               { icon: Users,       label: "Total Students",  value: totalStudents,   color: "blue" },
-              { icon: GraduationCap, label: "Grades Encoded", value: recentGrades.length, color: "emerald" },
+              { icon: GraduationCap, label: "Grades Encoded", value: gradesEncodedTotal, color: "emerald" },
             ].map((stat) => {
               const Icon = stat.icon;
               const c = colorMap[stat.color];
@@ -177,7 +437,7 @@ export function TeacherDashboard() {
                         <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-white/4 rounded-xl hover:bg-white/8 transition-colors border border-transparent hover:border-white/5">
                           <div>
                             <p className="text-white text-sm font-medium">{grade.studentName}</p>
-                            <p className="text-gray-500 text-xs mt-0.5">{grade.subject} Ã¢â‚¬Â¢ {new Date(grade.dateRecorded).toLocaleDateString()}</p>
+                            <p className="text-gray-500 text-xs mt-0.5">{grade.subject} - {new Date(grade.dateRecorded).toLocaleDateString()}</p>
                           </div>
                           <p className="text-lg font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">{grade.grade}%</p>
                         </div>

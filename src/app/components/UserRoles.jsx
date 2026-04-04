@@ -49,8 +49,8 @@ const roles = [
       "Broadcast announcements",
       "System access control",
     ],
-    cta: "/admin",
-    ctaLabel: "Go to Admin Portal",
+    cta: null,
+    ctaLabel: null,
   },
 ];
 
@@ -155,11 +155,11 @@ function UserRoles() {
                         {role.ctaLabel}
                         <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                       </button>
-                    ) : (
+                    ) : role.ctaLabel ? (
                       <div className="w-full text-center py-3 px-6 rounded-xl text-sm font-medium text-gray-500 bg-gray-800/60 border border-white/8">
                         📱 Available on the Mobile App
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
