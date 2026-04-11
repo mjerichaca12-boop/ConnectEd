@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "../../components/TeacherSidebar";
-import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { teacherNotifications } from "../../components/NotificationDefault";
+import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { teacherNotifications } from "@/app/components/NotificationDefault";
 import {
   Megaphone,
   Plus,
@@ -146,12 +147,7 @@ function TeacherAnnouncements() {
     }
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-black/20">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading...</p>
-        </div>
-      </div>;
+    return <LoadingScreen message="Loading announcements..." />;
   }
   return <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />

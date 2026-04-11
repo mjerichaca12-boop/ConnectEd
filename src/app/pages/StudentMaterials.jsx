@@ -14,8 +14,113 @@ import {
   AlertCircle,
   X,
   Search,
-  Filter,
 } from "lucide-react";
+import { supabase } from "@/app/lib/supabaseClient";
+
+const STORAGE_BUCKET = "class-materials";
+const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
+
+const parseStoredFileList = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item || "").trim()).filter(Boolean);
+      }
+    } catch {
+      // Fall through to single-value handling.
+    }
+  }
+
+  return [text];
+};
+
+const buildAssignmentAttachments = (row) => {
+  const fileNames = parseStoredFileList(row?.file_name);
+  const filePaths = parseStoredFileList(row?.file_path);
+  const fileUrls = parseStoredFileList(row?.file_url);
+  const totalCount = Math.max(fileNames.length, filePaths.length, fileUrls.length);
+
+  const attachments = Array.from({ length: totalCount }, (_, index) => ({
+    fileName: fileNames[index] || `File ${index + 1}`,
+    filePath: filePaths[index] || "",
+    fileUrl: fileUrls[index] || ""
+  })).filter((attachment) => attachment.fileName || attachment.filePath || attachment.fileUrl);
+
+  return { fileNames, filePaths, fileUrls, attachments };
+};
+
+const buildMaterialAttachments = (row) => {
+  const fileNames = parseStoredFileList(row?.file_name);
+  const filePaths = parseStoredFileList(row?.file_path);
+  const fileUrls = parseStoredFileList(row?.file_url);
+  const totalCount = Math.max(fileNames.length, filePaths.length, fileUrls.length);
+
+  const attachments = Array.from({ length: totalCount }, (_, index) => ({
+    fileName: fileNames[index] || `File ${index + 1}`,
+    filePath: filePaths[index] || "",
+    fileUrl: fileUrls[index] || ""
+  })).filter((attachment) => attachment.fileName || attachment.filePath || attachment.fileUrl);
+
+  return { fileNames, filePaths, fileUrls, attachments };
+};
+
+const normalizeMaterialRecord = (row) => {
+  const attachments = buildMaterialAttachments(row);
+  const primaryFileName = attachments.fileNames[0] || "";
+  const extension = primaryFileName.includes(".") ? primaryFileName.split(".").pop().toUpperCase() : "FILE";
+
+  return {
+    id: String(row?.id || ""),
+    title: String(row?.title || "").trim(),
+    description: String(row?.description || "").trim(),
+    fileNames: attachments.fileNames,
+    filePaths: attachments.filePaths,
+    fileUrls: attachments.fileUrls,
+    attachments: attachments.attachments,
+    fileName: primaryFileName,
+    filePath: attachments.filePaths[0] || "",
+    fileType: extension,
+    fileUrl: attachments.fileUrls[0] || "",
+    uploadDate: row?.created_at || new Date().toISOString(),
+    classCode: String(row?.subject || row?.class_code || "").trim(),
+    className: String(row?.class_name || "").trim(),
+    teacherName: String(row?.author || row?.teacher_name || "").trim(),
+    section: String(row?.section || "").trim()
+  };
+};
+
+const normalizeAssignmentRecord = (row) => {
+  const attachments = buildAssignmentAttachments(row);
+
+  return {
+    id: String(row?.id || ""),
+    type: String(row?.type || row?.activity_type || row?.task_type || "assignment").trim().toLowerCase() === "activity" ? "activity" : "assignment",
+    title: String(row?.title || row?.name || "").trim(),
+    description: String(row?.description || row?.instructions || row?.content || "").trim(),
+    dueDate: String(row?.due_date || row?.dueDate || row?.deadline || "").trim(),
+    maxPoints: Number(row?.max_points ?? row?.total_points ?? row?.maxPoints ?? 100) || 100,
+    fileNames: attachments.fileNames,
+    filePaths: attachments.filePaths,
+    fileUrls: attachments.fileUrls,
+    attachments: attachments.attachments,
+    fileName: attachments.fileNames[0] || "",
+    filePath: attachments.filePaths[0] || "",
+    fileUrl: attachments.fileUrls[0] || "",
+    classCode: String(row?.subject || row?.class_code || row?.course_id || "").trim(),
+    className: String(row?.class_name || "").trim(),
+    teacherName: String(row?.author || row?.teacher_name || "").trim(),
+    uploadDate: row?.created_at || row?.date_posted || new Date().toISOString(),
+    status: "pending"
+  };
+};
 
 function StudentMaterials() {
   const navigate = useNavigate();
@@ -31,6 +136,81 @@ function StudentMaterials() {
   const [materials, setMaterials] = useState([]);
   const [activities, setActivities] = useState([]);
   const [submittedIds, setSubmittedIds] = useState([]);
+  const [assignmentTable, setAssignmentTable] = useState("");
+  const [assignmentColumns, setAssignmentColumns] = useState([]);
+
+  const resolveAssignmentTable = async () => {
+    for (const tableName of ASSIGNMENT_TABLE_CANDIDATES) {
+      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      if (!error) {
+        setAssignmentTable(tableName);
+        return tableName;
+      }
+    }
+    return "";
+  };
+
+  const resolveAssignmentColumns = async (tableName) => {
+    if (!tableName) {
+      setAssignmentColumns([]);
+      return [];
+    }
+
+    const candidates = ["id", "type", "activity_type", "task_type", "title", "name", "description", "instructions", "content", "due_date", "dueDate", "deadline", "max_points", "total_points", "maxPoints", "file_url", "file_name", "file_path", "subject", "class_code", "class_name", "course_id", "author", "teacher_name", "created_at"];
+    const detected = [];
+
+    for (const col of candidates) {
+      const { error } = await supabase.from(tableName).select(col, { count: "exact", head: true });
+      if (!error) {
+        detected.push(col);
+      }
+    }
+
+    setAssignmentColumns(detected);
+    return detected;
+  };
+
+  const fetchMaterials = async () => {
+    const { data, error } = await supabase.from("class_materials").select("*").order("created_at", { ascending: false });
+    if (error) {
+      console.error("[StudentMaterials] Failed to fetch materials:", error);
+      setMaterials([]);
+      return;
+    }
+    setMaterials((data ?? []).map(normalizeMaterialRecord));
+  };
+
+  const fetchActivities = async (tableNameOverride, columnsOverride) => {
+    const tableName = tableNameOverride || assignmentTable || (await resolveAssignmentTable());
+    if (!tableName) {
+      setActivities([]);
+      return;
+    }
+
+    const columns = columnsOverride || assignmentColumns || [];
+    const orderColumn = columns.includes("created_at") ? "created_at" : columns.includes("due_date") ? "due_date" : columns.includes("deadline") ? "deadline" : "";
+
+    let query = supabase.from(tableName).select("*");
+    if (orderColumn) {
+      query = query.order(orderColumn, { ascending: false });
+    }
+
+    let { data, error } = await query;
+
+    if (error && /column .* does not exist|PGRST204/i.test(error.message || "")) {
+      const fallback = await supabase.from(tableName).select("*");
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.error("[StudentMaterials] Failed to fetch activities:", error);
+      setActivities([]);
+      return;
+    }
+
+    setActivities((data ?? []).map(normalizeAssignmentRecord));
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -39,26 +219,88 @@ function StudentMaterials() {
     if (user.role !== "student") { navigate("/login"); return; }
     setStudentName(user.name);
 
-    // Read materials posted by teachers
-    const allMaterials = JSON.parse(localStorage.getItem("class_materials") || "[]");
-    setMaterials(allMaterials);
-
-    // Read assignments/activities posted by teachers
-    const allAssignments = JSON.parse(localStorage.getItem("class_assignments") || "[]");
-    setActivities(allAssignments);
-
     // Read submitted ids
     const submitted = JSON.parse(localStorage.getItem("student_submissions") || "[]");
     setSubmittedIds(submitted);
+
+    let mounted = true;
+
+    const load = async () => {
+      try {
+        const tableName = await resolveAssignmentTable();
+        const columns = await resolveAssignmentColumns(tableName);
+        await Promise.all([fetchMaterials(), fetchActivities(tableName, columns)]);
+      } catch (error) {
+        console.error("[StudentMaterials] Failed to load resources:", error);
+        if (mounted) {
+          setMaterials([]);
+          setActivities([]);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
   }, [navigate]);
+
+  useEffect(() => {
+    const materialsChannel = supabase
+      .channel("student-materials-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_materials" }, () => {
+        fetchMaterials();
+      })
+      .subscribe();
+
+    let assignmentChannel = null;
+
+    if (assignmentTable) {
+      assignmentChannel = supabase
+        .channel(`student-assignments-realtime-${assignmentTable}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: assignmentTable }, () => {
+          fetchActivities(assignmentTable, assignmentColumns);
+        })
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(materialsChannel);
+      if (assignmentChannel) {
+        supabase.removeChannel(assignmentChannel);
+      }
+    };
+  }, [assignmentTable, assignmentColumns]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
 
-  const handleDownload = (material) => {
-    alert(`Downloading: ${material.fileName || material.title}`);
+  const resolveFileUrl = (fileUrl, filePath) => {
+    const normalizedUrl = String(fileUrl || "").trim();
+    if (normalizedUrl) return normalizedUrl;
+
+    const normalizedPath = String(filePath || "").trim();
+    if (!normalizedPath) return "";
+
+    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(normalizedPath);
+    return String(data?.publicUrl || "").trim();
+  };
+
+  const handleDownload = (material, attachment = null) => {
+    const targetFileUrl = attachment ? attachment.fileUrl : material.fileUrl;
+    const targetFilePath = attachment ? attachment.filePath : material.filePath;
+    const resolved = resolveFileUrl(targetFileUrl, targetFilePath);
+
+    if (resolved) {
+      window.open(resolved, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const fallbackName = attachment?.fileName || material.fileName || material.title;
+    alert(`File is not available for download: ${fallbackName}`);
   };
 
   const handleSubmitActivity = (activity) => {
@@ -258,6 +500,20 @@ function StudentMaterials() {
                             {material.description && (
                               <p className="text-sm text-gray-600 mb-3">{material.description}</p>
                             )}
+                            {Array.isArray(material.attachments) && material.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {material.attachments.map((attachment, index) => (
+                                  <button
+                                    key={`${material.id}-attachment-${index}`}
+                                    onClick={() => handleDownload(material, attachment)}
+                                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100"
+                                  >
+                                    <File className="w-3 h-3" />
+                                    {attachment.fileName || `File ${index + 1}`}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                               {material.classCode && (
                                 <span className="flex items-center gap-1">
@@ -278,13 +534,15 @@ function StudentMaterials() {
                               <p className="text-xs text-gray-400 mt-2">Uploaded by {material.teacherName}</p>
                             )}
                           </div>
-                          <button
-                            onClick={() => handleDownload(material)}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 text-sm"
-                          >
-                            <Download className="w-4 h-4" />
-                            Download
-                          </button>
+                          {(!Array.isArray(material.attachments) || material.attachments.length === 0) && (
+                            <button
+                              onClick={() => handleDownload(material)}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 text-sm"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -345,6 +603,22 @@ function StudentMaterials() {
                                 </span>
                                 <span>Max Points: {activity.maxPoints}</span>
                               </div>
+                              {Array.isArray(activity.attachments) && activity.attachments.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  {activity.attachments.map((attachment, index) => (
+                                    <a
+                                      key={`${activity.id}-attachment-${index}`}
+                                      href={attachment.fileUrl || attachment.filePath || "#"}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100"
+                                    >
+                                      <File className="w-3 h-3" />
+                                      {attachment.fileName || `File ${index + 1}`}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                               {activity.teacherName && (
                                 <p className="text-xs text-gray-400 mt-2">Posted by {activity.teacherName}</p>
                               )}
@@ -405,6 +679,22 @@ function StudentMaterials() {
                   <span>Max Points: {selectedActivity.maxPoints}</span>
                   <span>Due: {new Date(selectedActivity.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                 </div>
+                {Array.isArray(selectedActivity.attachments) && selectedActivity.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {selectedActivity.attachments.map((attachment, index) => (
+                      <a
+                        key={`${selectedActivity.id}-submit-attachment-${index}`}
+                        href={attachment.fileUrl || attachment.filePath || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-emerald-700 border border-emerald-200 text-xs font-medium hover:bg-emerald-50"
+                      >
+                        <File className="w-3 h-3" />
+                        {attachment.fileName || `File ${index + 1}`}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* File Upload */}

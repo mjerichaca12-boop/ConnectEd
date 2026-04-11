@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { supabase } from "@/app/lib/supabaseClient";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
 import {
   Bell,
   Calendar,
@@ -333,14 +334,7 @@ function AttendanceManagement() {
   const unmarkedCount = students.filter((student) => !student.status).length;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black/20">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading attendance...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Loading attendance..." />;
   }
 
   return (
@@ -354,7 +348,6 @@ function AttendanceManagement() {
               <h2 className="text-xl font-semibold text-white">Attendance Management</h2>
               <div className="flex items-center gap-4">
                 {hasUnsavedChanges && <span className="text-sm text-red-600 font-medium">Unsaved changes</span>}
-                {saveSuccess && <span className="text-sm text-emerald-500 font-medium">Attendance saved</span>}
                 <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
                   <Bell className="w-6 h-6 text-gray-400" />
                 </button>
@@ -364,6 +357,13 @@ function AttendanceManagement() {
         </div>
 
         <div className="p-6 space-y-6">
+          {saveSuccess && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-600" />
+              <p className="text-emerald-700 font-medium">Attendance saved successfully!</p>
+            </div>
+          )}
+
           {!selectedClass ? (
             <>
               <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">

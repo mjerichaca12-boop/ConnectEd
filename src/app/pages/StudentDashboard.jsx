@@ -299,7 +299,7 @@ export function StudentDashboard() {
             {/* Sidebar Column */}
             <div className="space-y-6">
               <div className="bg-gray-900/60 rounded-xl border border-white/8 overflow-hidden">
-                <DashboardCalendar />
+                <DashboardCalendar viewerRole="student" />
               </div>
 
               {/* Learning Progress Card */}

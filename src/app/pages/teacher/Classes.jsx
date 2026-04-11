@@ -1,7 +1,8 @@
   import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "../../components/TeacherSidebar";
-import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
 import {
   BookOpen,
   Users,
@@ -13,7 +14,8 @@ import {
   ChevronRight,
   GraduationCap,
 } from "lucide-react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
 
 function Classes() {
   const navigate = useNavigate();
@@ -54,27 +56,7 @@ function Classes() {
     localStorage.setItem("teacher_classes", JSON.stringify(nextClasses));
   };
 
-  const resolveTeacherIdByEmail = async (email) => {
-    if (!supabase || !email) {
-      return "";
-    }
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("email", normalizedEmail)
-      .eq("role", "teacher")
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Failed to resolve teacher profile:", error);
-      return "";
-    }
-
-    return String(data?.id || "");
-  };
 
   const loadTeacherSubjects = async (id) => {
     if (!supabase || !id) {
@@ -195,7 +177,7 @@ function Classes() {
     };
   }, [teacherId]);
 
-  const handleLogout = async () => {
+  const handleLogoutClick = async () => {
     if (supabase) {
       await supabase.auth.signOut();
     }
@@ -203,40 +185,28 @@ function Classes() {
     navigate("/login");
   };
 
-  const filteredClasses = classes.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.section.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredClasses = classes.filter((classItem) =>
+    classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    classItem.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    classItem.section.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleCreate = () => {
-    // Since Admin now handles class creation, we disable the handleCreate logic
+  const handleSubmitCreateClass = () => {
+    // Since Admin now handles class creation, we disable the handleSubmitCreateClass logic
     // but keep the state reset just in case.
     setShowCreateModal(false);
     setForm({ code: "", name: "", section: "", schedule: "", room: "", semester: "First Semester 2026" });
     setCreateError("");
   };
 
-  const closeModal = () => {
+  const handleCloseCreateModal = () => {
     setShowCreateModal(false);
     setCreateError("");
     setForm({ code: "", name: "", section: "", schedule: "", room: "", semester: "First Semester 2026" });
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
-          </div>
-          <p className="text-gray-500">Loading classes...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Loading classes..." />;
   }
 
   return (
@@ -246,7 +216,7 @@ function Classes() {
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
-      <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
+      <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
         {/* Top Bar */}
@@ -315,41 +285,41 @@ function Classes() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredClasses.map((cls) => (
+              {filteredClasses.map((classItem) => (
                 <div
-                  key={cls.id}
-                  onClick={() => navigate(`/teacher/class/${cls.id}`)}
+                  key={classItem.id}
+                  onClick={() => navigate(`/teacher/class/${classItem.id}`)}
                   className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 hover:bg-gray-800/80 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
                   <div className="bg-black/20 border-b border-white/5 p-6">
-                    {cls.code ? (
+                    {classItem.code ? (
                       <p className="text-emerald-400 text-sm font-medium tracking-wide">
-                        {cls.code}
+                        {classItem.code}
                       </p>
                     ) : null}
                     <h3 className="text-white font-bold text-xl mt-1 line-clamp-1">
-                      {cls.name}
+                      {classItem.name}
                     </h3>
-                    {cls.section && cls.section !== cls.name ? (
-                      <p className="text-gray-400 text-sm mt-1">{cls.section}</p>
+                    {classItem.section && classItem.section !== classItem.name ? (
+                      <p className="text-gray-400 text-sm mt-1">{classItem.section}</p>
                     ) : null}
                   </div>
                   <div className="p-6 space-y-3">
-                    {cls.schedule && (
+                    {classItem.schedule && (
                       <div className="flex items-center gap-2 text-sm text-gray-400">
                         <Clock className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        {cls.schedule}
+                        {classItem.schedule}
                       </div>
                     )}
-                    {cls.room && (
+                    {classItem.room && (
                       <div className="flex items-center gap-2 text-sm text-gray-400">
                         <MapPin className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        {cls.room}
+                        {classItem.room}
                       </div>
                     )}
                     <div className="flex items-center gap-2 text-sm text-gray-400">
                       <Users className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                      {cls.studentCount} students enrolled
+                      {classItem.studentCount} students enrolled
                     </div>
                     <button className="w-full mt-2 px-4 py-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors font-medium flex items-center justify-center gap-2">
                       View Class

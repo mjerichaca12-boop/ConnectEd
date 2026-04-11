@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "../../components/TeacherSidebar";
-import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { teacherNotifications } from "../../components/NotificationDefault";
-import { supabase } from "../../lib/supabaseClient";
+import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { CustomSelect } from "@/app/components/CustomSelect";
+import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { teacherNotifications } from "@/app/components/NotificationDefault";
+import { supabase } from "@/app/lib/supabaseClient";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
+import {
+  createDefaultGradeRecord,
+  clampGradeValue,
+  getGradeRemarks,
+  calculateOverallGrade,
+  resolveTeacherIdByEmail
+} from "@/app/lib/teacherHelpers";
 import {
   TrendingUp,
   TrendingDown,
@@ -16,32 +25,7 @@ import {
   Users
 } from "lucide-react";
 
-function defaultGradeRecord() {
-  return {
-    midtermGrade: 0,
-    finalGrade: 0,
-    quizAverage: 0,
-    projectGrade: 0
-  };
-}
 
-function clampGrade(value) {
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return 0;
-  return Math.max(0, Math.min(100, numeric));
-}
-
-function getRemarks(overallGrade) {
-  if (overallGrade >= 90) return "Outstanding";
-  if (overallGrade >= 85) return "Excellent";
-  if (overallGrade >= 80) return "Very Good";
-  if (overallGrade >= 75) return "Good";
-  return "Needs Improvement";
-}
-
-function buildOverallGrade(record) {
-  return Math.round((record.midtermGrade + record.finalGrade + record.quizAverage + record.projectGrade) / 4);
-}
 
 function GradesManagement() {
   const navigate = useNavigate();
@@ -58,25 +42,7 @@ function GradesManagement() {
   const [studentGrades, setStudentGrades] = useState([]);
   const [gradesCache, setGradesCache] = useState({});
 
-  const resolveTeacherId = async (email) => {
-    if (!supabase || !email) return "";
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("email", normalizedEmail)
-      .eq("role", "teacher")
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Failed to resolve teacher profile:", error);
-      return "";
-    }
-
-    return String(data?.id || "");
-  };
 
   const fetchClasses = async (id) => {
     if (!supabase || !id) {
@@ -159,17 +125,17 @@ function GradesManagement() {
       const id = String(row.student_id || "");
       if (!id) return;
       persistedGradeMap[id] = {
-        midtermGrade: clampGrade(row.midterm_grade),
-        finalGrade: clampGrade(row.final_grade),
-        quizAverage: clampGrade(row.quiz_average),
-        projectGrade: clampGrade(row.project_grade)
+        midtermGrade: clampGradeValue(row.midterm_grade),
+        finalGrade: clampGradeValue(row.final_grade),
+        quizAverage: clampGradeValue(row.quiz_average),
+        projectGrade: clampGradeValue(row.project_grade)
       };
     });
 
     const cacheForClass = gradesCache[classId] || {};
     const mapped = (studentRows ?? []).map((student) => {
       const studentId = String(student.id);
-      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || defaultGradeRecord();
+      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || createDefaultGradeRecord();
       const studentName = [student.first_name, student.middle_name, student.last_name]
         .map((part) => String(part || "").trim())
         .filter(Boolean)
@@ -180,17 +146,17 @@ function GradesManagement() {
         id: studentId,
         studentName,
         studentId: String(student.lrn || "N/A"),
-        midtermGrade: clampGrade(cached.midtermGrade),
-        finalGrade: clampGrade(cached.finalGrade),
-        quizAverage: clampGrade(cached.quizAverage),
-        projectGrade: clampGrade(cached.projectGrade)
+        midtermGrade: clampGradeValue(cached.midtermGrade),
+        finalGrade: clampGradeValue(cached.finalGrade),
+        quizAverage: clampGradeValue(cached.quizAverage),
+        projectGrade: clampGradeValue(cached.projectGrade)
       };
 
-      const overallGrade = buildOverallGrade(current);
+      const overallGrade = calculateOverallGrade(current);
       return {
         ...current,
         overallGrade,
-        remarks: getRemarks(overallGrade)
+        remarks: getGradeRemarks(overallGrade)
       };
     });
 
@@ -220,7 +186,7 @@ function GradesManagement() {
       }
 
       setTeacherName(user.name);
-      const resolvedTeacherId = await resolveTeacherId(user.email);
+      const resolvedTeacherId = await resolveTeacherIdByEmail(user.email);
       setTeacherId(resolvedTeacherId);
       await fetchClasses(resolvedTeacherId);
       setLoading(false);
@@ -288,27 +254,27 @@ function GradesManagement() {
     return () => window.clearTimeout(timer);
   }, [saveSuccess]);
 
-  const handleLogout = () => {
+  const handleLogoutClick = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
 
   const handleGradeChange = (studentId, field, value) => {
-    const nextValue = clampGrade(value);
+    const nextValue = clampGradeValue(value);
 
     setStudentGrades((prev) => prev.map((student) => {
       if (student.id !== studentId) return student;
 
       const updated = { ...student, [field]: nextValue };
-      const overallGrade = buildOverallGrade(updated);
+      const overallGrade = calculateOverallGrade(updated);
       updated.overallGrade = overallGrade;
-      updated.remarks = getRemarks(overallGrade);
+      updated.remarks = getGradeRemarks(overallGrade);
       return updated;
     }));
 
     setGradesCache((current) => {
       const classCache = { ...(current[selectedClass] || {}) };
-      const existing = classCache[studentId] || defaultGradeRecord();
+      const existing = classCache[studentId] || createDefaultGradeRecord();
       classCache[studentId] = {
         ...existing,
         [field]: nextValue
@@ -332,11 +298,11 @@ function GradesManagement() {
         teacher_id: teacherId,
         subject_id: selectedClass,
         student_id: student.id,
-        midterm_grade: clampGrade(student.midtermGrade),
-        final_grade: clampGrade(student.finalGrade),
-        quiz_average: clampGrade(student.quizAverage),
-        project_grade: clampGrade(student.projectGrade),
-        overall_grade: clampGrade(student.overallGrade),
+        midterm_grade: clampGradeValue(student.midtermGrade),
+        final_grade: clampGradeValue(student.finalGrade),
+        quiz_average: clampGradeValue(student.quizAverage),
+        project_grade: clampGradeValue(student.projectGrade),
+        overall_grade: clampGradeValue(student.overallGrade),
         updated_at: new Date().toISOString()
       }));
 
@@ -378,23 +344,20 @@ function GradesManagement() {
   const highestGrade = studentGrades.length > 0 ? Math.max(...studentGrades.map((item) => item.overallGrade)) : 0;
   const lowestGrade = studentGrades.length > 0 ? Math.min(...studentGrades.map((item) => item.overallGrade)) : 0;
   const passingRate = studentGrades.length > 0
-    ? Math.round((studentGrades.filter((item) => item.overallGrade >= 75).length / studentGrades.length) * 100)
+    ? Math.round(
+        (studentGrades.filter((item) => item.overallGrade >= 75).length /
+          studentGrades.length) *
+          100
+      )
     : 0;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black/20">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading grades...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Loading grades..." />;
   }
 
   return (
     <div className="min-h-screen bg-gray-950 flex">
-      <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
+      <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 relative">
@@ -469,21 +432,19 @@ function GradesManagement() {
                     No classes available
                   </div>
                 ) : (
-                  <select
+                  <CustomSelect
                     value={selectedClass}
-                    onChange={(e) => {
-                      setSelectedClass(e.target.value);
+                    onChange={(value) => {
+                      setSelectedClass(value);
                       setHasUnsavedChanges(false);
                     }}
-                    className="w-full px-4 py-3 bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select a class</option>
-                    {classes.map((classItem) => (
-                      <option key={classItem.id} value={classItem.id}>
-                        {classItem.code} - {classItem.name} ({classItem.section})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select a class"
+                    className="w-full"
+                    options={classes.map((classItemOption) => ({
+                      value: classItemOption.id,
+                      label: `${classItemOption.code} - ${classItemOption.name} (${classItemOption.section})`
+                    }))}
+                  />
                 )}
               </div>
               <div>

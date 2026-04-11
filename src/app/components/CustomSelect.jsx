@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check } from "lucide-react";
-function CustomSelect({ value, onChange, options, placeholder, label }) {
+function CustomSelect({ value, onChange, options, placeholder, label, icon, className = "" }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const selectedOption = options.find((opt) => opt.value === value);
+  const selectedOption = options.find((opt) => String(opt.value) === String(value));
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -21,44 +21,45 @@ function CustomSelect({ value, onChange, options, placeholder, label }) {
     onChange(optionValue);
     setIsOpen(false);
   };
-  return <div className="relative" ref={dropdownRef}>
+  return <div className={`relative ${className}`} ref={dropdownRef}>
       {label && <label className="block text-sm font-medium text-gray-700 mb-2">
           {label}
         </label>}
       
-      {
-    /* Select Button */
-  }
       <button
-    type="button"
-    onClick={() => setIsOpen(!isOpen)}
-    className={`w-full px-4 py-3 border rounded-lg flex items-center justify-between transition-all duration-200 ${isOpen ? "border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/50" : "border-gray-300 hover:border-gray-400 bg-white"}`}
-  >
-        <span className={selectedOption ? "text-gray-900" : "text-gray-500"}>
-          {selectedOption?.label || placeholder || "Select an option"}
-        </span>
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full rounded-2xl border-2 px-4 py-4 text-left transition-all duration-200 flex items-center justify-between gap-4 bg-slate-950/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] ${isOpen ? "border-emerald-400/80 ring-2 ring-emerald-400/20" : "border-emerald-400/70 hover:border-emerald-300"}`}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {icon && <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 transition-colors ${isOpen ? "text-emerald-300" : ""}`}>
+              {icon}
+            </span>}
+          <span className={`min-w-0 truncate text-lg font-semibold tracking-tight ${selectedOption ? "text-white" : "text-gray-400"}`}>
+            {selectedOption?.label || placeholder || "Select an option"}
+          </span>
+        </div>
         <ChevronDown
-    className={`w-5 h-5 text-gray-500 transition-transform duration-300 ${isOpen ? "rotate-180 text-emerald-600" : ""}`}
-  />
+          className={`w-5 h-5 flex-shrink-0 text-emerald-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+        />
       </button>
 
-      {
-    /* Dropdown Menu */
-  }
-      {isOpen && <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden animate-slideDown">
+      {isOpen && <div className="absolute z-50 w-full mt-2 overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="max-h-60 overflow-y-auto scrollbar-hide">
-            {options.map((option, index) => <button
-    key={option.value}
-    type="button"
-    onClick={() => handleSelect(option.value)}
-    className={`w-full px-4 py-3 flex items-center justify-between transition-all duration-150 ${option.value === value ? "bg-emerald-50 text-emerald-700" : "text-gray-900 hover:bg-gray-50"}`}
-    style={{
-      animationDelay: `${index * 30}ms`
-    }}
-  >
-                <span className="font-medium">{option.label}</span>
-                {option.value === value && <Check className="w-5 h-5 text-emerald-600 animate-scaleIn" />}
-              </button>)}
+            {options.map((option, index) => {
+    const isSelected = String(option.value) === String(value);
+    return <button
+      key={option.value}
+      type="button"
+      onClick={() => handleSelect(option.value)}
+      className={`w-full px-4 py-4 flex items-center justify-between gap-3 text-left transition-all duration-150 ${isSelected ? "bg-emerald-500/15 text-emerald-400 border-l-4 border-emerald-500" : "text-slate-100 hover:bg-white/5 border-l-4 border-transparent"} ${index !== 0 ? "border-t border-slate-800" : ""}`}
+    >
+                  <span className={`text-sm font-semibold ${isSelected ? "text-emerald-400" : "text-slate-100"}`}>
+                    {option.label}
+                  </span>
+                  {isSelected && <Check className="w-5 h-5 flex-shrink-0 text-emerald-400" />}
+                </button>;
+  })}
           </div>
         </div>}
     </div>;

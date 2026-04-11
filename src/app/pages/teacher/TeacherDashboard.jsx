@@ -1,20 +1,36 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "../../components/TeacherSidebar";
+import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import {
   BookOpen, Users, Megaphone, TrendingUp, Calendar,
   MessageSquare, ClipboardCheck, Plus, ArrowRight,
-  GraduationCap, BarChart2, Bell
+  GraduationCap, BarChart2, Bell, X
 } from "lucide-react";
-import { DashboardCalendar } from "../../components/DashboardCalendar";
-import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { supabase } from "../../lib/supabaseClient";
+import { DashboardCalendar } from "@/app/components/DashboardCalendar";
+import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { supabase } from "@/app/lib/supabaseClient";
+import {
+  normalizeAudience,
+  normalizePriority,
+  normalizeTimestamp,
+  normalizeAnnouncement,
+  sortAnnouncements,
+  resolveColumnName,
+  matchesTeacherAudience,
+  formatAnnouncementDate,
+  getPriorityStyles
+} from "@/app/lib/teacherHelpers";
 
 const colorMap = {
   emerald: { icon: "text-emerald-400", bg: "bg-emerald-500/10", hover: "hover:border-emerald-500/40 hover:bg-emerald-500/5" },
   blue:    { icon: "text-blue-400",    bg: "bg-blue-500/10",    hover: "hover:border-blue-500/40 hover:bg-blue-500/5" },
   red:     { icon: "text-red-400",     bg: "bg-red-500/10",     hover: "hover:border-red-500/40 hover:bg-red-500/5" },
 };
+
+const announcementTableCandidates = ["school_announcements", "announcements"];
+
+
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
@@ -27,7 +43,123 @@ export function TeacherDashboard() {
   const [totalStudents, setTotalStudents] = useState(0);
   const [gradesEncodedTotal, setGradesEncodedTotal] = useState(0);
   const [teacherEmail, setTeacherEmail] = useState("");
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementTable, setAnnouncementTable] = useState("");
+  const [announcementColumns, setAnnouncementColumns] = useState([]);
+  const [announcementsError, setAnnouncementsError] = useState("");
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const totalClasses = assignedSubjects.length;
+
+  const resolveAnnouncementTable = async () => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    for (const tableName of announcementTableCandidates) {
+      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+
+      if (!error) {
+        setAnnouncementTable(tableName);
+        return tableName;
+      }
+    }
+
+    throw new Error("Could not find the announcements table in Supabase.");
+  };
+
+  const getAnnouncementTableName = async () => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    if (announcementTable) {
+      const { error } = await supabase.from(announcementTable).select("id", { count: "exact", head: true });
+      if (!error) {
+        return announcementTable;
+      }
+    }
+
+    return resolveAnnouncementTable();
+  };
+
+  const resolveAnnouncementColumns = async (tableNameOverride) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const tableName = tableNameOverride || (await getAnnouncementTableName());
+    const candidates = [
+      "id",
+      "title",
+      "content",
+      "target_audience",
+      "audience",
+      "targetAudience",
+      "target_audience_type",
+      "recipient_audience",
+      "audience_type",
+      "priority",
+      "announcement_priority",
+      "importance",
+      "priority_level",
+      "created_at",
+      "date_posted",
+      "datePosted",
+      "timestamp",
+      "updated_at"
+    ];
+
+    const detected = [];
+
+    for (const columnName of candidates) {
+      const { error } = await supabase.from(tableName).select(columnName, { count: "exact", head: true });
+      if (!error) {
+        detected.push(columnName);
+      }
+    }
+
+    setAnnouncementColumns(detected);
+    return detected;
+  };
+
+  const getAnnouncementColumns = async (tableNameOverride) => {
+    if (announcementColumns.length > 0) {
+      return announcementColumns;
+    }
+
+    return resolveAnnouncementColumns(tableNameOverride);
+  };
+
+  const loadAnnouncements = async (tableNameOverride, columnsOverride) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const tableName = tableNameOverride || (await getAnnouncementTableName());
+    const columns = columnsOverride || (await getAnnouncementColumns(tableName));
+    const orderColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp", "updated_at"]);
+
+    let query = supabase.from(tableName).select("*");
+    if (orderColumn) {
+      query = query.order(orderColumn, { ascending: false });
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return sortAnnouncements((data ?? []).map(normalizeAnnouncement).filter((item) => item.id));
+  };
+
+  const refreshAnnouncements = async (tableNameOverride) => {
+    const tableName = tableNameOverride || (await getAnnouncementTableName());
+    const columns = await getAnnouncementColumns(tableName);
+    const rows = await loadAnnouncements(tableName, columns);
+    setAnnouncements(rows);
+    return rows;
+  };
 
   const resolveTeacherIdByEmail = async (email) => {
     if (!supabase || !email) return;
@@ -205,6 +337,33 @@ export function TeacherDashboard() {
   }, [navigate]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const initializeAnnouncements = async () => {
+      try {
+        const tableName = await resolveAnnouncementTable();
+        const columns = await resolveAnnouncementColumns(tableName);
+        const rows = await loadAnnouncements(tableName, columns);
+
+        if (isMounted) {
+          setAnnouncements(rows);
+          setAnnouncementsError("");
+        }
+      } catch (error) {
+        if (isMounted) {
+          setAnnouncementsError(error instanceof Error ? error.message : "Unable to load announcements.");
+        }
+      }
+    };
+
+    initializeAnnouncements();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!teacherId) return;
     fetchTeacherSubjects(teacherId);
     fetchTeacherStudentTotal(teacherId);
@@ -291,6 +450,29 @@ export function TeacherDashboard() {
     };
   }, [teacherId]);
 
+  useEffect(() => {
+    if (!supabase || !announcementTable) {
+      return undefined;
+    }
+
+    const channel = supabase
+      .channel(`teacher-dashboard-announcements-${announcementTable}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: announcementTable }, async () => {
+        try {
+          await refreshAnnouncements(announcementTable);
+        } catch {
+          // Keep current announcements if realtime refresh fails.
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [announcementTable]);
+
+  const visibleAnnouncements = sortAnnouncements(announcements.filter((item) => matchesTeacherAudience(item.targetAudience))).slice(0, 6);
+
   const handleLogout = async () => {
     if (supabase) {
       await supabase.auth.signOut();
@@ -307,18 +489,7 @@ export function TeacherDashboard() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce"    style={{ animationDelay: "150ms" }} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce"     style={{ animationDelay: "300ms" }} />
-          </div>
-          <p className="text-gray-500 text-sm">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Loading dashboard..." />;
   }
 
   return (
@@ -446,18 +617,95 @@ export function TeacherDashboard() {
                   )}
                 </div>
               </div>
+
+              {/* School Announcements */}
+              <div className="md:col-span-2 bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-white/8 flex items-center justify-between">
+                  <h3 className="text-white font-bold flex items-center gap-2">
+                    <Megaphone className="w-5 h-5 text-emerald-400" />
+                    Announcements
+                  </h3>
+                </div>
+
+                <div className="p-6">
+                  {announcementsError && (
+                    <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                      {announcementsError}
+                    </div>
+                  )}
+
+                  {visibleAnnouncements.length === 0 ? (
+                    <div className="text-center py-6 text-gray-500">No teacher announcements yet</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {visibleAnnouncements.map((announcement) => (
+                        <button
+                          key={announcement.id}
+                          type="button"
+                          onClick={() => setSelectedAnnouncement(announcement)}
+                          className="w-full text-left px-4 py-3 bg-white/4 rounded-xl border border-transparent hover:border-white/10 hover:bg-white/8 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3 mb-1.5">
+                            <p className="text-sm font-semibold text-white line-clamp-1">{announcement.title || "Untitled announcement"}</p>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getPriorityStyles(announcement.priority)}`}>
+                              {announcement.priority}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 line-clamp-2">{announcement.content || "No content."}</p>
+                          <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+                            <span>{formatAnnouncementDate(announcement.createdAt)}</span>
+                            <span>•</span>
+                            <span>{announcement.targetAudience}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Right Column */}
             <div className="space-y-6">
               {/* Calendar */}
               <div className="bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
-                <DashboardCalendar />
+                <DashboardCalendar viewerRole="teacher" />
               </div>
             </div>
           </div>
         </div>
       </main>
+
+      {selectedAnnouncement && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-gray-900 border border-white/10 shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-white text-lg font-semibold">Announcement Details</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedAnnouncement(null)}
+                className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getPriorityStyles(selectedAnnouncement.priority)}`}>
+                  {selectedAnnouncement.priority}
+                </span>
+                <span className="text-xs text-gray-500">{formatAnnouncementDate(selectedAnnouncement.createdAt)}</span>
+                <span className="text-xs text-gray-500">•</span>
+                <span className="text-xs text-gray-500">{selectedAnnouncement.targetAudience}</span>
+              </div>
+
+              <h4 className="text-white text-lg font-bold">{selectedAnnouncement.title || "Untitled announcement"}</h4>
+              <p className="text-sm text-gray-300 whitespace-pre-line leading-relaxed">{selectedAnnouncement.content || "No content."}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

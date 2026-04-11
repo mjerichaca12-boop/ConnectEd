@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "../../components/TeacherSidebar";
-import { CustomSelect } from "../../components/admin/CustomSelect";
+import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import {
   Bell,
   Search,
@@ -124,12 +125,7 @@ function VideoConferencing() {
     }
   };
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-black/20">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading video conferencing...</p>
-        </div>
-      </div>;
+    return <LoadingScreen message="Loading video conferencing..." />;
   }
   if (isInMeeting) {
     return <div className="min-h-screen bg-gray-900 flex flex-col">

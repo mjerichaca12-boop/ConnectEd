@@ -4,6 +4,15 @@ import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
+  sanitizeFileName,
+  extractFileType,
+  isColumnMissingError,
+  buildSupabaseErrorMessage,
+  getSupabaseHost,
+  resolveColumnName,
+  resolveTeacherIdByEmail
+} from "@/app/lib/teacherHelpers";
+import {
   Upload,
   FileText,
   File,
@@ -39,41 +48,7 @@ const ACTIVITY_SUBJECT_OPTIONS = [
   { value: "chem", label: "Chemistry" }
 ];
 
-function extractFileType(name) {
-  const extension = String(name || "").split(".").pop()?.trim().toUpperCase();
-  if (!extension || extension === String(name || "").toUpperCase()) return "";
-  return extension;
-}
 
-function sanitizeFileName(name) {
-  return String(name || "file")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .replace(/_+/g, "_");
-}
-
-function buildSupabaseErrorMessage(prefix, error) {
-  const message = String(error?.message || "").trim();
-  const details = String(error?.details || "").trim();
-  const hint = String(error?.hint || "").trim();
-  const extra = [message, details, hint].filter(Boolean).join(" | ");
-  return extra ? `${prefix}: ${extra}` : prefix;
-}
-
-function isColumnMissingError(error) {
-  const code = String(error?.code || "").trim();
-  const message = String(error?.message || "").toLowerCase();
-  return code === "42703" || message.includes("column") && message.includes("does not exist");
-}
-
-function getSupabaseHost() {
-  try {
-    const rawUrl = String(import.meta.env.VITE_SUPABASE_URL || "").trim();
-    if (!rawUrl) return "Not configured";
-    return new URL(rawUrl).host;
-  } catch {
-    return "Invalid URL";
-  }
-}
 
 function ClassMaterials() {
   const navigate = useNavigate();
@@ -90,6 +65,7 @@ function ClassMaterials() {
   const [activities] = useState([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
+  const [materialColumns, setMaterialColumns] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
 
@@ -118,25 +94,7 @@ function ClassMaterials() {
     }
   };
 
-  const resolveTeacherIdByEmail = async (email) => {
-    if (!supabase || !email) return "";
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("email", normalizedEmail)
-      .eq("role", "teacher")
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Failed to resolve teacher profile:", error);
-      return "";
-    }
-
-    return String(data?.id || "");
-  };
 
   const fetchMaterials = async (resolvedTeacherId) => {
     if (!supabase) {
@@ -149,26 +107,31 @@ function ClassMaterials() {
 
     let query = supabase
       .from("class_materials")
-      .select("id, title, description, file_type, file_url, file_name, file_path, subject, section, teacher_id, created_at")
+      .select("*")
       .order("created_at", { ascending: false });
 
-    if (resolvedTeacherId) {
+    if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
       query = query.eq("teacher_id", resolvedTeacherId);
+    }
+
+    if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+      query = query.eq("created_by", resolvedTeacherId);
     }
 
     let { data, error } = await query;
 
     if (error && isColumnMissingError(error)) {
-      let fallbackQuery = supabase
-        .from("class_materials")
-        .select("id, title, description, file_type, file_url, file_name, teacher_id, created_at")
-        .order("created_at", { ascending: false });
+      query = supabase.from("class_materials").select("*");
 
-      if (resolvedTeacherId) {
-        fallbackQuery = fallbackQuery.eq("teacher_id", resolvedTeacherId);
+      if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
+        query = query.eq("teacher_id", resolvedTeacherId);
       }
 
-      const fallbackResult = await fallbackQuery;
+      if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+        query = query.eq("created_by", resolvedTeacherId);
+      }
+
+      const fallbackResult = await query;
       data = fallbackResult.data;
       error = fallbackResult.error;
     }
@@ -181,8 +144,49 @@ function ClassMaterials() {
       return;
     }
 
-    setMaterials(data ?? []);
+    setMaterials((data ?? []).map((row) => normalizeMaterialRowRecord(row)));
     setLoadingMaterials(false);
+  };
+
+  const resolveMaterialColumns = async () => {
+    if (!supabase) {
+      return [];
+    }
+
+    const candidates = [
+      "id",
+      "title",
+      "description",
+      "file_type",
+      "file_url",
+      "file_name",
+      "file_path",
+      "subject",
+      "section",
+      "teacher_id",
+      "created_by",
+      "created_at"
+    ];
+
+    const detected = [];
+
+    for (const columnName of candidates) {
+      const { error } = await supabase.from("class_materials").select(columnName, { count: "exact", head: true });
+      if (!error) {
+        detected.push(columnName);
+      }
+    }
+
+    setMaterialColumns(detected);
+    return detected;
+  };
+
+  const getMaterialColumns = async () => {
+    if (materialColumns.length > 0) {
+      return materialColumns;
+    }
+
+    return resolveMaterialColumns();
   };
 
   const fetchTeacherSubjects = async (resolvedTeacherId) => {
@@ -246,6 +250,7 @@ function ClassMaterials() {
       setTeacherName(user.name || "Teacher");
       const resolvedTeacherId = await resolveTeacherIdByEmail(user.email);
       setTeacherId(resolvedTeacherId);
+      await resolveMaterialColumns();
       await Promise.all([
         fetchMaterials(resolvedTeacherId),
         fetchTeacherSubjects(resolvedTeacherId)
@@ -258,26 +263,33 @@ function ClassMaterials() {
   useEffect(() => {
     if (!supabase || !teacherId) return;
 
+    const filterColumn = materialColumns.includes("teacher_id")
+      ? "teacher_id"
+      : materialColumns.includes("created_by")
+        ? "created_by"
+        : "";
+
+    const changeConfig = {
+      event: "*",
+      schema: "public",
+      table: "class_materials"
+    };
+
+    if (filterColumn) {
+      changeConfig.filter = `${filterColumn}=eq.${teacherId}`;
+    }
+
     const channel = supabase
       .channel(`teacher-materials-${teacherId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "class_materials",
-          filter: `teacher_id=eq.${teacherId}`
-        },
-        () => {
-          fetchMaterials(teacherId);
-        }
-      )
+      .on("postgres_changes", changeConfig, () => {
+        fetchMaterials(teacherId);
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [teacherId]);
+  }, [teacherId, materialColumns]);
 
   useEffect(() => {
     if (!materialSuccess) return;
@@ -365,8 +377,14 @@ function ClassMaterials() {
       setMaterialError("");
       setMaterialSuccess("");
 
+      const timestamp = Date.now();
       const safeFileName = sanitizeFileName(materialFile.name);
-      const filePath = `${teacherId || "teacher"}/${Date.now()}_${safeFileName}`;
+      const storedFileName = `${timestamp}_${safeFileName}`;
+      const filePath = `class-materials/${teacherId || "teacher"}/${storedFileName}`;
+
+      const columns = await getMaterialColumns();
+      const hasTeacherIdColumn = columns.includes("teacher_id");
+      const hasCreatedByColumn = columns.includes("created_by");
 
       const { error: uploadError } = await supabase
         .storage
@@ -395,19 +413,38 @@ function ClassMaterials() {
         description: materialForm.description.trim() || null,
         file_type: fileType,
         file_url: fileUrl,
-        file_name: materialFile.name,
-        file_path: filePath,
-        teacher_id: teacherId,
-        subject: materialForm.subject.trim() || null,
-        section: materialForm.section.trim() || null,
-        created_at: new Date().toISOString()
+        file_name: storedFileName
       };
+
+      if (columns.includes("file_path")) {
+        payload.file_path = filePath;
+      }
+
+      if (columns.includes("subject")) {
+        payload.subject = materialForm.subject.trim() || null;
+      }
+
+      if (columns.includes("section")) {
+        payload.section = materialForm.section.trim() || null;
+      }
+
+      if (hasTeacherIdColumn) {
+        payload.teacher_id = teacherId;
+      }
+
+      if (hasCreatedByColumn) {
+        payload.created_by = teacherId;
+      }
+
+      if (columns.includes("created_at")) {
+        payload.created_at = new Date().toISOString();
+      }
 
       let insertedRow = null;
       let { data: insertData, error: insertError } = await supabase
         .from("class_materials")
         .insert(payload)
-        .select("id, title, description, file_type, file_url, file_name, file_path, subject, section, teacher_id, created_at")
+        .select("*")
         .single();
 
       insertedRow = insertData || null;
@@ -418,15 +455,25 @@ function ClassMaterials() {
           description: materialForm.description.trim() || null,
           file_type: fileType,
           file_url: fileUrl,
-          file_name: materialFile.name,
-          teacher_id: teacherId,
-          created_at: new Date().toISOString()
+          file_name: storedFileName
         };
+
+        if (hasTeacherIdColumn) {
+          fallbackPayload.teacher_id = teacherId;
+        }
+
+        if (hasCreatedByColumn) {
+          fallbackPayload.created_by = teacherId;
+        }
+
+        if (columns.includes("created_at")) {
+          fallbackPayload.created_at = new Date().toISOString();
+        }
 
         const fallbackInsert = await supabase
           .from("class_materials")
           .insert(fallbackPayload)
-          .select("id, title, description, file_type, file_url, file_name, teacher_id, created_at")
+          .select("*")
           .single();
 
         insertError = fallbackInsert.error;
@@ -444,7 +491,7 @@ function ClassMaterials() {
       }
 
       if (insertedRow) {
-        setMaterials((prev) => [insertedRow, ...prev]);
+        setMaterials((prev) => [normalizeMaterialRow(insertedRow), ...prev]);
       }
       await fetchMaterials(teacherId);
       setMaterialSuccess(`Material uploaded successfully to ${connectedSupabaseHost}.`);

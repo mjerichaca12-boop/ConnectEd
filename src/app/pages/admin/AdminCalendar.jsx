@@ -21,6 +21,7 @@ export function AdminCalendar() {
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, eventId: "", eventTitle: "" });
   const [events, setEvents] = useState([]);
   const [calendarTable, setCalendarTable] = useState("");
+  const [calendarColumns, setCalendarColumns] = useState([]);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -37,6 +38,17 @@ export function AdminCalendar() {
     { value: "Teachers", label: "Teachers" },
     { value: "Students", label: "Students" }
   ];
+
+  const ALLOWED_AUDIENCES = ["School-wide", "Teachers", "Students"];
+
+  const normalizeAudienceValue = (value) => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (!normalized) return "";
+    if (normalized === "school-wide" || normalized === "schoolwide" || normalized === "school wide") return "School-wide";
+    if (normalized === "teacher" || normalized === "teachers") return "Teachers";
+    if (normalized === "student" || normalized === "students") return "Students";
+    return "";
+  };
 
   const emptyForm = useMemo(() => ({
     title: "",
@@ -55,6 +67,8 @@ export function AdminCalendar() {
     targetAudience: String(row?.target_audience ?? row?.audience ?? "School-wide").trim(),
     createdAt: row?.created_at || new Date().toISOString()
   });
+
+  const resolveColumnName = (columns, candidates) => candidates.find((candidate) => columns.includes(candidate)) || "";
 
   const sortEvents = (items) => [...items].sort((left, right) => {
     const leftValue = new Date(`${left.eventDate}T${left.eventTime || "00:00:00"}`).getTime() || new Date(left.createdAt).getTime();
@@ -130,6 +144,83 @@ export function AdminCalendar() {
     return sortEvents((data ?? []).map(normalizeEvent).filter((item) => item.id));
   };
 
+  const resolveCalendarColumns = async (tableNameOverride) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const tableName = tableNameOverride || (await getCalendarTableName());
+    const candidates = [
+      "id",
+      "title",
+      "description",
+      "event_date",
+      "date",
+      "event_time",
+      "time",
+      "target_audience",
+      "audience",
+      "created_by",
+      "createdBy",
+      "author",
+      "created_at",
+      "updated_at"
+    ];
+
+    const detected = [];
+
+    for (const columnName of candidates) {
+      const { error } = await supabase.from(tableName).select(columnName, { count: "exact", head: true });
+      if (!error) {
+        detected.push(columnName);
+      }
+    }
+
+    setCalendarColumns(detected);
+    return detected;
+  };
+
+  const getCalendarColumns = async (tableNameOverride) => {
+    if (calendarColumns.length > 0) {
+      return calendarColumns;
+    }
+
+    return resolveCalendarColumns(tableNameOverride);
+  };
+
+  const buildCreatePayload = (columns, timestamp) => {
+    const dateColumn = resolveColumnName(columns, ["event_date", "date"]) || "event_date";
+    const timeColumn = resolveColumnName(columns, ["event_time", "time"]) || "event_time";
+    const audienceColumn = resolveColumnName(columns, ["target_audience", "audience"]) || "target_audience";
+    const createdByColumn = resolveColumnName(columns, ["created_by", "createdBy", "author"]);
+    const createdAtColumn = resolveColumnName(columns, ["created_at"]);
+    const updatedAtColumn = resolveColumnName(columns, ["updated_at"]);
+
+    const normalizedAudience = normalizeAudienceValue(formData.targetAudience) || "School-wide";
+
+    const payload = {
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      [dateColumn]: formData.eventDate,
+      [timeColumn]: formData.eventTime || null,
+      [audienceColumn]: normalizedAudience
+    };
+
+    if (createdByColumn) {
+      payload[createdByColumn] = "admin";
+    }
+
+    if (createdAtColumn) {
+      payload[createdAtColumn] = timestamp;
+    }
+
+    if (updatedAtColumn) {
+      payload[updatedAtColumn] = timestamp;
+    }
+
+    return payload;
+  };
+
   const refreshEvents = async (tableName) => {
     const rows = await loadEvents(tableName);
     setEvents((current) => {
@@ -167,6 +258,15 @@ export function AdminCalendar() {
       errors.eventDate = "Event date is required.";
     }
 
+    const normalizedAudience = normalizeAudienceValue(formData.targetAudience);
+    if (!normalizedAudience) {
+      errors.targetAudience = "Target audience must be School-wide, Teachers, or Students.";
+    }
+
+    if (normalizedAudience && !ALLOWED_AUDIENCES.includes(normalizedAudience)) {
+      errors.targetAudience = "Target audience must be School-wide, Teachers, or Students.";
+    }
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -192,6 +292,7 @@ export function AdminCalendar() {
         setNotificationList(adminNotifications);
 
         const tableName = await resolveCalendarTable();
+        await resolveCalendarColumns(tableName);
         const rows = await loadEvents(tableName);
 
         if (isMounted) {
@@ -273,6 +374,15 @@ export function AdminCalendar() {
       return;
     }
 
+    const normalizedAudience = normalizeAudienceValue(formData.targetAudience);
+    if (!normalizedAudience) {
+      setFormErrors((current) => ({
+        ...current,
+        targetAudience: "Target audience must be School-wide, Teachers, or Students."
+      }));
+      return;
+    }
+
     if (!supabase) {
       setEventsError("Supabase client is not configured.");
       return;
@@ -283,23 +393,20 @@ export function AdminCalendar() {
     try {
       const tableName = await getCalendarTableName();
       const timestamp = new Date().toISOString();
-      const payload = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        event_date: formData.eventDate,
-        event_time: formData.eventTime || null,
-        target_audience: formData.targetAudience,
-        created_at: timestamp,
-        updated_at: timestamp
-      };
+      const columns = await getCalendarColumns(tableName);
+      const payload = buildCreatePayload(columns, timestamp);
+
+      const dateColumn = resolveColumnName(columns, ["event_date", "date"]) || "event_date";
+      const timeColumn = resolveColumnName(columns, ["event_time", "time"]) || "event_time";
+      const audienceColumn = resolveColumnName(columns, ["target_audience", "audience"]) || "target_audience";
 
       const optimisticEvent = {
         id: `temp-${timestamp}`,
         title: payload.title,
         description: payload.description,
-        eventDate: payload.event_date,
-        eventTime: payload.event_time || "",
-        targetAudience: payload.target_audience,
+        eventDate: payload[dateColumn],
+        eventTime: payload[timeColumn] || "",
+        targetAudience: payload[audienceColumn],
         createdAt: timestamp
       };
 
@@ -412,7 +519,7 @@ export function AdminCalendar() {
           <div className="flex flex-col md:flex-row gap-6">
             {/* Calendar Preview */}
             <div className="w-full md:w-1/3">
-              <DashboardCalendar />
+              <DashboardCalendar viewerRole="admin" />
             </div>
 
             {/* Event Management */}
@@ -573,6 +680,7 @@ export function AdminCalendar() {
                       </button>
                     ))}
                   </div>
+                  {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
                 </div>
               </div>
 
