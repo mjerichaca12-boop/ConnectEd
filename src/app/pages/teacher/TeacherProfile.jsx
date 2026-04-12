@@ -4,79 +4,46 @@ import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { supabase } from "@/app/lib/supabaseClient";
 import { buildSupabaseErrorMessage, sanitizeFileName } from "@/app/lib/teacherHelpers";
-import { Bell, User, Mail, Phone, Edit, Save, X, Eye, EyeOff, Lock, Upload } from "lucide-react";
+import {
+  User, Mail, Phone, Edit3, Save, X, Eye, EyeOff, Lock, Upload,
+  Shield, BadgeCheck, Camera, ChevronRight, Star, BookOpen, Users,
+  Clock, CheckCircle, AlertTriangle,
+} from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
 const PHONE_ALLOWED_PATTERN = /^[0-9+\-()\s]*$/;
 
-const emptyProfile = {
-  teacherId: "",
-  fullName: "",
-  email: "",
-  phone: "",
-  role: "Teacher",
-  status: "Active",
-  avatarUrl: ""
-};
-
+const emptyProfile = { teacherId: "", fullName: "", email: "", phone: "", role: "Teacher", status: "Active", avatarUrl: "" };
 const normalizePhoneInput = (value) => String(value ?? "").replace(/[^0-9+\-()\s]/g, "");
 const countPhoneDigits = (value) => (String(value ?? "").match(/\d/g) || []).length;
-const isValidPhoneNumber = (value) => {
-  const normalized = String(value ?? "").trim();
-  return Boolean(normalized) && PHONE_ALLOWED_PATTERN.test(normalized) && countPhoneDigits(normalized) >= 10;
-};
-const joinNameParts = (...parts) => parts.map((part) => String(part ?? "").trim()).filter(Boolean).join(" ").trim();
+const isValidPhoneNumber = (value) => { const n = String(value ?? "").trim(); return Boolean(n) && PHONE_ALLOWED_PATTERN.test(n) && countPhoneDigits(n) >= 10; };
+const joinNameParts = (...parts) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(" ").trim();
 
-const getFallbackCurrentUser = () => {
-  try {
-    const stored = localStorage.getItem("currentUser");
-    if (!stored) return null;
-    return JSON.parse(stored);
-  } catch {
-    return null;
-  }
-};
+const getFallbackCurrentUser = () => { try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; } catch { return null; } };
 
 const formatDisplayName = (profileRow, authUser, fallbackUser) => {
   const profileName = joinNameParts(profileRow?.first_name, profileRow?.middle_name, profileRow?.last_name);
   if (profileName) return profileName;
-
-  const fallbackNames = [
-    profileRow?.full_name,
-    profileRow?.display_name,
-    profileRow?.name,
-    authUser?.user_metadata?.full_name,
-    authUser?.user_metadata?.name,
-    authUser?.user_metadata?.given_name && authUser?.user_metadata?.family_name
-      ? joinNameParts(authUser.user_metadata.given_name, authUser.user_metadata.family_name)
-      : "",
-    fallbackUser?.name
-  ];
-
-  for (const candidate of fallbackNames) {
-    const normalized = String(candidate ?? "").trim();
-    if (normalized) {
-      return normalized;
-    }
+  for (const c of [profileRow?.full_name, profileRow?.display_name, profileRow?.name, authUser?.user_metadata?.full_name, authUser?.user_metadata?.name, fallbackUser?.name]) {
+    if (String(c ?? "").trim()) return String(c).trim();
   }
-
   return String(authUser?.email || fallbackUser?.email || "Teacher").split("@")[0] || "Teacher";
 };
 
 const getAuthAvatarUrl = (authUser) => {
-  const metadata = authUser?.user_metadata || {};
-  return String(metadata.avatar_url || metadata.picture || metadata.picture_url || metadata.avatar || "").trim();
+  const m = authUser?.user_metadata || {};
+  return String(m.avatar_url || m.picture || m.picture_url || m.avatar || "").trim();
 };
 
 const makeTeacherProfileState = (profileRow, authUser, fallbackUser) => ({
   teacherId: String(profileRow?.id || authUser?.id || fallbackUser?.id || "").trim(),
   fullName: formatDisplayName(profileRow, authUser, fallbackUser),
   email: String(profileRow?.email || authUser?.email || fallbackUser?.email || "").trim(),
-  phone: String(profileRow?.phone || profileRow?.contact_number || fallbackUser?.phone || fallbackUser?.contactNumber || "").trim(),
+  phone: String(profileRow?.phone || profileRow?.contact_number || fallbackUser?.phone || "").trim(),
   role: String(profileRow?.role || fallbackUser?.role || "Teacher").trim() || "Teacher",
   status: String(profileRow?.status || fallbackUser?.status || "Active").trim() || "Active",
   avatarUrl: String(profileRow?.avatar_url || getAuthAvatarUrl(authUser) || fallbackUser?.avatarUrl || "").trim(),
-  rawProfile: profileRow || null
+  rawProfile: profileRow || null,
 });
 
 const getProfilePicturePath = (teacherId, fileName) =>
@@ -85,22 +52,40 @@ const getProfilePicturePath = (teacherId, fileName) =>
 const extractStoragePathFromPublicUrl = (url) => {
   const value = String(url || "").trim();
   if (!value) return "";
-
   const marker = `/storage/v1/object/public/${STORAGE_BUCKET}/`;
   const index = value.indexOf(marker);
-  if (index === -1) return "";
-
-  return decodeURIComponent(value.slice(index + marker.length));
+  return index === -1 ? "" : decodeURIComponent(value.slice(index + marker.length));
 };
 
-const collectChangedFields = ({ phoneChanged, passwordChanged, pictureChanged }) => {
-  const changes = [];
-  if (phoneChanged) changes.push("phone number");
-  if (passwordChanged) changes.push("password");
-  if (pictureChanged) changes.push("profile picture");
-  return changes;
-};
+/* ─── Stat Card ──────────────────────────────────────────────────── */
+function StatCard({ icon, label, value, color }) {
+  return (
+    <div className={`rounded-xl p-5 border ${color} flex items-center gap-4`}>
+      <div className="p-3 rounded-xl bg-white/5">
+        {icon}
+      </div>
+      <div>
+        <p className="text-gray-400 text-xs">{label}</p>
+        <p className="text-white font-semibold">{value}</p>
+      </div>
+    </div>
+  );
+}
 
+/* ─── Info Row ───────────────────────────────────────────────────── */
+function InfoRow({ icon, label, value, children }) {
+  return (
+    <div className="group">
+      <label className="block text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2.5">{label}</label>
+      <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/8 hover:border-white/20 transition-colors">
+        <span className="text-gray-400 shrink-0">{icon}</span>
+        {children || <span className="text-gray-100 text-base">{value || "Not available"}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Component ─────────────────────────────────────────────── */
 function TeacherProfile() {
   const navigate = useNavigate();
   const profileFileInputRef = useRef(null);
@@ -117,27 +102,23 @@ function TeacherProfile() {
   const [newPassword, setNewPassword] = useState("");
   const [profilePictureFile, setProfilePictureFile] = useState(null);
   const [profilePicturePreview, setProfilePicturePreview] = useState("");
+  const [activeSection, setActiveSection] = useState("profile"); // "profile" | "security"
 
   const syncStoredCurrentUser = (nextProfile) => {
     try {
       const currentUser = getFallbackCurrentUser();
       if (!currentUser) return;
-
-      const nextUser = {
+      localStorage.setItem("currentUser", JSON.stringify({
         ...currentUser,
         id: nextProfile.teacherId || currentUser.id,
         name: nextProfile.fullName || currentUser.name,
         email: nextProfile.email || currentUser.email,
         role: nextProfile.role || currentUser.role,
         status: nextProfile.status || currentUser.status,
-        phone: nextProfile.phone || currentUser.phone || currentUser.contactNumber,
-        avatarUrl: nextProfile.avatarUrl || currentUser.avatarUrl
-      };
-
-      localStorage.setItem("currentUser", JSON.stringify(nextUser));
-    } catch {
-      // Keep the page functional if localStorage sync fails.
-    }
+        phone: nextProfile.phone || currentUser.phone,
+        avatarUrl: nextProfile.avatarUrl || currentUser.avatarUrl,
+      }));
+    } catch { /* silent */ }
   };
 
   const loadTeacherProfile = async (authUserOverride) => {
@@ -154,40 +135,22 @@ function TeacherProfile() {
 
     setLoading(true);
     setErrorMessage("");
-
     const fallbackUser = getFallbackCurrentUser();
     const authUser = authUserOverride || (await supabase.auth.getUser()).data?.user || null;
-
-    if (!authUser && (!fallbackUser || fallbackUser.role !== "teacher")) {
-      navigate("/login");
-      return;
-    }
+    if (!authUser && (!fallbackUser || fallbackUser.role !== "teacher")) { navigate("/login"); return; }
 
     let profileRow = null;
-    const candidateIds = [authUser?.id, fallbackUser?.id].map((value) => String(value || "").trim()).filter(Boolean);
-    const candidateEmails = [authUser?.email, fallbackUser?.email].map((value) => String(value || "").trim()).filter(Boolean);
+    const candidateIds = [authUser?.id, fallbackUser?.id].map((v) => String(v || "").trim()).filter(Boolean);
+    const candidateEmails = [authUser?.email, fallbackUser?.email].map((v) => String(v || "").trim()).filter(Boolean);
 
-    for (const candidateId of candidateIds) {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", candidateId).eq("role", "teacher").maybeSingle();
-      if (error) {
-        console.error("Failed to load teacher profile by id:", error);
-      }
-      if (data) {
-        profileRow = data;
-        break;
-      }
+    for (const id of candidateIds) {
+      const { data } = await supabase.from("profiles").select("*").eq("id", id).eq("role", "teacher").maybeSingle();
+      if (data) { profileRow = data; break; }
     }
-
     if (!profileRow) {
-      for (const candidateEmail of candidateEmails) {
-        const { data, error } = await supabase.from("profiles").select("*").eq("email", candidateEmail).eq("role", "teacher").maybeSingle();
-        if (error) {
-          console.error("Failed to load teacher profile by email:", error);
-        }
-        if (data) {
-          profileRow = data;
-          break;
-        }
+      for (const email of candidateEmails) {
+        const { data } = await supabase.from("profiles").select("*").eq("email", email).eq("role", "teacher").maybeSingle();
+        if (data) { profileRow = data; break; }
       }
     }
 
@@ -202,68 +165,35 @@ function TeacherProfile() {
 
   useEffect(() => {
     let isMounted = true;
-
-    const initializeProfile = async () => {
+    const init = async () => {
       const authResult = await supabase?.auth.getUser?.() || { data: { user: null } };
       const authUser = authResult.data?.user || null;
       const fallbackUser = getFallbackCurrentUser();
-
-      if (!authUser && (!fallbackUser || fallbackUser.role !== "teacher")) {
-        navigate("/login");
-        return;
-      }
-
+      if (!authUser && (!fallbackUser || fallbackUser.role !== "teacher")) { navigate("/login"); return; }
       if (!isMounted) return;
       await loadTeacherProfile(authUser);
     };
-
-    initializeProfile().catch((error) => {
-      console.error("Failed to initialize teacher profile:", error);
-      if (isMounted) {
-        setErrorMessage("Unable to load profile data.");
-        setLoading(false);
-      }
-    });
-
-    const authSubscription = supabase?.auth.onAuthStateChange?.((_event, session) => {
+    init().catch((err) => { console.error(err); if (isMounted) { setErrorMessage("Unable to load profile data."); setLoading(false); } });
+    const sub = supabase?.auth.onAuthStateChange?.((_event, session) => {
       if (!isMounted) return;
-      if (!session?.user) {
-        navigate("/login");
-        return;
-      }
-      loadTeacherProfile(session.user).catch((error) => {
-        console.error("Failed to refresh teacher profile:", error);
-      });
+      if (!session?.user) { navigate("/login"); return; }
+      loadTeacherProfile(session.user).catch(console.error);
     });
-
-    return () => {
-      isMounted = false;
-      authSubscription?.data?.subscription?.unsubscribe?.();
-    };
+    return () => { isMounted = false; sub?.data?.subscription?.unsubscribe?.(); };
   }, [navigate]);
 
   useEffect(() => {
-    return () => {
-      if (profilePicturePreview?.startsWith("blob:")) {
-        URL.revokeObjectURL(profilePicturePreview);
-      }
-    };
+    return () => { if (profilePicturePreview?.startsWith("blob:")) URL.revokeObjectURL(profilePicturePreview); };
   }, [profilePicturePreview]);
 
   useEffect(() => {
     if (!successMessage && !errorMessage) return;
-    const timer = window.setTimeout(() => {
-      setSuccessMessage("");
-      setErrorMessage("");
-    }, 4000);
-
+    const timer = window.setTimeout(() => { setSuccessMessage(""); setErrorMessage(""); }, 4000);
     return () => window.clearTimeout(timer);
   }, [successMessage, errorMessage]);
 
   const handleLogout = () => {
-    if (supabase) {
-      void supabase.auth.signOut();
-    }
+    if (supabase) void supabase.auth.signOut();
     localStorage.removeItem("currentUser");
     navigate("/login");
   };
@@ -287,104 +217,27 @@ function TeacherProfile() {
     setErrorMessage("");
   };
 
-  const handlePhoneChange = (event) => {
-    setEditedPhone(normalizePhoneInput(event.target.value));
-  };
-
-  const handleProfilePictureClick = () => {
-    profileFileInputRef.current?.click();
-  };
-
-  const handleProfilePictureChange = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setProfilePictureFile(null);
-      setProfilePicturePreview(profile.avatarUrl || "");
-      return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-      setErrorMessage("Please select a valid image file.");
-      return;
-    }
-
-    if (profilePicturePreview?.startsWith("blob:")) {
-      URL.revokeObjectURL(profilePicturePreview);
-    }
-
-    setProfilePictureFile(file);
-    setProfilePicturePreview(URL.createObjectURL(file));
-  };
-
-  const notifyAdminProfileChange = async (changedFields, nextProfile) => {
-    if (!supabase || changedFields.length === 0) return;
-
-    const payload = {
-      title: "Teacher Profile Updated",
-      content: `Teacher ${nextProfile.fullName} updated their profile information: ${changedFields.join(", ")}.`,
-      target_audience: "Teacher",
-      priority: "Low",
-      author: nextProfile.fullName,
-      created_by: nextProfile.teacherId || null,
-      created_by_name: nextProfile.fullName
-    };
-
-    const { error } = await supabase.from("announcements").insert(payload);
-    if (error) {
-      console.error("Failed to create admin profile notification:", error);
-    }
-  };
-
   const handleSave = async () => {
-    if (!supabase) {
-      setErrorMessage("Unable to connect to the server.");
-      return;
-    }
-
+    if (!supabase) { setErrorMessage("Unable to connect to the server."); return; }
     const trimmedPhone = editedPhone.trim();
     const hasPhoneChange = trimmedPhone !== profile.phone;
     const hasPasswordChange = Boolean(newPassword.trim());
     const hasPictureChange = Boolean(profilePictureFile);
+    if (!hasPhoneChange && !hasPasswordChange && !hasPictureChange) { setIsEditing(false); return; }
+    if (hasPhoneChange && !isValidPhoneNumber(trimmedPhone)) { setErrorMessage("Enter a valid phone number (at least 10 digits)."); return; }
 
-    if (!hasPhoneChange && !hasPasswordChange && !hasPictureChange) {
-      setIsEditing(false);
-      return;
-    }
-
-    if (!isValidPhoneNumber(trimmedPhone)) {
-      setErrorMessage("Enter a valid phone number.");
-      return;
-    }
-
-    setIsSaving(true);
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    const changes = collectChangedFields({
-      phoneChanged: hasPhoneChange,
-      passwordChanged: hasPasswordChange,
-      pictureChanged: hasPictureChange
-    });
-
+    setIsSaving(true); setErrorMessage(""); setSuccessMessage("");
     const authResult = await supabase.auth.getUser();
     const authUser = authResult.data?.user || null;
-
-    let uploadedAvatarPath = "";
     let nextAvatarUrl = profile.avatarUrl;
-    let previousAvatarPath = extractStoragePathFromPublicUrl(profile.avatarUrl);
+    let uploadedAvatarPath = "";
+    const previousAvatarPath = extractStoragePathFromPublicUrl(profile.avatarUrl);
 
     try {
       if (hasPictureChange && profilePictureFile) {
         const filePath = getProfilePicturePath(profile.teacherId || authUser?.id || "teacher", profilePictureFile.name);
-        const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(filePath, profilePictureFile, {
-          upsert: true,
-          contentType: profilePictureFile.type
-        });
-
-        if (uploadResult.error) {
-          throw uploadResult.error;
-        }
-
+        const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(filePath, profilePictureFile, { upsert: true, contentType: profilePictureFile.type });
+        if (uploadResult.error) throw uploadResult.error;
         uploadedAvatarPath = uploadResult.data?.path || filePath;
         const { data: publicUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(uploadedAvatarPath);
         nextAvatarUrl = publicUrlData?.publicUrl || "";
@@ -392,30 +245,17 @@ function TeacherProfile() {
 
       const { error: profileUpdateError } = await supabase
         .from("profiles")
-        .update({
-          phone: trimmedPhone,
-          avatar_url: nextAvatarUrl || null
-        })
+        .update({ phone: trimmedPhone, avatar_url: nextAvatarUrl || null })
         .eq("id", profile.teacherId || authUser?.id)
         .eq("role", "teacher");
-
-      if (profileUpdateError) {
-        throw profileUpdateError;
-      }
+      if (profileUpdateError) throw profileUpdateError;
 
       if (hasPasswordChange) {
         const { error: passwordError } = await supabase.auth.updateUser({ password: newPassword.trim() });
-        if (passwordError) {
-          throw passwordError;
-        }
+        if (passwordError) throw passwordError;
       }
 
-      const nextProfile = {
-        ...profile,
-        phone: trimmedPhone,
-        avatarUrl: nextAvatarUrl || profile.avatarUrl
-      };
-
+      const nextProfile = { ...profile, phone: trimmedPhone, avatarUrl: nextAvatarUrl || profile.avatarUrl };
       setProfile(nextProfile);
       setTeacherName(nextProfile.fullName);
       setEditedPhone(nextProfile.phone);
@@ -424,226 +264,268 @@ function TeacherProfile() {
       setProfilePicturePreview(nextProfile.avatarUrl || "");
       setIsEditing(false);
       syncStoredCurrentUser(nextProfile);
-
-      if (profileFileInputRef.current) {
-        profileFileInputRef.current.value = "";
-      }
-
+      if (profileFileInputRef.current) profileFileInputRef.current.value = "";
       if (hasPictureChange && previousAvatarPath) {
-        const { error: deleteError } = await supabase.storage.from(STORAGE_BUCKET).remove([previousAvatarPath]);
-        if (deleteError) {
-          console.error("Failed to delete previous profile image:", deleteError);
-        }
+        await supabase.storage.from(STORAGE_BUCKET).remove([previousAvatarPath]).catch(console.error);
       }
-
-      await notifyAdminProfileChange(changes, nextProfile);
-
       setSuccessMessage("Profile updated successfully.");
     } catch (error) {
       console.error("Failed to update teacher profile:", error);
-
-      if (uploadedAvatarPath && hasPictureChange) {
-        const { error: cleanupError } = await supabase.storage.from(STORAGE_BUCKET).remove([uploadedAvatarPath]);
-        if (cleanupError) {
-          console.error("Failed to roll back uploaded avatar:", cleanupError);
-        }
-      }
-
+      if (uploadedAvatarPath && hasPictureChange) await supabase.storage.from(STORAGE_BUCKET).remove([uploadedAvatarPath]).catch(console.error);
       setErrorMessage(buildSupabaseErrorMessage("Unable to update profile", error));
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleProfilePictureChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) { setProfilePictureFile(null); setProfilePicturePreview(profile.avatarUrl || ""); return; }
+    if (!file.type.startsWith("image/")) { setErrorMessage("Please select a valid image file."); return; }
+    if (profilePicturePreview?.startsWith("blob:")) URL.revokeObjectURL(profilePicturePreview);
+    setProfilePictureFile(file);
+    setProfilePicturePreview(URL.createObjectURL(file));
+  };
+
   const avatarSource = profilePicturePreview || profile.avatarUrl;
+  const initials = profile.fullName?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "T";
 
-  if (loading) {
-    return <LoadingScreen message="Loading profile..." />;
-  }
+  if (loading) return <LoadingScreen message="Loading profile..." />;
 
-  return <div className="min-h-screen bg-gray-950 flex">
+  return (
+    <div className="min-h-screen bg-gray-950 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
+        {/* Top bar */}
         <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
-          <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Profile</h2>
-              </div>
-              <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
-                <Bell className="w-6 h-6 text-gray-400" />
-                
+          <div className="px-6 py-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-white">Teacher Profile</h2>
+            {!isEditing ? (
+              <button onClick={handleEdit} className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all text-sm font-medium">
+                <Edit3 className="w-4 h-4" />
+                Edit Profile
               </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button onClick={handleCancel} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-all text-sm font-medium">
+                  <X className="w-4 h-4" />
+                  Cancel
+                </button>
+                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                  <Save className="w-4 h-4" />
+                  {isSaving ? "Saving…" : "Save Changes"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-8 space-y-7">
+          {/* Alert messages */}
           {successMessage && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 text-emerald-300 text-sm">
-              {successMessage}
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-5 py-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+              <p className="text-emerald-300 text-sm font-medium">{successMessage}</p>
             </div>
           )}
-
           {errorMessage && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-300 text-sm">
-              {errorMessage}
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-5 py-4 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+              <p className="text-red-300 text-sm">{errorMessage}</p>
             </div>
           )}
 
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-8 text-white shadow-lg">
-            <div className="flex items-center gap-6">
-              <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-4 border-white/30 overflow-hidden shrink-0">
-                {avatarSource ? (
-                  <div
-                    className="w-full h-full bg-cover bg-center"
-                    style={{ backgroundImage: `url(${avatarSource})` }}
-                    aria-label="Profile picture"
-                  />
-                ) : (
-                  <span className="text-4xl font-bold">{profile.fullName.charAt(0) || "T"}</span>
-                )}
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold mb-2">{profile.fullName}</h1>
-                <p className="text-emerald-50 mb-1">{profile.teacherId || "Teacher Profile"}</p>
-                <p className="text-emerald-100">{profile.role}</p>
+          {/* Profile Hero Card */}
+          <div className="relative rounded-2xl overflow-hidden">
+            {/* Background gradient */}
+            <div className="h-56 bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 relative">
+              <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle at 20% 80%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "25px 25px" }} />
+            </div>
+
+            {/* Profile content */}
+            <div className="bg-gray-900/80 border border-white/10 px-10 pb-10">
+              <div className="flex items-end gap-8 -mt-18 flex-wrap">
+                {/* Avatar */}
+                <div className="relative group">
+                  <div className="w-36 h-36 rounded-3xl border-4 border-gray-900 overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-2xl">
+                    {avatarSource ? (
+                      <img src={avatarSource} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-5xl font-bold text-white">{initials}</span>
+                    )}
+                  </div>
+                  {isEditing && (
+                    <button
+                      onClick={() => profileFileInputRef.current?.click()}
+                      className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-3xl opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Camera className="w-8 h-8 text-white" />
+                    </button>
+                  )}
+                  <input ref={profileFileInputRef} type="file" accept="image/*" onChange={handleProfilePictureChange} className="hidden" />
+                </div>
+
+                <div className="flex-1 min-w-0 pt-20">
+                  <div className="flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                      <h1 className="text-4xl font-extrabold text-white tracking-tight">{profile.fullName || "Teacher"}</h1>
+                      <p className="text-gray-400 text-base mt-1">{profile.email}</p>
+                      <div className="flex items-center gap-3 mt-3 flex-wrap">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-full text-sm font-semibold">
+                          <BadgeCheck className="w-4 h-4" />
+                          {profile.role}
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold border ${profile.status === "Active" ? "bg-blue-500/10 border-blue-500/20 text-blue-300" : "bg-gray-500/10 border-gray-500/20 text-gray-400"}`}>
+                          <div className={`w-2 h-2 rounded-full ${profile.status === "Active" ? "bg-blue-400 animate-pulse" : "bg-gray-400"}`} />
+                          {profile.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm">
-            <div className="p-6 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Personal Information</h3>
-              {!isEditing ? <button onClick={handleEdit} className="flex items-center gap-2 px-4 py-2 text-emerald-600 hover:bg-emerald-50 rounded-lg">
-                  <Edit className="w-4 h-4" />
-                  Edit
-                </button> : <div className="flex gap-2">
-                  <button onClick={handleCancel} className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:bg-white/5 rounded-lg">
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </button>
-                  <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed">
-                    <Save className="w-4 h-4" />
-                    {isSaving ? "Saving..." : "Save"}
-                  </button>
-                </div>}
-            </div>
+          {/* Section tabs */}
+          <div className="flex gap-1 bg-gray-900/60 border border-white/10 rounded-2xl p-1.5">
+            {[
+              { key: "profile", label: "Personal Info", icon: <User className="w-5 h-5" /> },
+              { key: "security", label: "Security", icon: <Shield className="w-5 h-5" /> },
+            ].map(({ key, label, icon }) => (
+              <button
+                key={key}
+                onClick={() => setActiveSection(key)}
+                className={`flex-1 flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-base font-semibold transition-all ${activeSection === key ? "bg-white/10 text-white shadow-md" : "text-gray-400 hover:text-white"}`}
+              >
+                {icon}{label}
+              </button>
+            ))}
+          </div>
 
-            <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Teacher ID</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                  <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-white">{profile.teacherId || "Not available"}</span>
-                </div>
+          {/* Personal Info Section */}
+          {activeSection === "profile" && (
+            <div className="bg-gray-900/60 rounded-2xl border border-white/10 p-8 space-y-7">
+              <h3 className="text-lg font-bold text-white flex items-center gap-3">
+                <User className="w-5 h-5 text-emerald-400" />
+                Personal Information
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <InfoRow icon={<User className="w-5 h-5" />} label="Teacher ID" value={profile.teacherId || "Not available"} />
+                <InfoRow icon={<User className="w-5 h-5" />} label="Full Name" value={profile.fullName || "Not available"} />
+                <InfoRow icon={<Mail className="w-5 h-5" />} label="Email Address" value={profile.email || "Not available"} />
+                <InfoRow icon={<BadgeCheck className="w-5 h-5" />} label="Role" value={profile.role || "Teacher"} />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                  <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-white">{profile.fullName || "Not available"}</span>
-                </div>
-              </div>
+              {/* Phone */}
+              <InfoRow icon={<Phone className="w-4 h-4" />} label="Phone Number">
+                {isEditing ? (
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={editedPhone}
+                    onChange={(e) => setEditedPhone(normalizePhoneInput(e.target.value))}
+                    placeholder="Enter your phone number"
+                    className="flex-1 outline-none bg-transparent text-white text-sm placeholder-gray-500"
+                  />
+                ) : (
+                  <span className="text-gray-100 text-sm">{profile.phone || "Not set"}</span>
+                )}
+              </InfoRow>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                  <Mail className="w-5 h-5 text-gray-400" />
-                  <span className="text-white">{profile.email || "Not available"}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Role</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                  <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-white">{profile.role || "Teacher"}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-                <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                  <User className="w-5 h-5 text-gray-400" />
-                  <span className="text-white">{profile.status || "Active"}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Phone Number</label>
-                {isEditing ? <div className="flex items-center gap-3 px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg">
-                    <Phone className="w-5 h-5 text-gray-400" />
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      value={editedPhone}
-                      onChange={handlePhoneChange}
-                      className="flex-1 outline-none bg-transparent"
-                    />
-                  </div> : <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                    <Phone className="w-5 h-5 text-gray-400" />
-                    <span className="text-white">{profile.phone || "Not available"}</span>
-                  </div>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Profile Picture</label>
-                {isEditing ? <div className="space-y-3 px-4 py-3 bg-black/20 rounded-lg border border-white/20">
-                    <div className="flex items-center gap-3 text-white">
-                      <Upload className="w-5 h-5 text-gray-400" />
-                      <button type="button" onClick={handleProfilePictureClick} className="text-emerald-400 hover:text-emerald-300 transition-colors">
-                        Choose image
-                      </button>
-                      <span className="text-sm text-gray-400 truncate">
-                        {profilePictureFile?.name || "No new image selected"}
-                      </span>
+              {/* Profile picture */}
+              {isEditing && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Profile Picture</label>
+                  <div
+                    onClick={() => profileFileInputRef.current?.click()}
+                    className="flex items-center gap-4 px-4 py-4 bg-white/5 rounded-xl border border-dashed border-white/20 hover:border-emerald-500/50 cursor-pointer transition-all group"
+                  >
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-700 shrink-0 flex items-center justify-center">
+                      {avatarSource ? (
+                        <img src={avatarSource} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <Camera className="w-5 h-5 text-gray-400" />
+                      )}
                     </div>
-                    <input
-                      ref={profileFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleProfilePictureChange}
-                      className="hidden"
-                    />
-                  </div> : <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
-                    <User className="w-5 h-5 text-gray-400" />
-                    <span className="text-white">{profile.avatarUrl ? "Profile photo uploaded" : "No profile photo uploaded"}</span>
-                  </div>}
-              </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-white font-medium group-hover:text-emerald-300 transition-colors">
+                        {profilePictureFile ? profilePictureFile.name : "Click to upload profile picture"}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WEBP up to 5MB</p>
+                    </div>
+                    <Upload className="w-4 h-4 text-gray-400 group-hover:text-emerald-400 transition-colors" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* Security Section */}
+          {activeSection === "security" && (
+            <div className="bg-gray-900/60 rounded-2xl border border-white/10 p-8 space-y-7">
+              <h3 className="text-lg font-bold text-white flex items-center gap-3">
+                <Shield className="w-5 h-5 text-emerald-400" />
+                Security Settings
+              </h3>
+
+              {/* Password */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
-                {isEditing ? <div className="flex items-center gap-3 px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg">
-                    <Lock className="w-5 h-5 text-gray-400" />
+                <label className="block text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Password</label>
+                {isEditing ? (
+                  <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/10">
+                    <Lock className="w-5 h-5 text-gray-400 shrink-0" />
                     <input
                       type={showPassword ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter a new password"
-                      className="flex-1 outline-none bg-transparent"
+                      className="flex-1 outline-none bg-transparent text-white text-base placeholder-gray-500"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((current) => !current)}
-                      className="text-gray-400 hover:text-white"
-                    >
+                    <button type="button" onClick={() => setShowPassword((p) => !p)} className="text-gray-400 hover:text-white transition-colors">
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
-                  </div> : <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-lg border border-white/10">
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/10">
                     <Lock className="w-5 h-5 text-gray-400" />
-                    <span className="text-white">Password managed securely through sign-in</span>
-                  </div>}
+                    <span className="text-gray-400 text-base">Password is managed securely through Supabase Auth</span>
+                  </div>
+                )}
               </div>
+
+              {/* Tips */}
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6 space-y-3">
+                <p className="text-sm font-semibold text-blue-300 uppercase tracking-wider">Security Tips</p>
+                {[
+                  "Use at least 8 characters with a mix of letters, numbers & symbols",
+                  "Never share your password with anyone",
+                  "Log out when using shared devices",
+                ].map((tip) => (
+                  <div key={tip} className="flex items-start gap-3">
+                    <CheckCircle className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+                    <p className="text-sm text-blue-200">{tip}</p>
+                  </div>
+                ))}
+              </div>
+
+              {!isEditing && (
+                <button
+                  onClick={handleEdit}
+                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 rounded-2xl text-base font-semibold transition-all"
+                >
+                  <Lock className="w-5 h-5" />
+                  Change Password
+                </button>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </main>
-    </div>;
+    </div>
+  );
 }
 
-export {
-  TeacherProfile
-};
+export { TeacherProfile };

@@ -2539,20 +2539,29 @@ export function ClassDetail() {
               {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ASSIGNMENTS & ACTIVITIES TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
               {activeTab === "assignments" && (
                 <div>
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Assignments & Activities</h3>
+                      <h3 className="text-lg font-semibold text-white">Assignments &amp; Activities</h3>
                       <p className="text-sm text-gray-500 mt-0.5">Post tasks for students to accomplish and submit</p>
                       {asgError && <p className="text-sm text-red-500 mt-2">{asgError}</p>}
                       {asgSuccess && <p className="text-sm text-emerald-500 mt-2">{asgSuccess}</p>}
                     </div>
-                    <button
-                      onClick={openCreateAssignmentModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Create Task
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => navigate("/teacher/grades")}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all font-medium text-sm"
+                      >
+                        <TrendingUp className="w-4 h-4" />
+                        Grade Students
+                      </button>
+                      <button
+                        onClick={openCreateAssignmentModal}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Create Task
+                      </button>
+                    </div>
                   </div>
 
                   {assignments.length === 0 ? (

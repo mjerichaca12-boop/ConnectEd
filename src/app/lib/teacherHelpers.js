@@ -356,6 +356,7 @@ export const createDefaultGradeRecord = () => ({
   finalGrade: 0,
   quizAverage: 0,
   projectGrade: 0,
+  activityGrade: 0,
 });
 
 /**
@@ -386,6 +387,7 @@ export const calculateOverallGrade = (record) =>
     (record.midtermGrade +
       record.finalGrade +
       record.quizAverage +
-      record.projectGrade) /
-      4
+      record.projectGrade +
+      (record.activityGrade ?? 0)) /
+      5
   );
