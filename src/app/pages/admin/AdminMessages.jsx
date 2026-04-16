@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { LoadingScreen } from "@/app/components/LoadingScreen";
 import {
   Search,
   Send,
@@ -10,12 +9,13 @@ import {
   X,
   MessageSquare,
   Users,
-  Clock,
   ChevronRight,
   Video,
   AtSign,
   CheckCheck,
   Circle,
+  Shield,
+  UserCog,
 } from "lucide-react";
 
 const FILTERS = [
@@ -26,15 +26,14 @@ const FILTERS = [
   { key: "videomeet", label: "Video Meet", icon: Video },
 ];
 
-function TeacherMessages() {
+export function AdminMessages() {
   const navigate = useNavigate();
   const bottomRef = useRef(null);
 
-  const [teacherName, setTeacherName] = useState("");
+  const [adminName, setAdminName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  // Conversations: [{ id, participantName, participantRole, classCode, messages, unreadCount, isVideoMeet }]
+  // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -43,31 +42,22 @@ function TeacherMessages() {
 
   // New message modal
   const [showNewModal, setShowNewModal] = useState(false);
-  const [studentSearch, setStudentSearch] = useState("");
-  const [allStudents, setAllStudents] = useState([]);
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [allTeachers, setAllTeachers] = useState([]);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
     const user = JSON.parse(userData);
-    if (user.role !== "teacher") { navigate("/login"); return; }
-    setTeacherName(user.name);
+    if (user.role !== "admin") { navigate("/login"); return; }
+    setAdminName(user.name);
 
-    const savedConvs = JSON.parse(localStorage.getItem("teacher_conversations") || "[]");
+    const savedConvs = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
     setConversations(savedConvs);
 
-    const classes = JSON.parse(localStorage.getItem("teacher_classes") || "[]");
-    const students = [];
-    classes.forEach((cls) => {
-      (cls.students || []).forEach((stu) => {
-        if (!students.find((s) => s.id === stu.id)) {
-          students.push({ ...stu, classCode: cls.code, className: cls.name, section: cls.section });
-        }
-      });
-    });
-    setAllStudents(students);
-
-    setTimeout(() => setLoading(false), 400);
+    // Load teachers for new message modal (from localStorage or supabase stub)
+    const cachedTeachers = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
+    setAllTeachers(cachedTeachers);
   }, [navigate]);
 
   useEffect(() => {
@@ -76,7 +66,7 @@ function TeacherMessages() {
 
   const saveConversations = (updated) => {
     setConversations(updated);
-    localStorage.setItem("teacher_conversations", JSON.stringify(updated));
+    localStorage.setItem("admin_conversations", JSON.stringify(updated));
   };
 
   const handleLogout = () => {
@@ -90,17 +80,15 @@ function TeacherMessages() {
   const applyFilter = (convList) => {
     let filtered = convList;
 
-    // Text search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (c) =>
           c.participantName.toLowerCase().includes(q) ||
-          c.classCode?.toLowerCase().includes(q)
+          c.participantRole?.toLowerCase().includes(q)
       );
     }
 
-    // Tab filter
     switch (activeFilter) {
       case "unread":
         filtered = filtered.filter((c) => (c.unreadCount || 0) > 0);
@@ -111,7 +99,7 @@ function TeacherMessages() {
       case "mentions":
         filtered = filtered.filter((c) =>
           (c.messages || []).some((m) =>
-            m.from !== "teacher" && m.text && m.text.includes(`@${teacherName}`)
+            m.from !== "admin" && m.text && m.text.includes(`@${adminName}`)
           )
         );
         break;
@@ -127,22 +115,19 @@ function TeacherMessages() {
 
   const filteredConvs = applyFilter(conversations);
 
-  const handleStartConversation = (student) => {
-    const existing = conversations.find((c) => c.participantId === student.id);
+  const handleStartConversation = (teacher) => {
+    const existing = conversations.find((c) => c.participantId === teacher.id);
     if (existing) {
       setSelectedConvId(existing.id);
       setShowNewModal(false);
-      setStudentSearch("");
+      setRecipientSearch("");
       return;
     }
     const newConv = {
       id: Date.now().toString(),
-      participantId: student.id,
-      participantName: student.name,
-      participantRole: "Student",
-      classCode: student.classCode,
-      className: student.className,
-      section: student.section,
+      participantId: teacher.id,
+      participantName: teacher.name,
+      participantRole: "Teacher",
       messages: [],
       unreadCount: 0,
       lastMessageTime: new Date().toISOString(),
@@ -152,7 +137,7 @@ function TeacherMessages() {
     saveConversations(updated);
     setSelectedConvId(newConv.id);
     setShowNewModal(false);
-    setStudentSearch("");
+    setRecipientSearch("");
   };
 
   const handleSend = (e) => {
@@ -160,8 +145,8 @@ function TeacherMessages() {
     if (!messageInput.trim() || !selectedConv) return;
     const msg = {
       id: Date.now().toString(),
-      from: "teacher",
-      senderName: teacherName,
+      from: "admin",
+      senderName: adminName,
       text: messageInput.trim(),
       time: new Date().toISOString(),
     };
@@ -192,40 +177,41 @@ function TeacherMessages() {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const filteredStudents = allStudents.filter(
-    (s) =>
-      s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.studentId?.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.classCode?.toLowerCase().includes(studentSearch.toLowerCase())
+  const filteredRecipients = allTeachers.filter(
+    (t) =>
+      t.name.toLowerCase().includes(recipientSearch.toLowerCase()) ||
+      t.email?.toLowerCase().includes(recipientSearch.toLowerCase())
   );
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  // Badge counts for filter tabs
   const filterCounts = {
     all: conversations.length,
     unread: conversations.filter((c) => (c.unreadCount || 0) > 0).length,
     read: conversations.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet).length,
     mentions: conversations.filter((c) =>
-      (c.messages || []).some((m) => m.from !== "teacher" && m.text?.includes(`@${teacherName}`))
+      (c.messages || []).some((m) => m.from !== "admin" && m.text?.includes(`@${adminName}`))
     ).length,
     videomeet: conversations.filter((c) => c.isVideoMeet === true).length,
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading messages..." />;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-950 flex">
-      <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
+    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+      {/* Background glow */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-emerald-600/5 rounded-full blur-[120px]" />
+      </div>
 
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <AdminSidebar adminName={adminName} onLogout={handleLogout} />
+      <div className="hidden lg:block w-72 flex-shrink-0" />
+
+      <main className="flex-1 overflow-hidden flex flex-col relative z-10">
         {/* Top Bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 flex-shrink-0">
+        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
             <div>
-              <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Teacher Portal</p>
+              <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
               <h2 className="text-lg font-bold text-white">Messages</h2>
             </div>
             <NotificationDropdown
@@ -242,20 +228,22 @@ function TeacherMessages() {
 
         <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
-                <MessageSquare className="w-7 h-7 opacity-80" />
+                <div className="p-2 bg-white/15 rounded-xl">
+                  <MessageSquare className="w-6 h-6" />
+                </div>
                 <div>
                   <h1 className="text-xl font-bold">Messages</h1>
-                  <p className="text-emerald-100 text-sm">
+                  <p className="text-blue-100 text-sm">
                     {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
                     {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
+                onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
               >
                 <Plus className="w-4 h-4" />
@@ -278,12 +266,12 @@ function TeacherMessages() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full pl-9 pr-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full pl-9 pr-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <button
-                  onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
-                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
+                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                  className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0"
                   title="New Message"
                 >
                   <Plus className="w-4 h-4" />
@@ -301,7 +289,7 @@ function TeacherMessages() {
                       onClick={() => setActiveFilter(key)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
-                          ? "bg-emerald-600 text-white shadow-sm"
+                          ? "bg-blue-600 text-white shadow-sm"
                           : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
                       }`}
                     >
@@ -313,7 +301,7 @@ function TeacherMessages() {
                             isActive
                               ? "bg-white/25 text-white"
                               : key === "unread"
-                              ? "bg-emerald-500/20 text-emerald-400"
+                              ? "bg-blue-500/20 text-blue-400"
                               : "bg-white/10 text-gray-400"
                           }`}
                         >
@@ -333,9 +321,9 @@ function TeacherMessages() {
                       {activeFilter === "videomeet" ? (
                         <Video className="w-6 h-6 text-blue-400" />
                       ) : activeFilter === "mentions" ? (
-                        <AtSign className="w-6 h-6 text-emerald-400" />
+                        <AtSign className="w-6 h-6 text-blue-400" />
                       ) : (
-                        <MessageSquare className="w-6 h-6 text-emerald-400" />
+                        <MessageSquare className="w-6 h-6 text-blue-400" />
                       )}
                     </div>
                     <p className="text-sm font-medium text-gray-400 mb-1">
@@ -361,7 +349,7 @@ function TeacherMessages() {
                         onClick={() => handleSelectConv(conv)}
                         className={`w-full text-left px-4 py-3.5 hover:bg-black/20 transition-colors ${
                           selectedConvId === conv.id
-                            ? "bg-emerald-500/8 border-l-2 border-emerald-500"
+                            ? "bg-blue-500/8 border-l-2 border-blue-500"
                             : ""
                         }`}
                       >
@@ -370,8 +358,8 @@ function TeacherMessages() {
                             <div
                               className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                                 conv.isVideoMeet
-                                  ? "bg-gradient-to-br from-blue-500 to-indigo-600"
-                                  : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                                  ? "bg-gradient-to-br from-purple-500 to-indigo-600"
+                                  : "bg-gradient-to-br from-blue-500 to-indigo-600"
                               }`}
                             >
                               {conv.isVideoMeet ? (
@@ -381,7 +369,7 @@ function TeacherMessages() {
                               )}
                             </div>
                             {conv.isVideoMeet && (
-                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
+                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-purple-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
                                 <Video className="w-1.5 h-1.5 text-white" />
                               </span>
                             )}
@@ -396,15 +384,13 @@ function TeacherMessages() {
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <p className="text-xs text-gray-500 truncate flex items-center gap-1">
-                                {conv.isVideoMeet && (
-                                  <span className="text-blue-400 font-medium">Video Meet</span>
-                                )}
-                                {!conv.isVideoMeet && conv.classCode}
-                                {!conv.isVideoMeet && conv.section && ` · ${conv.section}`}
+                              <p className="text-xs text-gray-500 truncate">
+                                {conv.isVideoMeet
+                                  ? <span className="text-purple-400 font-medium">Video Meet</span>
+                                  : conv.participantRole || "Teacher"}
                               </p>
                               {conv.unreadCount > 0 && (
-                                <span className="w-5 h-5 bg-emerald-600 text-white text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
+                                <span className="w-5 h-5 bg-blue-600 text-white text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
                                   {conv.unreadCount}
                                 </span>
                               )}
@@ -432,8 +418,8 @@ function TeacherMessages() {
                     <div
                       className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                         selectedConv.isVideoMeet
-                          ? "bg-gradient-to-br from-blue-500 to-indigo-600"
-                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                          ? "bg-gradient-to-br from-purple-500 to-indigo-600"
+                          : "bg-gradient-to-br from-blue-500 to-indigo-600"
                       }`}
                     >
                       {selectedConv.isVideoMeet ? (
@@ -446,9 +432,9 @@ function TeacherMessages() {
                       <p className="font-semibold text-white">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1">
                         {selectedConv.isVideoMeet ? (
-                          <><Video className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Video Meet Chat</span></>
+                          <><Video className="w-3 h-3 text-purple-400" /> <span className="text-purple-400">Video Meet Chat</span></>
                         ) : (
-                          <>Student · {selectedConv.classCode} {selectedConv.section && `— ${selectedConv.section}`}</>
+                          <><UserCog className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">{selectedConv.participantRole || "Teacher"}</span></>
                         )}
                       </p>
                     </div>
@@ -461,18 +447,18 @@ function TeacherMessages() {
                         <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
                           <Send className="w-6 h-6 text-gray-400" />
                         </div>
-                        <p className="text-sm text-gray-500">No messages yet. Say hello!</p>
+                        <p className="text-sm text-gray-500">No messages yet. Start the conversation!</p>
                       </div>
                     ) : (
                       (selectedConv.messages || []).map((msg) => {
-                        const isTeacher = msg.from === "teacher";
-                        const hasMention = !isTeacher && msg.text?.includes(`@${teacherName}`);
+                        const isAdmin = msg.from === "admin";
+                        const hasMention = !isAdmin && msg.text?.includes(`@${adminName}`);
                         return (
-                          <div key={msg.id} className={`flex ${isTeacher ? "justify-end" : "justify-start"}`}>
+                          <div key={msg.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
                             <div
                               className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
-                                isTeacher
-                                  ? "bg-emerald-600 text-white rounded-br-sm"
+                                isAdmin
+                                  ? "bg-blue-600 text-white rounded-br-sm"
                                   : hasMention
                                   ? "bg-yellow-500/15 border border-yellow-500/30 text-white rounded-bl-sm"
                                   : "bg-white/5 text-white rounded-bl-sm"
@@ -484,7 +470,7 @@ function TeacherMessages() {
                                 </p>
                               )}
                               <p className="leading-relaxed">{msg.text}</p>
-                              <p className={`text-xs mt-1 ${isTeacher ? "text-emerald-100" : "text-gray-400"} text-right`}>
+                              <p className={`text-xs mt-1 ${isAdmin ? "text-blue-100" : "text-gray-400"} text-right`}>
                                 {getTimeLabel(msg.time)}
                               </p>
                             </div>
@@ -505,12 +491,12 @@ function TeacherMessages() {
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
                       placeholder={`Message ${selectedConv.participantName}...`}
-                      className="flex-1 px-4 py-2.5 bg-black/20 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      className="flex-1 px-4 py-2.5 bg-black/20 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     <button
                       type="submit"
                       disabled={!messageInput.trim()}
-                      className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                      className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                     >
                       <Send className="w-5 h-5" />
                     </button>
@@ -518,14 +504,14 @@ function TeacherMessages() {
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4">
-                    <MessageSquare className="w-8 h-8 text-emerald-400" />
+                  <div className="w-16 h-16 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center justify-center mb-4">
+                    <Shield className="w-8 h-8 text-blue-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-300 mb-2">Select a conversation</h3>
-                  <p className="text-gray-500 text-sm mb-5">Choose a conversation or start a new one.</p>
+                  <h3 className="text-lg font-semibold text-gray-300 mb-2">Admin Messaging</h3>
+                  <p className="text-gray-500 text-sm mb-5">Select a conversation or start one with a teacher.</p>
                   <button
-                    onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm"
+                    onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm"
                   >
                     <Plus className="w-4 h-4" />
                     New Message
@@ -543,12 +529,12 @@ function TeacherMessages() {
           <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
             <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
-                  <Users className="w-5 h-5 text-emerald-400" />
+                <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
+                  <UserCog className="w-5 h-5 text-blue-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">New Message</h3>
-                  <p className="text-sm text-gray-500">Select a student to message</p>
+                  <p className="text-sm text-gray-500">Message a teacher</p>
                 </div>
               </div>
               <button
@@ -565,49 +551,47 @@ function TeacherMessages() {
                 <input
                   autoFocus
                   type="text"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Search students by name, ID, or class..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={recipientSearch}
+                  onChange={(e) => setRecipientSearch(e.target.value)}
+                  placeholder="Search teachers by name or email..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-hide">
-              {allStudents.length === 0 ? (
+              {allTeachers.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No students enrolled in your classes yet.</p>
-                  <p className="text-xs text-gray-400 mt-1">Add students to a class first.</p>
+                  <UserCog className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No teachers found in the system.</p>
+                  <p className="text-xs text-gray-400 mt-1">Teachers must be registered first.</p>
                 </div>
-              ) : filteredStudents.length === 0 ? (
+              ) : filteredRecipients.length === 0 ? (
                 <div className="py-12 text-center">
                   <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">No students match your search.</p>
+                  <p className="text-sm text-gray-500">No teachers match your search.</p>
                 </div>
               ) : (
                 <div className="divide-y divide-white/5">
-                  {filteredStudents.map((student) => {
-                    const hasConv = conversations.find((c) => c.participantId === student.id);
+                  {filteredRecipients.map((teacher) => {
+                    const hasConv = conversations.find((c) => c.participantId === teacher.id);
                     return (
                       <button
-                        key={student.id}
-                        onClick={() => handleStartConversation(student)}
+                        key={teacher.id}
+                        onClick={() => handleStartConversation(teacher)}
                         className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-white/5 transition-colors text-left group"
                       >
-                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                          {student.name.charAt(0).toUpperCase()}
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                          {teacher.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{student.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {student.studentId} · {student.classCode}{student.section && ` — ${student.section}`}
-                          </p>
+                          <p className="text-sm font-semibold text-white truncate">{teacher.name}</p>
+                          <p className="text-xs text-gray-500">{teacher.email || "Teacher"}</p>
                           {hasConv && (
-                            <p className="text-xs text-emerald-400 font-medium mt-0.5">Existing conversation</p>
+                            <p className="text-xs text-blue-400 font-medium mt-0.5">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -621,4 +605,4 @@ function TeacherMessages() {
   );
 }
 
-export { TeacherMessages };
+export default AdminMessages;
