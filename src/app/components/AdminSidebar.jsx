@@ -3,7 +3,9 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserCog, BookOpen, ClipboardList,
   Megaphone, FileText, Settings, Menu, X, LogOut, ChevronRight,
-  Shield, Calendar, Mail
+
+  Shield, Calendar, MessageSquare
+
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
@@ -19,6 +21,7 @@ function AdminSidebar({ adminName, onLogout }) {
     { icon: Mail,            label: "Access Requests",      path: "/admin/access-requests", color: "yellow" },
     { icon: BookOpen,        label: "Subject Management",   path: "/admin/subjects",    color: "blue" },
     { icon: Megaphone,       label: "Announcements",        path: "/admin/announcements", color: "red" },
+    { icon: MessageSquare,   label: "Messages",             path: "/admin/messages",    color: "blue" },
     { icon: Calendar,        label: "School Calendar",      path: "/admin/calendar",    color: "emerald" },
     { icon: FileText,        label: "Reports",              path: "/admin/reports",     color: "red" },
     { icon: Settings,        label: "System Settings",      path: "/admin/settings",    color: "blue" },

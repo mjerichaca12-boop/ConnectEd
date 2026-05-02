@@ -43,6 +43,7 @@ import { AdminCalendar } from "./pages/admin/AdminCalendar";
 import { AdminAccessRequests } from "./pages/admin/AdminAccessRequests";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
+import { AdminMessages } from "./pages/admin/AdminMessages";
 
 function TeacherRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
@@ -228,6 +229,7 @@ export default function App() {
         <Route path="/admin/access-requests" element={<AdminRouteGuard><AdminAccessRequests /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
+        <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
       </Routes>
       </Router>
     </ActivityProvider>

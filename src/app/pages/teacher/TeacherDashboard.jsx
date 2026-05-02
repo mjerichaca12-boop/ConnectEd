@@ -484,62 +484,61 @@ export function TeacherDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Left Ã¢â‚¬â€ Main Content */}
-            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+            <div className="lg:col-span-2 flex flex-col gap-6">
 
-              {/* Tasks & Deadlines (Moved to prominent position) */}
-              <div className="h-[340px] md:h-[380px] bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b border-white/8">
-                  <h3 className="text-white font-bold text-base flex items-center gap-2">
+              {/* Top row: Tasks & Grades */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Tasks & Deadlines */}
+                <div className="bg-gray-900/60 border border-white/8 rounded-2xl p-6">
+                  <h3 className="text-white font-bold text-base mb-4 flex items-center gap-2 border-b border-white/8 pb-4">
                     <ClipboardCheck className="w-5 h-5 text-blue-400" />
                     Tasks & Deadlines
                   </h3>
-                </div>
-                <div className="p-6 flex-1 overflow-y-auto dark-scrollbar">
-                  <div className="text-center min-h-full flex flex-col items-center justify-center">
-                  <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-blue-500/20">
-                    <ClipboardCheck className="w-6 h-6 text-blue-400" />
-                  </div>
-                  <p className="text-gray-400 font-medium">You're all caught up!</p>
-                  <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Grades */}
-              <div className="h-[340px] md:h-[380px] bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b border-white/8 flex items-center justify-between">
-                  <h3 className="text-white font-bold flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-emerald-400" />
-                    Recently Updated Grades
-                  </h3>
-                </div>
-                <div className="p-6 flex-1 overflow-y-auto dark-scrollbar">
-                  {recentGrades.length === 0 ? (
-                    <div className="text-center min-h-full flex flex-col items-center justify-center py-6">
-                      <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                        <TrendingUp className="w-6 h-6 text-emerald-400" />
-                      </div>
-                      <p className="text-gray-400 font-medium">No grades recorded yet</p>
-
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-blue-500/20">
+                      <ClipboardCheck className="w-6 h-6 text-blue-400" />
                     </div>
-                  ) : (
-                    <div className="space-y-3 w-full pr-1">
-                      {recentGrades.map((grade) => (
-                        <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-white/4 rounded-xl hover:bg-white/8 transition-colors border border-transparent hover:border-white/5">
-                          <div>
-                            <p className="text-white text-sm font-medium">{grade.studentName}</p>
-                            <p className="text-gray-500 text-xs mt-0.5">{grade.subject} - {new Date(grade.dateRecorded).toLocaleDateString()}</p>
-                          </div>
-                          <p className="text-lg font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">{grade.grade}%</p>
+                    <p className="text-gray-400 font-medium">You're all caught up!</p>
+                    <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
+                  </div>
+                </div>
+
+                {/* Recent Grades */}
+                <div className="bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
+                  <div className="px-6 py-4 border-b border-white/8 flex items-center justify-between">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-emerald-400" />
+                      Recently Updated Grades
+                    </h3>
+                  </div>
+                  <div className="p-6">
+                    {recentGrades.length === 0 ? (
+                      <div className="text-center py-6">
+                        <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                          <TrendingUp className="w-6 h-6 text-emerald-400" />
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <p className="text-gray-400 font-medium">No grades recorded yet</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 w-full">
+                        {recentGrades.map((grade) => (
+                          <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-white/4 rounded-xl hover:bg-white/8 transition-colors border border-transparent hover:border-white/5">
+                            <div>
+                              <p className="text-white text-sm font-medium">{grade.studentName}</p>
+                              <p className="text-gray-500 text-xs mt-0.5">{grade.subject} - {new Date(grade.dateRecorded).toLocaleDateString()}</p>
+                            </div>
+                            <p className="text-lg font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">{grade.grade}%</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* School Announcements */}
-              <div className="md:col-span-2 bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
+              {/* School Announcements — full width */}
+
+              <div className="bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-white/8 flex items-center justify-between">
                   <h3 className="text-white font-bold flex items-center gap-2">
                     <Megaphone className="w-5 h-5 text-emerald-400" />

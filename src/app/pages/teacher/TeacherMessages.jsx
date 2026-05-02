@@ -14,6 +14,7 @@ import {
   Users,
   Clock,
   ChevronRight,
+<<<<<<< HEAD
   FileText,
   Download,
 } from "lucide-react";
@@ -92,6 +93,21 @@ const getMessagePreview = (message) => {
   if (message?.fileUrl) return "Sent an attachment";
   return "";
 };
+=======
+  Video,
+  AtSign,
+  CheckCheck,
+  Circle,
+} from "lucide-react";
+
+const FILTERS = [
+  { key: "all",       label: "All",        icon: MessageSquare },
+  { key: "unread",    label: "Unread",     icon: Circle },
+  { key: "read",      label: "Read",       icon: CheckCheck },
+  { key: "mentions",  label: "Mentions",   icon: AtSign },
+  { key: "videomeet", label: "Video Meet", icon: Video },
+];
+>>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
 function TeacherMessages() {
   const navigate = useNavigate();
@@ -105,177 +121,37 @@ function TeacherMessages() {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
 
-  // Conversations: [{ id, participantName, participantRole, classCode, messages: [{id, from, text, time}], unreadCount }]
+  // Conversations: [{ id, participantName, participantRole, classCode, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
+<<<<<<< HEAD
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+=======
+  const [activeFilter, setActiveFilter] = useState("all");
+>>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
   // New message modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
-  const [allStudents, setAllStudents] = useState([]); // [{id, name, studentId, classCode, className}]
+  const [allStudents, setAllStudents] = useState([]);
 
   const saveConversations = (updated) => {
     setConversations(updated);
   };
 
-  const resolveTeacherId = useCallback(async (email) => {
-    if (!supabase || !email) return "";
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("email", normalizedEmail)
-      .eq("role", "teacher")
-      .limit(1)
-      .maybeSingle();
+    const savedConvs = JSON.parse(localStorage.getItem("teacher_conversations") || "[]");
+    setConversations(savedConvs);
 
-    if (error) {
-      console.error("Failed to resolve teacher profile:", error);
-      return "";
-    }
-
-    return String(data?.id || "");
-  }, []);
-
-  const fetchStudents = useCallback(async (currentTeacherId) => {
-    if (!supabase || !currentTeacherId) {
-      setAllStudents([]);
-      return [];
-    }
-
-    const { data: assignments, error: assignmentsError } = await supabase
-      .from("teacher_student_assignments")
-      .select("student_id, subject_id")
-      .eq("teacher_id", currentTeacherId);
-
-    if (assignmentsError) {
-      console.error("Failed to load assigned students:", assignmentsError);
-      setAllStudents([]);
-      return [];
-    }
-
-    const assignmentRows = assignments ?? [];
-    const studentIds = [...new Set(assignmentRows.map((row) => String(row.student_id || "")).filter(Boolean))];
-    const subjectIds = [...new Set(assignmentRows.map((row) => String(row.subject_id || "")).filter(Boolean))];
-
-    if (studentIds.length === 0) {
-      setAllStudents([]);
-      return [];
-    }
-
-    const [{ data: studentRows, error: studentError }, { data: subjectRows, error: subjectError }] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, first_name, middle_name, last_name, lrn, email")
-        .eq("role", "student")
-        .in("id", studentIds),
-      subjectIds.length > 0
-        ? supabase
-            .from("subjects")
-            .select("id, code, name, section")
-            .in("id", subjectIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-
-    if (studentError) {
-      console.error("Failed to load student profiles:", studentError);
-      setAllStudents([]);
-      return [];
-    }
-
-    if (subjectError) {
-      console.error("Failed to load subject data:", subjectError);
-    }
-
-    const subjectById = new Map((subjectRows ?? []).map((subject) => [String(subject.id), subject]));
-    const assignmentByStudent = new Map();
-
-    assignmentRows.forEach((row) => {
-      const studentId = String(row.student_id || "");
-      const subject = subjectById.get(String(row.subject_id || ""));
-      if (!studentId || !subject) return;
-      if (!assignmentByStudent.has(studentId)) {
-        assignmentByStudent.set(studentId, subject);
-      }
-    });
-
-    const mappedStudents = (studentRows ?? []).map((student) => {
-      const id = String(student.id || "");
-      const subject = assignmentByStudent.get(id);
-      return {
-        id,
-        name: buildStudentName(student),
-        studentId: String(student.lrn || "").trim() || "N/A",
-        classCode: String(subject?.code || "").trim(),
-        className: String(subject?.name || "").trim(),
-        section: String(subject?.section || "").trim(),
-      };
-    });
-
-    mappedStudents.sort((left, right) => left.name.localeCompare(right.name));
-    setAllStudents(mappedStudents);
-    return mappedStudents;
-  }, []);
-
-  const fetchConversationMessages = useCallback(async (currentTeacherId, studentIds) => {
-    if (!supabase || !currentTeacherId || studentIds.length === 0) return [];
-
-    const { data: sentRows, error: sentError } = await supabase
-      .from(MESSAGE_TABLE)
-      .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size")
-      .eq("sender_id", currentTeacherId)
-      .in("receiver_id", studentIds)
-      .order("timestamp", { ascending: true });
-
-    if (sentError) {
-      throw sentError;
-    }
-
-    const { data: receivedRows, error: receivedError } = await supabase
-      .from(MESSAGE_TABLE)
-      .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size")
-      .eq("receiver_id", currentTeacherId)
-      .in("sender_id", studentIds)
-      .order("timestamp", { ascending: true });
-
-    if (receivedError) {
-      throw receivedError;
-    }
-
-    const merged = [...(sentRows ?? []), ...(receivedRows ?? [])];
-    merged.sort(
-      (left, right) =>
-        new Date(left.timestamp || left.created_at || 0).getTime() -
-        new Date(right.timestamp || right.created_at || 0).getTime()
-    );
-    return merged;
-  }, []);
-
-  const loadConversations = useCallback(async (currentTeacherId, students) => {
-    if (!currentTeacherId || !Array.isArray(students)) {
-      setConversations([]);
-      return;
-    }
-
-    const studentIds = students.map((student) => String(student.id || "")).filter(Boolean);
-    const conversationsByStudent = new Map();
-
-    students.forEach((student) => {
-      conversationsByStudent.set(String(student.id), {
-        id: String(student.id),
-        participantId: String(student.id),
-        participantName: student.name,
-        participantRole: "Student",
-        classCode: student.classCode,
-        className: student.className,
-        section: student.section,
-        messages: [],
-        unreadCount: 0,
-        lastMessageTime: new Date().toISOString(),
+    const classes = JSON.parse(localStorage.getItem("teacher_classes") || "[]");
+    const students = [];
+    classes.forEach((cls) => {
+      (cls.students || []).forEach((stu) => {
+        if (!students.find((s) => s.id === stu.id)) {
+          students.push({ ...stu, classCode: cls.code, className: cls.name, section: cls.section });
+        }
       });
     });
 
@@ -349,7 +225,6 @@ function TeacherMessages() {
 
   const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
 
-  // Scroll to bottom when conversation changes or new message arrives
   useEffect(() => {
     const container = messageContainerRef.current;
     if (!container) return;
@@ -377,13 +252,49 @@ function TeacherMessages() {
     navigate("/login");
   };
 
-  const filteredConvs = conversations.filter((c) =>
-    c.participantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.classCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.className?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
 
-  // Start or open conversation with a student
+  // ── Filtering logic ──
+  const applyFilter = (convList) => {
+    let filtered = convList;
+
+    // Text search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (c) =>
+          c.participantName.toLowerCase().includes(q) ||
+          c.classCode?.toLowerCase().includes(q)
+      );
+    }
+
+    // Tab filter
+    switch (activeFilter) {
+      case "unread":
+        filtered = filtered.filter((c) => (c.unreadCount || 0) > 0);
+        break;
+      case "read":
+        filtered = filtered.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet);
+        break;
+      case "mentions":
+        filtered = filtered.filter((c) =>
+          (c.messages || []).some((m) =>
+            m.from !== "teacher" && m.text && m.text.includes(`@${teacherName}`)
+          )
+        );
+        break;
+      case "videomeet":
+        filtered = filtered.filter((c) => c.isVideoMeet === true);
+        break;
+      default:
+        break;
+    }
+
+    return filtered;
+  };
+
+  const filteredConvs = applyFilter(conversations);
+
   const handleStartConversation = (student) => {
     const existing = conversations.find((c) => c.participantId === student.id);
     if (existing) {
@@ -404,6 +315,7 @@ function TeacherMessages() {
       messages: [],
       unreadCount: 0,
       lastMessageTime: new Date().toISOString(),
+      isVideoMeet: false,
     };
 
     const updated = [newConv, ...conversations];
@@ -413,8 +325,7 @@ function TeacherMessages() {
     setStudentSearch("");
   };
 
-  // Send a message
-  const handleSend = async (e) => {
+  const handleSend = (e) => {
     e.preventDefault();
 
     const text = String(messageInput || "").trim();
@@ -545,7 +456,6 @@ function TeacherMessages() {
     }
   };
 
-  // Select conversation + mark read
   const handleSelectConv = (conv) => {
     if (conv.unreadCount > 0) {
       const updated = conversations.map((c) =>
@@ -574,6 +484,17 @@ function TeacherMessages() {
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
+  // Badge counts for filter tabs
+  const filterCounts = {
+    all: conversations.length,
+    unread: conversations.filter((c) => (c.unreadCount || 0) > 0).length,
+    read: conversations.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet).length,
+    mentions: conversations.filter((c) =>
+      (c.messages || []).some((m) => m.from !== "teacher" && m.text?.includes(`@${teacherName}`))
+    ).length,
+    videomeet: conversations.filter((c) => c.isVideoMeet === true).length,
+  };
+
   if (loading) {
     return <LoadingScreen message="Loading messages..." />;
   }
@@ -586,7 +507,10 @@ function TeacherMessages() {
         {/* Top Bar */}
         <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Messages</h2>
+            <div>
+              <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Teacher Portal</p>
+              <h2 className="text-lg font-bold text-white">Messages</h2>
+            </div>
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) =>
@@ -599,20 +523,27 @@ function TeacherMessages() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col p-6 gap-6">
+        <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex-shrink-0">
+          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
-                <MessageSquare className="w-8 h-8 opacity-80" />
+                <MessageSquare className="w-7 h-7 opacity-80" />
                 <div>
-                  <h1 className="text-2xl font-bold">Messages</h1>
+                  <h1 className="text-xl font-bold">Messages</h1>
                   <p className="text-emerald-100 text-sm">
-                      {conversations.length} conversations
-                      {totalUnread > 0 && ` • ${totalUnread} unread`}
+                    {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+                    {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
                 </div>
               </div>
+              <button
+                onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
+                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                New Message
+              </button>
             </div>
           </div>
 
@@ -625,10 +556,11 @@ function TeacherMessages() {
 
           {/* Main chat layout */}
           <div className="flex-1 overflow-hidden bg-gray-900/60 rounded-xl border border-white/10 shadow-sm grid grid-cols-1 lg:grid-cols-3">
-            {/* Left: Conversations List */}
+            {/* ══ Left: Conversations List ══ */}
             <div className="lg:col-span-1 border-r border-white/10 flex flex-col">
+
               {/* Search + New */}
-              <div className="p-4 border-b border-white/5 flex gap-2">
+              <div className="p-3 border-b border-white/5 flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
@@ -648,15 +580,68 @@ function TeacherMessages() {
                 </button>
               </div>
 
+              {/* Filter Tabs */}
+              <div className="px-3 pt-2 pb-1.5 border-b border-white/5 flex gap-1.5 overflow-x-auto scrollbar-hide flex-shrink-0">
+                {FILTERS.map(({ key, label, icon: Icon }) => {
+                  const count = filterCounts[key];
+                  const isActive = activeFilter === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setActiveFilter(key)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                        isActive
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                      }`}
+                    >
+                      <Icon className="w-3 h-3" />
+                      {label}
+                      {count > 0 && (
+                        <span
+                          className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] flex items-center justify-center ${
+                            isActive
+                              ? "bg-white/25 text-white"
+                              : key === "unread"
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : "bg-white/10 text-gray-400"
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* List */}
               <div className="flex-1 overflow-y-auto scrollbar-hide">
                 {filteredConvs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
-                    <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-3">
-                      <MessageSquare className="w-6 h-6 text-emerald-400" />
+                    <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
+                      {activeFilter === "videomeet" ? (
+                        <Video className="w-6 h-6 text-blue-400" />
+                      ) : activeFilter === "mentions" ? (
+                        <AtSign className="w-6 h-6 text-emerald-400" />
+                      ) : (
+                        <MessageSquare className="w-6 h-6 text-emerald-400" />
+                      )}
                     </div>
-                    <p className="text-sm font-medium text-gray-300 mb-1">No conversations yet</p>
-                    <p className="text-xs text-gray-400">Click "New Message" to message a student.</p>
+                    <p className="text-sm font-medium text-gray-400 mb-1">
+                      {activeFilter === "all"
+                        ? "No conversations yet"
+                        : activeFilter === "unread"
+                        ? "No unread messages"
+                        : activeFilter === "read"
+                        ? "No read conversations"
+                        : activeFilter === "mentions"
+                        ? "No mentions found"
+                        : "No Video Meet chats"}
+                    </p>
+                    {activeFilter === "all" && (
+                      <p className="text-xs text-gray-500">Click "New Message" to start chatting.</p>
+                    )}
                   </div>
                 ) : (
                   <div className="divide-y divide-white/5">
@@ -664,24 +649,49 @@ function TeacherMessages() {
                       <button
                         key={conv.id}
                         onClick={() => handleSelectConv(conv)}
-                        className={`w-full text-left px-4 py-3.5 hover:bg-white/5 transition-colors ${selectedConvId === conv.id ? "bg-white/5" : ""}`}
+                        className={`w-full text-left px-4 py-3.5 hover:bg-black/20 transition-colors ${
+                          selectedConvId === conv.id
+                            ? "bg-emerald-500/8 border-l-2 border-emerald-500"
+                            : ""
+                        }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                            {conv.participantName.charAt(0).toUpperCase()}
+                          <div className="relative flex-shrink-0">
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                                conv.isVideoMeet
+                                  ? "bg-gradient-to-br from-blue-500 to-indigo-600"
+                                  : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                              }`}
+                            >
+                              {conv.isVideoMeet ? (
+                                <Video className="w-4 h-4" />
+                              ) : (
+                                conv.participantName.charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            {conv.isVideoMeet && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
+                                <Video className="w-1.5 h-1.5 text-white" />
+                              </span>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
                               <p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? "text-white" : "text-gray-300"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
+                              <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
                                 {getTimeLabel(conv.lastMessageTime)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <p className="text-xs text-gray-500 truncate">
-                                {conv.classCode} {conv.section && `• ${conv.section}`}
+                              <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                                {conv.isVideoMeet && (
+                                  <span className="text-blue-400 font-medium">Video Meet</span>
+                                )}
+                                {!conv.isVideoMeet && conv.classCode}
+                                {!conv.isVideoMeet && conv.section && ` · ${conv.section}`}
                               </p>
                               {conv.unreadCount > 0 && (
                                 <span className="w-5 h-5 bg-emerald-600 text-white text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
@@ -703,19 +713,33 @@ function TeacherMessages() {
               </div>
             </div>
 
-            {/* Right: Chat Window */}
+            {/* ══ Right: Chat Window ══ */}
             <div className="lg:col-span-2 flex flex-col">
               {selectedConv ? (
                 <>
                   {/* Chat Header */}
                   <div className="px-6 py-4 border-b border-white/10 flex items-center gap-3 flex-shrink-0">
-                    <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                      {selectedConv.participantName.charAt(0).toUpperCase()}
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                        selectedConv.isVideoMeet
+                          ? "bg-gradient-to-br from-blue-500 to-indigo-600"
+                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                      }`}
+                    >
+                      {selectedConv.isVideoMeet ? (
+                        <Video className="w-4 h-4" />
+                      ) : (
+                        selectedConv.participantName.charAt(0).toUpperCase()
+                      )}
                     </div>
                     <div>
                       <p className="font-semibold text-white">{selectedConv.participantName}</p>
-                      <p className="text-xs text-gray-500">
-                        Student • {selectedConv.classCode} {selectedConv.section && `- ${selectedConv.section}`}
+                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                        {selectedConv.isVideoMeet ? (
+                          <><Video className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Video Meet Chat</span></>
+                        ) : (
+                          <>Student · {selectedConv.classCode} {selectedConv.section && `— ${selectedConv.section}`}</>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -735,48 +759,24 @@ function TeacherMessages() {
                     ) : (
                       (selectedConv.messages || []).map((msg) => {
                         const isTeacher = msg.from === "teacher";
+                        const hasMention = !isTeacher && msg.text?.includes(`@${teacherName}`);
                         return (
                           <div key={msg.id} className={`flex ${isTeacher ? "justify-end" : "justify-start"}`}>
                             <div
                               className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                                 isTeacher
                                   ? "bg-emerald-600 text-white rounded-br-sm"
+                                  : hasMention
+                                  ? "bg-yellow-500/15 border border-yellow-500/30 text-white rounded-bl-sm"
                                   : "bg-white/5 text-white rounded-bl-sm"
                               }`}
                             >
-                              {msg.text && <p className="leading-relaxed">{msg.text}</p>}
-
-                              {!!msg.fileUrl && msg.attachmentKind === "image" && (
-                                <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="block mt-2">
-                                  <img
-                                    src={msg.fileUrl}
-                                    alt={msg.fileName || "Attached image"}
-                                    className="max-h-56 rounded-lg border border-white/10 object-cover"
-                                  />
-                                </a>
+                              {hasMention && (
+                                <p className="text-[10px] text-yellow-400 font-semibold mb-1 flex items-center gap-1">
+                                  <AtSign className="w-2.5 h-2.5" /> Mentioned you
+                                </p>
                               )}
-
-                              {!!msg.fileUrl && msg.attachmentKind === "video" && (
-                                <video
-                                  controls
-                                  src={msg.fileUrl}
-                                  className="mt-2 max-h-56 rounded-lg border border-white/10"
-                                />
-                              )}
-
-                              {!!msg.fileUrl && msg.attachmentKind === "document" && (
-                                <a
-                                  href={msg.fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={`mt-2 flex items-center gap-2 rounded-lg px-3 py-2 border ${isTeacher ? "border-white/20 bg-white/10 text-white" : "border-white/10 bg-black/20 text-gray-200"}`}
-                                >
-                                  <FileText className="w-4 h-4" />
-                                  <span className="text-xs font-medium truncate">{msg.fileName || "Attachment"}</span>
-                                  <Download className="w-3.5 h-3.5 ml-auto" />
-                                </a>
-                              )}
-
+                              <p className="leading-relaxed">{msg.text}</p>
                               <p className={`text-xs mt-1 ${isTeacher ? "text-emerald-100" : "text-gray-400"} text-right`}>
                                 {getTimeLabel(msg.time)}
                               </p>
@@ -793,68 +793,29 @@ function TeacherMessages() {
                     onSubmit={handleSend}
                     className="px-6 py-4 border-t border-white/10 flex flex-col gap-2 flex-shrink-0"
                   >
-                    {attachmentFile && (
-                      <div className="w-full flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                        <Paperclip className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs text-gray-200 truncate">{attachmentFile.name}</span>
-                        <button
-                          type="button"
-                          onClick={clearAttachment}
-                          className="ml-auto p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-                          aria-label="Remove selected attachment"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="w-full flex items-center gap-3">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.txt"
-                        className="hidden"
-                        onChange={handleAttachmentChange}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-2.5 bg-white/5 text-gray-300 rounded-xl hover:bg-white/10 hover:text-white transition-colors flex-shrink-0"
-                        title="Attach File"
-                      >
-                        <Paperclip className="w-5 h-5" />
-                      </button>
-
-                      <input
-                        type="text"
-                        value={messageInput}
-                        onChange={(e) => setMessageInput(e.target.value)}
-                        placeholder={`Message ${selectedConv.participantName}...`}
-                        className="flex-1 px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 caret-emerald-400 border border-white/20 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                      />
-
-                      <button
-                        type="submit"
-                        disabled={(!messageInput.trim() && !attachmentFile) || isUploadingAttachment}
-                        className="px-3 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 flex-shrink-0"
-                      >
-                        {isUploadingAttachment ? (
-                          <span className="text-xs font-medium">Uploading...</span>
-                        ) : (
-                          <Send className="w-5 h-5" />
-                        )}
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      placeholder={`Message ${selectedConv.participantName}...`}
+                      className="flex-1 px-4 py-2.5 bg-black/20 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!messageInput.trim()}
+                      className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                      <Send className="w-5 h-5" />
+                    </button>
                   </form>
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-4">
+                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4">
                     <MessageSquare className="w-8 h-8 text-emerald-400" />
                   </div>
-                  <h3 className="text-lg font-semibold text-white mb-2">Select a conversation</h3>
-                  <p className="text-gray-500 text-sm mb-5">Choose a conversation or start a new one to message a student.</p>
+                  <h3 className="text-lg font-semibold text-gray-300 mb-2">Select a conversation</h3>
+                  <p className="text-gray-500 text-sm mb-5">Choose a conversation or start a new one.</p>
                   <button
                     onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
                     className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm"
@@ -869,27 +830,28 @@ function TeacherMessages() {
         </div>
       </main>
 
-      {/* NEW MESSAGE MODAL */}
+      {/* ══ NEW MESSAGE MODAL ══ */}
       {showNewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
-            {/* Header */}
+          <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
             <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 rounded-lg">
-                  <Users className="w-5 h-5 text-emerald-600" />
+                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                  <Users className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">New Message</h3>
                   <p className="text-sm text-gray-400">Select a student to message</p>
                 </div>
               </div>
-              <button onClick={() => setShowNewModal(false)} className="p-2 hover:bg-white/5 rounded-lg">
+              <button
+                onClick={() => setShowNewModal(false)}
+                className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+              >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
-            {/* Search students */}
             <div className="px-6 py-4 border-b border-white/5 flex-shrink-0">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -904,17 +866,16 @@ function TeacherMessages() {
               </div>
             </div>
 
-            {/* Student list */}
             <div className="flex-1 overflow-y-auto scrollbar-hide">
               {allStudents.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No students enrolled in your classes yet.</p>
                   <p className="text-xs text-gray-400 mt-1">Add students to a class first.</p>
                 </div>
               ) : filteredStudents.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Search className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No students match your search.</p>
                 </div>
               ) : (
@@ -933,13 +894,13 @@ function TeacherMessages() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-white truncate">{student.name}</p>
                           <p className="text-xs text-gray-500">
-                            {student.studentId} • {student.classCode} {student.section && `- ${student.section}`}
+                            {student.studentId} · {student.classCode}{student.section && ` — ${student.section}`}
                           </p>
                           {hasConv && (
                             <p className="text-xs text-emerald-400 font-medium mt-0.5">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -951,6 +912,4 @@ function TeacherMessages() {
       )}
     </div>
   );
-}
-
 export { TeacherMessages };
