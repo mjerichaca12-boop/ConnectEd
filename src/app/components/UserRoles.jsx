@@ -32,8 +32,8 @@ const roles = [
       "Post class announcements",
       "Message students directly",
     ],
-    cta: "/login",
-    ctaLabel: "Login as Teacher",
+    cta: "/request-access",
+    ctaLabel: "Sign up as a Teacher",
     highlighted: true,
   },
   {

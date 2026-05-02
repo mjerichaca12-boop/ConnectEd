@@ -33,6 +33,34 @@ import {
    Jitsi Meet API integration
    ─────────────────────────────────────────────────────────────────── */
 const JITSI_DOMAIN = "meet.jit.si";
+const MEETING_TABLE = "online_class_meetings";
+const MEETING_HEADER_HEIGHT = 57;
+
+const buildDirectMeetingUrl = (meetingLink, displayName) => {
+  const base = String(meetingLink || "").trim();
+  if (!base) return "";
+
+  const joinConfig = [
+    "config.prejoinPageEnabled=false",
+    "config.prejoinConfig.enabled=false",
+    "config.requireDisplayName=false",
+    "config.enableWelcomePage=false",
+    "config.enableLobby=false",
+    "config.disableDeepLinking=true",
+    "config.startWithAudioMuted=false",
+    "config.startWithVideoMuted=false",
+    "interfaceConfig.MOBILE_APP_PROMO=false",
+    displayName ? `userInfo.displayName=\"${encodeURIComponent(String(displayName).trim())}\"` : "",
+  ].join("&");
+
+  return `${base}#${joinConfig}`;
+};
+
+const isLegacyRoomName = (roomName) => {
+  const normalized = String(roomName || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized.startsWith("connected") || normalized.startsWith("connect");
+};
 
 /** Load the Jitsi Meet External API script once */
 function useJitsiScript() {
@@ -52,9 +80,60 @@ function useJitsiScript() {
   return ready;
 }
 
-/** Build a clean room name from a title */
-const toRoomName = (title) =>
-  "ConnectEd_" + String(title || "").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 60) + "_" + Date.now();
+/** Build a structured, readable, and unique room name from form values */
+const slugPart = (value) => {
+  const cleaned = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s_]/g, "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned;
+};
+
+const normalizeDatePart = (dateValue) => String(dateValue || "").replace(/[^0-9]/g, "");
+const normalizeTimePart = (timeValue) => String(timeValue || "").replace(/[^0-9]/g, "").slice(0, 4);
+
+const uniqueRoomSuffix = () => {
+  const bytes = new Uint32Array(2);
+  if (window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    bytes[0] = Math.floor(Math.random() * 0xffffffff);
+    bytes[1] = Math.floor(Math.random() * 0xffffffff);
+  }
+
+  return `${bytes[0].toString(16)}${bytes[1].toString(16)}`;
+};
+
+const buildStructuredRoomName = ({ title, className, subject, date, time, uniqueId }) => {
+  const rawDate = normalizeDatePart(date);
+  // Convert YYYYMMDD from native date input into MMDDYYYY for readability.
+  const readableDate = rawDate.length === 8
+    ? `${rawDate.slice(4, 6)}${rawDate.slice(6, 8)}${rawDate.slice(0, 4)}`
+    : rawDate;
+
+  const classChunk = slugPart(className) || "class";
+  const subjectChunk = slugPart(subject) || "subject";
+  const titleChunk = slugPart(title) || "meeting";
+  const dateChunk = readableDate || rawDate || "date";
+  const timeChunk = normalizeTimePart(time) || "time";
+  const uniqueChunk = String(uniqueId || uniqueRoomSuffix());
+
+  const chunks = [
+    classChunk,
+    subjectChunk,
+    titleChunk,
+    dateChunk,
+    timeChunk,
+    uniqueChunk,
+  ];
+
+  const room = chunks.join("_").replace(/_+/g, "_");
+  return room.slice(0, 180);
+};
 
 /* ──────────────────────────────────────────────────────────────────────
    Component
@@ -64,10 +143,12 @@ function VideoConferencing() {
   const jitsiReady = useJitsiScript();
   const jitsiContainerRef = useRef(null);
   const jitsiApiRef = useRef(null);
+  const meetingWindowRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
   const [teacherEmail, setTeacherEmail] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [teacherId, setTeacherId] = useState("");
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -82,21 +163,99 @@ function VideoConferencing() {
   });
   const [formErrors, setFormErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [meetingLaunchError, setMeetingLaunchError] = useState("");
 
-  /* ── load meetings from localStorage ────────────────────────────── */
-  const STORAGE_KEY = "teacher_meetings";
+  const saveMeetings = (updated) => setMeetings(updated);
 
-  const loadMeetings = useCallback(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      setMeetings(saved ? JSON.parse(saved) : []);
-    } catch { setMeetings([]); }
+  const normalizeMeetingStatus = (row) => {
+    const status = String(row?.status || "").trim().toLowerCase();
+    if (status === "ongoing") return "Ongoing";
+    if (status === "ended") return "Ended";
+    if (status === "scheduled") return "Scheduled";
+    return row?.is_meeting_active ? "Ongoing" : "Scheduled";
+  };
+
+  const mapMeetingRow = (row) => {
+    const storedRoomName = String(row?.room_name || row?.roomName || "").trim();
+    const computedRoomName = isLegacyRoomName(storedRoomName)
+      ? buildStructuredRoomName({
+          title: row?.title,
+          className: row?.class_name,
+          subject: row?.subject,
+          date: row?.scheduled_date,
+          time: row?.scheduled_time,
+          uniqueId: row?.id,
+        })
+      : storedRoomName;
+    const roomName = String(computedRoomName || storedRoomName || "").trim();
+    const meetingLink = String(row?.meeting_link || row?.meetingLink || (roomName ? `https://${JITSI_DOMAIN}/${roomName}` : "")).trim();
+    const durationValue = Number(row?.duration_minutes ?? 60) || 60;
+    const meetingTime = String(row?.scheduled_time || "").slice(0, 5);
+
+    return {
+      id: String(row?.id || `meeting_${Date.now()}`),
+      title: String(row?.title || "Untitled Meeting"),
+      class: String(row?.class_name || ""),
+      classId: "",
+      subject: String(row?.subject || ""),
+      date: String(row?.scheduled_date || ""),
+      time: meetingTime,
+      duration: `${durationValue} min`,
+      status: normalizeMeetingStatus(row),
+      participants: Number(row?.participants_count || 0),
+      roomName,
+      meetingLink,
+      createdAt: row?.created_at || new Date().toISOString(),
+    };
+  };
+
+  const fetchMeetings = useCallback(async () => {
+    if (!supabase) {
+      setMeetings([]);
+      return;
+    }
+
+    const tableName = MEETING_TABLE;
+    const query = supabase.from(tableName).select("*").order("created_at", { ascending: false });
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("Failed to fetch meetings:", error);
+      setMeetings([]);
+      return;
+    }
+
+    setMeetings((data ?? []).map(mapMeetingRow));
   }, []);
 
-  const saveMeetings = (updated) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    setMeetings(updated);
-  };
+  const generateUniqueRoomName = useCallback(async ({ title, className, subject, date, time }) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const candidate = buildStructuredRoomName({ title, className, subject, date, time });
+      const { count, error } = await supabase
+        .from(MEETING_TABLE)
+        .select("id", { head: true, count: "exact" })
+        .eq("room_name", candidate);
+
+      if (error) {
+        // If lookup fails, still return the generated candidate and let DB unique constraint enforce safety.
+        return candidate;
+      }
+
+      if ((count ?? 0) === 0) {
+        return candidate;
+      }
+    }
+
+    return [
+      slugPart(className),
+      slugPart(subject),
+      slugPart(title),
+      normalizeDatePart(date),
+      normalizeTimePart(time),
+      `${Date.now()}${uniqueRoomSuffix()}`,
+    ].filter(Boolean).join("_");
+  }, []);
 
   /* ── fetch teacher classes from Supabase ────────────────────────── */
   const fetchClasses = useCallback(async (email) => {
@@ -109,6 +268,7 @@ function VideoConferencing() {
       .limit(1)
       .maybeSingle();
     if (!profileData?.id) return;
+    setTeacherId(profileData.id);
     const { data } = await supabase
       .from("subjects")
       .select("id, code, name, section")
@@ -126,9 +286,9 @@ function VideoConferencing() {
     setTeacherName(user.name);
     setTeacherEmail(user.email || "");
     fetchClasses(user.email);
-    loadMeetings();
+    fetchMeetings();
     setTimeout(() => setLoading(false), 400);
-  }, [navigate, fetchClasses, loadMeetings]);
+  }, [navigate, fetchClasses, fetchMeetings]);
 
   /* ── destroy Jitsi when leaving the meeting ─────────────────────── */
   useEffect(() => {
@@ -139,55 +299,74 @@ function VideoConferencing() {
   }, [isInMeeting]);
 
   /* ── launch Jitsi Meet ───────────────────────────────────────────── */
-  const launchJitsi = useCallback((meeting) => {
-    if (!jitsiReady || !jitsiContainerRef.current) return;
-    if (jitsiApiRef.current) { jitsiApiRef.current.dispose(); jitsiApiRef.current = null; }
+  const launchJitsi = useCallback(async (meeting) => {
+    if (!meeting?.meetingLink) return;
+    setMeetingLaunchError("");
 
-    const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
-      roomName: meeting.roomName,
-      parentNode: jitsiContainerRef.current,
-      width: "100%",
-      height: "100%",
-      userInfo: { displayName: teacherName, email: teacherEmail },
-      configOverwrite: {
-        startWithAudioMuted: false,
-        startWithVideoMuted: false,
-        disableDeepLinking: true,
-        prejoinPageEnabled: false,
-      },
-      interfaceConfigOverwrite: {
-        TOOLBAR_BUTTONS: [
-          "microphone", "camera", "closedcaptions", "desktop",
-          "fullscreen", "fodeviceselection", "hangup", "chat",
-          "recording", "raisehand", "videoquality", "filmstrip",
-          "invite", "shortcuts", "tileview", "select-background",
-          "mute-everyone",
-        ],
-        SHOW_JITSI_WATERMARK: false,
-        SHOW_BRAND_WATERMARK: false,
-      },
-    });
+    let effectiveRoomName = String(meeting.roomName || "").trim();
+    let effectiveMeetingLink = String(meeting.meetingLink || "").trim();
 
-    api.addEventListener("readyToClose", () => {
-      setIsInMeeting(false);
-      setActiveMeeting(null);
-    });
+    if (isLegacyRoomName(effectiveRoomName)) {
+      const regeneratedRoomName = buildStructuredRoomName({
+        title: meeting.title,
+        className: meeting.class,
+        subject: meeting.subject,
+        date: meeting.date,
+        time: meeting.time,
+        uniqueId: `${meeting.id}_${Date.now()}`,
+      });
+      effectiveRoomName = regeneratedRoomName;
+      effectiveMeetingLink = `https://${JITSI_DOMAIN}/${regeneratedRoomName}`;
+    }
 
-    jitsiApiRef.current = api;
-    setActiveMeeting(meeting);
     setIsInMeeting(true);
+    setActiveMeeting({ ...meeting, status: "Ongoing", roomName: effectiveRoomName, meetingLink: effectiveMeetingLink });
 
-    // Update meeting status to Ongoing
-    const updated = meetings.map((m) =>
-      m.id === meeting.id ? { ...m, status: "Ongoing" } : m
-    );
-    saveMeetings(updated);
-  }, [jitsiReady, teacherName, teacherEmail, meetings]);
+    try {
+      const tableName = MEETING_TABLE;
+      const payload = {
+        status: "Ongoing",
+        is_meeting_active: true,
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        room_name: effectiveRoomName,
+        meeting_link: effectiveMeetingLink,
+      };
+      await supabase.from(tableName).update(payload).eq("id", Number(meeting.id));
+
+      const updated = meetings.map((m) => (
+        String(m.id) === String(meeting.id)
+          ? { ...m, status: "Ongoing", roomName: effectiveRoomName, meetingLink: effectiveMeetingLink }
+          : m
+      ));
+      saveMeetings(updated);
+    } catch (error) {
+      console.error("Failed to mark meeting as ongoing:", error);
+      setMeetingLaunchError("Meeting opened, but we could not update status in the database.");
+    }
+  }, [meetings, teacherName]);
 
   /* ── end meeting ─────────────────────────────────────────────────── */
-  const endMeeting = () => {
+  const endMeeting = async () => {
     if (jitsiApiRef.current) { jitsiApiRef.current.dispose(); jitsiApiRef.current = null; }
+    if (meetingWindowRef.current && !meetingWindowRef.current.closed) {
+      meetingWindowRef.current.close();
+    }
+    meetingWindowRef.current = null;
     if (activeMeeting) {
+      try {
+        const tableName = MEETING_TABLE;
+        const payload = {
+          status: "Ended",
+          is_meeting_active: false,
+          ended_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        await supabase.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
+      } catch (error) {
+        console.error("Failed to end meeting:", error);
+      }
+
       const updated = meetings.map((m) =>
         m.id === activeMeeting.id ? { ...m, status: "Ended" } : m
       );
@@ -195,51 +374,150 @@ function VideoConferencing() {
     }
     setIsInMeeting(false);
     setActiveMeeting(null);
+    navigate("/teacher/video-conference", { replace: true });
   };
+
+  /* ── initialize embedded Jitsi room in existing meeting mockup ─── */
+  useEffect(() => {
+    if (!isInMeeting || !activeMeeting || !jitsiReady || !jitsiContainerRef.current) return;
+    if (!window.JitsiMeetExternalAPI || jitsiApiRef.current) return;
+
+    const meetingLink = String(activeMeeting.meetingLink || "").trim();
+    const roomFromLink = meetingLink.split("/").filter(Boolean).pop() || "";
+    const roomName = String(activeMeeting.roomName || roomFromLink || "").trim();
+    if (!roomName) return;
+
+    const api = new window.JitsiMeetExternalAPI(JITSI_DOMAIN, {
+      roomName,
+      parentNode: jitsiContainerRef.current,
+      width: "100%",
+      height: "100%",
+      userInfo: {
+        displayName: teacherName || "Teacher",
+        email: teacherEmail || "",
+      },
+      configOverwrite: {
+        disableDeepLinking: true,
+        prejoinPageEnabled: false,
+        prejoinConfig: {
+          enabled: false,
+        },
+        startWithAudioMuted: false,
+        startWithVideoMuted: false,
+      },
+    });
+
+    jitsiApiRef.current = api;
+  }, [isInMeeting, activeMeeting, jitsiReady, teacherName, teacherEmail]);
 
   /* ── form validation + create ────────────────────────────────────── */
   const validateForm = () => {
     const errors = {};
     if (!formData.title.trim()) errors.title = "Title is required";
+    if (!formData.class) errors.class = "Class is required";
+    if (!formData.subject.trim()) errors.subject = "Subject is required";
     if (!formData.date) errors.date = "Date is required";
     if (!formData.time) errors.time = "Time is required";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleCreateMeeting = () => {
+  const handleCreateMeeting = async () => {
     if (!validateForm()) return;
+    setSaveError("");
     setIsSaving(true);
-    const roomName = toRoomName(formData.title);
-    const meetingLink = `https://${JITSI_DOMAIN}/${roomName}`;
-    const newMeeting = {
-      id: `meeting_${Date.now()}`,
-      title: formData.title,
-      class: formData.class,
-      subject: formData.subject,
-      date: formData.date,
-      time: formData.time,
-      duration: `${formData.duration} min`,
-      status: "Scheduled",
-      participants: 0,
-      roomName,
-      meetingLink,
-      createdAt: new Date().toISOString(),
-    };
-    saveMeetings([newMeeting, ...meetings]);
-    handleCloseModal();
-    setIsSaving(false);
+    try {
+      const selectedClass = classOptions.find((c) => String(c.value) === String(formData.class));
+      if (!selectedClass) {
+        setSaveError("Please select a valid class from your assigned classes.");
+        return;
+      }
+      const className = selectedClass?.label || formData.class || "";
+      const roomName = await generateUniqueRoomName({
+        title: formData.title,
+        className,
+        subject: formData.subject,
+        date: formData.date,
+        time: formData.time,
+      });
+      const meetingLink = `https://${JITSI_DOMAIN}/${roomName}`;
+      const now = new Date().toISOString();
+
+      let creatorId = String(teacherId || "").trim();
+      if (!creatorId && teacherEmail) {
+        const { data: teacherProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .ilike("email", teacherEmail)
+          .eq("role", "teacher")
+          .maybeSingle();
+        creatorId = String(teacherProfile?.id || "").trim();
+      }
+
+      if (!creatorId) {
+        setSaveError("Unable to resolve teacher account. Please sign in again.");
+        return;
+      }
+
+      const tableName = MEETING_TABLE;
+      const payload = {
+        teacher_id: creatorId,
+        teacher_name: teacherName || "",
+        teacher_email: teacherEmail || "",
+        title: formData.title.trim(),
+        class_name: className,
+        subject: formData.subject.trim(),
+        scheduled_date: formData.date,
+        scheduled_time: formData.time,
+        duration_minutes: Number(formData.duration || 60) || 60,
+        room_name: roomName,
+        meeting_link: meetingLink,
+        status: "Scheduled",
+        is_meeting_active: false,
+        participants_count: 0,
+        created_at: now,
+        updated_at: now,
+      };
+
+      const { data, error } = await supabase.from(tableName).insert(payload).select("*").single();
+      if (error) {
+        console.error("Failed to save meeting:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          payload,
+        });
+        setSaveError(error.message || "Failed to save meeting.");
+        return;
+      }
+
+      const mappedMeeting = mapMeetingRow(data || payload);
+      saveMeetings([mappedMeeting, ...meetings]);
+
+      handleCloseModal();
+      await launchJitsi(mappedMeeting);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCloseModal = () => {
     setShowCreateModal(false);
     setFormData({ title: "", class: "", subject: "", date: "", time: "", duration: "60" });
     setFormErrors({});
+    setSaveError("");
   };
 
-  const handleDeleteMeeting = (id) => {
+  const handleDeleteMeeting = async (id) => {
     if (!window.confirm("Delete this meeting?")) return;
-    saveMeetings(meetings.filter((m) => m.id !== id));
+    try {
+      const tableName = MEETING_TABLE;
+      await supabase.from(tableName).delete().eq("id", Number(id));
+    } catch (error) {
+      console.error("Failed to delete meeting:", error);
+    }
+    saveMeetings(meetings.filter((m) => String(m.id) !== String(id)));
   };
 
   const handleCopyLink = (link, id) => {
@@ -255,15 +533,13 @@ function VideoConferencing() {
     return "bg-white/5 text-gray-400 border-white/10";
   };
 
-  const classOptions = classes.length > 0
-    ? classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))
-    : [{ value: "Grade 7", label: "Grade 7" }, { value: "Grade 8", label: "Grade 8" }, { value: "Grade 9", label: "Grade 9" }, { value: "Grade 10", label: "Grade 10" }];
+  const classOptions = classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }));
 
   const filteredMeetings = meetings.filter((meeting) => {
     const matchesSearch = [meeting.title, meeting.class, meeting.subject].some((s) =>
       String(s || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
-    const matchesFilter = filterStatus === "all" || meeting.status.toLowerCase() === filterStatus;
+    const matchesFilter = filterStatus === "all" || String(meeting.status || "").toLowerCase() === filterStatus.toLowerCase();
     return matchesSearch && matchesFilter;
   });
 
@@ -274,22 +550,21 @@ function VideoConferencing() {
   /* ══════════════════ MEETING ROOM VIEW ══════════════════ */
   if (isInMeeting) {
     return (
-      <div className="min-h-screen bg-gray-900 flex flex-col">
-        {/* Meeting header */}
-        <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <h2 className="text-white font-semibold text-sm">{activeMeeting?.title}</h2>
-            <div className="flex items-center gap-2 px-3 py-1 bg-red-600/20 text-red-300 border border-red-500/30 rounded-full text-xs">
-              <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
+      <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
+        <div className="bg-gray-900/80 border-b border-white/10 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-white font-semibold text-sm">{activeMeeting?.title || "Meeting"}</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border bg-red-500/15 text-red-300 border-red-500/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
               Live
-            </div>
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <a
-              href={activeMeeting?.meetingLink}
+              href={buildDirectMeetingUrl(activeMeeting?.meetingLink, teacherName || "Teacher") || activeMeeting?.meetingLink}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors"
+              className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               Open in new tab
@@ -304,17 +579,28 @@ function VideoConferencing() {
           </div>
         </div>
 
-        {/* Jitsi embed */}
-        <div className="flex-1 relative bg-gray-950">
-          <div ref={jitsiContainerRef} className="w-full h-full" style={{ minHeight: "calc(100vh - 57px)" }} />
-          {!jitsiReady && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-950">
-              <div className="text-center">
-                <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-gray-400 text-sm">Loading meeting room…</p>
+        <div
+          className="p-4"
+          style={{ height: `calc(100vh - ${MEETING_HEADER_HEIGHT}px)` }}
+        >
+          <div className="relative h-full w-full rounded-xl overflow-hidden border border-white/10 bg-black">
+            {jitsiReady ? (
+              <div ref={jitsiContainerRef} className="h-full w-full" />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center">
+                <div className="text-center max-w-xl px-6">
+                  <div className="w-12 h-12 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-white text-base font-medium mb-2">Loading meeting...</p>
+                  <p className="text-gray-400 text-sm">Please wait while we load Jitsi.</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            {meetingLaunchError && (
+              <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-md">
+                {meetingLaunchError}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -337,6 +623,12 @@ function VideoConferencing() {
         </div>
 
         <div className="p-6 space-y-6">
+          {meetingLaunchError && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-200 text-sm">
+              {meetingLaunchError}
+            </div>
+          )}
+
           {/* Hero */}
           <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
@@ -374,14 +666,6 @@ function VideoConferencing() {
               </div>
             ))}
           </div>
-
-          {/* Info banner about Jitsi */}
-          {!jitsiReady && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-center gap-3">
-              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin shrink-0" />
-              <p className="text-blue-300 text-sm">Loading Jitsi Meet API… meetings will be available shortly.</p>
-            </div>
-          )}
 
           {/* Search & filter */}
           <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 flex flex-col md:flex-row gap-4">
@@ -488,8 +772,7 @@ function VideoConferencing() {
                         {(meeting.status === "Scheduled" || meeting.status === "Ongoing") && (
                           <button
                             onClick={() => launchJitsi(meeting)}
-                            disabled={!jitsiReady}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
                           >
                             <Video className="w-4 h-4" />
                             {meeting.status === "Ongoing" ? "Rejoin" : "Start"}
@@ -547,13 +830,14 @@ function VideoConferencing() {
                   <select
                     value={formData.class}
                     onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                    className="w-full px-4 py-3 bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                    className={`w-full px-4 py-3 bg-black/20 text-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.class ? "border-red-500" : "border-white/20"}`}
                   >
                     <option value="">Select class</option>
                     {classOptions.map((c) => (
-                      <option key={c.value} value={c.label || c.value}>{c.label || c.value}</option>
+                      <option key={c.value} value={c.value}>{c.label || c.value}</option>
                     ))}
                   </select>
+                  {formErrors.class && <p className="mt-1 text-xs text-red-400">{formErrors.class}</p>}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Subject</label>
@@ -562,8 +846,9 @@ function VideoConferencing() {
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                     placeholder="e.g., Mathematics"
-                    className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                    className={`w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.subject ? "border-red-500" : "border-white/20"}`}
                   />
+                  {formErrors.subject && <p className="mt-1 text-xs text-red-400">{formErrors.subject}</p>}
                 </div>
               </div>
 
@@ -610,6 +895,13 @@ function VideoConferencing() {
                   A unique <strong>Jitsi Meet</strong> room link will be generated. Students can join from any browser — no app or account required. You can share the link or start the meeting directly from this page.
                 </p>
               </div>
+
+              {saveError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-300 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-200 leading-relaxed">{saveError}</p>
+                </div>
+              )}
             </div>
 
             <div className="p-6 border-t border-white/10 flex gap-3">

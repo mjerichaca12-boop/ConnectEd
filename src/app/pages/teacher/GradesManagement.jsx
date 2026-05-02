@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import * as LucideIcons from "lucide-react";
 import {
   createDefaultGradeRecord,
   clampGradeValue,
@@ -24,13 +25,12 @@ import {
   Target,
   Users,
   Download,
-  FileSpreadsheet,
-  ClipboardList,
-  BookOpen,
-  PenLine,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+
+const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
+const EmptyStateIcon = LucideIcons.ClipboardList || LucideIcons.BookOpen;
 
 /* ─── pure helpers ────────────────────────────────────────────────── */
 const exportToExcel = (studentGrades, className) => {
@@ -71,9 +71,40 @@ const exportToExcel = (studentGrades, className) => {
   URL.revokeObjectURL(url);
 };
 
+const normalizeAssessment = (row) => {
+  const assessmentType = String(row?.type || row?.activity_type || row?.task_type || "assignment").trim().toLowerCase();
+  const maxPoints = Number(row?.max_points ?? row?.total_points ?? row?.maxPoints ?? 100) || 100;
+
+  return {
+    id: String(row?.id || "").trim(),
+    title: String(row?.title || row?.name || "Untitled Assessment").trim() || "Untitled Assessment",
+    type: assessmentType || "assignment",
+    dueDate: String(row?.due_date || row?.dueDate || row?.deadline || "").trim(),
+    maxPoints: Math.max(1, maxPoints),
+  };
+};
+
+const clampAssessmentScore = (value, maxPoints) => {
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) return "";
+  const safeMax = Number(maxPoints) > 0 ? Number(maxPoints) : 100;
+  return Math.max(0, Math.min(safeMax, numeric));
+};
+
+const normalizeSubmission = (row) => ({
+  assessmentId: String(row?.assessment_id || "").trim(),
+  studentId: String(row?.student_id || "").trim(),
+  responseText: String(row?.response_text || row?.answer_text || row?.response || "").trim(),
+  fileUrl: String(row?.file_url || "").trim(),
+  fileName: String(row?.file_name || "").trim(),
+  filePath: String(row?.file_path || "").trim(),
+  submittedAt: row?.submitted_at || row?.updated_at || row?.created_at || null,
+});
+
 /* ─── component ──────────────────────────────────────────────────── */
 function GradesManagement() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
@@ -86,11 +117,35 @@ function GradesManagement() {
   const [saving, setSaving] = useState(false);
   const [studentGrades, setStudentGrades] = useState([]);
   const [gradesCache, setGradesCache] = useState({});
+  const gradesCacheRef = useRef({});
   const [activeView, setActiveView] = useState("all"); // "all" | "passed" | "failed"
-  const [expandedStudent, setExpandedStudent] = useState(null);
+  const [assessmentItems, setAssessmentItems] = useState([]);
+  const [assessmentGradesMap, setAssessmentGradesMap] = useState({});
+  const [expandedAssessments, setExpandedAssessments] = useState({});
+  const [focusedAssessmentId, setFocusedAssessmentId] = useState("");
+  const [selectedAssessmentId, setSelectedAssessmentId] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [hasViewedSubmission, setHasViewedSubmission] = useState(false);
+  const [assessmentSubmissionsMap, setAssessmentSubmissionsMap] = useState({});
+  const [submittedStudentProfiles, setSubmittedStudentProfiles] = useState({});
+  const [assessmentStatusMap, setAssessmentStatusMap] = useState({});
+  const [autoSaveStateMap, setAutoSaveStateMap] = useState({});
+  const [autoSaveMessage, setAutoSaveMessage] = useState("");
+  const autoSaveTimersRef = useRef({});
 
-  // Activity/Quiz/Assignment counts from DB
-  const [classCounts, setClassCounts] = useState({ quizzes: 0, activities: 0, assignments: 0 });
+  useEffect(() => {
+    gradesCacheRef.current = gradesCache;
+  }, [gradesCache]);
+
+  const requestedContext = useMemo(() => {
+    const query = new URLSearchParams(location.search || "");
+    const state = location.state || {};
+
+    return {
+      classId: String(state.selectedClassId || query.get("classId") || "").trim(),
+      assessmentId: String(state.selectedAssessmentId || query.get("assessmentId") || "").trim(),
+    };
+  }, [location.search, location.state]);
 
   /* ─── fetch classes ─────────────────────────────────────────────── */
   const fetchClasses = useCallback(async (id) => {
@@ -109,49 +164,192 @@ function GradesManagement() {
     })));
   }, []);
 
-  /* ─── fetch activity/quiz/assignment counts ─────────────────────── */
-  const fetchClassCounts = useCallback(async (currentTeacherId, classId) => {
-    if (!supabase || !currentTeacherId || !classId) { setClassCounts({ quizzes: 0, activities: 0, assignments: 0 }); return; }
+  const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId) => {
+    if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
 
-    // Try to find the assignment table
-    const CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
     let tableName = "";
-    for (const t of CANDIDATES) {
+    for (const t of ASSIGNMENT_TABLE_CANDIDATES) {
       const { error } = await supabase.from(t).select("id", { count: "exact", head: true });
       if (!error) { tableName = t; break; }
     }
-    if (!tableName) { setClassCounts({ quizzes: 0, activities: 0, assignments: 0 }); return; }
 
-    const { data, error } = await supabase
-      .from(tableName)
-      .select("*");
+    if (!tableName) {
+      setAssessmentItems([]);
+      return [];
+    }
 
-    if (error) { setClassCounts({ quizzes: 0, activities: 0, assignments: 0 }); return; }
+    const { data, error } = await supabase.from(tableName).select("*");
+    if (error) {
+      console.error("Failed to load assessments:", error);
+      setAssessmentItems([]);
+      return [];
+    }
 
     const rows = (data ?? []).filter((row) => {
       const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-      return !classId || !rowCourseId || rowCourseId === classId;
+      const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
+      const classMatches = !classId || !rowCourseId || rowCourseId === classId;
+      const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
+      return classMatches && teacherMatches;
     });
 
-    const quizzes = rows.filter((r) => {
-      const t = String(r?.type || r?.activity_type || r?.task_type || "").toLowerCase();
-      return t === "quiz";
-    }).length;
-    const activities = rows.filter((r) => {
-      const t = String(r?.type || r?.activity_type || r?.task_type || "").toLowerCase();
-      return t === "activity";
-    }).length;
-    const assignments = rows.filter((r) => {
-      const t = String(r?.type || r?.activity_type || r?.task_type || "").toLowerCase();
-      return !t || t === "assignment";
-    }).length;
+    const mapped = rows
+      .map(normalizeAssessment)
+      .filter((assessment) => assessment.id)
+      .sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
 
-    setClassCounts({ quizzes, activities, assignments });
+    setAssessmentItems(mapped);
+    setExpandedAssessments((prev) => {
+      const next = { ...prev };
+      mapped.forEach((assessment) => {
+        if (typeof next[assessment.id] === "undefined") {
+          next[assessment.id] = true;
+        }
+      });
+      return next;
+    });
+    return mapped;
+  }, []);
+
+  const fetchAssessmentGrades = useCallback(async (currentTeacherId, classId, assessments, studentIds) => {
+    if (!supabase || !currentTeacherId || !classId || assessments.length === 0 || studentIds.length === 0) {
+      setAssessmentGradesMap({});
+      setAssessmentStatusMap({});
+      return;
+    }
+
+    const assessmentIds = assessments.map((item) => item.id);
+
+    let gradeResult = await supabase
+      .from("teacher_assessment_grades")
+      .select("assessment_id, student_id, grade_value, status, grading_status")
+      .eq("teacher_id", currentTeacherId)
+      .eq("subject_id", classId)
+      .in("assessment_id", assessmentIds)
+      .in("student_id", studentIds);
+
+    if (gradeResult.error) {
+      gradeResult = await supabase
+        .from("teacher_assessment_grades")
+        .select("assessment_id, student_id, grade_value")
+        .eq("teacher_id", currentTeacherId)
+        .eq("subject_id", classId)
+        .in("assessment_id", assessmentIds)
+        .in("student_id", studentIds);
+    }
+
+    const { data, error } = gradeResult;
+
+    if (error) {
+      console.error("Failed to load assessment grades:", error);
+      setAssessmentGradesMap({});
+      return;
+    }
+
+    const assessmentLookup = new Map(assessments.map((item) => [item.id, item]));
+    const mapped = {};
+    const statusMapped = {};
+    (data ?? []).forEach((row) => {
+      const assessmentId = String(row.assessment_id || "");
+      const studentId = String(row.student_id || "");
+      if (!assessmentId || !studentId) return;
+      const assessment = assessmentLookup.get(assessmentId);
+      const score = clampAssessmentScore(row.grade_value, assessment?.maxPoints ?? 100);
+      if (!mapped[assessmentId]) mapped[assessmentId] = {};
+      mapped[assessmentId][studentId] = score;
+
+      if (!statusMapped[assessmentId]) statusMapped[assessmentId] = {};
+      const rowStatus = String(row.status || row.grading_status || "").trim();
+      statusMapped[assessmentId][studentId] = rowStatus || (typeof score === "number" ? "Graded" : "Pending");
+    });
+
+    setAssessmentGradesMap(mapped);
+    setAssessmentStatusMap(statusMapped);
+  }, []);
+
+  const fetchAssessmentSubmissions = useCallback(async (currentTeacherId, classId, assessments, enrolledStudentIds) => {
+    if (!supabase || !currentTeacherId || !classId || assessments.length === 0) {
+      setAssessmentSubmissionsMap({});
+      setSubmittedStudentProfiles({});
+      return;
+    }
+
+    const assessmentIds = assessments.map((item) => item.id);
+    const { data, error } = await supabase
+      .from("teacher_assessment_submissions")
+      .select("assessment_id, student_id, response_text, answer_text, response, file_url, file_name, file_path, submitted_at, updated_at, created_at")
+      .eq("teacher_id", currentTeacherId)
+      .eq("subject_id", classId)
+      .in("assessment_id", assessmentIds);
+
+    if (error) {
+      console.error("Failed to load assessment submissions:", error);
+      setAssessmentSubmissionsMap({});
+      setSubmittedStudentProfiles({});
+      return;
+    }
+
+    const mapped = {};
+    const enrolledSet = new Set(enrolledStudentIds.map((id) => String(id || "").trim()).filter(Boolean));
+    const submittedOnlyIds = new Set();
+
+    (data ?? []).forEach((row) => {
+      const normalized = normalizeSubmission(row);
+      if (!normalized.assessmentId || !normalized.studentId) return;
+
+      if (!mapped[normalized.assessmentId]) {
+        mapped[normalized.assessmentId] = {};
+      }
+      mapped[normalized.assessmentId][normalized.studentId] = normalized;
+
+      if (!enrolledSet.has(normalized.studentId)) {
+        submittedOnlyIds.add(normalized.studentId);
+      }
+    });
+
+    setAssessmentSubmissionsMap(mapped);
+
+    if (submittedOnlyIds.size === 0) {
+      setSubmittedStudentProfiles({});
+      return;
+    }
+
+    const { data: profileRows, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, first_name, middle_name, last_name, lrn")
+      .eq("role", "student")
+      .in("id", [...submittedOnlyIds]);
+
+    if (profileError) {
+      console.error("Failed to load submitted student profiles:", profileError);
+      setSubmittedStudentProfiles({});
+      return;
+    }
+
+    const profileMap = {};
+    (profileRows ?? []).forEach((row) => {
+      const id = String(row.id || "");
+      if (!id) return;
+
+      const fullName = [row.first_name, row.middle_name, row.last_name]
+        .map((part) => String(part || "").trim())
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Student";
+
+      profileMap[id] = {
+        id,
+        studentName: fullName,
+        studentId: String(row.lrn || "N/A"),
+      };
+    });
+
+    setSubmittedStudentProfiles(profileMap);
   }, []);
 
   /* ─── fetch students + grades ───────────────────────────────────── */
   const fetchStudentsForClass = useCallback(async (currentTeacherId, classId) => {
-    if (!supabase || !currentTeacherId || !classId) { setStudentGrades([]); return; }
+    if (!supabase || !currentTeacherId || !classId) { setStudentGrades([]); return []; }
 
     const { data: assignments, error: assignmentError } = await supabase
       .from("teacher_student_assignments")
@@ -159,10 +357,10 @@ function GradesManagement() {
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId);
 
-    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); setStudentGrades([]); return; }
+    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); setStudentGrades([]); return []; }
 
     const studentIds = [...new Set((assignments ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
-    if (studentIds.length === 0) { setStudentGrades([]); return; }
+    if (studentIds.length === 0) { setStudentGrades([]); return []; }
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
@@ -170,7 +368,7 @@ function GradesManagement() {
       .eq("role", "student")
       .in("id", studentIds);
 
-    if (studentError) { console.error("Failed to load students:", studentError); setStudentGrades([]); return; }
+    if (studentError) { console.error("Failed to load students:", studentError); setStudentGrades([]); return []; }
 
     const { data: gradeRows } = await supabase
       .from("teacher_student_grades")
@@ -192,7 +390,7 @@ function GradesManagement() {
       };
     });
 
-    const cacheForClass = gradesCache[classId] || {};
+    const cacheForClass = gradesCacheRef.current[classId] || {};
     const mapped = (studentRows ?? []).map((student) => {
       const studentId = String(student.id);
       const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || { ...createDefaultGradeRecord(), activityGrade: 0 };
@@ -222,7 +420,8 @@ function GradesManagement() {
       [classId]: { ...(prev[classId] || {}), ...persistedGradeMap },
     }));
     setStudentGrades(mapped);
-  }, [gradesCache]);
+    return studentIds;
+  }, []);
 
   /* ─── init ──────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -241,16 +440,106 @@ function GradesManagement() {
   }, [navigate, fetchClasses]);
 
   useEffect(() => {
-    if (!teacherId || !selectedClass) { setStudentGrades([]); return; }
-    fetchStudentsForClass(teacherId, selectedClass);
-    fetchClassCounts(teacherId, selectedClass);
-  }, [teacherId, selectedClass]);
+    if (!requestedContext.classId) return;
+    if (!classes.some((item) => item.id === requestedContext.classId)) return;
+
+    setSelectedClass(requestedContext.classId);
+    setActiveView("all");
+    if (requestedContext.assessmentId) {
+      setFocusedAssessmentId(requestedContext.assessmentId);
+    }
+  }, [classes, requestedContext.classId, requestedContext.assessmentId]);
+
+  useEffect(() => {
+    if (!focusedAssessmentId || !selectedClass) return;
+
+    const target = document.getElementById(`assessment-item-${focusedAssessmentId}`);
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedAssessmentId, selectedClass, assessmentItems.length]);
+
+  useEffect(() => {
+    if (assessmentItems.length === 0) {
+      setSelectedAssessmentId("");
+      setSelectedStudentId("");
+      setHasViewedSubmission(false);
+      return;
+    }
+
+    const hasSelected = assessmentItems.some((item) => item.id === selectedAssessmentId);
+    if (hasSelected) return;
+
+    const preferred = focusedAssessmentId && assessmentItems.some((item) => item.id === focusedAssessmentId)
+      ? focusedAssessmentId
+      : assessmentItems[0].id;
+
+    setSelectedAssessmentId(preferred);
+    setSelectedStudentId("");
+    setHasViewedSubmission(false);
+  }, [assessmentItems, selectedAssessmentId, focusedAssessmentId]);
+
+  useEffect(() => {
+    if (!teacherId || !selectedClass) {
+      setStudentGrades([]);
+      setAssessmentItems([]);
+      setAssessmentGradesMap({});
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadData = async () => {
+      const studentIds = await fetchStudentsForClass(teacherId, selectedClass);
+      if (!isMounted) return;
+
+      const assessments = await fetchAssessmentsForClass(teacherId, selectedClass);
+      if (!isMounted) return;
+
+      if (requestedContext.assessmentId) {
+        const hasTarget = assessments.some((item) => item.id === requestedContext.assessmentId);
+        if (hasTarget) {
+          setExpandedAssessments((prev) => ({ ...prev, [requestedContext.assessmentId]: true }));
+          setFocusedAssessmentId(requestedContext.assessmentId);
+        }
+      }
+
+      if (assessments.length > 0 && studentIds.length > 0) {
+        await fetchAssessmentGrades(teacherId, selectedClass, assessments, studentIds);
+      } else {
+        setAssessmentGradesMap({});
+      }
+
+      await fetchAssessmentSubmissions(teacherId, selectedClass, assessments, studentIds);
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [teacherId, selectedClass, fetchStudentsForClass, fetchAssessmentsForClass, fetchAssessmentGrades, fetchAssessmentSubmissions, requestedContext.assessmentId]);
 
   useEffect(() => {
     if (!saveSuccess) return;
     const timer = window.setTimeout(() => setSaveSuccess(false), 3000);
     return () => window.clearTimeout(timer);
   }, [saveSuccess]);
+
+  useEffect(() => {
+    if (!autoSaveMessage) return;
+    const timer = window.setTimeout(() => setAutoSaveMessage(""), 1800);
+    return () => window.clearTimeout(timer);
+  }, [autoSaveMessage]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(autoSaveTimersRef.current).forEach((timerId) => {
+        window.clearTimeout(timerId);
+      });
+      autoSaveTimersRef.current = {};
+    };
+  }, []);
 
   /* ─── handlers ──────────────────────────────────────────────────── */
   const handleLogoutClick = () => { localStorage.removeItem("currentUser"); navigate("/login"); };
@@ -270,6 +559,100 @@ function GradesManagement() {
       return { ...current, [selectedClass]: classCache };
     });
     setHasUnsavedChanges(true);
+  };
+
+  const persistAssessmentGrade = useCallback(async (assessmentId, studentId, rawValue) => {
+    if (!supabase || !teacherId || !selectedClass) return;
+
+    const assessment = assessmentItems.find((item) => item.id === assessmentId);
+    if (!assessment) return;
+
+    const scoreValue = rawValue === "" ? 0 : Number(clampAssessmentScore(rawValue, assessment.maxPoints));
+    const statusValue = rawValue === "" ? "Pending" : "Graded";
+    const key = `${assessmentId}:${studentId}`;
+
+    setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saving" }));
+
+    const payloadWithStatus = {
+      teacher_id: teacherId,
+      subject_id: selectedClass,
+      assessment_id: assessment.id,
+      assessment_title: assessment.title,
+      assessment_type: assessment.type,
+      max_points: assessment.maxPoints,
+      student_id: studentId,
+      grade_value: scoreValue,
+      status: statusValue,
+      updated_at: new Date().toISOString(),
+    };
+
+    let result = await supabase
+      .from("teacher_assessment_grades")
+      .upsert(payloadWithStatus, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+
+    if (result.error) {
+      const payloadWithoutStatus = {
+        ...payloadWithStatus,
+      };
+      delete payloadWithoutStatus.status;
+
+      result = await supabase
+        .from("teacher_assessment_grades")
+        .upsert(payloadWithoutStatus, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+    }
+
+    if (result.error) {
+      console.error("Failed to auto-save assessment grade:", result.error);
+      setAutoSaveStateMap((prev) => ({ ...prev, [key]: "error" }));
+      setAutoSaveMessage("Auto-save failed. Please try again.");
+      return;
+    }
+
+    setAssessmentStatusMap((prev) => ({
+      ...prev,
+      [assessmentId]: {
+        ...(prev[assessmentId] || {}),
+        [studentId]: statusValue,
+      },
+    }));
+    setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
+    setAutoSaveMessage(`Saved grade for ${assessment.title}.`);
+
+    const clearTimer = autoSaveTimersRef.current[`clear:${key}`];
+    if (clearTimer) {
+      window.clearTimeout(clearTimer);
+    }
+
+    autoSaveTimersRef.current[`clear:${key}`] = window.setTimeout(() => {
+      setAutoSaveStateMap((prev) => ({ ...prev, [key]: "idle" }));
+      delete autoSaveTimersRef.current[`clear:${key}`];
+    }, 1000);
+  }, [assessmentItems, selectedClass, supabase, teacherId]);
+
+  const scheduleAssessmentAutoSave = useCallback((assessmentId, studentId, value) => {
+    const key = `${assessmentId}:${studentId}`;
+    const existingTimer = autoSaveTimersRef.current[key];
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    autoSaveTimersRef.current[key] = window.setTimeout(() => {
+      persistAssessmentGrade(assessmentId, studentId, value);
+    }, 350);
+  }, [persistAssessmentGrade]);
+
+  const handleAssessmentGradeChange = (assessmentId, studentId, maxPoints, value) => {
+    const nextValue = value === "" ? "" : clampAssessmentScore(value, maxPoints);
+
+    setAssessmentGradesMap((prev) => ({
+      ...prev,
+      [assessmentId]: {
+        ...(prev[assessmentId] || {}),
+        [studentId]: nextValue,
+      },
+    }));
+
+    scheduleAssessmentAutoSave(assessmentId, studentId, nextValue);
   };
 
   const handleSave = async () => {
@@ -292,6 +675,70 @@ function GradesManagement() {
         .from("teacher_student_grades")
         .upsert(payload, { onConflict: "teacher_id,subject_id,student_id" });
       if (error) { console.error("Failed to save grades:", error); return; }
+
+      const assessmentPayload = [];
+      assessmentItems.forEach((assessment) => {
+        studentGrades.forEach((student) => {
+          const rawValue = assessmentGradesMap?.[assessment.id]?.[student.id];
+          if (rawValue === "" || typeof rawValue === "undefined") return;
+
+          assessmentPayload.push({
+            teacher_id: teacherId,
+            subject_id: selectedClass,
+            assessment_id: assessment.id,
+            assessment_title: assessment.title,
+            assessment_type: assessment.type,
+            max_points: assessment.maxPoints,
+            student_id: student.id,
+            grade_value: Number(clampAssessmentScore(rawValue, assessment.maxPoints)),
+            status: "Graded",
+            updated_at: new Date().toISOString(),
+          });
+        });
+      });
+
+      if (assessmentPayload.length > 0) {
+        const { error: assessmentError } = await supabase
+          .from("teacher_assessment_grades")
+          .upsert(assessmentPayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+
+        if (assessmentError) {
+          console.error("Failed to save assessment grades:", assessmentError);
+          return;
+        }
+
+        setAssessmentStatusMap((prev) => {
+          const next = { ...prev };
+          assessmentPayload.forEach((item) => {
+            const assessmentId = String(item.assessment_id || "");
+            const studentId = String(item.student_id || "");
+            if (!assessmentId || !studentId) return;
+            if (!next[assessmentId]) next[assessmentId] = {};
+            next[assessmentId][studentId] = "Graded";
+          });
+          return next;
+        });
+
+        setAutoSaveStateMap((prev) => {
+          const next = { ...prev };
+          assessmentPayload.forEach((item) => {
+            const key = `${String(item.assessment_id || "")}:${String(item.student_id || "")}`;
+            next[key] = "saved";
+
+            const clearTimer = autoSaveTimersRef.current[`clear:${key}`];
+            if (clearTimer) {
+              window.clearTimeout(clearTimer);
+            }
+
+            autoSaveTimersRef.current[`clear:${key}`] = window.setTimeout(() => {
+              setAutoSaveStateMap((current) => ({ ...current, [key]: "idle" }));
+              delete autoSaveTimersRef.current[`clear:${key}`];
+            }, 1000);
+          });
+          return next;
+        });
+      }
+
       setSaveSuccess(true);
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -323,6 +770,54 @@ function GradesManagement() {
   const passingCount = studentGrades.filter((s) => s.overallGrade >= 75).length;
   const failingCount = studentGrades.filter((s) => s.overallGrade < 75).length;
   const passingRate = studentGrades.length > 0 ? Math.round((passingCount / studentGrades.length) * 100) : 0;
+
+  const selectedAssessment = useMemo(
+    () => assessmentItems.find((item) => item.id === selectedAssessmentId) || null,
+    [assessmentItems, selectedAssessmentId]
+  );
+
+  const studentsForSelectedAssessment = useMemo(() => {
+    if (!selectedAssessmentId) return [];
+
+    const search = String(searchQuery || "").trim().toLowerCase();
+    const submissionsForAssessment = assessmentSubmissionsMap[selectedAssessmentId] || {};
+    const submittedStudentIds = Object.keys(submissionsForAssessment);
+
+    const enrolled = studentGrades.map((student) => ({
+      id: student.id,
+      studentName: student.studentName,
+      studentId: student.studentId,
+      isSubmitted: Boolean(submissionsForAssessment[student.id]),
+    }));
+
+    const enrolledSet = new Set(enrolled.map((student) => student.id));
+    const submittedOnly = submittedStudentIds
+      .filter((studentId) => !enrolledSet.has(studentId))
+      .map((studentId) => {
+        const profile = submittedStudentProfiles[studentId];
+        return {
+          id: studentId,
+          studentName: profile?.studentName || "Student",
+          studentId: profile?.studentId || "N/A",
+          isSubmitted: true,
+        };
+      });
+
+    const combined = [...enrolled, ...submittedOnly];
+    if (!search) return combined;
+
+    return combined.filter((student) => {
+      const name = String(student.studentName || "").toLowerCase();
+      const lrn = String(student.studentId || "").toLowerCase();
+      return name.includes(search) || lrn.includes(search);
+    });
+  }, [selectedAssessmentId, searchQuery, assessmentSubmissionsMap, studentGrades, submittedStudentProfiles]);
+
+  const selectedStudentSubmission = useMemo(() => {
+    if (!selectedAssessmentId || !selectedStudentId) return null;
+    return assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
+  }, [selectedAssessmentId, selectedStudentId, assessmentSubmissionsMap]);
+
 
   /* ─── render ────────────────────────────────────────────────────── */
   if (loading) return <LoadingScreen message="Loading grades..." />;
@@ -358,18 +853,6 @@ function GradesManagement() {
                 <h1 className="text-3xl font-bold mb-1">Grade Management</h1>
                 <p className="text-emerald-50 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
               </div>
-              {selectedClass && (
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => exportToExcel(studentGrades, selectedClassName)}
-                    disabled={studentGrades.length === 0}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 backdrop-blur-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed font-medium text-sm"
-                  >
-                    <FileSpreadsheet className="w-4 h-4" />
-                    Export Excel
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -389,30 +872,18 @@ function GradesManagement() {
             ))}
           </div>
 
-          {/* Activity / Quiz / Assignment counts */}
-          {selectedClass && (
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { label: "Quizzes", count: classCounts.quizzes, icon: <PenLine className="w-4 h-4" />, color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
-                { label: "Activities", count: classCounts.activities, icon: <ClipboardList className="w-4 h-4" />, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
-                { label: "Assignments", count: classCounts.assignments, icon: <BookOpen className="w-4 h-4" />, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/20" },
-              ].map(({ label, count, icon, color, bg }) => (
-                <div key={label} className={`rounded-xl p-4 border ${bg} flex items-center gap-4`}>
-                  <div className={`p-2.5 rounded-lg bg-white/5 ${color}`}>{icon}</div>
-                  <div>
-                    <p className="text-gray-400 text-xs">{label} Posted</p>
-                    <p className={`text-xl font-bold ${color}`}>{count}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Success banner */}
           {saveSuccess && (
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-emerald-400" />
               <p className="text-emerald-300 font-medium">Grades saved successfully!</p>
+            </div>
+          )}
+
+          {autoSaveMessage && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-300" />
+              <p className="text-emerald-200 text-sm">{autoSaveMessage}</p>
             </div>
           )}
 
@@ -454,6 +925,7 @@ function GradesManagement() {
 
           {/* Grade Table */}
           {selectedClass && (
+            <>
             <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
               {/* Table header row */}
               <div className="p-5 border-b border-white/10 flex flex-wrap items-center justify-between gap-4">
@@ -514,7 +986,6 @@ function GradesManagement() {
                     <tbody className="divide-y divide-white/5">
                       {filteredByView.map((student) => {
                         const isPassed = student.overallGrade >= 75;
-                        const isExpanded = expandedStudent === student.id;
                         return (
                           <tr key={student.id} className={`hover:bg-white/5 transition-colors ${!isPassed ? "bg-red-500/5" : ""}`}>
                             <td className="px-5 py-4">
@@ -591,6 +1062,191 @@ function GradesManagement() {
                 </div>
               )}
             </div>
+
+            <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-white/10">
+                <h3 className="text-base font-semibold text-white">Assessment-Based Grading</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Review student submissions and assign grades for each assessment.
+                </p>
+              </div>
+
+              {assessmentItems.length === 0 ? (
+                <div className="p-8 text-center">
+                  <EmptyStateIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400 text-sm">No assessments found for this class yet.</p>
+                </div>
+              ) : (
+                <div className="p-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-white/10">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">1. Assessments</p>
+                      </div>
+                      <div className="max-h-[460px] overflow-y-auto dark-scrollbar p-2 space-y-2">
+                        {assessmentItems.map((assessment) => {
+                          const isActive = selectedAssessmentId === assessment.id;
+                          return (
+                            <button
+                              id={`assessment-item-${assessment.id}`}
+                              key={assessment.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedAssessmentId(assessment.id);
+                                setSelectedStudentId("");
+                                setHasViewedSubmission(false);
+                                setFocusedAssessmentId(assessment.id);
+                              }}
+                              className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 hover:bg-white/5"}`}
+                            >
+                              <p className="text-sm font-semibold text-white line-clamp-1">{assessment.title}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {assessment.type.charAt(0).toUpperCase() + assessment.type.slice(1)} • Max {assessment.maxPoints}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-white/10">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">2. Students</p>
+                      </div>
+                      <div className="max-h-[460px] overflow-y-auto dark-scrollbar p-2 space-y-2">
+                        {!selectedAssessment ? (
+                          <div className="px-3 py-8 text-center text-sm text-gray-500">Select an assessment to view students.</div>
+                        ) : studentsForSelectedAssessment.length === 0 ? (
+                          <div className="px-3 py-8 text-center text-sm text-gray-500">No enrolled or submitted students found.</div>
+                        ) : (
+                          studentsForSelectedAssessment.map((student) => {
+                            const isActive = selectedStudentId === student.id;
+                            const gradingStatus = assessmentStatusMap?.[selectedAssessmentId]?.[student.id] || "Pending";
+                            const rowKey = `${selectedAssessmentId}:${student.id}`;
+                            const rowSaveState = autoSaveStateMap[rowKey] || "idle";
+                            return (
+                              <button
+                                key={`${selectedAssessmentId}-${student.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStudentId(student.id);
+                                  setHasViewedSubmission(true);
+                                }}
+                                className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 hover:bg-white/5"}`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium text-white line-clamp-1">{student.studentName}</p>
+                                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                    {student.isSubmitted ? (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Submitted</span>
+                                    ) : (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">No Submission</span>
+                                    )}
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${gradingStatus === "Graded" ? "bg-blue-500/10 text-blue-300 border-blue-500/20" : "bg-gray-500/10 text-gray-300 border-gray-500/20"}`}>
+                                      {gradingStatus}
+                                    </span>
+                                    {rowSaveState === "saving" ? (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">Saving…</span>
+                                    ) : null}
+                                    {rowSaveState === "saved" ? (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Saved</span>
+                                    ) : null}
+                                    {rowSaveState === "error" ? (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">Save Failed</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <p className="text-xs text-gray-500">{student.studentId}</p>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-white/10">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">3. Submission & Grade</p>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        {!selectedAssessment || !selectedStudentId ? (
+                          <div className="text-center py-10">
+                            <p className="text-sm text-gray-500">Select a student to view submission and input grade.</p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Submission Output</p>
+
+                              {selectedStudentSubmission ? (
+                                <div className="space-y-3">
+                                  {selectedStudentSubmission.responseText ? (
+                                    <div>
+                                      <p className="text-[11px] text-gray-500 mb-1">Response</p>
+                                      <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">{selectedStudentSubmission.responseText}</p>
+                                    </div>
+                                  ) : null}
+
+                                  {selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath ? (
+                                    <div>
+                                      <p className="text-[11px] text-gray-500 mb-1">Attachment</p>
+                                      <a
+                                        href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-300 text-xs border border-emerald-500/20 hover:bg-emerald-500/20"
+                                      >
+                                        {selectedStudentSubmission.fileName || "Open submitted file"}
+                                      </a>
+                                    </div>
+                                  ) : null}
+
+                                  {selectedStudentSubmission.submittedAt ? (
+                                    <p className="text-[11px] text-gray-500">
+                                      Submitted: {new Date(selectedStudentSubmission.submittedAt).toLocaleString()}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-amber-300">No submission found for this student yet.</p>
+                              )}
+                            </div>
+
+                            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Grade Input</p>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={selectedAssessment.maxPoints}
+                                  step="0.01"
+                                  value={assessmentGradesMap?.[selectedAssessment.id]?.[selectedStudentId] ?? ""}
+                                  onChange={(e) => handleAssessmentGradeChange(selectedAssessment.id, selectedStudentId, selectedAssessment.maxPoints, e.target.value)}
+                                  disabled={!hasViewedSubmission}
+                                  className="w-full px-3 py-2 text-sm bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  placeholder="Enter grade"
+                                />
+                                <span className="text-xs text-gray-400 whitespace-nowrap">/ {selectedAssessment.maxPoints}</span>
+                              </div>
+                              {selectedAssessment && selectedStudentId ? (
+                                <p className="text-[11px] text-gray-400 mt-2">
+                                  Status: <span className="text-white font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
+                                </p>
+                              ) : null}
+                              {!hasViewedSubmission ? (
+                                <p className="text-[11px] text-amber-300 mt-2">View the student submission first before grading.</p>
+                              ) : null}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            </>
           )}
 
           {/* Empty state when no class selected */}

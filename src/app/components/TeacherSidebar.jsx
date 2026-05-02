@@ -7,10 +7,21 @@ import {
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { supabase } from "../lib/supabaseClient";
 
+const getStoredCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem("currentUser");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
 export function TeacherSidebar({ teacherName, onLogout }) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
+  const storedCurrentUser = getStoredCurrentUser();
+  const avatarUrl = String(storedCurrentUser?.avatarUrl || storedCurrentUser?.avatar_url || "").trim();
 
   const handleConfirmLogout = async () => {
     try {
@@ -77,8 +88,12 @@ export function TeacherSidebar({ teacherName, onLogout }) {
 
           {/* User chip */}
           <div className="flex items-center gap-3 bg-white/5 border border-white/8 rounded-xl px-3 py-2.5">
-            <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-              {teacherName?.charAt(0)?.toUpperCase() || "T"}
+            <div className="w-8 h-8 bg-emerald-500 rounded-lg overflow-hidden flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Teacher avatar" className="w-full h-full object-cover" />
+              ) : (
+                teacherName?.charAt(0)?.toUpperCase() || "T"
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white text-sm font-semibold truncate">{teacherName}</p>

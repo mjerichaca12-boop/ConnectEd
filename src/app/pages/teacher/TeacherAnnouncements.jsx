@@ -3,7 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
 import { teacherNotifications } from "@/app/components/NotificationDefault";
+import { supabase } from "@/app/lib/supabaseClient";
+import { parseStoredFileList } from "@/app/lib/teacherHelpers";
 import {
   Megaphone,
   Plus,
@@ -16,8 +19,203 @@ import {
   Clock,
   Download,
   Trash2,
-  BookOpen
+  BookOpen,
+  File
 } from "lucide-react";
+
+let announcementAttachmentsTableStatus = "unknown";
+
+const normalizeAudience = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "teacher" || normalized === "teachers") return "Teacher";
+  if (normalized === "student" || normalized === "students") return "Students";
+  if (normalized === "schoolwide" || normalized === "school wide") return "School-wide";
+  return "School-wide";
+};
+
+const normalizePriority = (value) => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "high") return "High";
+  if (normalized === "low") return "Low";
+  return "Medium";
+};
+
+const getPriorityRank = (priority) => {
+  const normalized = String(priority ?? "").trim().toLowerCase();
+  if (normalized === "high") return 0;
+  if (normalized === "medium") return 1;
+  if (normalized === "low") return 2;
+  return 1;
+};
+
+const normalizeAudienceType = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "student" || normalized === "students") return "student";
+  if (normalized === "teacher" || normalized === "teachers") return "teacher";
+  return "school";
+};
+
+const audienceLabelFromType = (audienceType) => {
+  if (audienceType === "student") return "Students";
+  if (audienceType === "teacher") return "Teacher";
+  return "School-wide";
+};
+
+const normalizeTimestamp = (row) =>
+  row?.created_at ||
+  row?.date_posted ||
+  row?.datePosted ||
+  row?.timestamp ||
+  row?.updated_at ||
+  new Date().toISOString();
+
+const matchesTeacherAudience = (announcement) => {
+  const normalizedType = String(announcement?.audienceType || "").trim().toLowerCase();
+  if (normalizedType) {
+    return normalizedType === "school" || normalizedType === "teacher";
+  }
+
+  const normalizedAudience = String(announcement?.targetAudience ?? "").trim().toLowerCase();
+  return normalizedAudience.includes("school") || normalizedAudience.includes("teacher");
+};
+
+const getAnnouncementAttachmentKind = (fileType, fileName, fileUrl) => {
+  const normalizedType = String(fileType || "").trim().toLowerCase();
+  const normalizedName = String(fileName || "").trim().toLowerCase();
+  const normalizedUrl = String(fileUrl || "").trim().toLowerCase();
+
+  if (normalizedType.startsWith("image/")) return "image";
+  if (normalizedType.startsWith("video/")) return "video";
+
+  const source = normalizedName || normalizedUrl;
+  const extensionMatch = source.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+  const extension = extensionMatch ? extensionMatch[1].toLowerCase() : "";
+
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (["mp4", "webm", "ogg", "mov", "m4v"].includes(extension)) return "video";
+  if (normalizedUrl) return "document";
+  return "";
+};
+
+const normalizeAnnouncementAttachment = (attachment, index) => {
+  const fileName = String(attachment?.file_name || attachment?.fileName || `File ${index + 1}`).trim();
+  const fileUrl = String(attachment?.file_url || attachment?.fileUrl || "").trim();
+  const filePath = String(attachment?.file_path || attachment?.filePath || "").trim();
+  const fileType = String(attachment?.file_type || attachment?.fileType || "").trim();
+
+  return {
+    fileName,
+    fileUrl,
+    filePath,
+    fileType,
+    kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl),
+  };
+};
+
+const getRowAttachments = (row) => {
+  const fileNames = parseStoredFileList(row?.file_name);
+  const fileUrls = parseStoredFileList(row?.file_url);
+  const filePaths = parseStoredFileList(row?.file_path);
+  const fileTypes = parseStoredFileList(row?.file_type);
+  const totalCount = Math.max(fileNames.length, fileUrls.length, filePaths.length, fileTypes.length);
+
+  return Array.from({ length: totalCount }, (_, index) => {
+    const fileName = fileNames[index] || `File ${index + 1}`;
+    const fileUrl = fileUrls[index] || "";
+    const filePath = filePaths[index] || "";
+    const fileType = fileTypes[index] || "";
+
+    return {
+      fileName,
+      fileUrl,
+      filePath,
+      fileType,
+      kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl),
+    };
+  }).filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath);
+};
+
+const buildAnnouncementAttachments = (row, attachmentRows = []) => {
+  const attachmentList = [
+    ...getRowAttachments(row),
+    ...(Array.isArray(attachmentRows) ? attachmentRows.map(normalizeAnnouncementAttachment) : []),
+  ].filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath);
+
+  const uniqueAttachments = [];
+  const seenKeys = new Set();
+
+  for (const attachment of attachmentList) {
+    const key = [attachment.fileUrl, attachment.filePath, attachment.fileName].join("::");
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    uniqueAttachments.push(attachment);
+  }
+
+  return { attachments: uniqueAttachments };
+};
+
+const normalizeAnnouncement = (row, attachmentRows = []) => {
+  const audienceType = normalizeAudienceType(
+    row?.audience_type ??
+      row?.target_audience ??
+      row?.targetAudience ??
+      row?.audience ??
+      row?.target_audience_type ??
+      row?.recipient_audience ??
+      "school"
+  );
+
+  return {
+    id: String(row?.id ?? ""),
+    title: String(row?.title ?? "").trim(),
+    content: String(row?.content ?? "").trim(),
+    targetAudience: row?.audience_type != null
+      ? audienceLabelFromType(audienceType)
+      : normalizeAudience(
+          row?.target_audience ??
+            row?.targetAudience ??
+            row?.audience ??
+            row?.target_audience_type ??
+            row?.recipient_audience ??
+            row?.audience_type ??
+            "School-wide"
+        ),
+    audienceType,
+    priority: normalizePriority(
+      row?.priority ??
+        row?.announcement_priority ??
+        row?.importance ??
+        row?.priority_level ??
+        "Medium"
+    ),
+    createdAt: normalizeTimestamp(row),
+    subject: String(row?.subject ?? row?.course ?? row?.course_name ?? row?.class_name ?? row?.topic ?? "").trim(),
+    ...buildAnnouncementAttachments(row, attachmentRows),
+  };
+};
+
+const sortAnnouncements = (items) =>
+  [...items].sort((left, right) => {
+    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const leftTime = new Date(left?.createdAt || 0).getTime();
+    const rightTime = new Date(right?.createdAt || 0).getTime();
+    if (rightTime !== leftTime) return rightTime - leftTime;
+
+    return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
+  });
+
 function TeacherAnnouncements() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
@@ -53,20 +251,139 @@ function TeacherAnnouncements() {
   const [announcements, setAnnouncements] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [files, setFiles] = useState([]);
+  const [announcementTable, setAnnouncementTable] = useState("school_announcements");
+
+  const fetchAttachmentRowsByAnnouncementId = async (tableName, rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return new Map();
+    }
+
+    const attachmentTableName = "announcement_attachments";
+    const attachmentForeignKey = tableName === "school_announcements" ? "school_announcement_id" : "announcement_id";
+
+    if (announcementAttachmentsTableStatus === "missing") {
+      return new Map();
+    }
+
+    if (announcementAttachmentsTableStatus === "unknown") {
+      const { error: checkError } = await supabase
+        .from(attachmentTableName)
+        .select("id", { head: true, count: "exact" })
+        .limit(1);
+
+      if (checkError) {
+        announcementAttachmentsTableStatus = "missing";
+        return new Map();
+      }
+
+      announcementAttachmentsTableStatus = "available";
+    }
+
+    const ids = rows.map((row) => String(row?.id || "").trim()).filter(Boolean);
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const { data, error } = await supabase
+      .from(attachmentTableName)
+      .select(`${attachmentForeignKey}, file_url, file_name, file_path, file_type, created_at`)
+      .in(attachmentForeignKey, ids)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      announcementAttachmentsTableStatus = "missing";
+      return new Map();
+    }
+
+    announcementAttachmentsTableStatus = "available";
+
+    const grouped = new Map();
+    for (const attachment of data ?? []) {
+      const announcementId = String(attachment?.[attachmentForeignKey] ?? "");
+      const list = grouped.get(announcementId) || [];
+      list.push(attachment);
+      grouped.set(announcementId, list);
+    }
+
+    return grouped;
+  };
+
+  const loadAnnouncements = async () => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const tableName = "school_announcements";
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const rows = data ?? [];
+    const attachmentRowsByAnnouncementId = await fetchAttachmentRowsByAnnouncementId(tableName, rows);
+
+    return sortAnnouncements(
+      rows
+        .map((row) => normalizeAnnouncement(row, attachmentRowsByAnnouncementId.get(String(row?.id ?? "")) || []))
+        .filter((item) => item.id && matchesTeacherAudience(item))
+    );
+  };
+
   useEffect(() => {
-    const userData = localStorage.getItem("currentUser");
-    if (!userData) {
-      navigate("/login");
-      return;
-    }
-    const user = JSON.parse(userData);
-    if (user.role !== "teacher") {
-      navigate("/login");
-      return;
-    }
-    setTeacherName(user.name);
-    setTimeout(() => setLoading(false), 600);
+    const initialize = async () => {
+      const userData = localStorage.getItem("currentUser");
+      if (!userData) {
+        navigate("/login");
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      if (user.role !== "teacher") {
+        navigate("/login");
+        return;
+      }
+
+      setAnnouncementTable("school_announcements");
+      setTeacherName(user.name);
+      setNotificationList(teacherNotifications.map((item) => ({ ...item })));
+
+      try {
+        const rows = await loadAnnouncements();
+        setAnnouncements(rows);
+      } catch (error) {
+        console.error("Failed to load teacher announcements:", error);
+        setAnnouncements([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initialize();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!supabase || !announcementTable) return undefined;
+
+    const channel = supabase
+      .channel(`teacher-announcements-page-${announcementTable}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: announcementTable }, async () => {
+        try {
+          const rows = await loadAnnouncements();
+          setAnnouncements(rows);
+        } catch {
+          // Keep current announcements if realtime refresh fails.
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [announcementTable]);
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
@@ -100,7 +417,7 @@ function TeacherAnnouncements() {
       ...formData,
       datePosted: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
     };
-    setAnnouncements([newAnnouncement, ...announcements]);
+    setAnnouncements(sortAnnouncements([newAnnouncement, ...announcements].filter((announcement) => matchesTeacherAudience(announcement))));
     setShowCreateModal(false);
     setFormData({ title: "", content: "", targetAudience: "Subject-specific", subject: "", priority: "Medium" });
   };
@@ -146,6 +463,9 @@ function TeacherAnnouncements() {
         return "bg-white/5 text-gray-300";
     }
   };
+  const filteredAnnouncements = sortAnnouncements(
+    announcements.filter((announcement) => matchesTeacherAudience(announcement))
+  );
   if (loading) {
     return <LoadingScreen message="Loading announcements..." />;
   }
@@ -204,7 +524,7 @@ function TeacherAnnouncements() {
                     {tab === "files" && <Upload className="w-5 h-5" />}
                     <span className="capitalize">{tab}</span>
                     <span className="ml-2 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full">
-                      {tab === "announcements" ? announcements.length : tab === "assignments" ? assignments.length : files.length}
+                      {tab === "announcements" ? filteredAnnouncements.length : tab === "assignments" ? assignments.length : files.length}
                     </span>
                   </div>
                 </button>)}
@@ -215,21 +535,40 @@ function TeacherAnnouncements() {
     /* Announcements Tab */
   }
               {activeTab === "announcements" && <div className="space-y-4">
-                  {announcements.length === 0 ? <div className="text-center py-12">
+                  {filteredAnnouncements.length === 0 ? <div className="text-center py-12">
                       <Megaphone className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">No announcements yet</p>
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-emerald-600 hover:text-emerald-700 font-medium">Create your first announcement</button>
-                    </div> : announcements.map((announcement) => <div key={announcement.id} className="bg-gray-900/60 rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-md transition-shadow">
+                    </div> : filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-gray-900/60 rounded-xl border border-white/10 p-6 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between mb-3">
                         <h3 className="text-lg font-semibold text-white">{announcement.title}</h3>
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(announcement.priority)}`}>{announcement.priority}</span>
                       </div>
                       <p className="text-gray-300 mb-4">{announcement.content}</p>
-                      <div className="flex items-center gap-4 text-sm text-gray-400">
+                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400">
                         <span>{announcement.targetAudience}</span>
-                        {announcement.subject && <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {announcement.subject}</span>}
-                        <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {new Date(announcement.datePosted).toLocaleDateString()}</span>
+                        {announcement.subject ? (
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="w-4 h-4" />
+                            {announcement.subject}
+                          </span>
+                        ) : null}
+                        <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
                       </div>
+
+                      {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
+                        <div className="mt-4 grid gap-3">
+                          {announcement.attachments.map((attachment, index) => (
+                            <AnnouncementAttachmentPreview
+                              key={`${announcement.id}-attachment-${index}`}
+                              attachment={attachment}
+                              index={index}
+                              announcementId={announcement.id}
+                              variant="dark"
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>)}
                 </div>}
 

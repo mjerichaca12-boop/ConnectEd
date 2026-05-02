@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserCog, BookOpen, ClipboardList,
   Megaphone, FileText, Settings, Menu, X, LogOut, ChevronRight,
-  Shield, Calendar
+  Shield, Calendar, Mail
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
@@ -16,6 +16,7 @@ function AdminSidebar({ adminName, onLogout }) {
     { icon: LayoutDashboard, label: "Dashboard",            path: "/admin/dashboard",   color: "emerald" },
     { icon: Users,           label: "Student Management",   path: "/admin/students",    color: "blue" },
     { icon: UserCog,         label: "Teacher Management",   path: "/admin/teachers",    color: "emerald" },
+    { icon: Mail,            label: "Access Requests",      path: "/admin/access-requests", color: "yellow" },
     { icon: BookOpen,        label: "Subject Management",   path: "/admin/subjects",    color: "blue" },
     { icon: Megaphone,       label: "Announcements",        path: "/admin/announcements", color: "red" },
     { icon: Calendar,        label: "School Calendar",      path: "/admin/calendar",    color: "emerald" },
@@ -30,11 +31,13 @@ function AdminSidebar({ adminName, onLogout }) {
     emerald: "text-emerald-400 bg-emerald-500/20 border-emerald-500/30 bg-left-panel-emerald",
     blue: "text-blue-400 bg-blue-500/20 border-blue-500/30",
     red: "text-red-400 bg-red-500/20 border-red-500/30",
+    yellow: "text-yellow-400 bg-yellow-500/20 border-yellow-500/30",
   };
   const activeIcon = {
     emerald: "text-emerald-400",
     blue: "text-blue-400",
     red: "text-red-400",
+    yellow: "text-yellow-400",
   };
 
   return (

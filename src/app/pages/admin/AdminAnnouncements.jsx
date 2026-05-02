@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { CustomSelect } from "../../components/admin/CustomSelect";
@@ -6,17 +7,20 @@ import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
+import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
 import {
   AlertTriangle,
   Edit,
   Loader2,
   Megaphone,
   Plus,
+  File,
+  Paperclip,
   School,
   Search,
   Trash2,
   Users,
-  X
+  X,
 } from "lucide-react";
 
 const emptyForm = {
@@ -33,7 +37,11 @@ const emptyTouchedFields = {
   priority: false
 };
 
-const announcementTableCandidates = ["school_announcements", "announcements"];
+const announcementTableCandidates = ["announcements", "school_announcements"];
+const ANNOUNCEMENT_ATTACHMENT_BUCKET = "message-attachments";
+const MAX_ANNOUNCEMENT_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024;
+const ANNOUNCEMENT_FILE_ACCEPT = "image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.txt";
+let announcementAttachmentsTableStatus = "unknown";
 
 const ALLOWED_AUDIENCES = ["School-wide", "Students", "Teacher"];
 const ALLOWED_PRIORITIES = ["Low", "Medium", "High"];
@@ -79,6 +87,24 @@ const toDatabaseAudience = (value) => {
   return normalized;
 };
 
+const toDatabaseAudienceType = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "student" || normalized === "students") return "student";
+  if (normalized === "teacher" || normalized === "teachers") return "teacher";
+  return "school";
+};
+
+const audienceLabelFromType = (audienceType) => {
+  if (audienceType === "student") return "Students";
+  if (audienceType === "teacher") return "Teacher";
+  return "School-wide";
+};
+
 const toDatabasePriority = (value) => {
   const normalized = normalizePriority(value);
   return normalized;
@@ -109,32 +135,147 @@ const formatPriorityLabel = (priority) => {
 
 const normalizeTimestamp = (row) => row?.created_at || row?.date_posted || row?.datePosted || row?.timestamp || row?.updated_at || new Date().toISOString();
 
-const normalizeAnnouncement = (row) => ({
-  id: String(row?.id ?? ""),
-  title: String(row?.title ?? "").trim(),
-  content: String(row?.content ?? "").trim(),
-  targetAudience: normalizeAudience(
+const extractMissingColumnFromSupabaseError = (error) => {
+  const message = String(error?.message || "");
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match ? String(match[1] || "").trim() : "";
+};
+
+const getPriorityRank = (priority) => {
+  const normalized = String(priority ?? "").trim().toLowerCase();
+  if (normalized === "high") return 0;
+  if (normalized === "medium") return 1;
+  if (normalized === "low") return 2;
+  return 1;
+};
+
+const getAnnouncementAttachmentKind = (fileType, fileName, fileUrl) => {
+  const normalizedType = String(fileType || "").trim().toLowerCase();
+  const normalizedName = String(fileName || "").trim().toLowerCase();
+  const normalizedUrl = String(fileUrl || "").trim().toLowerCase();
+
+  if (normalizedType.startsWith("image/")) return "image";
+  if (normalizedType.startsWith("video/")) return "video";
+
+  const source = normalizedName || normalizedUrl;
+  const extensionMatch = source.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+  const extension = extensionMatch ? extensionMatch[1].toLowerCase() : "";
+
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (["mp4", "webm", "ogg", "mov", "m4v"].includes(extension)) return "video";
+  if (normalizedUrl) return "document";
+
+  return "";
+};
+
+const buildAnnouncementAttachments = (row, attachmentRows = []) => {
+  if (Array.isArray(attachmentRows) && attachmentRows.length > 0) {
+    const attachments = attachmentRows
+      .map((attachment, index) => {
+        const fileName = String(attachment?.file_name || `File ${index + 1}`).trim();
+        const fileUrl = String(attachment?.file_url || "").trim();
+        const filePath = String(attachment?.file_path || "").trim();
+        const fileType = String(attachment?.file_type || "").trim();
+
+        return {
+          fileName,
+          fileUrl,
+          filePath,
+          fileType,
+          kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl)
+        };
+      })
+      .filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath);
+
+    return {
+      fileNames: attachments.map((attachment) => attachment.fileName),
+      fileUrls: attachments.map((attachment) => attachment.fileUrl),
+      filePaths: attachments.map((attachment) => attachment.filePath),
+      fileTypes: attachments.map((attachment) => attachment.fileType),
+      attachments
+    };
+  }
+
+  const fileNames = parseStoredFileList(row?.file_name);
+  const fileUrls = parseStoredFileList(row?.file_url);
+  const filePaths = parseStoredFileList(row?.file_path);
+  const fileTypes = parseStoredFileList(row?.file_type);
+  const totalCount = Math.max(fileNames.length, fileUrls.length, filePaths.length, fileTypes.length);
+
+  const attachments = Array.from({ length: totalCount }, (_, index) => {
+    const fileName = fileNames[index] || `File ${index + 1}`;
+    const fileUrl = fileUrls[index] || "";
+    const filePath = filePaths[index] || "";
+    const fileType = fileTypes[index] || "";
+
+    return {
+      fileName,
+      fileUrl,
+      filePath,
+      fileType,
+      kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl)
+    };
+  }).filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath);
+
+  return { fileNames, fileUrls, filePaths, fileTypes, attachments };
+};
+
+const normalizeAnnouncement = (row, attachmentRows = []) => {
+  const attachments = buildAnnouncementAttachments(row, attachmentRows);
+  const audienceType = toDatabaseAudienceType(
+    row?.audience_type ??
     row?.target_audience ??
     row?.targetAudience ??
     row?.audience ??
     row?.target_audience_type ??
     row?.recipient_audience ??
-    row?.audience_type ??
-    "School-wide"
-  ),
-  priority: normalizePriority(
-    row?.priority ??
-    row?.announcement_priority ??
-    row?.importance ??
-    row?.priority_level ??
-    "Medium"
-  ),
-  createdAt: normalizeTimestamp(row),
-  author: row?.author || row?.created_by_name || row?.created_by || "Admin Office"
-});
+    "school"
+  );
+
+  return {
+    id: String(row?.id ?? ""),
+    title: String(row?.title ?? "").trim(),
+    content: String(row?.content ?? "").trim(),
+    targetAudience: row?.audience_type != null
+      ? audienceLabelFromType(audienceType)
+      : normalizeAudience(
+          row?.target_audience ??
+          row?.targetAudience ??
+          row?.audience ??
+          row?.target_audience_type ??
+          row?.recipient_audience ??
+          row?.audience_type ??
+          "School-wide"
+        ),
+    audienceType,
+    priority: normalizePriority(
+      row?.priority ??
+      row?.announcement_priority ??
+      row?.importance ??
+      row?.priority_level ??
+      "Medium"
+    ),
+    createdAt: normalizeTimestamp(row),
+    author: row?.author || row?.created_by_name || row?.created_by || "Admin Office",
+    ...attachments,
+    fileName: attachments.fileNames[0] || "",
+    fileUrl: attachments.fileUrls[0] || "",
+    filePath: attachments.filePaths[0] || "",
+    fileType: attachments.fileTypes[0] || ""
+  };
+};
 
 const sortAnnouncements = (items) =>
-  [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  [...items].sort((left, right) => {
+    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime();
+    const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime();
+    if (rightTime !== leftTime) return rightTime - leftTime;
+
+    return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
+  });
 
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 
@@ -226,6 +367,7 @@ const getAnnouncementValidationErrors = (data) => {
 function AdminAnnouncements() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
+  const announcementFileInputRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -240,6 +382,7 @@ function AdminAnnouncements() {
   const [announcementColumns, setAnnouncementColumns] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [editFormData, setEditFormData] = useState(emptyForm);
+  const [announcementFiles, setAnnouncementFiles] = useState([]);
   const [formErrors, setFormErrors] = useState({});
   const [editFormErrors, setEditFormErrors] = useState({});
   const [formTouched, setFormTouched] = useState(emptyTouchedFields);
@@ -249,6 +392,90 @@ function AdminAnnouncements() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetAnnouncementFileInput = () => {
+    setAnnouncementFiles([]);
+    if (announcementFileInputRef.current) {
+      announcementFileInputRef.current.value = "";
+    }
+  };
+
+  const isSupportedAnnouncementAttachment = (file) => {
+    const mimeType = String(file?.type || "").toLowerCase();
+    if (mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
+      return true;
+    }
+
+    const fileName = String(file?.name || "").toLowerCase();
+    const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+    return ["pdf", "doc", "docx", "ppt", "pptx", "txt"].includes(extension);
+  };
+
+  const buildAnnouncementAttachmentStoragePath = (announcementId, fileName) => {
+    const uniqueId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    return `announcements/${String(announcementId || "").trim()}/${uniqueId}_${sanitizeFileName(fileName)}`;
+  };
+
+  const uploadAnnouncementAttachments = async (files, announcementId) => {
+    if (!announcementId) {
+      throw new Error("Announcement ID is required before uploading attachments.");
+    }
+
+    if (!files.length) return [];
+
+    const uploaded = [];
+
+    try {
+      for (const file of files) {
+        if (file.size > MAX_ANNOUNCEMENT_ATTACHMENT_SIZE_BYTES) {
+          throw new Error(`File ${file.name} is too large. Maximum allowed size is 20MB.`);
+        }
+
+        if (!isSupportedAnnouncementAttachment(file)) {
+          throw new Error(`Unsupported file type: ${file.name}`);
+        }
+
+        const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
+        const uploadResult = await supabase.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).upload(storagePath, file, {
+          upsert: false,
+          contentType: file.type || "application/octet-stream"
+        });
+
+        if (uploadResult.error) {
+          console.error("Announcement attachment upload failed:", uploadResult.error);
+          throw uploadResult.error;
+        }
+
+        const { data } = supabase.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).getPublicUrl(storagePath);
+        const fileUrl = String(data?.publicUrl || "").trim();
+
+        if (!fileUrl) {
+          throw new Error(`Unable to generate public URL for ${file.name}.`);
+        }
+
+        uploaded.push({
+          fileName: file.name,
+          filePath: storagePath,
+          fileUrl,
+          fileType: file.type || "application/octet-stream"
+        });
+      }
+
+      return uploaded;
+    } catch (error) {
+      console.error("Announcement attachment processing failed:", error);
+      if (uploaded.length > 0) {
+        await supabase.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uploaded.map((item) => item.filePath)).catch(() => {
+          // Ignore rollback cleanup failures.
+        });
+      }
+
+      throw error;
+    }
+  };
 
   const getVisibleErrors = (allErrors, touchedMap, submitAttempted) => {
     if (submitAttempted) {
@@ -315,11 +542,11 @@ function AdminAnnouncements() {
   };
 
   const handleOpenCreateModal = () => {
-    setErrorMessage("");
     setFormData(emptyForm);
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
+    resetAnnouncementFileInput();
     setShowCreateModal(true);
   };
 
@@ -328,114 +555,373 @@ function AdminAnnouncements() {
     navigate("/login");
   };
 
-  const resolveAnnouncementTable = async () => {
-    if (!supabase) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    for (const tableName of announcementTableCandidates) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
-
-      if (!error) {
-        setAnnouncementTable(tableName);
-        return tableName;
-      }
-    }
-
-    throw new Error("Could not find the announcements table in Supabase.");
-  };
-
   const getAnnouncementTableName = async () => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
 
-    if (announcementTable) {
-      const { error } = await supabase.from(announcementTable).select("id", { count: "exact", head: true });
-
-      if (!error) {
-        return announcementTable;
-      }
-    }
-
-    return resolveAnnouncementTable();
+    const tableName = "school_announcements";
+    setAnnouncementTable(tableName);
+    return tableName;
   };
 
-  const loadAnnouncements = async (tableNameOverride) => {
+  const loadAnnouncements = async () => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
 
-    const tableName = tableNameOverride || (await getAnnouncementTableName());
-    const { data, error } = await supabase.from(tableName).select("*");
+    const { data, error } = await supabase
+      .from("school_announcements")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
       throw new Error(error.message);
     }
 
-    return sortAnnouncements((data ?? []).map(normalizeAnnouncement).filter((item) => item.id));
+    const rows = data ?? [];
+    const attachmentRowsByAnnouncementId = await fetchAttachmentRowsByAnnouncementId("school_announcements", rows);
+
+    return sortAnnouncements(rows.map((row) => {
+      const rowId = String(row?.id ?? "");
+      return normalizeAnnouncement(row, attachmentRowsByAnnouncementId.get(rowId) || []);
+    }).filter((item) => item.id));
   };
 
-  const resolveAnnouncementColumns = async (tableNameOverride) => {
-    if (!supabase) {
-      throw new Error("Supabase client is not configured.");
-    }
+  const getAnnouncementAttachmentTableName = (tableName) => (
+    "announcement_attachments"
+  );
 
-    const tableName = tableNameOverride || (await getAnnouncementTableName());
-    const candidates = [
-      "id",
-      "title",
-      "content",
-      "target_audience",
-      "audience",
-      "targetAudience",
-      "target_audience_type",
-      "recipient_audience",
-      "audience_type",
-      "priority",
-      "announcement_priority",
-      "importance",
-      "priority_level",
-      "created_at",
-      "date_posted",
-      "datePosted",
-      "timestamp",
-      "updated_at",
-      "author",
-      "created_by_name",
-      "created_by",
-      "createdBy",
-      "school_id",
-      "schoolId"
-    ];
+  const getAnnouncementAttachmentForeignKey = (tableName) => (
+    tableName === "school_announcements" ? "school_announcement_id" : "announcement_id"
+  );
 
-    const detected = [];
-
-    for (const columnName of candidates) {
-      const { error } = await supabase.from(tableName).select(columnName, { count: "exact", head: true });
-      if (!error) {
-        detected.push(columnName);
-      }
-    }
-
-    setAnnouncementColumns(detected);
-    return detected;
-  };
-
-  const getAnnouncementColumns = async (tableNameOverride) => {
+  const getAnnouncementColumns = async () => {
     if (announcementColumns.length > 0) {
       return announcementColumns;
     }
 
-    return resolveAnnouncementColumns(tableNameOverride);
+    const columns = [
+      "id",
+      "title",
+      "content",
+      "priority",
+      "created_at",
+      "updated_at",
+      "author",
+      "created_by",
+      "created_by_name",
+      "school_id",
+      "target_audience",
+      "announcement_priority",
+      "importance",
+      "priority_level",
+      "date_posted",
+      "datePosted",
+      "timestamp"
+    ];
+
+    setAnnouncementColumns(columns);
+    return columns;
   };
 
-  const buildCreatePayloads = (data, timestamp, columns) => {
+  const fetchAttachmentRowsByAnnouncementId = async (tableName, rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return new Map();
+    }
+
+    const attachmentTableName = getAnnouncementAttachmentTableName(tableName);
+    const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
+
+    if (announcementAttachmentsTableStatus === "missing") {
+      return new Map();
+    }
+
+    if (announcementAttachmentsTableStatus === "unknown") {
+      const { error: checkError } = await supabase
+        .from(attachmentTableName)
+        .select("id", { head: true, count: "exact" })
+        .limit(1);
+
+      if (checkError) {
+        announcementAttachmentsTableStatus = "missing";
+        return new Map();
+      }
+
+      announcementAttachmentsTableStatus = "available";
+    }
+
+    const ids = rows
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const { data, error } = await supabase
+      .from(attachmentTableName)
+      .select(`${attachmentForeignKey}, file_url, file_name, file_path, file_type, created_at`)
+      .in(attachmentForeignKey, ids)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      return new Map();
+    }
+
+    const grouped = new Map();
+
+    for (const attachment of data ?? []) {
+      const announcementId = String(attachment?.[attachmentForeignKey] ?? "");
+      if (!announcementId) continue;
+
+      const existing = grouped.get(announcementId) || [];
+      existing.push(attachment);
+      grouped.set(announcementId, existing);
+    }
+
+    return grouped;
+  };
+
+  const insertAnnouncementAttachmentRows = async (tableName, announcementId, attachments) => {
+    if (!announcementId || !Array.isArray(attachments) || attachments.length === 0) {
+      return true;
+    }
+
+    const attachmentTableName = getAnnouncementAttachmentTableName(tableName);
+    const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
+
+    const resolveLinkedAnnouncementIdForSchoolAnnouncement = async (schoolAnnouncementId) => {
+      const normalizedSchoolAnnouncementId = String(schoolAnnouncementId || "").trim();
+      if (!normalizedSchoolAnnouncementId) {
+        throw new Error("School announcement ID is required to save attachments.");
+      }
+
+      const existingLink = await supabase
+        .from("announcement_attachments")
+        .select("announcement_id")
+        .eq("school_announcement_id", normalizedSchoolAnnouncementId)
+        .not("announcement_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingLink.error) {
+        console.error("Failed to resolve existing attachment link:", existingLink.error);
+        throw new Error(existingLink.error.message || "Unable to resolve announcement attachment link.");
+      }
+
+      const linkedAnnouncementId = String(existingLink.data?.announcement_id || "").trim();
+      if (linkedAnnouncementId) {
+        return linkedAnnouncementId;
+      }
+
+      const schoolAnnouncementResult = await supabase
+        .from("school_announcements")
+        .select("*")
+        .eq("id", normalizedSchoolAnnouncementId)
+        .maybeSingle();
+
+      if (schoolAnnouncementResult.error) {
+        console.error("Failed to load school announcement for attachment linking:", schoolAnnouncementResult.error);
+        throw new Error(schoolAnnouncementResult.error.message || "Unable to load school announcement for attachment linking.");
+      }
+
+      const source = schoolAnnouncementResult.data || {};
+      const basePayloads = [
+        {
+          title: String(source.title || "Announcement").trim() || "Announcement",
+          content: String(source.content || "Attachment").trim() || "Attachment",
+          target_audience: normalizeAudience(source.target_audience || "School-wide"),
+          priority: normalizePriority(source.priority || "Medium"),
+          author: String(source.author || source.created_by_name || "Admin Office").trim() || "Admin Office",
+          created_by: source.created_by || null,
+          created_by_name: source.created_by_name || null,
+          school_id: source.school_id || null,
+          created_at: source.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          title: String(source.title || "Announcement").trim() || "Announcement",
+          content: String(source.content || "Attachment").trim() || "Attachment",
+          target_audience: normalizeAudience(source.target_audience || "School-wide"),
+          priority: normalizePriority(source.priority || "Medium")
+        },
+        {
+          title: String(source.title || "Announcement").trim() || "Announcement",
+          content: String(source.content || "Attachment").trim() || "Attachment"
+        }
+      ];
+
+      let lastError = null;
+      for (const initialPayload of basePayloads) {
+        const { data, error } = await supabase
+          .from("announcements")
+          .insert(initialPayload)
+          .select("id")
+          .maybeSingle();
+
+        if (!error) {
+          const createdLinkedAnnouncementId = String(data?.id || "").trim();
+          if (!createdLinkedAnnouncementId) {
+            throw new Error("Unable to create linked announcement for attachments.");
+          }
+
+          return createdLinkedAnnouncementId;
+        }
+
+        lastError = error;
+      }
+
+      console.error("Failed to create linked announcement record:", lastError);
+      throw new Error(lastError?.message || "Unable to create linked announcement for attachments.");
+    };
+
+    let linkedAnnouncementId = "";
+    if (tableName === "school_announcements") {
+      linkedAnnouncementId = await resolveLinkedAnnouncementIdForSchoolAnnouncement(announcementId);
+    }
+
+    const payload = attachments.map((attachment, index) => {
+      const fileName = String(attachment?.fileName || "").trim();
+      const fileUrl = String(attachment?.fileUrl || "").trim();
+      const filePath = String(attachment?.filePath || "").trim();
+      const fileType = String(attachment?.fileType || "application/octet-stream").trim() || "application/octet-stream";
+
+      if (!fileName || !fileUrl || !filePath) {
+        throw new Error(`Attachment metadata is incomplete for file #${index + 1}.`);
+      }
+
+      return {
+      ...(tableName === "school_announcements"
+        ? { announcement_id: linkedAnnouncementId }
+        : {}),
+      [attachmentForeignKey]: announcementId,
+      file_url: fileUrl,
+      file_name: fileName,
+      file_path: filePath,
+      file_type: fileType
+      };
+    });
+
+    if (payload.length === 0) {
+      return true;
+    }
+
+    const { error } = await supabase.from(attachmentTableName).insert(payload);
+
+    if (error) {
+      console.error("Announcement attachment database insert failed:", error);
+      throw new Error(error.message || "Unable to save announcement attachments.");
+    }
+
+    announcementAttachmentsTableStatus = "available";
+    return true;
+  };
+
+  const syncAnnouncementInlineAttachmentColumns = async (tableName, announcementId) => {
+    const normalizedAnnouncementId = String(announcementId || "").trim();
+    if (!normalizedAnnouncementId) {
+      return;
+    }
+
+    const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
+    const { data, error } = await supabase
+      .from("announcement_attachments")
+      .select("announcement_id, file_name, file_url, file_path, file_type, created_at")
+      .eq(attachmentForeignKey, normalizedAnnouncementId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Failed to load attachments for inline sync:", error);
+      return;
+    }
+
+    const attachmentRows = data || [];
+    const fileNames = attachmentRows.map((row) => String(row?.file_name || "").trim()).filter(Boolean);
+    const fileUrls = attachmentRows.map((row) => String(row?.file_url || "").trim()).filter(Boolean);
+    const filePaths = attachmentRows.map((row) => String(row?.file_path || "").trim()).filter(Boolean);
+    const fileTypes = attachmentRows.map((row) => String(row?.file_type || "").trim()).filter(Boolean);
+
+    const updatePayload = {
+      file_name: JSON.stringify(fileNames),
+      file_url: JSON.stringify(fileUrls),
+      file_path: JSON.stringify(filePaths),
+      file_type: JSON.stringify(fileTypes)
+    };
+
+    const runInlineSync = async (targetTable, targetId) => {
+      const normalizedTargetId = String(targetId || "").trim();
+      if (!normalizedTargetId) {
+        return;
+      }
+
+      const payload = { ...updatePayload };
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const payloadKeys = Object.keys(payload);
+        if (payloadKeys.length === 0) {
+          return;
+        }
+
+        const { error: updateError } = await supabase
+          .from(targetTable)
+          .update(payload)
+          .eq("id", normalizedTargetId);
+
+        if (!updateError) {
+          return;
+        }
+
+        const missingColumn = extractMissingColumnFromSupabaseError(updateError);
+        if (missingColumn && Object.prototype.hasOwnProperty.call(payload, missingColumn)) {
+          delete payload[missingColumn];
+          continue;
+        }
+
+        console.error("Failed to sync inline announcement attachment columns:", updateError);
+        return;
+      }
+    };
+
+    await runInlineSync(tableName, normalizedAnnouncementId);
+
+    if (tableName === "school_announcements") {
+      const linkedAnnouncementIds = [...new Set(
+        attachmentRows
+          .map((row) => String(row?.announcement_id || "").trim())
+          .filter(Boolean)
+      )];
+
+      for (const linkedAnnouncementId of linkedAnnouncementIds) {
+        await runInlineSync("announcements", linkedAnnouncementId);
+      }
+    }
+  };
+
+  const addAttachmentColumnsToPayload = (payload, attachments, columns) => {
+    if (!Array.isArray(attachments) || attachments.length === 0) {
+      return payload;
+    }
+
+    const fileNames = attachments.map((item) => String(item.fileName || "").trim()).filter(Boolean);
+    const fileUrls = attachments.map((item) => String(item.fileUrl || "").trim()).filter(Boolean);
+    const filePaths = attachments.map((item) => String(item.filePath || "").trim()).filter(Boolean);
+    const fileTypes = attachments.map((item) => String(item.fileType || "").trim()).filter(Boolean);
+
+    if (columns.includes("file_name") && fileNames.length > 0) payload.file_name = JSON.stringify(fileNames);
+    if (columns.includes("file_url") && fileUrls.length > 0) payload.file_url = JSON.stringify(fileUrls);
+    if (columns.includes("file_path") && filePaths.length > 0) payload.file_path = JSON.stringify(filePaths);
+    if (columns.includes("file_type") && fileTypes.length > 0) payload.file_type = JSON.stringify(fileTypes);
+
+    return payload;
+  };
+
+  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
     const user = getCurrentUser();
     const targetAudience = toDatabaseAudience(data.targetAudience);
     const priority = toDatabasePriority(data.priority);
 
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience", "audience_type"];
+    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
     const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
     const audienceColumn = resolveColumnName(columns, audienceCandidates);
     const priorityColumn = resolveColumnName(columns, priorityCandidates);
@@ -458,63 +944,25 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    const payloads = [];
+    if (announcementId && columns.includes("id")) {
+      basePayload.id = announcementId;
+    }
 
-    const pushPayload = (payload) => {
-      const key = JSON.stringify(payload);
-      if (!payloads.some((existing) => JSON.stringify(existing) === key)) {
-        payloads.push(payload);
-      }
+    addAttachmentColumnsToPayload(basePayload, attachments, columns);
+
+    const strictPayload = {
+      ...basePayload,
+      ...(audienceColumn ? { [audienceColumn]: targetAudience } : {}),
+      ...(priorityColumn ? { [priorityColumn]: priority } : {})
     };
 
-    if (audienceColumn && priorityColumn) {
-      pushPayload({
-        ...basePayload,
-        [audienceColumn]: targetAudience,
-        [priorityColumn]: priority
-      });
-    }
-
-    if (audienceColumn) {
-      pushPayload({
-        ...basePayload,
-        [audienceColumn]: targetAudience
-      });
-    }
-
-    if (priorityColumn) {
-      pushPayload({
-        ...basePayload,
-        [priorityColumn]: priority
-      });
-    }
-
-    const fallbackPairs = [
-      ["target_audience", "priority"],
-      ["target_audience", "announcement_priority"],
-      ["audience", "priority"],
-      ["audience", "importance"],
-      ["targetAudience", "priority"],
-      ["audience_type", "priority_level"]
-    ];
-
-    for (const [audienceKey, priorityKey] of fallbackPairs) {
-      pushPayload({
-        ...basePayload,
-        [audienceKey]: targetAudience,
-        [priorityKey]: priority
-      });
-    }
-
-    pushPayload(basePayload);
-
-    return payloads;
+    return [strictPayload, basePayload];
   };
 
-  const buildUpdatePayloads = (data, timestamp, columns) => {
+  const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
     const targetAudience = toDatabaseAudience(data.targetAudience);
     const priority = toDatabasePriority(data.priority);
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience", "audience_type"];
+    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
     const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
     const audienceColumn = resolveColumnName(columns, audienceCandidates);
     const priorityColumn = resolveColumnName(columns, priorityCandidates);
@@ -529,79 +977,95 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    const payloads = [];
+    if (attachments) {
+      addAttachmentColumnsToPayload(basePayload, attachments, columns);
+    }
 
-    const pushPayload = (payload) => {
-      const key = JSON.stringify(payload);
-      if (!payloads.some((existing) => JSON.stringify(existing) === key)) {
-        payloads.push(payload);
-      }
+    const strictPayload = {
+      ...basePayload,
+      ...(audienceColumn ? { [audienceColumn]: targetAudience } : {}),
+      ...(priorityColumn ? { [priorityColumn]: priority } : {})
     };
 
-    if (audienceColumn && priorityColumn) {
-      pushPayload({
-        ...basePayload,
-        [audienceColumn]: targetAudience,
-        [priorityColumn]: priority
-      });
-    }
-
-    if (audienceColumn) {
-      pushPayload({
-        ...basePayload,
-        [audienceColumn]: targetAudience
-      });
-    }
-
-    if (priorityColumn) {
-      pushPayload({
-        ...basePayload,
-        [priorityColumn]: priority
-      });
-    }
-
-    const fallbackPairs = [
-      ["target_audience", "priority"],
-      ["target_audience", "announcement_priority"],
-      ["audience", "priority"],
-      ["audience", "importance"],
-      ["targetAudience", "priority"],
-      ["audience_type", "priority_level"]
-    ];
-
-    for (const [audienceKey, priorityKey] of fallbackPairs) {
-      pushPayload({
-        ...basePayload,
-        [audienceKey]: targetAudience,
-        [priorityKey]: priority
-      });
-    }
-
-    pushPayload(basePayload);
-
-    return payloads;
+    return [strictPayload, basePayload];
   };
 
   const writeAnnouncement = async (tableName, mode, payloads, id) => {
     let lastError = null;
+    const attemptErrors = [];
 
-    for (const payload of payloads) {
-      const query = mode === "insert"
-        ? supabase.from(tableName).insert(payload)
-        : supabase.from(tableName).update(payload).eq("id", id);
+    for (let attemptIndex = 0; attemptIndex < payloads.length; attemptIndex += 1) {
+      const payload = payloads[attemptIndex];
+      if (mode === "insert") {
+        const { data, error } = await supabase
+          .from(tableName)
+          .insert(payload)
+          .select("id")
+          .maybeSingle();
 
-      const { error } = await query;
+        if (!error) {
+          return {
+            payload,
+            recordId: data?.id ?? null
+          };
+        }
+
+        const fallbackInsert = await supabase.from(tableName).insert(payload);
+        if (!fallbackInsert.error) {
+          return {
+            payload,
+            recordId: null
+          };
+        }
+
+        attemptErrors.push({
+          attempt: attemptIndex + 1,
+          mode,
+          operation: "insert",
+          payloadKeys: Object.keys(payload),
+          error: {
+            code: String((fallbackInsert.error || error)?.code || "").trim(),
+            message: String((fallbackInsert.error || error)?.message || "").trim(),
+            details: String((fallbackInsert.error || error)?.details || "").trim(),
+            hint: String((fallbackInsert.error || error)?.hint || "").trim()
+          }
+        });
+
+        lastError = fallbackInsert.error || error;
+        continue;
+      }
+
+      const { error } = await supabase.from(tableName).update(payload).eq("id", id);
 
       if (!error) {
-        return payload;
+        return {
+          payload,
+          recordId: id ?? null
+        };
       }
+
+      attemptErrors.push({
+        attempt: attemptIndex + 1,
+        mode,
+        operation: "update",
+        payloadKeys: Object.keys(payload),
+        error: {
+          code: String(error?.code || "").trim(),
+          message: String(error?.message || "").trim(),
+          details: String(error?.details || "").trim(),
+          hint: String(error?.hint || "").trim()
+        }
+      });
 
       lastError = error;
     }
 
     if (lastError?.message) {
       const details = [lastError.message, lastError.details, lastError.hint].filter(Boolean).join(" | ");
-      throw new Error(details || "Unable to save announcement.");
+      const attemptSummary = attemptErrors.length > 0
+        ? ` Attempts: ${JSON.stringify(attemptErrors)}`
+        : "";
+      throw new Error((details || "Unable to save announcement.") + attemptSummary);
     }
 
     throw new Error("Unable to save announcement.");
@@ -629,7 +1093,16 @@ function AdminAnnouncements() {
           targetAudience: announcement.targetAudience || previous.targetAudience,
           priority: announcement.priority || previous.priority,
           createdAt: announcement.createdAt || previous.createdAt,
-          author: announcement.author || previous.author
+          author: announcement.author || previous.author,
+          fileNames: announcement.fileNames?.length ? announcement.fileNames : previous.fileNames,
+          fileUrls: announcement.fileUrls?.length ? announcement.fileUrls : previous.fileUrls,
+          filePaths: announcement.filePaths?.length ? announcement.filePaths : previous.filePaths,
+          fileTypes: announcement.fileTypes?.length ? announcement.fileTypes : previous.fileTypes,
+          attachments: announcement.attachments?.length ? announcement.attachments : previous.attachments,
+          fileName: announcement.fileName || previous.fileName,
+          fileUrl: announcement.fileUrl || previous.fileUrl,
+          filePath: announcement.filePath || previous.filePath,
+          fileType: announcement.fileType || previous.fileType
         };
       }));
     });
@@ -658,8 +1131,7 @@ function AdminAnnouncements() {
         setAdminName(user.name);
         setNotificationList(adminNotifications);
 
-        const tableName = await resolveAnnouncementTable();
-        await resolveAnnouncementColumns(tableName);
+        const tableName = await getAnnouncementTableName();
         const rows = await loadAnnouncements(tableName);
 
         if (isMounted) {
@@ -712,12 +1184,12 @@ function AdminAnnouncements() {
     return () => window.clearTimeout(timer);
   }, [successMessage]);
 
-  const filteredAnnouncements = announcements.filter((announcement) => {
+  const filteredAnnouncements = sortAnnouncements(announcements.filter((announcement) => {
     const query = searchQuery.toLowerCase();
     return [announcement.title, announcement.content, announcement.targetAudience, announcement.priority]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
-  });
+  }));
 
   const handleCloseCreateModal = () => {
     setShowCreateModal(false);
@@ -725,7 +1197,7 @@ function AdminAnnouncements() {
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
-    setErrorMessage("");
+    resetAnnouncementFileInput();
   };
 
   const handleOpenEditModal = (announcement) => {
@@ -739,7 +1211,7 @@ function AdminAnnouncements() {
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
-    setErrorMessage("");
+    resetAnnouncementFileInput();
     setShowEditModal(true);
   };
 
@@ -749,7 +1221,32 @@ function AdminAnnouncements() {
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
-    setErrorMessage("");
+    resetAnnouncementFileInput();
+  };
+
+  const handleAnnouncementFileChange = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+
+    if (selectedFiles.length === 0) {
+      setAnnouncementFiles([]);
+      return;
+    }
+
+    const invalidFile = selectedFiles.find((file) => !isSupportedAnnouncementAttachment(file));
+    if (invalidFile) {
+      setErrorMessage(`Unsupported file type: ${invalidFile.name}`);
+      resetAnnouncementFileInput();
+      return;
+    }
+
+    const oversizedFile = selectedFiles.find((file) => file.size > MAX_ANNOUNCEMENT_ATTACHMENT_SIZE_BYTES);
+    if (oversizedFile) {
+      setErrorMessage(`File too large: ${oversizedFile.name}. Maximum size is 20MB.`);
+      resetAnnouncementFileInput();
+      return;
+    }
+
+    setAnnouncementFiles(selectedFiles);
   };
 
   const handleCreateAnnouncement = async (event) => {
@@ -779,14 +1276,46 @@ function AdminAnnouncements() {
       const tableName = await getAnnouncementTableName();
       const columns = await getAnnouncementColumns(tableName);
       const timestamp = new Date().toISOString();
-      await writeAnnouncement(tableName, "insert", buildCreatePayloads(formData, timestamp, columns));
+      const writeResult = await writeAnnouncement(tableName, "insert", buildCreatePayloads(formData, timestamp, columns, []));
+      const createdAnnouncementId = String(writeResult?.recordId ?? "").trim();
+
+      if (announcementFiles.length > 0 && !createdAnnouncementId) {
+        throw new Error("Announcement was created, but no announcement ID was returned for attachments.");
+      }
+
+      const uploadedAttachments = announcementFiles.length > 0
+        ? await uploadAnnouncementAttachments(announcementFiles, createdAnnouncementId)
+        : [];
+
+      if (announcementFiles.length > 0 && uploadedAttachments.length === 0) {
+        throw new Error("Unable to upload announcement attachments.");
+      }
+
+      if (uploadedAttachments.length > 0 && createdAnnouncementId) {
+        const savedAttachments = await insertAnnouncementAttachmentRows(tableName, createdAnnouncementId, uploadedAttachments);
+        if (!savedAttachments) {
+          throw new Error("Announcement was created, but attachments could not be saved.");
+        }
+
+        await syncAnnouncementInlineAttachmentColumns(tableName, createdAnnouncementId);
+      }
+
       const nextAnnouncement = {
-        id: "",
+        id: createdAnnouncementId || String(Date.now()),
         title: formData.title.trim(),
         content: formData.content.trim(),
         targetAudience: formData.targetAudience,
+        audienceType: toDatabaseAudienceType(formData.targetAudience),
         priority: formData.priority,
-        createdAt: timestamp
+        createdAt: timestamp,
+        ...(uploadedAttachments.length > 0
+          ? buildAnnouncementAttachments({
+              file_name: JSON.stringify(uploadedAttachments.map((item) => item.fileName)),
+              file_url: JSON.stringify(uploadedAttachments.map((item) => item.fileUrl)),
+              file_path: JSON.stringify(uploadedAttachments.map((item) => item.filePath)),
+              file_type: JSON.stringify(uploadedAttachments.map((item) => item.fileType))
+            })
+          : { fileNames: [], fileUrls: [], filePaths: [], fileTypes: [], attachments: [], fileName: "", fileUrl: "", filePath: "", fileType: "" })
       };
 
       setAnnouncements((current) => sortAnnouncements([
@@ -809,8 +1338,11 @@ function AdminAnnouncements() {
       setFormErrors({});
       setFormTouched(emptyTouchedFields);
       setHasTriedCreateSubmit(false);
+      resetAnnouncementFileInput();
+      setAnnouncementFiles([]);
       setSuccessMessage("Announcement added successfully.");
     } catch (error) {
+      console.error("Create announcement failed:", error);
       setErrorMessage(error instanceof Error ? error.message : "Unable to add announcement.");
     } finally {
       setIsSubmitting(false);
@@ -847,12 +1379,25 @@ function AdminAnnouncements() {
     try {
       const tableName = await getAnnouncementTableName();
       const columns = await getAnnouncementColumns(tableName);
+      const replacingFiles = announcementFiles.length > 0;
+      const announcementId = String(editingAnnouncement.id || "").trim();
+      const uploadedAttachments = replacingFiles ? await uploadAnnouncementAttachments(announcementFiles, announcementId) : [];
+
+      if (replacingFiles && uploadedAttachments.length === 0) {
+        throw new Error("Unable to upload announcement attachments.");
+      }
+
       await writeAnnouncement(
         tableName,
         "update",
-        buildUpdatePayloads(editFormData, new Date().toISOString(), columns),
-        editingAnnouncement.id
+        buildUpdatePayloads(editFormData, new Date().toISOString(), columns, null),
+        announcementId
       );
+
+      if (replacingFiles && uploadedAttachments.length > 0) {
+        await insertAnnouncementAttachmentRows(tableName, announcementId, uploadedAttachments);
+        await syncAnnouncementInlineAttachmentColumns(tableName, announcementId);
+      }
 
       setAnnouncements((current) => sortAnnouncements(current.map((announcement) => (
         announcement.id === editingAnnouncement.id
@@ -861,7 +1406,16 @@ function AdminAnnouncements() {
               title: editFormData.title.trim(),
               content: editFormData.content.trim(),
               targetAudience: editFormData.targetAudience,
-              priority: editFormData.priority
+              audienceType: toDatabaseAudienceType(editFormData.targetAudience),
+              priority: editFormData.priority,
+              ...(uploadedAttachments.length > 0
+                ? buildAnnouncementAttachments({
+                    file_name: JSON.stringify(uploadedAttachments.map((item) => item.fileName)),
+                    file_url: JSON.stringify(uploadedAttachments.map((item) => item.fileUrl)),
+                    file_path: JSON.stringify(uploadedAttachments.map((item) => item.filePath)),
+                    file_type: JSON.stringify(uploadedAttachments.map((item) => item.fileType))
+                  })
+                : { attachments: Array.isArray(editingAnnouncement.attachments) ? editingAnnouncement.attachments : [] })
             }
           : announcement
       ))));
@@ -873,8 +1427,11 @@ function AdminAnnouncements() {
       setEditFormErrors({});
       setEditFormTouched(emptyTouchedFields);
       setHasTriedEditSubmit(false);
+      resetAnnouncementFileInput();
+      setAnnouncementFiles([]);
       setSuccessMessage("Announcement updated successfully.");
     } catch (error) {
+      console.error("Update announcement failed:", error);
       setErrorMessage(error instanceof Error ? error.message : "Unable to update announcement.");
     } finally {
       setIsSubmitting(false);
@@ -908,10 +1465,64 @@ function AdminAnnouncements() {
 
     try {
       const tableName = await getAnnouncementTableName();
+      const attachmentTableName = getAnnouncementAttachmentTableName(tableName);
+      const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
+      const normalizedAnnouncementId = String(deletingAnnouncement.id || "").trim();
+
+      const { data: attachmentRows, error: attachmentFetchError } = await supabase
+        .from(attachmentTableName)
+        .select("id, file_path, announcement_id")
+        .eq(attachmentForeignKey, normalizedAnnouncementId);
+
+      if (attachmentFetchError) {
+        throw new Error(attachmentFetchError.message || "Unable to load announcement attachments before delete.");
+      }
+
+      const oldFilePaths = [
+        ...(Array.isArray(deletingAnnouncement.attachments)
+          ? deletingAnnouncement.attachments.map((attachment) => String(attachment.filePath || "").trim()).filter(Boolean)
+          : []),
+        ...((attachmentRows || []).map((row) => String(row?.file_path || "").trim()).filter(Boolean))
+      ];
+
+      const uniqueFilePaths = [...new Set(oldFilePaths)];
+
+      if (uniqueFilePaths.length > 0) {
+        await supabase.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uniqueFilePaths).catch(() => {
+          // Continue with the delete even if file cleanup fails.
+        });
+      }
+
+      const linkedAnnouncementIds = [...new Set(
+        (attachmentRows || [])
+          .map((row) => String(row?.announcement_id || "").trim())
+          .filter(Boolean)
+      )];
+
       const { error } = await supabase.from(tableName).delete().eq("id", deletingAnnouncement.id);
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      const { error: attachmentCleanupError } = await supabase
+        .from(attachmentTableName)
+        .delete()
+        .eq(attachmentForeignKey, normalizedAnnouncementId);
+
+      if (attachmentCleanupError) {
+        console.error("Failed to cleanup attachment rows after parent delete:", attachmentCleanupError);
+      }
+
+      if (tableName === "school_announcements" && linkedAnnouncementIds.length > 0) {
+        const { error: linkedAnnouncementCleanupError } = await supabase
+          .from("announcements")
+          .delete()
+          .in("id", linkedAnnouncementIds);
+
+        if (linkedAnnouncementCleanupError) {
+          console.error("Failed to cleanup linked announcements after delete:", linkedAnnouncementCleanupError);
+        }
       }
 
       logActivity({
@@ -983,21 +1594,6 @@ function AdminAnnouncements() {
               {isSubmitting ? "Deleting..." : "Delete"}
             </button>
           </div>
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "150ms" }} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "300ms" }} />
-          </div>
-          <p className="text-gray-500">Loading announcements...</p>
         </div>
       </div>
     );
@@ -1095,6 +1691,44 @@ function AdminAnnouncements() {
                           </span>
                         </div>
                         <p className="text-gray-400 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
+                        {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
+                          <div className="space-y-3 mb-4">
+                            {announcement.attachments.map((attachment, index) => {
+                              if (attachment.kind === "image") {
+                                return (
+                                  <a key={`${announcement.id}-attachment-${index}`} href={attachment.fileUrl} target="_blank" rel="noreferrer" className="block">
+                                    <img
+                                      src={attachment.fileUrl}
+                                      alt={attachment.fileName || "Announcement attachment"}
+                                      className="max-h-80 w-full rounded-xl border border-white/10 object-cover bg-black/20"
+                                    />
+                                  </a>
+                                );
+                              }
+
+                              if (attachment.kind === "video") {
+                                return (
+                                  <div key={`${announcement.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                                    <video controls src={attachment.fileUrl} className="w-full max-h-80 bg-black" />
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <a
+                                  key={`${announcement.id}-attachment-${index}`}
+                                  href={attachment.fileUrl || attachment.filePath || "#"}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
+                                >
+                                  <File className="w-3 h-3" />
+                                  {attachment.fileName || `File ${index + 1}`}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getAudienceStyles(announcement.targetAudience)}`}>
                             {String(announcement.targetAudience || "").toLowerCase().includes("school") ? <School className="w-3 h-3" /> : <Users className="w-3 h-3" />}
@@ -1193,6 +1827,38 @@ function AdminAnnouncements() {
                   />
                   {formErrors.priority && <p className="mt-1 text-sm text-red-600">{formErrors.priority}</p>}
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
+                  <input
+                    ref={announcementFileInputRef}
+                    type="file"
+                    multiple
+                    accept={ANNOUNCEMENT_FILE_ACCEPT}
+                    className="hidden"
+                    onChange={handleAnnouncementFileChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => announcementFileInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-emerald-200 rounded-lg text-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                    Choose files
+                  </button>
+                  {announcementFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-500">Selected files:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {announcementFiles.map((file) => (
+                          <span key={file.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
+                            <Paperclip className="w-3 h-3" />
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button onClick={handleCloseCreateModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
@@ -1274,6 +1940,80 @@ function AdminAnnouncements() {
                     className={`w-full ${editFormErrors.priority ? "border-red-500" : ""}`}
                   />
                   {editFormErrors.priority && <p className="mt-1 text-sm text-red-600">{editFormErrors.priority}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
+                  {Array.isArray(editingAnnouncement?.attachments) && editingAnnouncement.attachments.length > 0 && (
+                    <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-500">Current files:</p>
+                      <div className="space-y-2">
+                        {editingAnnouncement.attachments.map((attachment, index) => {
+                          if (attachment.kind === "image") {
+                            return (
+                              <a key={`${editingAnnouncement.id}-current-${index}`} href={attachment.fileUrl} target="_blank" rel="noreferrer" className="block">
+                                <img
+                                  src={attachment.fileUrl}
+                                  alt={attachment.fileName || "Announcement attachment"}
+                                  className="max-h-60 w-full rounded-lg border border-gray-200 object-cover bg-white"
+                                />
+                              </a>
+                            );
+                          }
+
+                          if (attachment.kind === "video") {
+                            return (
+                              <div key={`${editingAnnouncement.id}-current-${index}`} className="overflow-hidden rounded-lg border border-gray-200 bg-black">
+                                <video controls src={attachment.fileUrl} className="w-full max-h-60" />
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <a
+                              key={`${editingAnnouncement.id}-current-${index}`}
+                              href={attachment.fileUrl || attachment.filePath || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white text-gray-700 text-xs font-medium border border-gray-200 hover:bg-gray-50"
+                            >
+                              <File className="w-3 h-3" />
+                              {attachment.fileName || `File ${index + 1}`}
+                            </a>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-gray-500">Uploading new files will add to the current attachments.</p>
+                    </div>
+                  )}
+                  <input
+                    ref={announcementFileInputRef}
+                    type="file"
+                    multiple
+                    accept={ANNOUNCEMENT_FILE_ACCEPT}
+                    className="hidden"
+                    onChange={handleAnnouncementFileChange}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => announcementFileInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-emerald-200 rounded-lg text-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                    Choose files
+                  </button>
+                  {announcementFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-medium text-gray-500">Selected files:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {announcementFiles.map((file) => (
+                          <span key={file.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
+                            <Paperclip className="w-3 h-3" />
+                            {file.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6">

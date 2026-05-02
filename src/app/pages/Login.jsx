@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Lock, User } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
@@ -19,14 +19,52 @@ const GoogleLogo = () => (
   </svg>
 );
 
+const GOOGLE_OAUTH_INTENT_KEY = "connected_google_oauth_intent";
+const GOOGLE_VERIFICATION_SENT_KEY_PREFIX = "connected_google_verification_sent";
+const GOOGLE_RESEND_COOLDOWN_SECONDS = 20;
+
 function Login() {
   const [formData, setFormData] = useState({ usernameOrEmail: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
+  const [googleNotice, setGoogleNotice] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleResendEmail, setGoogleResendEmail] = useState("");
+  const [showGoogleResend, setShowGoogleResend] = useState(false);
+  const [googleResendLoading, setGoogleResendLoading] = useState(false);
+  const [googleVerificationSending, setGoogleVerificationSending] = useState(false);
+  const [googleResendCooldown, setGoogleResendCooldown] = useState(0);
+  const oauthSessionProcessingRef = useRef(false);
   const navigate = useNavigate();
+
+  const getGoogleVerificationSentKey = (email, userId) => {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedUserId = String(userId || "").trim();
+    return `${GOOGLE_VERIFICATION_SENT_KEY_PREFIX}:${normalizedUserId || normalizedEmail}`;
+  };
+
+  const hasOAuthCallbackParams = () => {
+    const searchParams = new URLSearchParams(window.location.search || "");
+    if (
+      searchParams.has("code") ||
+      searchParams.has("access_token") ||
+      searchParams.has("refresh_token") ||
+      searchParams.has("provider_token") ||
+      searchParams.has("error")
+    ) {
+      return true;
+    }
+
+    const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
+    return (
+      hashParams.has("access_token") ||
+      hashParams.has("refresh_token") ||
+      hashParams.has("provider_token") ||
+      hashParams.has("error")
+    );
+  };
 
   const resolveTeacherRecordByEmail = async (email) => {
     if (!supabase) {
@@ -170,7 +208,9 @@ function Login() {
       middle_name: middleName,
       last_name: lastName,
       email: normalizedEmail,
-      status: "Active"
+      status: "Active",
+      provider: "google",
+      is_verified: false
     };
 
     const { data, error } = await supabase
@@ -249,54 +289,180 @@ function Login() {
     navigate("/teacher/dashboard", { replace: true });
   };
 
+  const isGoogleProfileVerified = (record) => record?.is_verified !== false;
+
+  const sendVerificationEmail = async ({ email, name }) => {
+    if (!supabase) {
+      throw new Error("Supabase client is not configured.");
+    }
+
+    const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resend-verification`;
+    const response = await fetch(functionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || ""}`,
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+      },
+      body: JSON.stringify({ email, name })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data?.message || `Unable to send verification email. (${response.status})`);
+    }
+
+    if (!data?.ok) {
+      throw new Error(data?.message || "Unable to send verification email.");
+    }
+  };
+
+  useEffect(() => {
+    if (googleResendCooldown <= 0) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setGoogleResendCooldown((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [googleResendCooldown]);
+
   useEffect(() => {
     if (!supabase) {
       return undefined;
     }
 
     let isMounted = true;
+    const hasIntent = window.sessionStorage.getItem(GOOGLE_OAUTH_INTENT_KEY) === "1";
+    const isOAuthCallback = hasOAuthCallbackParams();
+    const shouldProcessOAuthSession = hasIntent || isOAuthCallback;
+
+    if (!shouldProcessOAuthSession) {
+      return undefined;
+    }
 
     const handleOAuthSession = async (session) => {
+      if (oauthSessionProcessingRef.current) {
+        return;
+      }
+
+      oauthSessionProcessingRef.current = true;
       const sessionEmail = String(session?.user?.email || "").trim().toLowerCase();
       if (!sessionEmail) {
+        window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
         await supabase.auth.signOut();
         if (isMounted) {
           setGoogleError("Google login failed because no email was returned.");
+          setGoogleNotice("");
+          setShowGoogleResend(false);
+          setGoogleResendEmail("");
           setGoogleLoading(false);
         }
+        oauthSessionProcessingRef.current = false;
         return;
       }
 
       if (isMounted) {
         setGoogleLoading(true);
+        setGoogleVerificationSending(false);
         setGoogleError("");
+        setGoogleNotice("");
+        setShowGoogleResend(false);
+        setGoogleResendEmail("");
       }
 
       try {
         let teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
+        let isNewGoogleUser = false;
 
         if (!teacherRecord) {
           teacherRecord = await createTeacherProfileFromGoogle(session?.user, sessionEmail);
+          isNewGoogleUser = true;
+        }
+
+        if (!isGoogleProfileVerified(teacherRecord)) {
+          await supabase.auth.signOut();
+          window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
+          if (isMounted) {
+            setGoogleResendEmail(sessionEmail);
+            setShowGoogleResend(true);
+            setGoogleLoading(false);
+          }
+
+          if (isNewGoogleUser) {
+            const verificationSentKey = getGoogleVerificationSentKey(sessionEmail, session?.user?.id);
+            const alreadySent = window.sessionStorage.getItem(verificationSentKey) === "1";
+
+            if (!alreadySent) {
+              try {
+                if (isMounted) {
+                  setGoogleVerificationSending(true);
+                  setGoogleNotice("Sending verification email...");
+                }
+
+                const displayName = getGoogleUserDisplayName(session?.user, sessionEmail);
+                await sendVerificationEmail({ email: sessionEmail, name: displayName });
+                window.sessionStorage.setItem(verificationSentKey, "1");
+
+                if (isMounted) {
+                  setGoogleNotice("Verification email sent. Please check your inbox.");
+                  setGoogleResendCooldown(GOOGLE_RESEND_COOLDOWN_SECONDS);
+                }
+              } catch (verificationError) {
+                if (isMounted) {
+                  setGoogleError(
+                    verificationError instanceof Error
+                      ? verificationError.message
+                      : "Account created, but we could not send the verification email."
+                  );
+                }
+              } finally {
+                if (isMounted) {
+                  setGoogleVerificationSending(false);
+                }
+              }
+            } else if (isMounted) {
+              setGoogleNotice("Verification email already sent. Please check your inbox.");
+            }
+          } else if (isMounted) {
+            setGoogleError("Please verify your email before logging in.");
+          }
+
+          oauthSessionProcessingRef.current = false;
+          return;
         }
 
         teacherRecord = await ensureTeacherIsActive(teacherRecord, sessionEmail);
 
         if (isMounted) {
+          window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
           completeTeacherSession(sessionEmail, teacherRecord);
         }
       } catch (authError) {
+        window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
         await supabase.auth.signOut();
         localStorage.removeItem("currentUser");
         if (isMounted) {
           setGoogleError(authError instanceof Error ? authError.message : "Unable to complete Google login.");
+          setGoogleNotice("");
+          setShowGoogleResend(false);
+          setGoogleResendEmail("");
           setGoogleLoading(false);
         }
+      } finally {
+        oauthSessionProcessingRef.current = false;
       }
     };
 
     const initializeSession = async () => {
       const { data, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
+        window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
         if (isMounted) {
           setGoogleError(sessionError.message);
         }
@@ -305,6 +471,11 @@ function Login() {
 
       if (data?.session?.user) {
         await handleOAuthSession(data.session);
+      } else {
+        window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
+        if (isMounted) {
+          setGoogleLoading(false);
+        }
       }
     };
 
@@ -353,6 +524,53 @@ function Login() {
       return;
     }
 
+    // Check if the teacher account is verified (for invitation-based teachers)
+    try {
+      if (supabase) {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("is_verified, status, role")
+          .ilike("email", normalizedEmail)
+          .limit(1)
+          .maybeSingle();
+
+        if (!profileError && profile) {
+          const profileRole = String(profile.role || "").trim().toLowerCase();
+          
+          // If it's a teacher and not verified, check if they have an active invitation
+          if (profileRole === "teacher" && profile.is_verified === false) {
+            const { data: invitation } = await supabase
+              .from("teacher_invitation_tokens")
+              .select("used_at")
+              .ilike("email", normalizedEmail)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            // If no valid invitation, ask them to request access or contact admin
+            if (!invitation || invitation.used_at) {
+              setError("Your account is not yet verified. Please request access or contact an administrator.");
+              setLoading(false);
+              return;
+            }
+          }
+
+          // Also check status
+          if (profileRole === "teacher") {
+            const status = String(profile.status || "").trim().toLowerCase();
+            if (status !== "active") {
+              setError("Your account is not active. Please contact an administrator.");
+              setLoading(false);
+              return;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error checking profile verification:", err);
+      // Continue with login attempt anyway in case of error
+    }
+
     setTimeout(() => {
       localStorage.setItem("currentUser", JSON.stringify({
         name: formData.usernameOrEmail.split("@")[0] || "Teacher",
@@ -371,7 +589,11 @@ function Login() {
     }
 
     setGoogleError("");
+    setGoogleNotice("");
+    setShowGoogleResend(false);
+    setGoogleResendEmail("");
     setGoogleLoading(true);
+    window.sessionStorage.setItem(GOOGLE_OAUTH_INTENT_KEY, "1");
 
     // Clear any stale auth session so Google always shows account selection.
     await supabase.auth.signOut();
@@ -387,8 +609,32 @@ function Login() {
     });
 
     if (oauthError) {
+      window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
       setGoogleError(oauthError.message || "Unable to start Google login.");
+      setGoogleNotice("");
       setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleResendVerification = async () => {
+    if (!googleResendEmail || !supabase) {
+      return;
+    }
+
+    setGoogleResendLoading(true);
+    setGoogleError("");
+    setGoogleNotice("");
+
+    try {
+      await sendVerificationEmail({ email: googleResendEmail, name: "" });
+      setGoogleNotice("Verification email resent. Please check your inbox.");
+      setGoogleResendCooldown(GOOGLE_RESEND_COOLDOWN_SECONDS);
+    } catch (resendError) {
+      setGoogleError(
+        resendError instanceof Error ? resendError.message : "Unable to resend verification email."
+      );
+    } finally {
+      setGoogleResendLoading(false);
     }
   };
 
@@ -492,7 +738,28 @@ function Login() {
             <GoogleLogo />
             {googleLoading ? "Connecting to Google..." : "Continue with Google"}
           </button>
-          {googleError && <p className="text-red-400 text-xs mb-4">{googleError}</p>}
+          {googleNotice && (
+            <div className="mb-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+              <p className="text-emerald-300 text-xs">{googleNotice}</p>
+            </div>
+          )}
+          {googleError && <p className="text-red-400 text-xs mb-3">{googleError}</p>}
+          {showGoogleResend && (
+            <button
+              type="button"
+              onClick={handleGoogleResendVerification}
+              disabled={googleResendLoading || googleVerificationSending || googleResendCooldown > 0}
+              className="w-full mb-4 px-4 py-2.5 text-xs font-semibold rounded-xl border border-emerald-400/40 text-emerald-300 hover:text-white hover:bg-emerald-500/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {googleVerificationSending
+                ? "Sending verification email..."
+                : googleResendLoading
+                  ? "Resending verification email..."
+                  : googleResendCooldown > 0
+                    ? `Resend available in ${googleResendCooldown}s`
+                    : "Resend verification email"}
+            </button>
+          )}
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">

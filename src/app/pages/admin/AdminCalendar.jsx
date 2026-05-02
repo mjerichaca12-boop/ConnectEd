@@ -95,6 +95,7 @@ export function AdminCalendar() {
     return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   };
 
+
   const audienceMatches = (audience) => {
     const normalized = String(audience ?? "").trim().toLowerCase();
     return normalized.includes("school") || normalized.includes("teacher") || normalized.includes("student");

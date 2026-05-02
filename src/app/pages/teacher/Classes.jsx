@@ -237,19 +237,19 @@ function Classes() {
 
         <div className="p-6 space-y-6">
           {/* Header */}
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
-            <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
-              <div className="flex-1 bg-blue-600" />
-              <div className="flex-1 bg-red-600" />
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
-            <div className="relative pl-4 flex items-center justify-between flex-wrap gap-4">
+          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+            <div
+              className="absolute inset-0 opacity-10"
+              style={{
+                backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)",
+                backgroundSize: "20px 20px",
+              }}
+            />
+            <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
-                <h1 className="text-3xl font-bold mb-1 text-emerald-400">My Classes</h1>
-                <p className="text-gray-400">
-                  {classes[0]?.semester || "First Semester 2026"} &bull;{" "}
-                  {classes.length} {classes.length === 1 ? "Class" : "Classes"}
+                <h1 className="text-3xl font-bold mb-1">My Classes</h1>
+                <p className="text-emerald-50 text-sm">
+                  {classes[0]?.semester || "First Semester 2026"} &bull; {classes.length} {classes.length === 1 ? "Class" : "Classes"}
                 </p>
               </div>
             </div>

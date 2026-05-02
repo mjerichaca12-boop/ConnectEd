@@ -9,6 +9,7 @@ import {
 import { DashboardCalendar } from "@/app/components/DashboardCalendar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   normalizeAudience,
@@ -28,10 +29,6 @@ const colorMap = {
   red:     { icon: "text-red-400",     bg: "bg-red-500/10",     hover: "hover:border-red-500/40 hover:bg-red-500/5" },
 };
 
-const announcementTableCandidates = ["school_announcements", "announcements"];
-
-
-
 export function TeacherDashboard() {
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
@@ -45,106 +42,29 @@ export function TeacherDashboard() {
   const [teacherEmail, setTeacherEmail] = useState("");
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTable, setAnnouncementTable] = useState("");
-  const [announcementColumns, setAnnouncementColumns] = useState([]);
   const [announcementsError, setAnnouncementsError] = useState("");
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const totalClasses = assignedSubjects.length;
-
-  const resolveAnnouncementTable = async () => {
-    if (!supabase) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    for (const tableName of announcementTableCandidates) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
-
-      if (!error) {
-        setAnnouncementTable(tableName);
-        return tableName;
-      }
-    }
-
-    throw new Error("Could not find the announcements table in Supabase.");
-  };
 
   const getAnnouncementTableName = async () => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
 
-    if (announcementTable) {
-      const { error } = await supabase.from(announcementTable).select("id", { count: "exact", head: true });
-      if (!error) {
-        return announcementTable;
-      }
-    }
-
-    return resolveAnnouncementTable();
+    const tableName = "announcements";
+    setAnnouncementTable(tableName);
+    return tableName;
   };
 
-  const resolveAnnouncementColumns = async (tableNameOverride) => {
+  const loadAnnouncements = async () => {
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
 
-    const tableName = tableNameOverride || (await getAnnouncementTableName());
-    const candidates = [
-      "id",
-      "title",
-      "content",
-      "target_audience",
-      "audience",
-      "targetAudience",
-      "target_audience_type",
-      "recipient_audience",
-      "audience_type",
-      "priority",
-      "announcement_priority",
-      "importance",
-      "priority_level",
-      "created_at",
-      "date_posted",
-      "datePosted",
-      "timestamp",
-      "updated_at"
-    ];
-
-    const detected = [];
-
-    for (const columnName of candidates) {
-      const { error } = await supabase.from(tableName).select(columnName, { count: "exact", head: true });
-      if (!error) {
-        detected.push(columnName);
-      }
-    }
-
-    setAnnouncementColumns(detected);
-    return detected;
-  };
-
-  const getAnnouncementColumns = async (tableNameOverride) => {
-    if (announcementColumns.length > 0) {
-      return announcementColumns;
-    }
-
-    return resolveAnnouncementColumns(tableNameOverride);
-  };
-
-  const loadAnnouncements = async (tableNameOverride, columnsOverride) => {
-    if (!supabase) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    const tableName = tableNameOverride || (await getAnnouncementTableName());
-    const columns = columnsOverride || (await getAnnouncementColumns(tableName));
-    const orderColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp", "updated_at"]);
-
-    let query = supabase.from(tableName).select("*");
-    if (orderColumn) {
-      query = query.order(orderColumn, { ascending: false });
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     if (error) {
       throw new Error(error.message);
@@ -153,10 +73,8 @@ export function TeacherDashboard() {
     return sortAnnouncements((data ?? []).map(normalizeAnnouncement).filter((item) => item.id));
   };
 
-  const refreshAnnouncements = async (tableNameOverride) => {
-    const tableName = tableNameOverride || (await getAnnouncementTableName());
-    const columns = await getAnnouncementColumns(tableName);
-    const rows = await loadAnnouncements(tableName, columns);
+  const refreshAnnouncements = async () => {
+    const rows = await loadAnnouncements();
     setAnnouncements(rows);
     return rows;
   };
@@ -341,9 +259,7 @@ export function TeacherDashboard() {
 
     const initializeAnnouncements = async () => {
       try {
-        const tableName = await resolveAnnouncementTable();
-        const columns = await resolveAnnouncementColumns(tableName);
-        const rows = await loadAnnouncements(tableName, columns);
+        const rows = await loadAnnouncements();
 
         if (isMounted) {
           setAnnouncements(rows);
@@ -568,34 +484,38 @@ export function TeacherDashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Left Ã¢â‚¬â€ Main Content */}
-            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
 
               {/* Tasks & Deadlines (Moved to prominent position) */}
-              <div className="bg-gray-900/60 border border-white/8 rounded-2xl p-6">
-                <h3 className="text-white font-bold text-base mb-4 flex items-center gap-2 border-b border-white/8 pb-4">
-                  <ClipboardCheck className="w-5 h-5 text-blue-400" />
-                  Tasks & Deadlines
-                </h3>
-                <div className="text-center py-8 flex-1 flex flex-col items-center justify-center">
+              <div className="h-[340px] md:h-[380px] bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden flex flex-col">
+                <div className="px-6 py-4 border-b border-white/8">
+                  <h3 className="text-white font-bold text-base flex items-center gap-2">
+                    <ClipboardCheck className="w-5 h-5 text-blue-400" />
+                    Tasks & Deadlines
+                  </h3>
+                </div>
+                <div className="p-6 flex-1 overflow-y-auto dark-scrollbar">
+                  <div className="text-center min-h-full flex flex-col items-center justify-center">
                   <div className="w-12 h-12 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-blue-500/20">
                     <ClipboardCheck className="w-6 h-6 text-blue-400" />
                   </div>
                   <p className="text-gray-400 font-medium">You're all caught up!</p>
                   <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
+                  </div>
                 </div>
               </div>
 
               {/* Recent Grades */}
-              <div className="bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden">
+              <div className="h-[340px] md:h-[380px] bg-gray-900/60 border border-white/8 rounded-2xl overflow-hidden flex flex-col">
                 <div className="px-6 py-4 border-b border-white/8 flex items-center justify-between">
                   <h3 className="text-white font-bold flex items-center gap-2">
                     <TrendingUp className="w-5 h-5 text-emerald-400" />
                     Recently Updated Grades
                   </h3>
                 </div>
-                <div className="p-6 flex-1 flex flex-col items-center justify-center">
+                <div className="p-6 flex-1 overflow-y-auto dark-scrollbar">
                   {recentGrades.length === 0 ? (
-                    <div className="text-center py-6">
+                    <div className="text-center min-h-full flex flex-col items-center justify-center py-6">
                       <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
                         <TrendingUp className="w-6 h-6 text-emerald-400" />
                       </div>
@@ -603,7 +523,7 @@ export function TeacherDashboard() {
 
                     </div>
                   ) : (
-                    <div className="space-y-3 w-full">
+                    <div className="space-y-3 w-full pr-1">
                       {recentGrades.map((grade) => (
                         <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-white/4 rounded-xl hover:bg-white/8 transition-colors border border-transparent hover:border-white/5">
                           <div>
@@ -702,6 +622,23 @@ export function TeacherDashboard() {
 
               <h4 className="text-white text-lg font-bold">{selectedAnnouncement.title || "Untitled announcement"}</h4>
               <p className="text-sm text-gray-300 whitespace-pre-line leading-relaxed">{selectedAnnouncement.content || "No content."}</p>
+
+              {Array.isArray(selectedAnnouncement.attachments) && selectedAnnouncement.attachments.length > 0 && (
+                <div className="pt-2 space-y-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Attachments</div>
+                  <div className="grid gap-3">
+                    {selectedAnnouncement.attachments.map((attachment, index) => (
+                      <AnnouncementAttachmentPreview
+                        key={`${selectedAnnouncement.id}-attachment-${index}`}
+                        attachment={attachment}
+                        index={index}
+                        announcementId={selectedAnnouncement.id}
+                        variant="dark"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
