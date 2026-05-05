@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "../components/Sidebar";
+import { supabase } from "@/app/lib/supabaseClient";
 import {
   Bell,
   Search,
@@ -19,6 +20,65 @@ import {
   X,
   Info
 } from "lucide-react";
+
+const JITSI_DOMAIN = "meet.jit.si";
+const MEETING_TABLE = "online_class_meetings";
+
+const buildDirectMeetingUrl = (meetingLink, displayName) => {
+  const base = String(meetingLink || "").trim();
+  if (!base) return "";
+
+  const joinConfig = [
+    "config.prejoinPageEnabled=false",
+    "config.prejoinConfig.enabled=false",
+    "config.requireDisplayName=false",
+    "config.enableWelcomePage=false",
+    "config.enableLobby=false",
+    "config.disableDeepLinking=true",
+    "config.startWithAudioMuted=false",
+    "config.startWithVideoMuted=false",
+    "interfaceConfig.MOBILE_APP_PROMO=false",
+    displayName ? `userInfo.displayName=\"${encodeURIComponent(String(displayName).trim())}\"` : "",
+  ].join("&");
+
+  return `${base}#${joinConfig}`;
+};
+
+const slugPart = (value) => String(value || "")
+  .toLowerCase()
+  .replace(/[^a-z0-9\s_]/g, "")
+  .trim()
+  .replace(/\s+/g, "_")
+  .replace(/_+/g, "_")
+  .replace(/^_+|_+$/g, "");
+
+const normalizeDatePart = (dateValue) => String(dateValue || "").replace(/[^0-9]/g, "");
+const normalizeTimePart = (timeValue) => String(timeValue || "").replace(/[^0-9]/g, "").slice(0, 4);
+
+const buildStructuredRoomName = ({ title, className, subject, date, time, uniqueId }) => {
+  const rawDate = normalizeDatePart(date);
+  const readableDate = rawDate.length === 8
+    ? `${rawDate.slice(4, 6)}${rawDate.slice(6, 8)}${rawDate.slice(0, 4)}`
+    : rawDate;
+
+  const chunks = [
+    slugPart(className) || "class",
+    slugPart(subject) || "subject",
+    slugPart(title) || "meeting",
+    readableDate || rawDate || "date",
+    normalizeTimePart(time) || "time",
+    String(uniqueId || Date.now()),
+  ];
+
+  return chunks.join("_").replace(/_+/g, "_").slice(0, 180);
+};
+
+const isLegacyRoomName = (roomName) => {
+  const normalized = String(roomName || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized.startsWith("connected") || normalized.startsWith("connect");
+};
+
 function VideoConferencing() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
@@ -32,8 +92,64 @@ function VideoConferencing() {
   const [showParticipants, setShowParticipants] = useState(true);
   const [showChat, setShowChat] = useState(false);
   const [viewMode, setViewMode] = useState("speaker");
-  const [meetings] = useState([]);
+  const [meetings, setMeetings] = useState([]);
   const [participants] = useState([]);
+
+  const resolveMeetingTable = async () => {
+    return MEETING_TABLE;
+  };
+
+  const normalizeStudentMeeting = (row) => {
+    const storedRoomName = String(row?.room_name || row?.roomName || "").trim();
+    const computedRoomName = isLegacyRoomName(storedRoomName)
+      ? buildStructuredRoomName({
+          title: row?.title,
+          className: row?.class_name,
+          subject: row?.subject,
+          date: row?.scheduled_date,
+          time: row?.scheduled_time,
+          uniqueId: row?.id,
+        })
+      : storedRoomName;
+    const roomName = String(computedRoomName || storedRoomName || "").trim();
+    const status = String(row?.status || "").trim().toLowerCase();
+    const isActive = status === "ongoing" || Boolean(row?.is_meeting_active);
+    const isEnded = status === "ended";
+
+    return {
+      id: String(row?.id || `meeting_${Date.now()}`),
+      title: String(row?.title || "Untitled Meeting"),
+      subject: String(row?.subject || "General"),
+      teacher: String(row?.teacher_name || "Teacher"),
+      date: String(row?.scheduled_date || ""),
+      time: String(row?.scheduled_time || "").slice(0, 5),
+      duration: `${Number(row?.duration_minutes ?? 60) || 60} min`,
+      meetingLink: String(row?.meeting_link || (roomName ? `https://${JITSI_DOMAIN}/${roomName}` : "")).trim(),
+      status: isEnded ? "Ended" : (isActive ? "Ongoing" : "Upcoming"),
+    };
+  };
+
+  const fetchMeetings = async () => {
+    if (!supabase) {
+      setMeetings([]);
+      return;
+    }
+
+    const tableName = await resolveMeetingTable();
+
+    const { data, error } = await supabase
+      .from(tableName)
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to fetch meetings:", error);
+      setMeetings([]);
+      return;
+    }
+
+    setMeetings((data ?? []).map(normalizeStudentMeeting));
+  };
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -46,6 +162,7 @@ function VideoConferencing() {
       return;
     }
     setStudentName(user.name);
+    fetchMeetings();
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
   const handleLogout = () => {
@@ -56,7 +173,14 @@ function VideoConferencing() {
     (meeting) => meeting.title.toLowerCase().includes(searchQuery.toLowerCase()) || meeting.teacher.toLowerCase().includes(searchQuery.toLowerCase()) || meeting.subject.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const handleCopyLink = (link) => {
+    if (!link) return;
     navigator.clipboard.writeText(link);
+  };
+
+  const handleJoinMeeting = (meeting) => {
+    const directMeetingUrl = buildDirectMeetingUrl(meeting?.meetingLink, studentName || "Student");
+    if (!directMeetingUrl) return;
+    window.location.href = directMeetingUrl;
   };
   const getStatusColor = (status) => {
     switch (status) {
@@ -476,7 +600,7 @@ function VideoConferencing() {
                         </div>
 
                         <button
-    onClick={() => setIsInMeeting(true)}
+    onClick={() => handleJoinMeeting(meeting)}
     className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-md hover:shadow-lg"
   >
                           <Video className="w-5 h-5" />
@@ -538,6 +662,10 @@ function VideoConferencing() {
   >
                               <Copy className="w-4 h-4 text-gray-600" />
                             </button>
+                          </div>
+
+                          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
+                            Waiting for teacher to start the meeting...
                           </div>
                         </div>
                       </div>

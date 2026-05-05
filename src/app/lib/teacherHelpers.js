@@ -243,22 +243,111 @@ export const normalizeTimestamp = (row) =>
   row?.updated_at ||
   new Date().toISOString();
 
+const getAnnouncementAttachmentKind = (fileType, fileName, fileUrl) => {
+  const normalizedType = String(fileType || "").trim().toLowerCase();
+  const normalizedName = String(fileName || "").trim().toLowerCase();
+  const normalizedUrl = String(fileUrl || "").trim().toLowerCase();
+
+  if (normalizedType.startsWith("image/")) return "image";
+  if (normalizedType.startsWith("video/")) return "video";
+
+  const source = normalizedName || normalizedUrl;
+  const extensionMatch = source.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+  const extension = extensionMatch ? extensionMatch[1].toLowerCase() : "";
+
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (["mp4", "webm", "ogg", "mov", "m4v"].includes(extension)) return "video";
+  if (normalizedUrl) return "document";
+  return "";
+};
+
+const parseAnnouncementAttachments = (row) => {
+  const fileNames = parseStoredFileList(row?.file_name);
+  const fileUrls = parseStoredFileList(row?.file_url);
+  const filePaths = parseStoredFileList(row?.file_path);
+  const fileTypes = parseStoredFileList(row?.file_type);
+  const totalCount = Math.max(fileNames.length, fileUrls.length, filePaths.length, fileTypes.length);
+
+  return Array.from({ length: totalCount }, (_, index) => {
+    const fileName = fileNames[index] || `File ${index + 1}`;
+    const fileUrl = fileUrls[index] || "";
+    const filePath = filePaths[index] || "";
+    const fileType = fileTypes[index] || "";
+
+    return {
+      fileName,
+      fileUrl,
+      filePath,
+      fileType,
+      kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl),
+    };
+  }).filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath);
+};
+
+const normalizeAudienceType = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "teacher" || normalized === "teachers") return "teacher";
+  if (normalized === "student" || normalized === "students") return "student";
+  return "school";
+};
+
+const getAnnouncementSortTimestamp = (item) => {
+  const rawValue =
+    item?.createdAt ??
+    item?.created_at ??
+    item?.datePosted ??
+    item?.date_posted ??
+    item?.timestamp ??
+    item?.updated_at ??
+    item?.updatedAt ??
+    0;
+
+  const parsed = new Date(rawValue);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+};
+
+const getPriorityRank = (priority) => {
+  const normalized = String(priority ?? "").trim().toLowerCase();
+  if (normalized === "high") return 0;
+  if (normalized === "medium") return 1;
+  if (normalized === "low") return 2;
+  return 1;
+};
+
 /**
  * Check if audience matches teacher audience filter
  */
 export const matchesTeacherAudience = (audience) => {
-  const normalized = String(audience ?? "").trim().toLowerCase();
+  const normalized = String(
+    typeof audience === "object"
+      ? audience?.audienceType ?? audience?.audience_type ?? audience?.targetAudience ?? audience?.target_audience ?? audience?.audience
+      : audience
+  )
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) return false;
   return normalized.includes("school") || normalized.includes("teacher");
 };
 
 /**
- * Sort announcements by creation date (newest first)
+ * Sort announcements by priority first, then by creation date (newest first)
  */
 export const sortAnnouncements = (items) =>
-  [...items].sort(
-    (left, right) =>
-      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
-  );
+  [...items].sort((left, right) => {
+    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const dateDiff = getAnnouncementSortTimestamp(right) - getAnnouncementSortTimestamp(left);
+    if (dateDiff !== 0) return dateDiff;
+
+    return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
+  });
 
 /**
  * Normalize announcement record structure
@@ -267,6 +356,15 @@ export const normalizeAnnouncement = (row) => ({
   id: String(row?.id ?? ""),
   title: String(row?.title ?? "").trim(),
   content: String(row?.content ?? "").trim(),
+  audienceType: normalizeAudienceType(
+    row?.audience_type ??
+      row?.target_audience ??
+      row?.targetAudience ??
+      row?.audience ??
+      row?.target_audience_type ??
+      row?.recipient_audience ??
+      "school"
+  ),
   targetAudience: normalizeAudience(
     row?.target_audience ??
       row?.targetAudience ??
@@ -284,6 +382,7 @@ export const normalizeAnnouncement = (row) => ({
       "Medium"
   ),
   createdAt: normalizeTimestamp(row),
+  attachments: parseAnnouncementAttachments(row),
 });
 
 /**

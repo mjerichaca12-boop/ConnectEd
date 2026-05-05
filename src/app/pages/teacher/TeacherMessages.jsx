@@ -1,17 +1,99 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { supabase } from "@/app/lib/supabaseClient";
 import {
   Search,
   Send,
   Plus,
   X,
+  Paperclip,
   MessageSquare,
   Users,
   Clock,
   ChevronRight,
+<<<<<<< HEAD
+  FileText,
+  Download,
+} from "lucide-react";
+
+const MESSAGE_TABLE = "messages";
+const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
+const MAX_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024;
+const ACCEPTED_ATTACHMENT_EXTENSIONS = ["pdf", "doc", "docx", "ppt", "pptx", "txt"];
+
+const buildStudentName = (row) => {
+  const fullName = [row?.first_name, row?.middle_name, row?.last_name]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (fullName) return fullName;
+  if (String(row?.name || "").trim()) return String(row.name).trim();
+  if (String(row?.full_name || "").trim()) return String(row.full_name).trim();
+  return "Student";
+};
+
+const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
+  const fromTeacher = String(row?.sender_id || "") === String(currentTeacherId || "");
+  const fileType = String(row?.file_type || "").trim();
+  const attachmentKind = fileType.startsWith("image/")
+    ? "image"
+    : fileType.startsWith("video/")
+      ? "video"
+      : fileType
+        ? "document"
+        : "";
+
+  return {
+    id: String(row?.id || `${Date.now()}_${Math.random()}`),
+    from: fromTeacher ? "teacher" : "student",
+    senderName: fromTeacher ? teacherDisplayName : "Student",
+    text: String(row?.message_text || "").trim(),
+    time: String(row?.timestamp || row?.created_at || new Date().toISOString()),
+    fileUrl: String(row?.file_url || "").trim(),
+    fileName: String(row?.file_name || "").trim(),
+    fileType,
+    fileSize: Number(row?.file_size || 0),
+    attachmentKind,
+  };
+};
+
+const getAttachmentKindFromFile = (file) => {
+  const mimeType = String(file?.type || "").toLowerCase();
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  return "document";
+};
+
+const isSupportedAttachment = (file) => {
+  const mimeType = String(file?.type || "").toLowerCase();
+  if (mimeType.startsWith("image/")) return true;
+  if (mimeType.startsWith("video/")) return true;
+
+  const fileName = String(file?.name || "").toLowerCase();
+  const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+  return ACCEPTED_ATTACHMENT_EXTENSIONS.includes(String(extension || ""));
+};
+
+const sanitizeAttachmentFileName = (fileName) =>
+  String(fileName || "file")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/_+/g, "_");
+
+const getMessagePreview = (message) => {
+  const text = String(message?.text || "").trim();
+  if (text) return text;
+  if (message?.attachmentKind === "image") return "Sent an image";
+  if (message?.attachmentKind === "video") return "Sent a video";
+  if (message?.fileName) return `Sent ${message.fileName}`;
+  if (message?.fileUrl) return "Sent an attachment";
+  return "";
+};
+=======
   Video,
   AtSign,
   CheckCheck,
@@ -25,33 +107,40 @@ const FILTERS = [
   { key: "mentions",  label: "Mentions",   icon: AtSign },
   { key: "videomeet", label: "Video Meet", icon: Video },
 ];
+>>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
 function TeacherMessages() {
   const navigate = useNavigate();
   const bottomRef = useRef(null);
+  const messageContainerRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
+  const [teacherId, setTeacherId] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
 
   // Conversations: [{ id, participantName, participantRole, classCode, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
+<<<<<<< HEAD
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+=======
   const [activeFilter, setActiveFilter] = useState("all");
+>>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
   // New message modal
   const [showNewModal, setShowNewModal] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
   const [allStudents, setAllStudents] = useState([]);
 
-  useEffect(() => {
-    const userData = localStorage.getItem("currentUser");
-    if (!userData) { navigate("/login"); return; }
-    const user = JSON.parse(userData);
-    if (user.role !== "teacher") { navigate("/login"); return; }
-    setTeacherName(user.name);
+  const saveConversations = (updated) => {
+    setConversations(updated);
+  };
 
     const savedConvs = JSON.parse(localStorage.getItem("teacher_conversations") || "[]");
     setConversations(savedConvs);
@@ -65,19 +154,98 @@ function TeacherMessages() {
         }
       });
     });
-    setAllStudents(students);
 
-    setTimeout(() => setLoading(false), 400);
-  }, [navigate]);
+    if (studentIds.length > 0) {
+      try {
+        const rows = await fetchConversationMessages(currentTeacherId, studentIds);
+        rows.forEach((row) => {
+          const senderId = String(row.sender_id || "");
+          const receiverId = String(row.receiver_id || "");
+          const studentId = senderId === currentTeacherId ? receiverId : senderId;
+          const conversation = conversationsByStudent.get(studentId);
+          if (!conversation) return;
+          conversation.messages.push(toConversationMessage(row, currentTeacherId, teacherName));
+          conversation.lastMessageTime = String(row.timestamp || row.created_at || conversation.lastMessageTime);
+        });
+      } catch (error) {
+        console.error("Failed to load messages:", error);
+        setPageError("Unable to load message history. Please run the latest database migration for messages.");
+      }
+    }
+
+    const mapped = Array.from(conversationsByStudent.values()).sort(
+      (left, right) => new Date(right.lastMessageTime).getTime() - new Date(left.lastMessageTime).getTime()
+    );
+
+    saveConversations(mapped);
+
+    if (mapped.length === 0) {
+      setSelectedConvId(null);
+      return;
+    }
+
+    const stillExists = mapped.some((item) => item.id === selectedConvId);
+    if (!stillExists) {
+      setSelectedConvId(mapped[0].id);
+    }
+  }, [fetchConversationMessages, selectedConvId, teacherName]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const initialize = async () => {
+      const userData = localStorage.getItem("currentUser");
+      if (!userData) {
+        navigate("/login");
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      if (user.role !== "teacher") {
+        navigate("/login");
+        return;
+      }
+
+      setTeacherName(String(user.name || "Teacher"));
+      setPageError("");
+
+      const resolvedTeacherId = await resolveTeacherId(user.email);
+      if (!resolvedTeacherId) {
+        setPageError("Unable to resolve teacher account. Please sign in again.");
+        setLoading(false);
+        return;
+      }
+
+      setTeacherId(resolvedTeacherId);
+      const students = await fetchStudents(resolvedTeacherId);
+      await loadConversations(resolvedTeacherId, students);
+      setLoading(false);
+    };
+
+    initialize();
+  }, [navigate, resolveTeacherId, fetchStudents, loadConversations]);
+
+  const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
+
+  useEffect(() => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   }, [selectedConvId, conversations]);
 
-  const saveConversations = (updated) => {
-    setConversations(updated);
-    localStorage.setItem("teacher_conversations", JSON.stringify(updated));
-  };
+  useEffect(() => {
+    if (!supabase || !teacherId) return;
+
+    const channel = supabase
+      .channel(`teacher-messages-${teacherId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: MESSAGE_TABLE }, async () => {
+        const students = await fetchStudents(teacherId);
+        await loadConversations(teacherId, students);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherId, fetchStudents, loadConversations]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -135,8 +303,9 @@ function TeacherMessages() {
       setStudentSearch("");
       return;
     }
+
     const newConv = {
-      id: Date.now().toString(),
+      id: String(student.id),
       participantId: student.id,
       participantName: student.name,
       participantRole: "Student",
@@ -148,6 +317,7 @@ function TeacherMessages() {
       lastMessageTime: new Date().toISOString(),
       isVideoMeet: false,
     };
+
     const updated = [newConv, ...conversations];
     saveConversations(updated);
     setSelectedConvId(newConv.id);
@@ -157,21 +327,133 @@ function TeacherMessages() {
 
   const handleSend = (e) => {
     e.preventDefault();
-    if (!messageInput.trim() || !selectedConv) return;
+
+    const text = String(messageInput || "").trim();
+    if ((!text && !attachmentFile) || !selectedConv || !teacherId || !supabase) return;
+
+    const now = new Date().toISOString();
+    let uploadedFileUrl = "";
+    let uploadedFileName = "";
+    let uploadedFileType = "";
+    let uploadedFileSize = 0;
+
+    if (attachmentFile) {
+      if (!isSupportedAttachment(attachmentFile)) {
+        setPageError("Unsupported file type. Please upload image, video, or supported document files.");
+        return;
+      }
+
+      if (attachmentFile.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        setPageError("File is too large. Maximum allowed size is 20MB.");
+        return;
+      }
+
+      setIsUploadingAttachment(true);
+
+      const cleanedName = sanitizeAttachmentFileName(attachmentFile.name);
+      const filePath = `${teacherId}/${selectedConv.participantId}/${Date.now()}_${cleanedName}`;
+
+      const uploadResult = await supabase.storage
+        .from(MESSAGE_ATTACHMENT_BUCKET)
+        .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
+
+      if (uploadResult.error) {
+        console.error("Failed to upload attachment:", uploadResult.error);
+        setPageError("Unable to upload attachment. Please verify message attachment storage is configured.");
+        setIsUploadingAttachment(false);
+        return;
+      }
+
+      const publicUrlResult = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+      uploadedFileUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
+      uploadedFileName = cleanedName;
+      uploadedFileType = String(attachmentFile.type || "application/octet-stream").trim();
+      uploadedFileSize = Number(attachmentFile.size || 0);
+      setIsUploadingAttachment(false);
+    }
+
+    const { data, error } = await supabase
+      .from(MESSAGE_TABLE)
+      .insert({
+        sender_id: teacherId,
+        receiver_id: selectedConv.participantId,
+        message_text: text || null,
+        timestamp: now,
+        file_url: uploadedFileUrl || null,
+        file_name: uploadedFileName || null,
+        file_type: uploadedFileType || null,
+        file_size: uploadedFileSize || null,
+      })
+      .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size")
+      .single();
+
+    if (error) {
+      console.error("Failed to send message:", error);
+      setPageError("Unable to send message. Please ensure the latest messages and attachment migrations are applied.");
+      setIsUploadingAttachment(false);
+      return;
+    }
+
     const msg = {
-      id: Date.now().toString(),
+      ...(data ? toConversationMessage(data, teacherId, teacherName) : {}),
+      id: String(data?.id || Date.now()),
       from: "teacher",
       senderName: teacherName,
-      text: messageInput.trim(),
-      time: new Date().toISOString(),
+      text,
+      time: String(data?.timestamp || now),
+      fileUrl: String(data?.file_url || uploadedFileUrl || "").trim(),
+      fileName: String(data?.file_name || uploadedFileName || "").trim(),
+      fileType: String(data?.file_type || uploadedFileType || "").trim(),
+      fileSize: Number(data?.file_size || uploadedFileSize || 0),
+      attachmentKind: data?.file_type
+        ? (String(data.file_type).startsWith("image/") ? "image" : String(data.file_type).startsWith("video/") ? "video" : "document")
+        : (attachmentFile ? getAttachmentKindFromFile(attachmentFile) : ""),
     };
+
     const updated = conversations.map((c) =>
       c.id === selectedConv.id
         ? { ...c, messages: [...(c.messages || []), msg], lastMessageTime: msg.time }
         : c
     );
+
     saveConversations(updated);
     setMessageInput("");
+    setAttachmentFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setIsUploadingAttachment(false);
+    setPageError("");
+  };
+
+  const handleAttachmentChange = (event) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setAttachmentFile(null);
+      return;
+    }
+
+    if (!isSupportedAttachment(file)) {
+      setPageError("Unsupported file type. Please upload image, video, or supported document files.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      setPageError("File is too large. Maximum allowed size is 20MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setAttachmentFile(file);
+    setPageError("");
+  };
+
+  const clearAttachment = () => {
+    setAttachmentFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleSelectConv = (conv) => {
@@ -196,7 +478,8 @@ function TeacherMessages() {
     (s) =>
       s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.studentId?.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.classCode?.toLowerCase().includes(studentSearch.toLowerCase())
+      s.classCode?.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      s.className?.toLowerCase().includes(studentSearch.toLowerCase())
   );
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -264,6 +547,13 @@ function TeacherMessages() {
             </div>
           </div>
 
+          {pageError && (
+            <div className="bg-amber-500/10 border border-amber-500/20 text-amber-200 rounded-xl px-4 py-3 text-sm flex items-start gap-2 flex-shrink-0">
+              <Clock className="w-4 h-4 mt-0.5" />
+              <span>{pageError}</span>
+            </div>
+          )}
+
           {/* Main chat layout */}
           <div className="flex-1 overflow-hidden bg-gray-900/60 rounded-xl border border-white/10 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* ══ Left: Conversations List ══ */}
@@ -283,7 +573,7 @@ function TeacherMessages() {
                 </div>
                 <button
                   onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
-                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
+                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors flex-shrink-0"
                   title="New Message"
                 >
                   <Plus className="w-4 h-4" />
@@ -410,8 +700,8 @@ function TeacherMessages() {
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
-                              <p className="text-xs text-gray-400 truncate mt-0.5">
-                                {conv.messages[conv.messages.length - 1].text}
+                              <p className="text-xs text-gray-300 truncate mt-0.5">
+                                {getMessagePreview(conv.messages[conv.messages.length - 1])}
                               </p>
                             )}
                           </div>
@@ -455,7 +745,10 @@ function TeacherMessages() {
                   </div>
 
                   {/* Messages */}
-                  <div className="flex-1 overflow-y-auto scrollbar-hide p-6 space-y-3">
+                  <div
+                    ref={messageContainerRef}
+                    className="h-[300px] sm:h-[360px] lg:h-[400px] w-full overflow-y-auto overflow-x-hidden scrollbar-hide p-6 space-y-3"
+                  >
                     {(selectedConv.messages || []).length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-center">
                         <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
@@ -498,7 +791,7 @@ function TeacherMessages() {
                   {/* Input */}
                   <form
                     onSubmit={handleSend}
-                    className="px-6 py-4 border-t border-white/10 flex items-center gap-3 flex-shrink-0"
+                    className="px-6 py-4 border-t border-white/10 flex flex-col gap-2 flex-shrink-0"
                   >
                     <input
                       type="text"
@@ -548,7 +841,7 @@ function TeacherMessages() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white">New Message</h3>
-                  <p className="text-sm text-gray-500">Select a student to message</p>
+                  <p className="text-sm text-gray-400">Select a student to message</p>
                 </div>
               </div>
               <button
@@ -619,6 +912,4 @@ function TeacherMessages() {
       )}
     </div>
   );
-}
-
 export { TeacherMessages };

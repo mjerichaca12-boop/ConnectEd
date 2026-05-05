@@ -97,6 +97,7 @@ const normalizeAnnouncementRecordLocal = (row) => {
   const fileName = String(row?.file_name || "").trim();
   const filePath = String(row?.file_path || "").trim();
   const fileUrl = String(row?.file_url || "").trim();
+  const fileType = String(row?.file_type || "").trim();
 
   return {
     id: String(row?.id || ""),
@@ -108,11 +109,29 @@ const normalizeAnnouncementRecordLocal = (row) => {
     fileName,
     filePath,
     fileUrl,
+    fileType,
     datePosted: row?.created_at || row?.date_posted || row?.updated_at || new Date().toISOString(),
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
     section: String(row?.section || "").trim()
   };
+};
+
+const getAnnouncementAttachmentKind = (announcement) => {
+  const fileType = String(announcement?.fileType || announcement?.file_type || "").trim().toLowerCase();
+  const fileName = String(announcement?.fileName || announcement?.file_name || "").trim().toLowerCase();
+  const fileUrl = String(announcement?.fileUrl || announcement?.file_url || "").trim().toLowerCase();
+  const source = fileType || fileName || fileUrl;
+
+  if (fileType.startsWith("image/")) return "image";
+  if (fileType.startsWith("video/")) return "video";
+
+  const match = source.match(/\.([a-z0-9]+)(?:\?|#|$)/i);
+  const extension = match ? match[1].toLowerCase() : "";
+
+  if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(extension)) return "image";
+  if (["mp4", "webm", "ogg", "mov", "m4v"].includes(extension)) return "video";
+  return fileUrl ? "document" : "";
 };
 
 export function ClassDetail() {
@@ -2548,7 +2567,18 @@ export function ClassDetail() {
                     </div>
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => navigate("/teacher/grades")}
+                        onClick={() => {
+                          const params = new URLSearchParams();
+                          params.set("classId", String(id || ""));
+                          navigate(`/teacher/grades?${params.toString()}`, {
+                            state: {
+                              selectedClassId: String(id || ""),
+                              selectedSubjectCode: String(classData?.code || ""),
+                              selectedSubjectName: String(classData?.name || ""),
+                              selectedSection: String(classData?.section || ""),
+                            },
+                          });
+                        }}
                         className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all font-medium text-sm"
                       >
                         <TrendingUp className="w-4 h-4" />
@@ -2584,7 +2614,49 @@ export function ClassDetail() {
                       {assignments.map((asg) => {
                         const due = getDaysUntilDue(asg.dueDate);
                         return (
-                          <div key={asg.id} className="p-5 bg-gray-900/60 border border-white/10 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all">
+                          <div
+                            key={asg.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              const params = new URLSearchParams();
+                              params.set("classId", String(id || ""));
+                              params.set("assessmentId", String(asg.id || ""));
+
+                              navigate(`/teacher/grades?${params.toString()}`, {
+                                state: {
+                                  selectedClassId: String(id || ""),
+                                  selectedAssessmentId: String(asg.id || ""),
+                                  selectedAssessmentType: String(asg.type || "assignment"),
+                                  selectedAssessmentTitle: String(asg.title || ""),
+                                  selectedSubjectCode: String(classData?.code || ""),
+                                  selectedSubjectName: String(classData?.name || ""),
+                                  selectedSection: String(classData?.section || ""),
+                                },
+                              });
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+
+                              const params = new URLSearchParams();
+                              params.set("classId", String(id || ""));
+                              params.set("assessmentId", String(asg.id || ""));
+
+                              navigate(`/teacher/grades?${params.toString()}`, {
+                                state: {
+                                  selectedClassId: String(id || ""),
+                                  selectedAssessmentId: String(asg.id || ""),
+                                  selectedAssessmentType: String(asg.type || "assignment"),
+                                  selectedAssessmentTitle: String(asg.title || ""),
+                                  selectedSubjectCode: String(classData?.code || ""),
+                                  selectedSubjectName: String(classData?.name || ""),
+                                  selectedSection: String(classData?.section || ""),
+                                },
+                              });
+                            }}
+                            className="p-5 bg-gray-900/60 border border-white/10 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                          >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2614,6 +2686,7 @@ export function ClassDetail() {
                                         href={attachment.fileUrl || attachment.filePath || "#"}
                                         target="_blank"
                                         rel="noreferrer"
+                                        onClick={(event) => event.stopPropagation()}
                                         className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
                                       >
                                         <File className="w-3 h-3" />
@@ -2626,7 +2699,38 @@ export function ClassDetail() {
                               <div className="flex gap-2 flex-shrink-0">
                                 <button
                                   type="button"
-                                  onClick={() => openEditAssignmentModal(asg.id)}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+
+                                    const params = new URLSearchParams();
+                                    params.set("classId", String(id || ""));
+                                    params.set("assessmentId", String(asg.id || ""));
+
+                                    navigate(`/teacher/grades?${params.toString()}`, {
+                                      state: {
+                                        selectedClassId: String(id || ""),
+                                        selectedAssessmentId: String(asg.id || ""),
+                                        selectedAssessmentType: String(asg.type || "assignment"),
+                                        selectedAssessmentTitle: String(asg.title || ""),
+                                        selectedSubjectCode: String(classData?.code || ""),
+                                        selectedSubjectName: String(classData?.name || ""),
+                                        selectedSection: String(classData?.section || ""),
+                                      },
+                                    });
+                                  }}
+                                  className="p-2 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  title="Grade this activity"
+                                >
+                                  <TrendingUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    openEditAssignmentModal(asg.id);
+                                  }}
                                   className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
                                 >
                                   <FileText className="w-4 h-4" />
@@ -2702,17 +2806,45 @@ export function ClassDetail() {
                               </div>
                               <h4 className="font-semibold text-white text-sm">{ann.title}</h4>
                               <p className="text-sm text-gray-400 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
-                              {ann.fileUrl && (
-                                <a
-                                  href={ann.fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
-                                >
-                                  <File className="w-3 h-3" />
-                                  {ann.fileName || "Attached file"}
-                                </a>
-                              )}
+                              {ann.fileUrl && (() => {
+                                const attachmentKind = getAnnouncementAttachmentKind(ann);
+
+                                if (attachmentKind === "image") {
+                                  return (
+                                    <a href={ann.fileUrl} target="_blank" rel="noreferrer" className="block mt-3">
+                                      <img
+                                        src={ann.fileUrl}
+                                        alt={ann.fileName || "Announcement attachment"}
+                                        className="max-h-80 w-full rounded-xl border border-white/10 object-cover bg-black/20"
+                                      />
+                                    </a>
+                                  );
+                                }
+
+                                if (attachmentKind === "video") {
+                                  return (
+                                    <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                                      <video
+                                        controls
+                                        src={ann.fileUrl}
+                                        className="w-full max-h-80 bg-black"
+                                      />
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <a
+                                    href={ann.fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
+                                  >
+                                    <File className="w-3 h-3" />
+                                    {ann.fileName || "Attached file"}
+                                  </a>
+                                );
+                              })()}
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
                               <button

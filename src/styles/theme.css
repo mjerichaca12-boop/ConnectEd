@@ -195,27 +195,54 @@
   /* Custom Scrollbar Styles */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #10b981 #f3f4f6;
+    scrollbar-color: rgba(148, 163, 184, 0.55) rgba(15, 23, 42, 0.25);
   }
 
   .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: #f3f4f6;
-    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.25);
+    border-radius: 9999px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #10b981, #059669);
-    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(100, 116, 139, 0.9), rgba(71, 85, 105, 0.9));
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
     transition: background 0.3s ease;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #059669, #047857);
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.95), rgba(100, 116, 139, 0.95));
+  }
+
+  /* Dark surface scrollbar utility for dashboard cards */
+  .dark-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.55) rgba(15, 23, 42, 0.25);
+  }
+
+  .dark-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .dark-scrollbar::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.25);
+    border-radius: 9999px;
+  }
+
+  .dark-scrollbar::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(100, 116, 139, 0.9), rgba(71, 85, 105, 0.9));
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .dark-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.95), rgba(100, 116, 139, 0.95));
   }
 
   /* Global Scrollbar for body and main containers */
@@ -225,23 +252,24 @@
   }
 
   ::-webkit-scrollbar-track {
-    background: #f9fafb;
+    background: rgba(15, 23, 42, 0.25);
   }
 
   ::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #10b981, #059669);
-    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(100, 116, 139, 0.9), rgba(71, 85, 105, 0.9));
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
     transition: background 0.3s ease;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #059669, #047857);
+    background: linear-gradient(180deg, rgba(148, 163, 184, 0.95), rgba(100, 116, 139, 0.95));
   }
 
   /* Firefox scrollbar */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #10b981 #f9fafb;
+    scrollbar-color: rgba(148, 163, 184, 0.55) rgba(15, 23, 42, 0.25);
   }
 
   /* Utility to hide scrollbar */

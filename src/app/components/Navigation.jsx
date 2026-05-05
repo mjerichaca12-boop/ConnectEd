@@ -1,9 +1,10 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Menu, X } from "lucide-react";
 
 function Navigation() {
   const navigate = useNavigate();
+  const navRef = useRef(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -14,7 +15,17 @@ function Navigation() {
   }, []);
 
   const scrollTo = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const target = document.getElementById(id);
+    if (!target) return;
+
+    const navHeight = navRef.current?.offsetHeight ?? 0;
+    const targetTop = target.getBoundingClientRect().top + window.scrollY - navHeight - 8;
+
+    window.scrollTo({
+      top: Math.max(targetTop, 0),
+      behavior: "smooth",
+    });
+
     setMobileOpen(false);
   };
 
@@ -26,12 +37,12 @@ function Navigation() {
   ];
 
   return (
-    <nav className={`w-full sticky top-0 z-50 transition-all duration-300 ${isScrolled ? "bg-white/95 backdrop-blur-md shadow-md border-b border-gray-100" : "bg-transparent"}`}>
+    <nav ref={navRef} className={`fixed top-0 inset-x-0 z-50 w-full transition-all duration-300 ${isScrolled ? "bg-gray-950/70 backdrop-blur-md shadow-md border-b border-white/10" : "bg-transparent"}`}>
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-        <button onClick={() => navigate("/")} className="relative text-2xl font-extrabold tracking-tight text-emerald-600 select-none cursor-pointer">
-          Connect<span className="text-gray-900">Ed</span>
-        </button>
+        <span className="relative text-2xl font-extrabold tracking-tight text-emerald-600">
+          Connect<span className="text-white">Ed</span>
+        </span>
 
         {/* Desktop nav */}
         <div className="hidden md:flex items-center gap-8">

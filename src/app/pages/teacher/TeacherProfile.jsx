@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { supabase } from "@/app/lib/supabaseClient";
-import { buildSupabaseErrorMessage, sanitizeFileName } from "@/app/lib/teacherHelpers";
+import { buildSupabaseErrorMessage, isColumnMissingError, sanitizeFileName } from "@/app/lib/teacherHelpers";
 import {
   User, Mail, Phone, Edit3, Save, X, Eye, EyeOff, Lock, Upload,
   Shield, BadgeCheck, Camera, ChevronRight, Star, BookOpen, Users,
@@ -11,12 +11,11 @@ import {
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
-const PHONE_ALLOWED_PATTERN = /^[0-9+\-()\s]*$/;
+const PHONE_STRICT_PATTERN = /^09\d{9}$/;
 
 const emptyProfile = { teacherId: "", fullName: "", email: "", phone: "", role: "Teacher", status: "Active", avatarUrl: "" };
-const normalizePhoneInput = (value) => String(value ?? "").replace(/[^0-9+\-()\s]/g, "");
-const countPhoneDigits = (value) => (String(value ?? "").match(/\d/g) || []).length;
-const isValidPhoneNumber = (value) => { const n = String(value ?? "").trim(); return Boolean(n) && PHONE_ALLOWED_PATTERN.test(n) && countPhoneDigits(n) >= 10; };
+const normalizePhoneInput = (value) => String(value ?? "").replace(/\D/g, "").slice(0, 11);
+const isValidPhoneNumber = (value) => PHONE_STRICT_PATTERN.test(String(value ?? "").trim());
 const joinNameParts = (...parts) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(" ").trim();
 
 const getFallbackCurrentUser = () => { try { const s = localStorage.getItem("currentUser"); return s ? JSON.parse(s) : null; } catch { return null; } };
@@ -224,7 +223,7 @@ function TeacherProfile() {
     const hasPasswordChange = Boolean(newPassword.trim());
     const hasPictureChange = Boolean(profilePictureFile);
     if (!hasPhoneChange && !hasPasswordChange && !hasPictureChange) { setIsEditing(false); return; }
-    if (hasPhoneChange && !isValidPhoneNumber(trimmedPhone)) { setErrorMessage("Enter a valid phone number (at least 10 digits)."); return; }
+    if (hasPhoneChange && !isValidPhoneNumber(trimmedPhone)) { setErrorMessage("Phone number must be 11 digits and start with 09."); return; }
 
     setIsSaving(true); setErrorMessage(""); setSuccessMessage("");
     const authResult = await supabase.auth.getUser();
@@ -232,6 +231,7 @@ function TeacherProfile() {
     let nextAvatarUrl = profile.avatarUrl;
     let uploadedAvatarPath = "";
     const previousAvatarPath = extractStoragePathFromPublicUrl(profile.avatarUrl);
+    let avatarColumnUnavailable = false;
 
     try {
       if (hasPictureChange && profilePictureFile) {
@@ -243,11 +243,34 @@ function TeacherProfile() {
         nextAvatarUrl = publicUrlData?.publicUrl || "";
       }
 
-      const { error: profileUpdateError } = await supabase
+      const updatePayload = { phone: trimmedPhone };
+      if (hasPictureChange) {
+        updatePayload.avatar_url = nextAvatarUrl || null;
+      }
+
+      let { error: profileUpdateError } = await supabase
         .from("profiles")
-        .update({ phone: trimmedPhone, avatar_url: nextAvatarUrl || null })
+        .update(updatePayload)
         .eq("id", profile.teacherId || authUser?.id)
         .eq("role", "teacher");
+
+      if (profileUpdateError && hasPictureChange && isColumnMissingError(profileUpdateError)) {
+        avatarColumnUnavailable = true;
+        if (uploadedAvatarPath) {
+          await supabase.storage.from(STORAGE_BUCKET).remove([uploadedAvatarPath]).catch(console.error);
+          uploadedAvatarPath = "";
+        }
+        nextAvatarUrl = profile.avatarUrl;
+
+        const { error: retryError } = await supabase
+          .from("profiles")
+          .update({ phone: trimmedPhone })
+          .eq("id", profile.teacherId || authUser?.id)
+          .eq("role", "teacher");
+
+        profileUpdateError = retryError;
+      }
+
       if (profileUpdateError) throw profileUpdateError;
 
       if (hasPasswordChange) {
@@ -268,7 +291,11 @@ function TeacherProfile() {
       if (hasPictureChange && previousAvatarPath) {
         await supabase.storage.from(STORAGE_BUCKET).remove([previousAvatarPath]).catch(console.error);
       }
-      setSuccessMessage("Profile updated successfully.");
+      setSuccessMessage(
+        avatarColumnUnavailable
+          ? "Profile updated. Profile picture could not be saved because avatar_url is not available in your profiles table."
+          : "Profile updated successfully."
+      );
     } catch (error) {
       console.error("Failed to update teacher profile:", error);
       if (uploadedAvatarPath && hasPictureChange) await supabase.storage.from(STORAGE_BUCKET).remove([uploadedAvatarPath]).catch(console.error);
@@ -424,10 +451,11 @@ function TeacherProfile() {
                 {isEditing ? (
                   <input
                     type="tel"
-                    inputMode="tel"
+                    inputMode="numeric"
                     value={editedPhone}
                     onChange={(e) => setEditedPhone(normalizePhoneInput(e.target.value))}
-                    placeholder="Enter your phone number"
+                    maxLength={11}
+                    placeholder="09XXXXXXXXX"
                     className="flex-1 outline-none bg-transparent text-white text-sm placeholder-gray-500"
                   />
                 ) : (

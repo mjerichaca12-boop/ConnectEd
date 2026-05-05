@@ -11,6 +11,7 @@ function LandingPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <Navigation />
+      <div className="h-20" aria-hidden="true" />
       <div className="w-screen max-w-full overflow-x-hidden">
         <HeroSection />
         <CoreModules />

@@ -8,6 +8,9 @@ import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
 import { Login } from "./pages/Login";
 import { SignUp } from "./pages/SignUp";
 import { ForgotPassword } from "./pages/ForgotPassword";
+import { VerifyEmail } from "./pages/VerifyEmail";
+import { RequestAccess } from "./pages/RequestAccess";
+import { SetPassword } from "./pages/SetPassword";
 import { StudentDashboard } from "./pages/StudentDashboard";
 import { Subjects } from "./pages/Subjects";
 import { SubjectDetail } from "./pages/SubjectDetail";
@@ -37,6 +40,7 @@ import { SubjectManagement } from "./pages/admin/SubjectManagement";
 import { EnrollmentManagement } from "./pages/admin/EnrollmentManagement";
 import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminCalendar } from "./pages/admin/AdminCalendar";
+import { AdminAccessRequests } from "./pages/admin/AdminAccessRequests";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminMessages } from "./pages/admin/AdminMessages";
@@ -182,6 +186,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/request-access" element={<RequestAccess />} />
+        <Route path="/set-password" element={<SetPassword />} />
 
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
@@ -219,6 +226,7 @@ export default function App() {
         <Route path="/admin/enrollment" element={<AdminRouteGuard><EnrollmentManagement /></AdminRouteGuard>} />
         <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
+        <Route path="/admin/access-requests" element={<AdminRouteGuard><AdminAccessRequests /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
