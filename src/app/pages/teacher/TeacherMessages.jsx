@@ -14,15 +14,26 @@ import {
   Users,
   Clock,
   ChevronRight,
-<<<<<<< HEAD
   FileText,
   Download,
+  Video,
+  AtSign,
+  CheckCheck,
+  Circle,
 } from "lucide-react";
 
 const MESSAGE_TABLE = "messages";
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
 const MAX_ATTACHMENT_SIZE_BYTES = 20 * 1024 * 1024;
 const ACCEPTED_ATTACHMENT_EXTENSIONS = ["pdf", "doc", "docx", "ppt", "pptx", "txt"];
+
+const FILTERS = [
+  { key: "all",       label: "All",        icon: MessageSquare },
+  { key: "unread",    label: "Unread",     icon: Circle },
+  { key: "read",      label: "Read",       icon: CheckCheck },
+  { key: "mentions",  label: "Mentions",   icon: AtSign },
+  { key: "videomeet", label: "Video Meet", icon: Video },
+];
 
 const buildStudentName = (row) => {
   const fullName = [row?.first_name, row?.middle_name, row?.last_name]
@@ -93,21 +104,6 @@ const getMessagePreview = (message) => {
   if (message?.fileUrl) return "Sent an attachment";
   return "";
 };
-=======
-  Video,
-  AtSign,
-  CheckCheck,
-  Circle,
-} from "lucide-react";
-
-const FILTERS = [
-  { key: "all",       label: "All",        icon: MessageSquare },
-  { key: "unread",    label: "Unread",     icon: Circle },
-  { key: "read",      label: "Read",       icon: CheckCheck },
-  { key: "mentions",  label: "Mentions",   icon: AtSign },
-  { key: "videomeet", label: "Video Meet", icon: Video },
-];
->>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
 function TeacherMessages() {
   const navigate = useNavigate();
@@ -121,17 +117,13 @@ function TeacherMessages() {
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
 
-  // Conversations: [{ id, participantName, participantRole, classCode, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
-<<<<<<< HEAD
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
-=======
   const [activeFilter, setActiveFilter] = useState("all");
->>>>>>> 5bdd89caf812865709cc6fd6f166bc9574d5587f
 
   // New message modal
   const [showNewModal, setShowNewModal] = useState(false);
@@ -142,18 +134,72 @@ function TeacherMessages() {
     setConversations(updated);
   };
 
-    const savedConvs = JSON.parse(localStorage.getItem("teacher_conversations") || "[]");
-    setConversations(savedConvs);
+  const resolveTeacherId = useCallback(async (email) => {
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("email", email)
+        .single();
+      if (error || !data) return null;
+      return String(data.id);
+    } catch {
+      return null;
+    }
+  }, []);
 
-    const classes = JSON.parse(localStorage.getItem("teacher_classes") || "[]");
-    const students = [];
-    classes.forEach((cls) => {
-      (cls.students || []).forEach((stu) => {
-        if (!students.find((s) => s.id === stu.id)) {
-          students.push({ ...stu, classCode: cls.code, className: cls.name, section: cls.section });
-        }
+  const fetchStudents = useCallback(async (currentTeacherId) => {
+    try {
+      const { data, error } = await supabase
+        .from("enrollments")
+        .select("student_id, profiles(id, first_name, middle_name, last_name, name, full_name, email)")
+        .eq("teacher_id", currentTeacherId);
+      if (error || !data) return [];
+      return data.map((row) => ({
+        id: String(row.profiles?.id || row.student_id),
+        name: buildStudentName(row.profiles),
+        email: String(row.profiles?.email || ""),
+      }));
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const fetchConversationMessages = useCallback(async (currentTeacherId, studentIds) => {
+    try {
+      const { data, error } = await supabase
+        .from(MESSAGE_TABLE)
+        .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size")
+        .or(
+          studentIds
+            .map((sid) => `and(sender_id.eq.${currentTeacherId},receiver_id.eq.${sid}),and(sender_id.eq.${sid},receiver_id.eq.${currentTeacherId})`)
+            .join(",")
+        )
+        .order("timestamp", { ascending: true });
+      if (error) return [];
+      return data || [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const loadConversations = useCallback(async (currentTeacherId, students) => {
+    const conversationsByStudent = new Map();
+
+    students.forEach((student) => {
+      conversationsByStudent.set(student.id, {
+        id: student.id,
+        participantId: student.id,
+        participantName: student.name,
+        participantRole: "Student",
+        messages: [],
+        unreadCount: 0,
+        lastMessageTime: new Date(0).toISOString(),
+        isVideoMeet: false,
       });
     });
+
+    const studentIds = students.map((s) => s.id);
 
     if (studentIds.length > 0) {
       try {
@@ -216,14 +262,13 @@ function TeacherMessages() {
 
       setTeacherId(resolvedTeacherId);
       const students = await fetchStudents(resolvedTeacherId);
+      setAllStudents(students);
       await loadConversations(resolvedTeacherId, students);
       setLoading(false);
     };
 
     initialize();
   }, [navigate, resolveTeacherId, fetchStudents, loadConversations]);
-
-  const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
 
   useEffect(() => {
     const container = messageContainerRef.current;
@@ -254,11 +299,9 @@ function TeacherMessages() {
 
   const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
 
-  // ── Filtering logic ──
   const applyFilter = (convList) => {
     let filtered = convList;
 
-    // Text search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -268,7 +311,6 @@ function TeacherMessages() {
       );
     }
 
-    // Tab filter
     switch (activeFilter) {
       case "unread":
         filtered = filtered.filter((c) => (c.unreadCount || 0) > 0);
@@ -325,7 +367,7 @@ function TeacherMessages() {
     setStudentSearch("");
   };
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
 
     const text = String(messageInput || "").trim();
@@ -484,7 +526,6 @@ function TeacherMessages() {
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
-  // Badge counts for filter tabs
   const filterCounts = {
     all: conversations.length,
     unread: conversations.filter((c) => (c.unreadCount || 0) > 0).length,
@@ -556,7 +597,7 @@ function TeacherMessages() {
 
           {/* Main chat layout */}
           <div className="flex-1 overflow-hidden bg-gray-900/60 rounded-xl border border-white/10 shadow-sm grid grid-cols-1 lg:grid-cols-3">
-            {/* ══ Left: Conversations List ══ */}
+            {/* Left: Conversations List */}
             <div className="lg:col-span-1 border-r border-white/10 flex flex-col">
 
               {/* Search + New */}
@@ -713,7 +754,7 @@ function TeacherMessages() {
               </div>
             </div>
 
-            {/* ══ Right: Chat Window ══ */}
+            {/* Right: Chat Window */}
             <div className="lg:col-span-2 flex flex-col">
               {selectedConv ? (
                 <>
@@ -776,7 +817,22 @@ function TeacherMessages() {
                                   <AtSign className="w-2.5 h-2.5" /> Mentioned you
                                 </p>
                               )}
-                              <p className="leading-relaxed">{msg.text}</p>
+                              {msg.attachmentKind === "image" && msg.fileUrl && (
+                                <img src={msg.fileUrl} alt={msg.fileName || "image"} className="rounded-lg max-w-full mb-2" />
+                              )}
+                              {msg.attachmentKind === "document" && msg.fileUrl && (
+                                <a
+                                  href={msg.fileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-xs underline mb-2"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                  {msg.fileName || "Download file"}
+                                  <Download className="w-3 h-3" />
+                                </a>
+                              )}
+                              {msg.text && <p className="leading-relaxed">{msg.text}</p>}
                               <p className={`text-xs mt-1 ${isTeacher ? "text-emerald-100" : "text-gray-400"} text-right`}>
                                 {getTimeLabel(msg.time)}
                               </p>
@@ -788,11 +844,37 @@ function TeacherMessages() {
                     <div ref={bottomRef} />
                   </div>
 
+                  {/* Attachment Preview */}
+                  {attachmentFile && (
+                    <div className="px-6 py-2 border-t border-white/5 flex items-center gap-2 text-sm text-gray-300">
+                      <Paperclip className="w-4 h-4 text-emerald-400" />
+                      <span className="truncate">{attachmentFile.name}</span>
+                      <button onClick={clearAttachment} className="ml-auto text-gray-500 hover:text-red-400">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Input */}
                   <form
                     onSubmit={handleSend}
-                    className="px-6 py-4 border-t border-white/10 flex flex-col gap-2 flex-shrink-0"
+                    className="px-6 py-4 border-t border-white/10 flex items-center gap-2 flex-shrink-0"
                   >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleAttachmentChange}
+                      accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.txt"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0"
+                      title="Attach file"
+                    >
+                      <Paperclip className="w-5 h-5" />
+                    </button>
                     <input
                       type="text"
                       value={messageInput}
@@ -802,7 +884,7 @@ function TeacherMessages() {
                     />
                     <button
                       type="submit"
-                      disabled={!messageInput.trim()}
+                      disabled={(!messageInput.trim() && !attachmentFile) || isUploadingAttachment}
                       className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                     >
                       <Send className="w-5 h-5" />
@@ -830,7 +912,7 @@ function TeacherMessages() {
         </div>
       </main>
 
-      {/* ══ NEW MESSAGE MODAL ══ */}
+      {/* NEW MESSAGE MODAL */}
       {showNewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
@@ -912,4 +994,6 @@ function TeacherMessages() {
       )}
     </div>
   );
+}
+
 export { TeacherMessages };
