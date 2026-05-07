@@ -9,12 +9,12 @@ import { Footer } from "@/app/components/Footer";
 
 function LandingPage() {
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-white">
       <Navigation />
-      <div className="h-20" aria-hidden="true" />
       <div className="w-screen max-w-full overflow-x-hidden">
         <HeroSection />
         <CoreModules />
+        <HowItWorks />
         <UserRoles />
         <AboutSection />
         <FinalCTA />

@@ -53,18 +53,18 @@ function SchoolSelector({
         <div
     onClick={handleTriggerClick}
     className={`w-full flex items-center justify-between px-4 py-4 border rounded-lg bg-white transition-all duration-200 cursor-pointer
-            ${isOpen ? "border-emerald-500 ring-2 ring-emerald-500 ring-opacity-50 shadow-lg" : "border-gray-300 hover:border-emerald-400 hover:shadow-sm"}`}
+            ${isOpen ? "border-green-500 ring-2 ring-green-500 ring-opacity-50 shadow-lg" : "border-gray-300 hover:border-green-400 hover:shadow-sm"}`}
   >
           <div className="flex-1 min-w-0">
             {value ? <div className="flex items-start gap-3">
-                <div className="p-2 bg-emerald-50 rounded-md flex-shrink-0">
-                  <MapPin className="w-4 h-4 text-emerald-600" />
+                <div className="p-2 bg-green-50 rounded-md flex-shrink-0">
+                  <MapPin className="w-4 h-4 text-green-600" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900 truncate">{value.name}</div>
                   <div className="text-sm text-gray-500 truncate">{value.location}</div>
                 </div>
-              </div> : <div className="text-gray-400 flex items-center gap-2">
+              </div> : <div className="text-gray-600 flex items-center gap-2">
                 <MapPin className="w-4 h-4" />
                 <span>No school selected</span>
               </div>}
@@ -79,7 +79,7 @@ function SchoolSelector({
                 <X className="w-4 h-4 text-gray-500" />
               </div>}
             <ChevronDown
-    className={`w-5 h-5 text-gray-500 transition-transform duration-300 flex-shrink-0 ${isOpen ? "rotate-180 text-emerald-600" : ""}`}
+    className={`w-5 h-5 text-gray-500 transition-transform duration-300 flex-shrink-0 ${isOpen ? "rotate-180 text-green-600" : ""}`}
   />
           </div>
         </div>
@@ -93,14 +93,14 @@ function SchoolSelector({
   }
             <div className="p-3 border-b border-gray-200 bg-gray-50">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                 <input
     ref={searchInputRef}
     type="text"
     value={searchQuery}
     onChange={(e) => setSearchQuery(e.target.value)}
     placeholder={placeholder}
-    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
   />
               </div>
             </div>
@@ -116,14 +116,14 @@ function SchoolSelector({
       type="button"
       onClick={() => handleSelect(school)}
       className={`w-full flex items-start gap-3 px-4 py-3 transition-all duration-150 text-left
-                        ${isSelected ? "bg-emerald-50 border-l-4 border-emerald-500" : "hover:bg-gray-50 border-l-4 border-transparent"}`}
+                        ${isSelected ? "bg-green-50 border-l-4 border-green-500" : "hover:bg-gray-50 border-l-4 border-transparent"}`}
     >
-                      <div className={`p-2 rounded-md flex-shrink-0 transition-transform duration-200 ${isSelected ? "bg-emerald-100 scale-110" : "bg-gray-100"}`}>
-                        <MapPin className={`w-4 h-4 ${isSelected ? "text-emerald-600" : "text-gray-600"}`} />
+                      <div className={`p-2 rounded-md flex-shrink-0 transition-transform duration-200 ${isSelected ? "bg-green-100 scale-110" : "bg-gray-100"}`}>
+                        <MapPin className={`w-4 h-4 ${isSelected ? "text-green-600" : "text-gray-600"}`} />
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <div className={`font-medium truncate ${isSelected ? "text-emerald-700" : "text-gray-900"}`}>
+                        <div className={`font-medium truncate ${isSelected ? "text-green-700" : "text-gray-900"}`}>
                           {school.name}
                         </div>
                         <div className="text-sm text-gray-500 truncate flex items-center gap-1">
@@ -132,10 +132,10 @@ function SchoolSelector({
                         </div>
                       </div>
                       
-                      {isSelected && <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0 mt-2" />}
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 mt-2" />}
                     </button>;
   }) : <div className="px-4 py-8 text-center text-gray-500">
-                  <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                  <MapPin className="w-8 h-8 mx-auto mb-2 text-gray-600" />
                   <p className="text-sm">No schools found</p>
                   <p className="text-xs mt-1">Try a different search term</p>
                 </div>}

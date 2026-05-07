@@ -530,7 +530,7 @@ function VideoConferencing() {
   const getStatusColor = (status) => {
     if (status === "Ongoing") return "bg-red-500/20 text-red-300 border-red-500/30";
     if (status === "Scheduled") return "bg-blue-500/20 text-blue-300 border-blue-500/30";
-    return "bg-white/5 text-gray-400 border-white/10";
+    return "bg-gray-50 text-gray-600 border-gray-200";
   };
 
   const classOptions = classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }));
@@ -550,10 +550,10 @@ function VideoConferencing() {
   /* ══════════════════ MEETING ROOM VIEW ══════════════════ */
   if (isInMeeting) {
     return (
-      <div className="h-screen bg-gray-950 flex flex-col overflow-hidden">
-        <div className="bg-gray-900/80 border-b border-white/10 px-6 py-3 flex items-center justify-between">
+      <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+        <div className="bg-gray-1000 border-b border-gray-200 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-white font-semibold text-sm">{activeMeeting?.title || "Meeting"}</span>
+            <span className="text-gray-900 font-semibold text-sm">{activeMeeting?.title || "Meeting"}</span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border bg-red-500/15 text-red-300 border-red-500/30">
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
               Live
@@ -564,14 +564,14 @@ function VideoConferencing() {
               href={buildDirectMeetingUrl(activeMeeting?.meetingLink, teacherName || "Teacher") || activeMeeting?.meetingLink}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white transition-colors"
+              className="flex items-center gap-1.5 text-xs text-gray-700 hover:text-gray-900 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               Open in new tab
             </a>
             <button
               onClick={endMeeting}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-gray-900 rounded-lg transition-colors text-sm font-medium"
             >
               <StopCircle className="w-4 h-4" />
               End Meeting
@@ -583,20 +583,20 @@ function VideoConferencing() {
           className="p-4"
           style={{ height: `calc(100vh - ${MEETING_HEADER_HEIGHT}px)` }}
         >
-          <div className="relative h-full w-full rounded-xl overflow-hidden border border-white/10 bg-black">
+          <div className="relative h-full w-full rounded-xl overflow-hidden border border-gray-200 bg-black">
             {jitsiReady ? (
               <div ref={jitsiContainerRef} className="h-full w-full" />
             ) : (
               <div className="h-full w-full flex items-center justify-center">
                 <div className="text-center max-w-xl px-6">
-                  <div className="w-12 h-12 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                  <p className="text-white text-base font-medium mb-2">Loading meeting...</p>
-                  <p className="text-gray-400 text-sm">Please wait while we load Jitsi.</p>
+                  <div className="w-12 h-12 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                  <p className="text-gray-900 text-base font-medium mb-2">Loading meeting...</p>
+                  <p className="text-gray-600 text-sm">Please wait while we load Jitsi.</p>
                 </div>
               </div>
             )}
             {meetingLaunchError && (
-              <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-md">
+              <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-xs text-amber-300 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-md">
                 {meetingLaunchError}
               </p>
             )}
@@ -608,42 +608,42 @@ function VideoConferencing() {
 
   /* ══════════════════ MEETINGS DASHBOARD ══════════════════ */
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         {/* Top bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Video Conferencing</h2>
-            <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
-              <Bell className="w-6 h-6 text-gray-400" />
+            <h2 className="text-xl font-semibold text-gray-900">Video Conferencing</h2>
+            <button className="relative p-2 hover:bg-gray-50 rounded-lg transition-colors">
+              <Bell className="w-6 h-6 text-gray-600" />
             </button>
           </div>
         </div>
 
         <div className="p-6 space-y-6">
           {meetingLaunchError && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-200 text-sm">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-200 text-sm">
               {meetingLaunchError}
             </div>
           )}
 
           {/* Hero */}
-          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Virtual Classroom</h1>
                 <p className="text-indigo-100 text-sm">Schedule and host online classes powered by Jitsi Meet — no account or download needed</p>
-                <div className="mt-3 flex items-center gap-2 text-xs text-white/70">
+                <div className="mt-3 flex items-center gap-2 text-xs text-gray-900/70">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                   Jitsi Meet API Connected
                 </div>
               </div>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-white/15 hover:bg-white/25 text-white rounded-xl border border-white/20 backdrop-blur-sm transition-all font-medium"
+                className="flex items-center gap-2 px-6 py-3 bg-white/15 hover:bg-white/25 text-gray-900 rounded-xl border border-white/20 backdrop-blur-sm transition-all font-medium"
               >
                 <Plus className="w-5 h-5" />
                 Schedule Meeting
@@ -655,31 +655,31 @@ function VideoConferencing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Total Meetings", value: meetings.length, icon: <Video className="w-5 h-5" />, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
-              { label: "Live Now", value: meetings.filter((m) => m.status === "Ongoing").length, icon: <Play className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
-              { label: "Scheduled", value: meetings.filter((m) => m.status === "Scheduled").length, icon: <Calendar className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-              { label: "Completed", value: meetings.filter((m) => m.status === "Ended").length, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+              { label: "Live Now", value: meetings.filter((m) => m.status === "Ongoing").length, icon: <Play className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-50 border-red-200" },
+              { label: "Scheduled", value: meetings.filter((m) => m.status === "Scheduled").length, icon: <Calendar className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-50 border-blue-200" },
+              { label: "Completed", value: meetings.filter((m) => m.status === "Ended").length, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-green-600", bg: "bg-green-50 border-green-200" },
             ].map(({ label, value, icon, color, bg }) => (
               <div key={label} className={`rounded-xl p-5 border ${bg}`}>
                 <div className={`${color} mb-2`}>{icon}</div>
-                <p className="text-gray-400 text-xs mb-1">{label}</p>
+                <p className="text-gray-600 text-xs mb-1">{label}</p>
                 <p className={`text-2xl font-bold ${color}`}>{value}</p>
               </div>
             ))}
           </div>
 
           {/* Search & filter */}
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/10 flex flex-col md:flex-row gap-4">
+          <div className="bg-white rounded-xl p-4 border border-gray-200 flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
               <input
                 type="text"
                 placeholder="Search meetings by title, class, or subject…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
               />
             </div>
-            <div className="flex bg-black/20 rounded-lg p-1 border border-white/10">
+            <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200">
               {[
                 { key: "all", label: "All" },
                 { key: "Scheduled", label: "Scheduled" },
@@ -689,7 +689,7 @@ function VideoConferencing() {
                 <button
                   key={key}
                   onClick={() => setFilterStatus(key)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${filterStatus === key ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"}`}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${filterStatus === key ? "bg-gray-100 text-gray-900" : "text-gray-600 hover:text-gray-900"}`}
                 >
                   {label}
                 </button>
@@ -700,15 +700,15 @@ function VideoConferencing() {
           {/* Meetings list */}
           <div className="space-y-4">
             {filteredMeetings.length === 0 ? (
-              <div className="bg-gray-900/40 rounded-xl border border-white/5 p-16 text-center">
+              <div className="bg-gray-500 rounded-xl border border-gray-100 p-16 text-center">
                 <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Video className="w-8 h-8 text-indigo-400" />
                 </div>
-                <h3 className="text-white font-semibold mb-1">No meetings yet</h3>
-                <p className="text-gray-400 text-sm mb-4">Schedule your first online class session.</p>
+                <h3 className="text-gray-900 font-semibold mb-1">No meetings yet</h3>
+                <p className="text-gray-600 text-sm mb-4">Schedule your first online class session.</p>
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition-all"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-gray-900 rounded-xl text-sm font-medium transition-all"
                 >
                   <Plus className="w-4 h-4" />
                   Schedule Meeting
@@ -716,19 +716,19 @@ function VideoConferencing() {
               </div>
             ) : (
               filteredMeetings.map((meeting) => (
-                <div key={meeting.id} className="bg-gray-900/60 rounded-xl border border-white/10 hover:border-indigo-500/30 transition-all shadow-sm">
+                <div key={meeting.id} className="bg-white rounded-xl border border-gray-200 hover:border-indigo-500/30 transition-all shadow-sm">
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-3 flex-wrap">
-                          <h3 className="text-base font-semibold text-white">{meeting.title}</h3>
+                          <h3 className="text-base font-semibold text-gray-900">{meeting.title}</h3>
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(meeting.status)}`}>
                             {meeting.status === "Ongoing" && <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />}
                             {meeting.status}
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm text-gray-400">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm text-gray-600">
                           {meeting.class && (
                             <div className="flex items-center gap-2">
                               <GraduationCap className="w-4 h-4 text-indigo-400" />
@@ -747,7 +747,7 @@ function VideoConferencing() {
 
                         {/* Meeting link */}
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-black/20 border border-white/10 rounded-lg">
+                          <div className="flex-1 flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
                             <ExternalLink className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                             <a
                               href={meeting.meetingLink}
@@ -760,7 +760,7 @@ function VideoConferencing() {
                           </div>
                           <button
                             onClick={() => handleCopyLink(meeting.meetingLink, meeting.id)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${copySuccess === meeting.id ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "border-white/10 text-gray-400 hover:text-white hover:bg-white/5"}`}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${copySuccess === meeting.id ? "bg-green-500/20 text-green-300 border-green-300" : "border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50"}`}
                             title="Copy link"
                           >
                             {copySuccess === meeting.id ? <><CheckCircle2 className="w-3.5 h-3.5" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
@@ -772,7 +772,7 @@ function VideoConferencing() {
                         {(meeting.status === "Scheduled" || meeting.status === "Ongoing") && (
                           <button
                             onClick={() => launchJitsi(meeting)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-gray-900" : "bg-indigo-600 hover:bg-indigo-700 text-gray-900"}`}
                           >
                             <Video className="w-4 h-4" />
                             {meeting.status === "Ongoing" ? "Rejoin" : "Start"}
@@ -780,7 +780,7 @@ function VideoConferencing() {
                         )}
                         <button
                           onClick={() => handleDeleteMeeting(meeting.id)}
-                          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-50 rounded-lg transition-all"
                           title="Delete meeting"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -798,27 +798,27 @@ function VideoConferencing() {
       {/* ── Create Meeting Modal ──────────────────────────────────────── */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-2xl max-w-xl w-full shadow-2xl border border-white/10 max-h-[90vh] overflow-y-auto scrollbar-hide">
-            <div className="p-6 border-b border-white/10 flex items-center justify-between sticky top-0 bg-gray-900 z-10 rounded-t-2xl">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-gray-200 max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <div>
-                <h3 className="text-lg font-semibold text-white">Schedule Online Class</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Powered by Jitsi Meet — no software download needed</p>
+                <h3 className="text-lg font-semibold text-gray-900">Schedule Online Class</h3>
+                <p className="text-xs text-gray-600 mt-0.5">Powered by Jitsi Meet — no software download needed</p>
               </div>
-              <button onClick={handleCloseModal} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-400" />
+              <button onClick={handleCloseModal} className="p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
 
             <div className="p-6 space-y-4">
               {/* Title */}
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Meeting Title <span className="text-red-400">*</span></label>
+                <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Meeting Title <span className="text-red-400">*</span></label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   placeholder="e.g., Mathematics – Algebra Class"
-                  className={`w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.title ? "border-red-500" : "border-white/20"}`}
+                  className={`w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.title ? "border-red-500" : "border-white/20"}`}
                 />
                 {formErrors.title && <p className="mt-1 text-xs text-red-400">{formErrors.title}</p>}
               </div>
@@ -826,11 +826,11 @@ function VideoConferencing() {
               {/* Class & Subject */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Class</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Class</label>
                   <select
                     value={formData.class}
                     onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                    className={`w-full px-4 py-3 bg-black/20 text-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.class ? "border-red-500" : "border-white/20"}`}
+                    className={`w-full px-4 py-3 bg-gray-50 text-gray-900 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.class ? "border-red-500" : "border-white/20"}`}
                   >
                     <option value="">Select class</option>
                     {classOptions.map((c) => (
@@ -840,13 +840,13 @@ function VideoConferencing() {
                   {formErrors.class && <p className="mt-1 text-xs text-red-400">{formErrors.class}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Subject</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Subject</label>
                   <input
                     type="text"
                     value={formData.subject}
                     onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                     placeholder="e.g., Mathematics"
-                    className={`w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.subject ? "border-red-500" : "border-white/20"}`}
+                    className={`w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.subject ? "border-red-500" : "border-white/20"}`}
                   />
                   {formErrors.subject && <p className="mt-1 text-xs text-red-400">{formErrors.subject}</p>}
                 </div>
@@ -855,31 +855,31 @@ function VideoConferencing() {
               {/* Date, Time, Duration */}
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Date <span className="text-red-400">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Date <span className="text-red-400">*</span></label>
                   <input
                     type="date"
                     value={formData.date}
                     onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    className={`w-full px-4 py-3 bg-black/20 text-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.date ? "border-red-500" : "border-white/20"}`}
+                    className={`w-full px-4 py-3 bg-gray-50 text-gray-900 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.date ? "border-red-500" : "border-white/20"}`}
                   />
                   {formErrors.date && <p className="mt-1 text-xs text-red-400">{formErrors.date}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Time <span className="text-red-400">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Time <span className="text-red-400">*</span></label>
                   <input
                     type="time"
                     value={formData.time}
                     onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                    className={`w-full px-4 py-3 bg-black/20 text-white border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.time ? "border-red-500" : "border-white/20"}`}
+                    className={`w-full px-4 py-3 bg-gray-50 text-gray-900 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.time ? "border-red-500" : "border-white/20"}`}
                   />
                   {formErrors.time && <p className="mt-1 text-xs text-red-400">{formErrors.time}</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 uppercase tracking-wider">Duration</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Duration</label>
                   <select
                     value={formData.duration}
                     onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full px-4 py-3 bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                    className="w-full px-4 py-3 bg-gray-50 text-gray-900 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
                   >
                     {["30", "45", "60", "90", "120"].map((d) => (
                       <option key={d} value={d}>{d} min</option>
@@ -897,21 +897,21 @@ function VideoConferencing() {
               </div>
 
               {saveError && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex gap-2">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2">
                   <AlertCircle className="w-4 h-4 text-red-300 shrink-0 mt-0.5" />
                   <p className="text-xs text-red-200 leading-relaxed">{saveError}</p>
                 </div>
               )}
             </div>
 
-            <div className="p-6 border-t border-white/10 flex gap-3">
-              <button onClick={handleCloseModal} className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-white/5 text-sm font-medium transition-colors">
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+              <button onClick={handleCloseModal} className="flex-1 px-4 py-2.5 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors">
                 Cancel
               </button>
               <button
                 onClick={handleCreateMeeting}
                 disabled={isSaving}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-gray-900 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {isSaving ? "Scheduling…" : "Schedule Meeting"}
               </button>

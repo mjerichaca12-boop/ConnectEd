@@ -82,13 +82,13 @@ function NotificationDropdown({
             <div className="flex items-center gap-2">
               {unreadCount > 0 && <button
     onClick={handleMarkAllRead}
-    className="text-xs text-emerald-600 hover:text-emerald-700 cursor-pointer whitespace-nowrap"
+    className="text-xs text-green-600 hover:text-green-700 cursor-pointer whitespace-nowrap"
   >
                   Mark all read
                 </button>}
               <button
     onClick={() => setIsOpen(false)}
-    className="text-gray-400 hover:text-gray-600 cursor-pointer"
+    className="text-gray-600 hover:text-gray-600 cursor-pointer"
   >
                 <X className="w-4 h-4" />
               </button>
@@ -105,16 +105,16 @@ function NotificationDropdown({
     key={item.id}
     type="button"
     onClick={() => handleNotificationClick(item)}
-    className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-0 ${!item.isRead ? "bg-emerald-50/50" : ""}`}
+    className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 last:border-0 ${!item.isRead ? "bg-green-50/50" : ""}`}
   >
                   <div className="flex items-start gap-2">
-                    {!item.isRead && <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0 mt-1.5" />}
+                    {!item.isRead && <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0 mt-1.5" />}
                     <div className={`flex-1 min-w-0 ${item.isRead ? "pl-4" : ""}`}>
                       <p className={`text-sm font-medium ${!item.isRead ? "text-gray-900" : "text-gray-500"}`}>
                         {item.title}
                       </p>
                       <p className="text-xs text-gray-500 truncate">{item.message}</p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">{item.timestamp}</p>
+                      <p className="text-[10px] text-gray-600 mt-0.5">{item.timestamp}</p>
                     </div>
                   </div>
                 </button>)}

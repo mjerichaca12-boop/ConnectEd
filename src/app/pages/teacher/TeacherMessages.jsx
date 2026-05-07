@@ -541,16 +541,16 @@ function TeacherMessages() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Top Bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20 flex-shrink-0">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
             <div>
               <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Teacher Portal</p>
-              <h2 className="text-lg font-bold text-white">Messages</h2>
+              <h2 className="text-lg font-bold text-gray-900">Messages</h2>
             </div>
             <NotificationDropdown
               notifications={notificationList}
@@ -566,13 +566,13 @@ function TeacherMessages() {
 
         <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
+          <div className="bg-gradient-to-r from-green-600 to-teal-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <MessageSquare className="w-7 h-7 opacity-80" />
                 <div>
                   <h1 className="text-xl font-bold">Messages</h1>
-                  <p className="text-emerald-100 text-sm">
+                  <p className="text-green-100 text-sm">
                     {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
                     {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
@@ -589,32 +589,32 @@ function TeacherMessages() {
           </div>
 
           {pageError && (
-            <div className="bg-amber-500/10 border border-amber-500/20 text-amber-200 rounded-xl px-4 py-3 text-sm flex items-start gap-2 flex-shrink-0">
+            <div className="bg-amber-50 border border-amber-200 text-amber-200 rounded-xl px-4 py-3 text-sm flex items-start gap-2 flex-shrink-0">
               <Clock className="w-4 h-4 mt-0.5" />
               <span>{pageError}</span>
             </div>
           )}
 
           {/* Main chat layout */}
-          <div className="flex-1 overflow-hidden bg-gray-900/60 rounded-xl border border-white/10 shadow-sm grid grid-cols-1 lg:grid-cols-3">
+          <div className="flex-1 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* Left: Conversations List */}
-            <div className="lg:col-span-1 border-r border-white/10 flex flex-col">
+            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col">
 
               {/* Search + New */}
-              <div className="p-3 border-b border-white/5 flex gap-2">
+              <div className="p-3 border-b border-gray-100 flex gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full pl-9 pr-3 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                   />
                 </div>
                 <button
                   onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
-                  className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors flex-shrink-0"
+                  className="p-2.5 bg-green-600 text-gray-900 rounded-xl hover:bg-green-700 transition-colors flex-shrink-0"
                   title="New Message"
                 >
                   <Plus className="w-4 h-4" />
@@ -622,7 +622,7 @@ function TeacherMessages() {
               </div>
 
               {/* Filter Tabs */}
-              <div className="px-3 pt-2 pb-1.5 border-b border-white/5 flex gap-1.5 overflow-x-auto scrollbar-hide flex-shrink-0">
+              <div className="px-3 pt-2 pb-1.5 border-b border-gray-100 flex gap-1.5 overflow-x-auto scrollbar-hide flex-shrink-0">
                 {FILTERS.map(({ key, label, icon: Icon }) => {
                   const count = filterCounts[key];
                   const isActive = activeFilter === key;
@@ -632,8 +632,8 @@ function TeacherMessages() {
                       onClick={() => setActiveFilter(key)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
-                          ? "bg-emerald-600 text-white shadow-sm"
-                          : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                          ? "bg-green-600 text-gray-900 shadow-sm"
+                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-200"
                       }`}
                     >
                       <Icon className="w-3 h-3" />
@@ -642,10 +642,10 @@ function TeacherMessages() {
                         <span
                           className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] flex items-center justify-center ${
                             isActive
-                              ? "bg-white/25 text-white"
+                              ? "bg-white/25 text-gray-900"
                               : key === "unread"
-                              ? "bg-emerald-500/20 text-emerald-400"
-                              : "bg-white/10 text-gray-400"
+                              ? "bg-green-500/20 text-green-600"
+                              : "bg-gray-100 text-gray-600"
                           }`}
                         >
                           {count}
@@ -660,16 +660,16 @@ function TeacherMessages() {
               <div className="flex-1 overflow-y-auto scrollbar-hide">
                 {filteredConvs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
-                    <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
+                    <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
                       {activeFilter === "videomeet" ? (
                         <Video className="w-6 h-6 text-blue-400" />
                       ) : activeFilter === "mentions" ? (
-                        <AtSign className="w-6 h-6 text-emerald-400" />
+                        <AtSign className="w-6 h-6 text-green-600" />
                       ) : (
-                        <MessageSquare className="w-6 h-6 text-emerald-400" />
+                        <MessageSquare className="w-6 h-6 text-green-600" />
                       )}
                     </div>
-                    <p className="text-sm font-medium text-gray-400 mb-1">
+                    <p className="text-sm font-medium text-gray-600 mb-1">
                       {activeFilter === "all"
                         ? "No conversations yet"
                         : activeFilter === "unread"
@@ -690,19 +690,19 @@ function TeacherMessages() {
                       <button
                         key={conv.id}
                         onClick={() => handleSelectConv(conv)}
-                        className={`w-full text-left px-4 py-3.5 hover:bg-black/20 transition-colors ${
+                        className={`w-full text-left px-4 py-3.5 hover:bg-gray-50 transition-colors ${
                           selectedConvId === conv.id
-                            ? "bg-emerald-500/8 border-l-2 border-emerald-500"
+                            ? "bg-green-500/8 border-l-2 border-green-500"
                             : ""
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="relative flex-shrink-0">
                             <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
                                 conv.isVideoMeet
                                   ? "bg-gradient-to-br from-blue-500 to-indigo-600"
-                                  : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                                  : "bg-gradient-to-br from-green-500 to-teal-600"
                               }`}
                             >
                               {conv.isVideoMeet ? (
@@ -713,13 +713,13 @@ function TeacherMessages() {
                             </div>
                             {conv.isVideoMeet && (
                               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
-                                <Video className="w-1.5 h-1.5 text-white" />
+                                <Video className="w-1.5 h-1.5 text-gray-900" />
                               </span>
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? "text-white" : "text-gray-300"}`}>
+                              <p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? "text-gray-900" : "text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
                               <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
@@ -735,13 +735,13 @@ function TeacherMessages() {
                                 {!conv.isVideoMeet && conv.section && ` · ${conv.section}`}
                               </p>
                               {conv.unreadCount > 0 && (
-                                <span className="w-5 h-5 bg-emerald-600 text-white text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
+                                <span className="w-5 h-5 bg-green-600 text-gray-900 text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
                                   {conv.unreadCount}
                                 </span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
-                              <p className="text-xs text-gray-300 truncate mt-0.5">
+                              <p className="text-xs text-gray-700 truncate mt-0.5">
                                 {getMessagePreview(conv.messages[conv.messages.length - 1])}
                               </p>
                             )}
@@ -759,12 +759,12 @@ function TeacherMessages() {
               {selectedConv ? (
                 <>
                   {/* Chat Header */}
-                  <div className="px-6 py-4 border-b border-white/10 flex items-center gap-3 flex-shrink-0">
+                  <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3 flex-shrink-0">
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
                         selectedConv.isVideoMeet
                           ? "bg-gradient-to-br from-blue-500 to-indigo-600"
-                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
+                          : "bg-gradient-to-br from-green-500 to-teal-600"
                       }`}
                     >
                       {selectedConv.isVideoMeet ? (
@@ -774,7 +774,7 @@ function TeacherMessages() {
                       )}
                     </div>
                     <div>
-                      <p className="font-semibold text-white">{selectedConv.participantName}</p>
+                      <p className="font-semibold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1">
                         {selectedConv.isVideoMeet ? (
                           <><Video className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Video Meet Chat</span></>
@@ -792,8 +792,8 @@ function TeacherMessages() {
                   >
                     {(selectedConv.messages || []).length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
-                          <Send className="w-6 h-6 text-gray-400" />
+                        <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
+                          <Send className="w-6 h-6 text-gray-600" />
                         </div>
                         <p className="text-sm text-gray-500">No messages yet. Say hello!</p>
                       </div>
@@ -806,10 +806,10 @@ function TeacherMessages() {
                             <div
                               className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                                 isTeacher
-                                  ? "bg-emerald-600 text-white rounded-br-sm"
+                                  ? "bg-green-600 text-gray-900 rounded-br-sm"
                                   : hasMention
-                                  ? "bg-yellow-500/15 border border-yellow-500/30 text-white rounded-bl-sm"
-                                  : "bg-white/5 text-white rounded-bl-sm"
+                                  ? "bg-yellow-500/15 border border-yellow-500/30 text-gray-900 rounded-bl-sm"
+                                  : "bg-gray-50 text-gray-900 rounded-bl-sm"
                               }`}
                             >
                               {hasMention && (
@@ -833,7 +833,7 @@ function TeacherMessages() {
                                 </a>
                               )}
                               {msg.text && <p className="leading-relaxed">{msg.text}</p>}
-                              <p className={`text-xs mt-1 ${isTeacher ? "text-emerald-100" : "text-gray-400"} text-right`}>
+                              <p className={`text-xs mt-1 ${isTeacher ? "text-green-100" : "text-gray-600"} text-right`}>
                                 {getTimeLabel(msg.time)}
                               </p>
                             </div>
@@ -846,8 +846,8 @@ function TeacherMessages() {
 
                   {/* Attachment Preview */}
                   {attachmentFile && (
-                    <div className="px-6 py-2 border-t border-white/5 flex items-center gap-2 text-sm text-gray-300">
-                      <Paperclip className="w-4 h-4 text-emerald-400" />
+                    <div className="px-6 py-2 border-t border-gray-100 flex items-center gap-2 text-sm text-gray-700">
+                      <Paperclip className="w-4 h-4 text-green-600" />
                       <span className="truncate">{attachmentFile.name}</span>
                       <button onClick={clearAttachment} className="ml-auto text-gray-500 hover:text-red-400">
                         <X className="w-4 h-4" />
@@ -858,7 +858,7 @@ function TeacherMessages() {
                   {/* Input */}
                   <form
                     onSubmit={handleSend}
-                    className="px-6 py-4 border-t border-white/10 flex items-center gap-2 flex-shrink-0"
+                    className="px-6 py-4 border-t border-gray-200 flex items-center gap-2 flex-shrink-0"
                   >
                     <input
                       ref={fileInputRef}
@@ -870,7 +870,7 @@ function TeacherMessages() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 text-gray-400 hover:text-emerald-400 transition-colors flex-shrink-0"
+                      className="p-2.5 text-gray-600 hover:text-green-600 transition-colors flex-shrink-0"
                       title="Attach file"
                     >
                       <Paperclip className="w-5 h-5" />
@@ -880,12 +880,12 @@ function TeacherMessages() {
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
                       placeholder={`Message ${selectedConv.participantName}...`}
-                      className="flex-1 px-4 py-2.5 bg-black/20 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                      className="flex-1 px-4 py-2.5 bg-gray-50 border border-white/20 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     />
                     <button
                       type="submit"
                       disabled={(!messageInput.trim() && !attachmentFile) || isUploadingAttachment}
-                      className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                      className="p-2.5 bg-green-600 text-gray-900 rounded-xl hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                     >
                       <Send className="w-5 h-5" />
                     </button>
@@ -893,14 +893,14 @@ function TeacherMessages() {
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4">
-                    <MessageSquare className="w-8 h-8 text-emerald-400" />
+                  <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mb-4">
+                    <MessageSquare className="w-8 h-8 text-green-600" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-300 mb-2">Select a conversation</h3>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">Select a conversation</h3>
                   <p className="text-gray-500 text-sm mb-5">Choose a conversation or start a new one.</p>
                   <button
                     onClick={() => { setShowNewModal(true); setStudentSearch(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-gray-900 rounded-xl hover:bg-green-700 transition-colors font-semibold text-sm"
                   >
                     <Plus className="w-4 h-4" />
                     New Message
@@ -915,35 +915,35 @@ function TeacherMessages() {
       {/* NEW MESSAGE MODAL */}
       {showNewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
-            <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between flex-shrink-0">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
-                  <Users className="w-5 h-5 text-emerald-400" />
+                <div className="p-2 bg-green-500/20 rounded-lg border border-green-300">
+                  <Users className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">New Message</h3>
-                  <p className="text-sm text-gray-400">Select a student to message</p>
+                  <h3 className="text-lg font-bold text-gray-900">New Message</h3>
+                  <p className="text-sm text-gray-600">Select a student to message</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowNewModal(false)}
-                className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-white/5 flex-shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                 <input
                   autoFocus
                   type="text"
                   value={studentSearch}
                   onChange={(e) => setStudentSearch(e.target.value)}
                   placeholder="Search students by name, ID, or class..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
               </div>
             </div>
@@ -953,7 +953,7 @@ function TeacherMessages() {
                 <div className="py-12 text-center">
                   <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No students enrolled in your classes yet.</p>
-                  <p className="text-xs text-gray-400 mt-1">Add students to a class first.</p>
+                  <p className="text-xs text-gray-600 mt-1">Add students to a class first.</p>
                 </div>
               ) : filteredStudents.length === 0 ? (
                 <div className="py-12 text-center">
@@ -968,21 +968,21 @@ function TeacherMessages() {
                       <button
                         key={student.id}
                         onClick={() => handleStartConversation(student)}
-                        className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-white/5 transition-colors text-left group"
+                        className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
                       >
-                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm flex-shrink-0">
                           {student.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{student.name}</p>
+                          <p className="text-sm font-semibold text-gray-900 truncate">{student.name}</p>
                           <p className="text-xs text-gray-500">
                             {student.studentId} · {student.classCode}{student.section && ` — ${student.section}`}
                           </p>
                           {hasConv && (
-                            <p className="text-xs text-emerald-400 font-medium mt-0.5">Existing conversation</p>
+                            <p className="text-xs text-green-600 font-medium mt-0.5">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-green-600 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}

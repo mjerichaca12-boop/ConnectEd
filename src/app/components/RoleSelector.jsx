@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, GraduationCap, BookOpen, Shield } from "lucide-react";
 const roles = [
-  { value: "student", label: "Student", icon: GraduationCap, color: "text-emerald-600", bgColor: "bg-emerald-50" },
+  { value: "student", label: "Student", icon: GraduationCap, color: "text-green-600", bgColor: "bg-green-50" },
   { value: "teacher", label: "Teacher", icon: BookOpen, color: "text-blue-600", bgColor: "bg-blue-50" },
   { value: "administrator", label: "Administrator", icon: Shield, color: "text-red-600", bgColor: "bg-red-50" }
 ];
@@ -11,19 +11,19 @@ function RoleSelector({
   label,
   required = false,
   allowedRoles,
-  accentColor = "emerald"
+  accentColor = "green"
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const availableRoles = allowedRoles ? roles.filter((role) => allowedRoles.includes(role.value)) : roles;
   const selectedRole = availableRoles.find((role) => role.value === value);
-  const borderColor = accentColor === "blue" ? "border-blue-500" : "border-emerald-500";
-  const ringColor = accentColor === "blue" ? "ring-blue-500" : "ring-emerald-500";
-  const hoverBorderColor = accentColor === "blue" ? "hover:border-blue-400" : "hover:border-emerald-400";
-  const selectedBgColor = accentColor === "blue" ? "bg-blue-50 border-blue-500" : "bg-emerald-50 border-emerald-500";
-  const selectedTextColor = accentColor === "blue" ? "text-blue-700" : "text-emerald-700";
-  const chevronColor = accentColor === "blue" ? "text-blue-600" : "text-emerald-600";
-  const indicatorBgColor = accentColor === "blue" ? "bg-blue-500" : "bg-emerald-500";
+  const borderColor = accentColor === "blue" ? "border-blue-500" : "border-green-500";
+  const ringColor = accentColor === "blue" ? "ring-blue-500" : "ring-green-500";
+  const hoverBorderColor = accentColor === "blue" ? "hover:border-blue-400" : "hover:border-green-400";
+  const selectedBgColor = accentColor === "blue" ? "bg-blue-50 border-blue-500" : "bg-green-50 border-green-500";
+  const selectedTextColor = accentColor === "blue" ? "text-blue-700" : "text-green-700";
+  const chevronColor = accentColor === "blue" ? "text-blue-600" : "text-green-600";
+  const indicatorBgColor = accentColor === "blue" ? "bg-blue-500" : "bg-green-500";
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {

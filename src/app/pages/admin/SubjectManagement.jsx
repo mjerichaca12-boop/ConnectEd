@@ -609,10 +609,10 @@ function SubjectManagement() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: "0ms" }} />
             <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "150ms" }} />
             <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "300ms" }} />
           </div>
@@ -623,9 +623,9 @@ function SubjectManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -633,12 +633,12 @@ function SubjectManagement() {
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Subject Management</h2>
+                <h2 className="text-lg font-bold text-gray-900">Subject Management</h2>
               </div>
               <NotificationDropdown
                 notifications={notificationList}
@@ -650,19 +650,19 @@ function SubjectManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Subject Management</h1>
-                <p className="text-gray-400">{subjects.length} subjects available</p>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Subject Management</h1>
+                <p className="text-gray-600">{subjects.length} subjects available</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20">
+              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
                 <Plus className="w-5 h-5" />
                 Add Subject
               </button>
@@ -670,46 +670,46 @@ function SubjectManagement() {
           </div>
 
           {errorMessage && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {successMessage && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
               {successMessage}
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
-              <p className="text-3xl font-bold text-white">{subjects.length}</p>
+              <p className="text-3xl font-bold text-gray-900">{subjects.length}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Credits</p>
-              <p className="text-3xl font-bold text-emerald-400">{subjects.reduce((sum, s) => sum + Number(s.credits || 0), 0)}</p>
+              <p className="text-3xl font-bold text-green-600">{subjects.reduce((sum, s) => sum + Number(s.credits || 0), 0)}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Enrolled</p>
               <p className="text-3xl font-bold text-blue-400">{subjects.reduce((sum, s) => sum + Number(s.enrolled || 0), 0)}</p>
             </div>
           </div>
 
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8 shadow-sm">
+          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
                   placeholder="Search by name, code, or teacher..."
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50"
+                  className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
                 />
               </div>
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-colors border border-white/10">
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
@@ -717,46 +717,46 @@ function SubjectManagement() {
           </div>
 
           {filteredSubjects.length === 0 ? (
-            <div className="bg-gray-900/80 rounded-xl border border-white/10 p-16 text-center">
+            <div className="bg-gray-1000 rounded-xl border border-gray-200 p-16 text-center">
               <BookOpen className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400">No subjects found.</p>
+              <p className="text-gray-600">No subjects found.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {filteredSubjects.map((subject) => (
-                <div key={subject.id} className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors overflow-hidden">
-                  <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 p-4 border-b border-white/5">
+                <div key={subject.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-colors overflow-hidden">
+                  <div className="bg-gradient-to-r from-green-500/10 to-teal-500/10 p-4 border-b border-gray-100">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-sm text-emerald-400 font-medium">{subject.code}</p>
-                        <h3 className="text-lg font-bold text-white mt-1">{subject.name}</h3>
+                        <p className="text-sm text-green-600 font-medium">{subject.code}</p>
+                        <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
                       </div>
-                      <div className="px-3 py-1 bg-black/40 border border-white/10 rounded-full">
-                        <p className="text-sm font-medium text-gray-300">{subject.credits} Credits</p>
+                      <div className="px-3 py-1 bg-black/40 border border-gray-200 rounded-full">
+                        <p className="text-sm font-medium text-gray-700">{subject.credits} Credits</p>
                       </div>
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
-                    <p className="text-gray-400 text-sm">{subject.description || "No description provided"}</p>
+                    <p className="text-gray-600 text-sm">{subject.description || "No description provided"}</p>
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-emerald-500/70" /><span className="text-gray-300">{getTeacherNameById(subject.teacher_id)}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-emerald-500/70" /><span className="text-gray-300">{subject.section || "No section assigned"}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-emerald-500/70" /><span className="text-gray-300">{subject.schedule}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{getTeacherNameById(subject.teacher_id)}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.section || "No section assigned"}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.schedule}</span></div>
                     </div>
-                    <div className="flex items-center justify-between pt-4 mt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-100">
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Enrollment</p>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-emerald-400">{subject.enrolled}/{subject.capacity}</p>
+                          <p className="text-sm font-medium text-green-600">{subject.enrolled}/{subject.capacity}</p>
                           <div className="w-16 h-1.5 bg-black/40 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500" style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
+                            <div className="h-full bg-green-500" style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-400" /></button>
-                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-emerald-400" /></button>
-                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-600" /></button>
+                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-green-600" /></button>
+                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4 text-red-500" /></button>
                       </div>
                     </div>
                   </div>
@@ -780,26 +780,26 @@ function SubjectManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Code</label>
-                    <input type="text" placeholder="e.g., CS101" value={subjectFormData.code} onChange={(e) => setSubjectFormData({ ...subjectFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" placeholder="e.g., CS101" value={subjectFormData.code} onChange={(e) => setSubjectFormData({ ...subjectFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.code && <p className="text-red-500 text-sm mt-1">{formErrors.code}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" placeholder="e.g., 3" value={subjectFormData.credits} onChange={(e) => setSubjectFormData({ ...subjectFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" inputMode="numeric" placeholder="e.g., 3" value={subjectFormData.credits} onChange={(e) => setSubjectFormData({ ...subjectFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.credits && <p className="text-red-500 text-sm mt-1">{formErrors.credits}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
-                    <input type="text" placeholder="e.g., Computer Science Fundamentals" value={subjectFormData.name} onChange={(e) => setSubjectFormData({ ...subjectFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" placeholder="e.g., Computer Science Fundamentals" value={subjectFormData.name} onChange={(e) => setSubjectFormData({ ...subjectFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.name && <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
-                    <textarea rows={3} placeholder="Brief description of the subject" value={subjectFormData.description} onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <textarea rows={3} placeholder="Brief description of the subject" value={subjectFormData.description} onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={subjectFormData.teacher} onChange={(e) => setSubjectFormData({ ...subjectFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}>
+                    <select value={subjectFormData.teacher} onChange={(e) => setSubjectFormData({ ...subjectFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
                       <option value="">Select teacher</option>
                       {teachers.map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
@@ -809,23 +809,23 @@ function SubjectManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" placeholder="e.g., Grade 10 - Section A" value={subjectFormData.section} onChange={(e) => setSubjectFormData({ ...subjectFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" placeholder="e.g., Grade 10 - Section A" value={subjectFormData.section} onChange={(e) => setSubjectFormData({ ...subjectFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
-                    <input type="text" inputMode="numeric" placeholder="e.g., 30" value={subjectFormData.capacity} onChange={(e) => setSubjectFormData({ ...subjectFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" inputMode="numeric" placeholder="e.g., 30" value={subjectFormData.capacity} onChange={(e) => setSubjectFormData({ ...subjectFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.capacity && <p className="text-red-500 text-sm mt-1">{formErrors.capacity}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" placeholder="e.g., MWF 8:00-9:00 AM" value={subjectFormData.schedule} onChange={(e) => setSubjectFormData({ ...subjectFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" placeholder="e.g., MWF 8:00-9:00 AM" value={subjectFormData.schedule} onChange={(e) => setSubjectFormData({ ...subjectFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.schedule && <p className="text-red-500 text-sm mt-1">{formErrors.schedule}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
                   <button onClick={handleCloseAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Subject"}
                   </button>
@@ -849,26 +849,26 @@ function SubjectManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Code</label>
-                    <input type="text" value={editFormData.code} onChange={(e) => setEditFormData({ ...editFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" value={editFormData.code} onChange={(e) => setEditFormData({ ...editFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.code && <p className="text-red-500 text-sm mt-1">{editFormErrors.code}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" value={editFormData.credits} onChange={(e) => setEditFormData({ ...editFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" inputMode="numeric" value={editFormData.credits} onChange={(e) => setEditFormData({ ...editFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.credits && <p className="text-red-500 text-sm mt-1">{editFormErrors.credits}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
-                    <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.name && <p className="text-red-500 text-sm mt-1">{editFormErrors.name}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
-                    <textarea rows={3} value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <textarea rows={3} value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={editFormData.teacher} onChange={(e) => setEditFormData({ ...editFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}>
+                    <select value={editFormData.teacher} onChange={(e) => setEditFormData({ ...editFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
                       <option value="">Select teacher</option>
                       {teachers.map((teacher) => (
                         <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
@@ -878,23 +878,23 @@ function SubjectManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
-                    <input type="text" inputMode="numeric" value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" inputMode="numeric" value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.capacity && <p className="text-red-500 text-sm mt-1">{editFormErrors.capacity}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" value={editFormData.schedule} onChange={(e) => setEditFormData({ ...editFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`} />
+                    <input type="text" value={editFormData.schedule} onChange={(e) => setEditFormData({ ...editFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.schedule && <p className="text-red-500 text-sm mt-1">{editFormErrors.schedule}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
                   <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Subject"}
                   </button>
@@ -913,15 +913,15 @@ function SubjectManagement() {
               <button onClick={() => setShowViewModal(false)} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
             <div className="p-6">
-              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 mb-6">
+              <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-xl p-6 mb-6">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-sm text-emerald-600 font-medium mb-1">{selectedSubject.code}</p>
+                    <p className="text-sm text-green-600 font-medium mb-1">{selectedSubject.code}</p>
                     <h4 className="text-2xl font-bold text-gray-900">{selectedSubject.name}</h4>
                   </div>
                   <div className="px-4 py-2 bg-white rounded-full">
                     <div className="flex items-center gap-2">
-                      <Award className="w-5 h-5 text-emerald-600" />
+                      <Award className="w-5 h-5 text-green-600" />
                       <span className="font-semibold text-gray-900">{selectedSubject.credits} Credits</span>
                     </div>
                   </div>
@@ -931,25 +931,25 @@ function SubjectManagement() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Teacher</label>
-                    <div className="flex items-center gap-2"><User className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{getTeacherNameById(selectedSubject.teacher_id)}</p></div>
+                    <div className="flex items-center gap-2"><User className="w-4 h-4 text-green-600" /><p className="text-gray-900">{getTeacherNameById(selectedSubject.teacher_id)}</p></div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Section/Class</label>
-                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedSubject.section || "No section assigned"}</p></div>
+                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.section || "No section assigned"}</p></div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Schedule</label>
-                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedSubject.schedule}</p></div>
+                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.schedule}</p></div>
                   </div>
                 </div>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Capacity</label>
-                    <div className="flex items-center gap-2"><Users className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedSubject.capacity} students</p></div>
+                    <div className="flex items-center gap-2"><Users className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.capacity} students</p></div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Currently Enrolled</label>
-                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-emerald-600" /><p className="text-gray-900">{selectedSubject.enrolled} students</p></div>
+                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.enrolled} students</p></div>
                   </div>
                 </div>
                 <div className="md:col-span-2">
@@ -964,13 +964,13 @@ function SubjectManagement() {
                       <span className="font-medium text-gray-900">{selectedSubject.capacity - selectedSubject.enrolled} / {selectedSubject.capacity}</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 h-3 rounded-full transition-all" style={{ width: `${selectedSubject.capacity > 0 ? selectedSubject.enrolled / selectedSubject.capacity * 100 : 0}%` }} />
+                      <div className="bg-gradient-to-r from-green-600 to-teal-600 h-3 rounded-full transition-all" style={{ width: `${selectedSubject.capacity > 0 ? selectedSubject.enrolled / selectedSubject.capacity * 100 : 0}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
-                <button onClick={() => { setShowViewModal(false); handleEditSubject(selectedSubject); }} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"><Edit className="w-4 h-4" />Edit Subject</button>
+                <button onClick={() => { setShowViewModal(false); handleEditSubject(selectedSubject); }} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"><Edit className="w-4 h-4" />Edit Subject</button>
                 <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Close</button>
               </div>
             </div>
@@ -980,41 +980,41 @@ function SubjectManagement() {
 
       {showDeleteConfirm && subjectToDelete && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-950 rounded-2xl shadow-2xl max-w-md w-full transform border border-white/10 overflow-hidden">
-            <div className="flex items-start justify-between p-6 border-b border-white/10 bg-black/20">
+          <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-md w-full transform border border-gray-200 overflow-hidden">
+            <div className="flex items-start justify-between p-6 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl border bg-red-500/10 border-red-500/20">
+                <div className="p-2 rounded-xl border bg-red-50 border-red-200">
                   <AlertTriangle className="w-6 h-6 text-red-500" />
                 </div>
-                <h3 className="text-xl font-semibold text-white">Delete Subject</h3>
+                <h3 className="text-xl font-semibold text-gray-900">Delete Subject</h3>
               </div>
               <button
                 type="button"
                 onClick={() => { setShowDeleteConfirm(false); setSubjectToDelete(null); }}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-gray-600 hover:text-gray-900 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 bg-slate-900/50">
-              <p className="text-gray-300 leading-relaxed">
+              <p className="text-gray-700 leading-relaxed">
                 Are you sure you want to permanently delete {subjectToDelete.name}? This action cannot be undone.
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-3 p-6 bg-black/40 rounded-b-2xl border-t border-white/5">
+            <div className="flex items-center justify-end gap-3 p-6 bg-black/40 rounded-b-2xl border-t border-gray-100">
               <button
                 type="button"
                 onClick={() => { setShowDeleteConfirm(false); setSubjectToDelete(null); }}
-                className="px-6 py-2.5 text-gray-300 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all duration-200 font-medium"
+                className="px-6 py-2.5 text-gray-700 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-all duration-200 font-medium"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-6 py-2.5 text-white rounded-xl transition-all duration-200 font-medium shadow-lg bg-red-600 hover:bg-red-700"
+                className="px-6 py-2.5 text-gray-900 rounded-xl transition-all duration-200 font-medium shadow-lg bg-red-600 hover:bg-red-700"
               >
                 Delete
               </button>

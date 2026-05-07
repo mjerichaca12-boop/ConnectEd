@@ -304,28 +304,28 @@ const getAudienceStyles = (audience) => {
   const normalizedAudience = String(audience ?? "").toLowerCase();
 
   if (normalizedAudience.includes("school")) {
-    return "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
+    return "bg-green-50 text-green-300 border-green-200";
   }
 
   if (normalizedAudience.includes("teacher")) {
-    return "bg-red-500/10 text-red-300 border-red-500/20";
+    return "bg-red-50 text-red-300 border-red-200";
   }
 
-  return "bg-blue-500/10 text-blue-300 border-blue-500/20";
+  return "bg-blue-50 text-blue-300 border-blue-200";
 };
 
 const getPriorityStyles = (priority) => {
   const normalizedPriority = String(priority ?? "").toLowerCase();
 
   if (normalizedPriority === "high") {
-    return "bg-red-500/10 text-red-300 border-red-500/20";
+    return "bg-red-50 text-red-300 border-red-200";
   }
 
   if (normalizedPriority === "low") {
-    return "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
+    return "bg-green-50 text-green-300 border-green-200";
   }
 
-  return "bg-amber-500/10 text-amber-300 border-amber-500/20";
+  return "bg-amber-50 text-amber-300 border-amber-200";
 };
 
 const getAnnouncementValidationErrors = (data) => {
@@ -1552,18 +1552,18 @@ function AdminAnnouncements() {
 
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-gray-950 rounded-2xl shadow-2xl max-w-md w-full border border-white/10 overflow-hidden">
-          <div className="flex items-start justify-between p-6 border-b border-white/10 bg-black/20">
+        <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-md w-full border border-gray-200 overflow-hidden">
+          <div className="flex items-start justify-between p-6 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl border bg-red-500/10 border-red-500/20">
+              <div className="p-2 rounded-xl border bg-red-50 border-red-200">
                 <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
-              <h3 className="text-4 font-semibold text-white">Delete Announcement</h3>
+              <h3 className="text-4 font-semibold text-gray-900">Delete Announcement</h3>
             </div>
             <button
               type="button"
               onClick={() => setDeleteConfirm({ isOpen: false, announcementId: "", announcementTitle: "" })}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-600 hover:text-gray-900 transition-colors"
               disabled={isSubmitting}
             >
               <X className="w-5 h-5" />
@@ -1571,16 +1571,16 @@ function AdminAnnouncements() {
           </div>
 
           <div className="p-6 bg-slate-900/50">
-            <p className="text-gray-300 leading-relaxed">
+            <p className="text-gray-700 leading-relaxed">
               Are you sure you want to permanently delete {deleteConfirm.announcementTitle}? This action cannot be undone.
             </p>
           </div>
 
-          <div className="flex items-center justify-end gap-3 p-6 bg-black/40 rounded-b-2xl border-t border-white/5">
+          <div className="flex items-center justify-end gap-3 p-6 bg-black/40 rounded-b-2xl border-t border-gray-100">
             <button
               type="button"
               onClick={() => setDeleteConfirm({ isOpen: false, announcementId: "", announcementTitle: "" })}
-              className="px-6 py-2.5 text-gray-300 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all duration-200 font-medium"
+              className="px-6 py-2.5 text-gray-700 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-all duration-200 font-medium"
               disabled={isSubmitting}
             >
               Cancel
@@ -1588,7 +1588,7 @@ function AdminAnnouncements() {
             <button
               type="button"
               onClick={handleDeleteAnnouncement}
-              className="px-6 py-2.5 text-white rounded-xl transition-all duration-200 font-medium shadow-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 text-gray-900 rounded-xl transition-all duration-200 font-medium shadow-lg bg-red-600 hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
               disabled={isSubmitting}
             >
               {isSubmitting ? "Deleting..." : "Delete"}
@@ -1600,9 +1600,9 @@ function AdminAnnouncements() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -1610,12 +1610,12 @@ function AdminAnnouncements() {
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Announcements</h2>
+                <h2 className="text-lg font-bold text-gray-900">Announcements</h2>
               </div>
               <NotificationDropdown
                 notifications={notificationList}
@@ -1627,24 +1627,24 @@ function AdminAnnouncements() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Announcements</h1>
-                <p className="text-gray-400">{announcements.length} published announcements</p>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Announcements</h1>
+                <p className="text-gray-600">{announcements.length} published announcements</p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   handleOpenCreateModal();
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20"
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20"
               >
                 <Plus className="w-5 h-5" />
                 Create Announcement
@@ -1653,44 +1653,44 @@ function AdminAnnouncements() {
           </div>
 
           {(errorMessage || successMessage) && (
-            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"}`}>
+            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-200 bg-red-50 text-red-200" : "border-green-200 bg-green-50 text-green-200"}`}>
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMessage || successMessage}</span>
             </div>
           )}
 
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8 shadow-sm">
+          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
                 type="text"
                 placeholder="Search announcements..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50"
+                className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
               />
             </div>
           </div>
 
           <div className="space-y-4">
             {filteredAnnouncements.length === 0 ? (
-              <div className="bg-gray-900/80 rounded-xl border border-white/10 p-16 text-center">
+              <div className="bg-gray-1000 rounded-xl border border-gray-200 p-16 text-center">
                 <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">No announcements found.</p>
+                <p className="text-gray-600">No announcements found.</p>
               </div>
             ) : (
               filteredAnnouncements.map((announcement) => (
-                <div key={announcement.id} className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors">
+                <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-colors">
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                       <div className="flex-1">
                         <div className="flex flex-wrap items-start gap-3 mb-3">
-                          <h3 className="text-lg font-semibold text-white">{announcement.title}</h3>
+                          <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getPriorityStyles(announcement.priority)}`}>
                             {formatPriorityLabel(announcement.priority)}
                           </span>
                         </div>
-                        <p className="text-gray-400 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
+                        <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
                         {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
                           <div className="space-y-3 mb-4">
                             {announcement.attachments.map((attachment, index) => {
@@ -1700,7 +1700,7 @@ function AdminAnnouncements() {
                                     <img
                                       src={attachment.fileUrl}
                                       alt={attachment.fileName || "Announcement attachment"}
-                                      className="max-h-80 w-full rounded-xl border border-white/10 object-cover bg-black/20"
+                                      className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
                                     />
                                   </a>
                                 );
@@ -1708,7 +1708,7 @@ function AdminAnnouncements() {
 
                               if (attachment.kind === "video") {
                                 return (
-                                  <div key={`${announcement.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                                  <div key={`${announcement.id}-attachment-${index}`} className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                                     <video controls src={attachment.fileUrl} className="w-full max-h-80 bg-black" />
                                   </div>
                                 );
@@ -1720,7 +1720,7 @@ function AdminAnnouncements() {
                                   href={attachment.fileUrl || attachment.filePath || "#"}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
+                                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
                                 >
                                   <File className="w-3 h-3" />
                                   {attachment.fileName || `File ${index + 1}`}
@@ -1741,14 +1741,14 @@ function AdminAnnouncements() {
                         <button
                           type="button"
                           onClick={() => handleOpenEditModal(announcement)}
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                           title="Edit"
                         >
-                          <Edit className="w-4 h-4 text-emerald-400" />
+                          <Edit className="w-4 h-4 text-green-600" />
                         </button>
                         <button
                           type="button"
-                          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                           onClick={() => setDeleteConfirm({ isOpen: true, announcementId: announcement.id, announcementTitle: announcement.title })}
                           title="Delete"
                         >
@@ -1784,7 +1784,7 @@ function AdminAnnouncements() {
                     value={formData.title}
                     onChange={(event) => handleCreateFieldChange("title", event.target.value)}
                     onBlur={() => handleCreateFieldBlur("title")}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${formErrors.title ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${formErrors.title ? "border-red-500" : "border-gray-300"}`}
                     placeholder="Enter announcement title"
                   />
                   {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
@@ -1796,7 +1796,7 @@ function AdminAnnouncements() {
                     onChange={(event) => handleCreateFieldChange("content", event.target.value)}
                     onBlur={() => handleCreateFieldBlur("content")}
                     rows={5}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none ${formErrors.content ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none ${formErrors.content ? "border-red-500" : "border-gray-300"}`}
                     placeholder="Enter announcement content"
                   />
                   {formErrors.content && <p className="mt-1 text-sm text-red-600">{formErrors.content}</p>}
@@ -1840,7 +1840,7 @@ function AdminAnnouncements() {
                   <button
                     type="button"
                     onClick={() => announcementFileInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-emerald-200 rounded-lg text-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-green-200 rounded-lg text-sm text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
                   >
                     <Paperclip className="w-4 h-4" />
                     Choose files
@@ -1864,7 +1864,7 @@ function AdminAnnouncements() {
                 <button onClick={handleCloseCreateModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -1898,7 +1898,7 @@ function AdminAnnouncements() {
                     value={editFormData.title}
                     onChange={(event) => handleEditFieldChange("title", event.target.value)}
                     onBlur={() => handleEditFieldBlur("title")}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 ${editFormErrors.title ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${editFormErrors.title ? "border-red-500" : "border-gray-300"}`}
                     placeholder="Enter announcement title"
                   />
                   {editFormErrors.title && <p className="mt-1 text-sm text-red-600">{editFormErrors.title}</p>}
@@ -1910,7 +1910,7 @@ function AdminAnnouncements() {
                     onChange={(event) => handleEditFieldChange("content", event.target.value)}
                     onBlur={() => handleEditFieldBlur("content")}
                     rows={5}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none ${editFormErrors.content ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none ${editFormErrors.content ? "border-red-500" : "border-gray-300"}`}
                     placeholder="Enter announcement content"
                   />
                   {editFormErrors.content && <p className="mt-1 text-sm text-red-600">{editFormErrors.content}</p>}
@@ -1996,7 +1996,7 @@ function AdminAnnouncements() {
                   <button
                     type="button"
                     onClick={() => announcementFileInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-emerald-200 rounded-lg text-sm text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-green-200 rounded-lg text-sm text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
                   >
                     <Paperclip className="w-4 h-4" />
                     Choose files
@@ -2020,7 +2020,7 @@ function AdminAnnouncements() {
                 <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />

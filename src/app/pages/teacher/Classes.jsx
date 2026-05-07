@@ -210,9 +210,9 @@ function Classes() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -220,9 +220,9 @@ function Classes() {
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
         {/* Top Bar */}
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-white">Classes</h2>
+            <h2 className="text-xl font-bold text-gray-900">Classes</h2>
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) =>
@@ -237,7 +237,7 @@ function Classes() {
 
         <div className="p-6 space-y-6">
           {/* Header */}
-          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
             <div
               className="absolute inset-0 opacity-10"
               style={{
@@ -248,7 +248,7 @@ function Classes() {
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">My Classes</h1>
-                <p className="text-emerald-50 text-sm">
+                <p className="text-green-50 text-sm">
                   {classes[0]?.semester || "First Semester 2026"} &bull; {classes.length} {classes.length === 1 ? "Class" : "Classes"}
                 </p>
               </div>
@@ -256,28 +256,28 @@ function Classes() {
           </div>
 
           {/* Search */}
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8">
+          <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
                 type="text"
                 placeholder="Search classes by name or code..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50 transition-colors"
               />
             </div>
           </div>
 
           {filteredClasses.length === 0 ? (
-            <div className="bg-gray-900/60 rounded-xl border border-white/10 p-16 text-center">
-              <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-                <BookOpen className="w-8 h-8 text-emerald-400" />
+            <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+              <div className="w-16 h-16 bg-green-50 rounded-2xl border border-green-200 flex items-center justify-center mx-auto mb-4">
+                <BookOpen className="w-8 h-8 text-green-600" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 {searchQuery ? "No classes found" : "No classes assigned yet"}
               </h3>
-              <p className="text-gray-400 mb-6">
+              <p className="text-gray-600 mb-6">
                 {searchQuery
                   ? "Try a different search term."
                   : "Your school administrator has not assigned you any classes yet."}
@@ -289,39 +289,39 @@ function Classes() {
                 <div
                   key={classItem.id}
                   onClick={() => navigate(`/teacher/class/${classItem.id}`)}
-                  className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm hover:border-emerald-500/30 hover:bg-gray-800/80 transition-all duration-300 cursor-pointer group overflow-hidden"
+                  className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 hover:bg-gray-200/80 transition-all duration-300 cursor-pointer group overflow-hidden"
                 >
-                  <div className="bg-black/20 border-b border-white/5 p-6">
+                  <div className="bg-gray-50 border-b border-gray-100 p-6">
                     {classItem.code ? (
-                      <p className="text-emerald-400 text-sm font-medium tracking-wide">
+                      <p className="text-green-600 text-sm font-medium tracking-wide">
                         {classItem.code}
                       </p>
                     ) : null}
-                    <h3 className="text-white font-bold text-xl mt-1 line-clamp-1">
+                    <h3 className="text-gray-900 font-bold text-xl mt-1 line-clamp-1">
                       {classItem.name}
                     </h3>
                     {classItem.section && classItem.section !== classItem.name ? (
-                      <p className="text-gray-400 text-sm mt-1">{classItem.section}</p>
+                      <p className="text-gray-600 text-sm mt-1">{classItem.section}</p>
                     ) : null}
                   </div>
                   <div className="p-6 space-y-3">
                     {classItem.schedule && (
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
-                        <Clock className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Clock className="w-4 h-4 text-green-600 flex-shrink-0" />
                         {classItem.schedule}
                       </div>
                     )}
                     {classItem.room && (
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
-                        <MapPin className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
                         {classItem.room}
                       </div>
                     )}
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                      <Users className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
                       {classItem.studentCount} students enrolled
                     </div>
-                    <button className="w-full mt-2 px-4 py-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors font-medium flex items-center justify-center gap-2">
+                    <button className="w-full mt-2 px-4 py-3 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-500/20 transition-colors font-medium flex items-center justify-center gap-2">
                       View Class
                       <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                     </button>

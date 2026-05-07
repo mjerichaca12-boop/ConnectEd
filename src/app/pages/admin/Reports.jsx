@@ -44,10 +44,10 @@ function Reports() {
   const reportCategories = [];
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
             <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
             <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
           </div>
@@ -56,9 +56,9 @@ function Reports() {
       </div>
     );
   }
-  return <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+  return <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -69,12 +69,12 @@ function Reports() {
         {
     /* Top Bar */
   }
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Reports</h2>
+                <h2 className="text-lg font-bold text-gray-900">Reports</h2>
               </div>
               <NotificationDropdown
     notifications={notificationList}
@@ -89,16 +89,16 @@ function Reports() {
           {
     /* Header */
   }
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4">
-              <h1 className="text-3xl font-bold mb-2 text-emerald-400">System Reports</h1>
-              <p className="text-gray-400">Generate and download various system reports</p>
+              <h1 className="text-3xl font-bold mb-2 text-green-600">System Reports</h1>
+              <p className="text-gray-600">Generate and download various system reports</p>
             </div>
           </div>
 
@@ -108,28 +108,28 @@ function Reports() {
           {reportCategories.map((category, idx) => {
     const Icon = category.icon;
     const colorClasses = {
-      emerald: "bg-emerald-500/10 text-emerald-400",
-      blue: "bg-blue-500/10 text-blue-400",
-      red: "bg-red-500/10 text-red-400"
+      green: "bg-green-50 text-green-600",
+      blue: "bg-blue-50 text-blue-400",
+      red: "bg-red-50 text-red-400"
     };
-    return <div key={idx} className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-white/5 bg-black/20">
+    return <div key={idx} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-100 bg-gray-50">
                   <div className="flex items-center gap-3">
-                    <div className={`p-3 rounded-xl border border-white/5 ${colorClasses[category.color]}`}>
+                    <div className={`p-3 rounded-xl border border-gray-100 ${colorClasses[category.color]}`}>
                       <Icon className="w-6 h-6" />
                     </div>
-                    <h3 className="text-lg font-semibold text-white">{category.title}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{category.title}</h3>
                   </div>
                 </div>
                 <div className="p-6">
                   <div className="space-y-3">
-                    {category.reports.map((report, reportIdx) => <div key={reportIdx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-white/10 bg-white/5 rounded-xl hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all group gap-4">
+                    {category.reports.map((report, reportIdx) => <div key={reportIdx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200 bg-gray-50 rounded-xl hover:border-green-300 hover:bg-green-500/5 transition-all group gap-4">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-gray-200 group-hover:text-emerald-400 transition-colors">{report.name}</h4>
+                          <h4 className="font-semibold text-gray-200 group-hover:text-green-600 transition-colors">{report.name}</h4>
                           <p className="text-sm text-gray-500 mt-1">{report.description}</p>
                         </div>
                         <button
-      className="flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors font-medium shadow-lg shadow-emerald-500/20"
+      className="flex flex-shrink-0 items-center justify-center gap-2 px-5 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-500 transition-colors font-medium shadow-lg shadow-green-500/20"
       onClick={() => handleGenerateReport(report.name)}
     >
                           <Download className="w-4 h-4" />

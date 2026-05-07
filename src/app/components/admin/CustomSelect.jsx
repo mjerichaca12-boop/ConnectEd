@@ -50,18 +50,18 @@ function CustomSelect({
   const triggerContent = multiple
     ? selectedOptions.length > 0
       ? <div className="flex flex-wrap items-center gap-2">
-          {selectedOptions.slice(0, 2).map((option) => <span key={option.value} className="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs font-medium rounded-full border border-emerald-500/20">
+          {selectedOptions.slice(0, 2).map((option) => <span key={option.value} className="px-2 py-1 bg-green-500/20 text-green-600 text-xs font-medium rounded-full border border-green-200">
               {option.label}
             </span>)}
-          {selectedOptions.length > 2 && <span className="px-2 py-1 bg-white/10 text-gray-300 text-xs font-medium rounded-full border border-white/10">
+          {selectedOptions.length > 2 && <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full border border-gray-200">
               +{selectedOptions.length - 2} more
             </span>}
         </div>
       : <span className="text-gray-500">{placeholder}</span>
     : selectedOption ? <div className="flex items-center gap-2">
         {selectedOption.icon && <span className="flex-shrink-0">{selectedOption.icon}</span>}
-        <span className="text-white font-medium">{selectedOption.label}</span>
-        {selectedOption.badge && <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs font-medium rounded-full">
+        <span className="text-gray-900 font-medium">{selectedOption.label}</span>
+        {selectedOption.badge && <span className="px-2 py-0.5 bg-green-500/20 text-green-600 text-xs font-medium rounded-full">
             {selectedOption.badge}
           </span>}
       </div> : <span className="text-gray-500">{placeholder}</span>;
@@ -80,26 +80,26 @@ function CustomSelect({
     disabled={disabled}
     className={`
           w-full flex items-center justify-between gap-3 px-4 py-3 
-          bg-black/20 text-white placeholder-gray-500 border rounded-lg transition-all duration-200
-          ${disabled ? "cursor-not-allowed opacity-60 border-white/10" : isOpen ? "border-emerald-500 ring-2 ring-emerald-500 ring-opacity-20 shadow-md" : "border-white/20 hover:border-emerald-400 hover:shadow-sm"}
+          bg-gray-50 text-gray-900 placeholder-gray-500 border rounded-lg transition-all duration-200
+          ${disabled ? "cursor-not-allowed opacity-60 border-gray-200" : isOpen ? "border-green-500 ring-2 ring-green-500 ring-opacity-20 shadow-md" : "border-white/20 hover:border-green-400 hover:shadow-sm"}
         `}
   >
         <div className="flex items-center gap-3 flex-1">
-          {icon && <div className={`transition-colors ${isOpen ? "text-emerald-500" : "text-gray-400"}`}>
+          {icon && <div className={`transition-colors ${isOpen ? "text-green-600" : "text-gray-600"}`}>
               {icon}
             </div>}
           {triggerContent}
         </div>
         
         <ChevronDown
-    className={`w-5 h-5 transition-all duration-300 flex-shrink-0 ${disabled ? "text-gray-600" : isOpen ? "rotate-180 text-emerald-500" : "rotate-0 text-gray-400"}`}
+    className={`w-5 h-5 transition-all duration-300 flex-shrink-0 ${disabled ? "text-gray-600" : isOpen ? "rotate-180 text-green-600" : "rotate-0 text-gray-600"}`}
   />
       </button>
 
       {
     /* Dropdown Menu */
   }
-      {isOpen && !disabled && <div className="absolute z-50 w-full mt-2 bg-gray-900 border border-white/20 rounded-lg shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+      {isOpen && !disabled && <div className="absolute z-50 w-full mt-2 bg-white border border-white/20 rounded-lg shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="max-h-64 overflow-y-auto scrollbar-hide">
             {options.map((option, index) => {
     const isSelected = multiple ? selectedValues.some((selectedValue) => String(selectedValue) === String(option.value)) : String(option.value) === String(value);
@@ -110,23 +110,23 @@ function CustomSelect({
       className={`
                     w-full flex items-center justify-between gap-3 px-4 py-3 
                     transition-all duration-150
-                    ${isSelected ? "bg-emerald-500/20 text-emerald-400 border-l-4 border-emerald-500" : "hover:bg-white/5 border-l-4 border-transparent text-gray-300 hover:text-white"}
-                    ${index !== 0 ? "border-t border-white/10" : ""}
+                    ${isSelected ? "bg-green-500/20 text-green-600 border-l-4 border-green-500" : "hover:bg-gray-50 border-l-4 border-transparent text-gray-700 hover:text-gray-900"}
+                    ${index !== 0 ? "border-t border-gray-200" : ""}
                   `}
     >
                   <div className="flex items-center gap-2 flex-1">
                     {option.icon && <span className={`flex-shrink-0 transition-transform ${isSelected ? "scale-110" : "scale-100"}`}>
                         {option.icon}
                       </span>}
-                    <span className={`font-medium ${isSelected ? "text-emerald-400" : ""}`}>
+                    <span className={`font-medium ${isSelected ? "text-green-600" : ""}`}>
                       {option.label}
                     </span>
-                    {option.badge && <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${isSelected ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-gray-400"}`}>
+                    {option.badge && <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${isSelected ? "bg-green-500/20 text-green-600" : "bg-gray-50 text-gray-600"}`}>
                         {option.badge}
                       </span>}
                   </div>
                   
-                  {isSelected && <Check className="w-5 h-5 text-emerald-500 animate-in zoom-in duration-200" />}
+                  {isSelected && <Check className="w-5 h-5 text-green-600 animate-in zoom-in duration-200" />}
                 </button>;
   })}
           </div>

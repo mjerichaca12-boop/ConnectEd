@@ -29,18 +29,18 @@ function CustomSelect({ value, onChange, options, placeholder, label, icon, clas
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-full rounded-2xl border-2 px-4 py-4 text-left transition-all duration-200 flex items-center justify-between gap-4 bg-slate-950/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] ${isOpen ? "border-emerald-400/80 ring-2 ring-emerald-400/20" : "border-emerald-400/70 hover:border-emerald-300"}`}
+        className={`w-full rounded-2xl border-2 px-4 py-4 text-left transition-all duration-200 flex items-center justify-between gap-4 bg-slate-950/90 shadow-[0_10px_30px_rgba(0,0,0,0.25)] ${isOpen ? "border-green-400/80 ring-2 ring-green-400/20" : "border-green-400/70 hover:border-green-300"}`}
       >
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          {icon && <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 transition-colors ${isOpen ? "text-emerald-300" : ""}`}>
+          {icon && <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-green-200 bg-green-50 text-green-600 transition-colors ${isOpen ? "text-green-300" : ""}`}>
               {icon}
             </span>}
-          <span className={`min-w-0 truncate text-lg font-semibold tracking-tight ${selectedOption ? "text-white" : "text-gray-400"}`}>
+          <span className={`min-w-0 truncate text-lg font-semibold tracking-tight ${selectedOption ? "text-gray-900" : "text-gray-600"}`}>
             {selectedOption?.label || placeholder || "Select an option"}
           </span>
         </div>
         <ChevronDown
-          className={`w-5 h-5 flex-shrink-0 text-emerald-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          className={`w-5 h-5 flex-shrink-0 text-green-600 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
@@ -52,12 +52,12 @@ function CustomSelect({ value, onChange, options, placeholder, label, icon, clas
       key={option.value}
       type="button"
       onClick={() => handleSelect(option.value)}
-      className={`w-full px-4 py-4 flex items-center justify-between gap-3 text-left transition-all duration-150 ${isSelected ? "bg-emerald-500/15 text-emerald-400 border-l-4 border-emerald-500" : "text-slate-100 hover:bg-white/5 border-l-4 border-transparent"} ${index !== 0 ? "border-t border-slate-800" : ""}`}
+      className={`w-full px-4 py-4 flex items-center justify-between gap-3 text-left transition-all duration-150 ${isSelected ? "bg-green-500/15 text-green-600 border-l-4 border-green-500" : "text-slate-100 hover:bg-gray-50 border-l-4 border-transparent"} ${index !== 0 ? "border-t border-slate-800" : ""}`}
     >
-                  <span className={`text-sm font-semibold ${isSelected ? "text-emerald-400" : "text-slate-100"}`}>
+                  <span className={`text-sm font-semibold ${isSelected ? "text-green-600" : "text-slate-100"}`}>
                     {option.label}
                   </span>
-                  {isSelected && <Check className="w-5 h-5 flex-shrink-0 text-emerald-400" />}
+                  {isSelected && <Check className="w-5 h-5 flex-shrink-0 text-green-600" />}
                 </button>;
   })}
           </div>

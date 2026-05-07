@@ -11,10 +11,10 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
   const isDark = variant === "dark";
 
   const fallbackClassName = isDark
-    ? "border-white/10 bg-black/20 text-gray-300"
+    ? "border-gray-200 bg-gray-50 text-gray-700"
     : "border-gray-200 bg-gray-50 text-gray-600";
   const documentClassName = isDark
-    ? "border-white/10 bg-black/20 text-gray-200 hover:bg-black/30"
+    ? "border-gray-200 bg-gray-50 text-gray-200 hover:bg-black/30"
     : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100";
 
   if (!attachmentLink || loadFailed) {
@@ -37,7 +37,7 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
           alt={fileName || `Attachment ${index + 1}`}
           loading="lazy"
           onError={() => setLoadFailed(true)}
-          className={`w-full max-h-80 rounded-xl border object-cover ${isDark ? "border-white/10" : "border-gray-200"}`}
+          className={`w-full max-h-80 rounded-xl border object-cover ${isDark ? "border-gray-200" : "border-gray-200"}`}
         />
       </a>
     );
@@ -45,7 +45,7 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
 
   if (fileKind === "video") {
     return (
-      <div className={`overflow-hidden rounded-xl border ${isDark ? "border-white/10 bg-black/20" : "border-gray-200 bg-gray-50"}`}>
+      <div className={`overflow-hidden rounded-xl border ${isDark ? "border-gray-200 bg-gray-50" : "border-gray-200 bg-gray-50"}`}>
         <video
           controls
           src={attachmentLink}

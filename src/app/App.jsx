@@ -33,6 +33,7 @@ import { ClassMaterials } from "./pages/teacher/ClassMaterials";
 import { TeacherMessages } from "./pages/teacher/TeacherMessages";
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
 import { VideoConferencing as TeacherVideoConferencing } from "./pages/teacher/VideoConferencing";
+import { AIAssistant } from "./pages/teacher/AIAssistant";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { StudentManagement } from "./pages/admin/StudentManagement";
 import { TeacherManagement } from "./pages/admin/TeacherManagement";
@@ -44,6 +45,7 @@ import { AdminAccessRequests } from "./pages/admin/AdminAccessRequests";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminMessages } from "./pages/admin/AdminMessages";
+import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 
 function TeacherRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
@@ -217,6 +219,7 @@ export default function App() {
         <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
         <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
         <Route path="/teacher/video-conference" element={<TeacherRouteGuard><TeacherVideoConferencing /></TeacherRouteGuard>} />
+        <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
@@ -230,6 +233,7 @@ export default function App() {
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
+        <Route path="/admin/ai-assistant" element={<AdminRouteGuard><AIAdminAssistant /></AdminRouteGuard>} />
       </Routes>
       </Router>
     </ActivityProvider>

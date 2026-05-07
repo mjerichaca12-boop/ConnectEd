@@ -2156,13 +2156,13 @@ export function ClassDetail() {
     if (diff < 0) return { label: "Overdue", color: "text-red-600 bg-red-50" };
     if (diff === 0) return { label: "Due today", color: "text-orange-600 bg-orange-50" };
     if (diff === 1) return { label: "Due tomorrow", color: "text-yellow-600 bg-yellow-50" };
-    return { label: `${diff} days left`, color: "text-emerald-600 bg-emerald-50" };
+    return { label: `${diff} days left`, color: "text-green-600 bg-green-50" };
   };
 
   const getPriorityColor = (p) => {
     if (p === "High") return "bg-red-100 text-red-700";
     if (p === "Medium") return "bg-blue-100 text-blue-700";
-    return "bg-white/5 text-gray-400";
+    return "bg-gray-50 text-gray-600";
   };
 
   const getFileIcon = (type = "PDF") => {
@@ -2179,13 +2179,13 @@ export function ClassDetail() {
 
   if (!classData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black/20">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-300 mb-2">Class not found</h2>
+          <BookOpen className="w-16 h-16 text-gray-700 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">Class not found</h2>
           <button
             onClick={() => navigate("/teacher/classes")}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700"
           >
             Back to Classes
           </button>
@@ -2202,14 +2202,14 @@ export function ClassDetail() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         {/* Top Bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Class Details</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Class Details</h2>
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) =>
@@ -2289,19 +2289,19 @@ export function ClassDetail() {
 
           <button
             onClick={() => navigate("/teacher/classes")}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-white/20 text-gray-300 rounded-lg hover:bg-white/5 transition-colors text-sm font-medium"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Classes
           </button>
 
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 p-6 text-white shadow-lg border border-emerald-300/30">
+          <div className="rounded-2xl bg-gradient-to-r from-green-600 via-green-500 to-teal-500 p-6 text-gray-900 shadow-lg border border-green-300/30">
             <div className="flex items-start gap-3 mb-5">
               <div className="w-11 h-11 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center flex-shrink-0">
                 <BookOpen className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-sm text-emerald-100 font-medium">Assigned Class</p>
+                <p className="text-sm text-green-100 font-medium">Assigned Class</p>
                 <h3 className="text-3xl font-bold leading-tight">
                   {[String(classData?.name || "").trim(), String(classData?.section || "").trim()].filter(Boolean).join(" - ")
                     || String(classData?.name || classData?.section || "Section").trim()}
@@ -2310,29 +2310,29 @@ export function ClassDetail() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-emerald-100 text-xs font-medium">
+              <div className="rounded-xl bg-gray-100 border border-white/20 p-3">
+                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
                   <Users className="w-3.5 h-3.5" />
                   Students
                 </div>
                 <p className="text-2xl font-semibold mt-1">{assignedStudents.length}</p>
               </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-emerald-100 text-xs font-medium">
+              <div className="rounded-xl bg-gray-100 border border-white/20 p-3">
+                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
                   <BookOpen className="w-3.5 h-3.5" />
                   Materials
                 </div>
                 <p className="text-2xl font-semibold mt-1">{materials.length}</p>
               </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-emerald-100 text-xs font-medium">
+              <div className="rounded-xl bg-gray-100 border border-white/20 p-3">
+                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
                   <FileText className="w-3.5 h-3.5" />
                   Assignments
                 </div>
                 <p className="text-2xl font-semibold mt-1">{assignments.length}</p>
               </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-emerald-100 text-xs font-medium">
+              <div className="rounded-xl bg-gray-100 border border-white/20 p-3">
+                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
                   <Megaphone className="w-3.5 h-3.5" />
                   Announcements
                 </div>
@@ -2342,17 +2342,17 @@ export function ClassDetail() {
           </div>
 
           {/* Tabs + Content */}
-          <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Tab Nav */}
-            <div className="flex border-b border-white/10 overflow-x-auto no-scrollbar">
+            <div className="flex border-b border-gray-200 overflow-x-auto no-scrollbar">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors whitespace-nowrap border-b-2 ${
                     activeTab === tab.id
-                      ? "border-emerald-600 text-emerald-600"
-                      : "border-transparent text-gray-500 hover:text-emerald-600 hover:border-emerald-200"
+                      ? "border-green-600 text-green-600"
+                      : "border-transparent text-gray-500 hover:text-green-600 hover:border-green-200"
                   }`}
                 >
                   {tab.icon}
@@ -2367,23 +2367,23 @@ export function ClassDetail() {
                 <div>
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Student List</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                       <p className="text-sm text-gray-500 mt-0.5">{assignedStudents.length} students enrolled</p>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
                       <div className="relative flex-1 md:w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                         <input
                           type="text"
                           placeholder="Search students..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full pl-10 pr-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                         />
                       </div>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm whitespace-nowrap"
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm whitespace-nowrap"
                       >
                         <Plus className="w-4 h-4" />
                         Add Student
@@ -2391,24 +2391,24 @@ export function ClassDetail() {
                     </div>
                   </div>
                   {filteredStudents.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-white/10 rounded-xl">
-                      <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Users className="w-7 h-7 text-emerald-400" />
+                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
+                      <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Users className="w-7 h-7 text-green-600" />
                       </div>
-                      <h4 className="font-semibold text-gray-300 mb-1">No students enrolled yet</h4>
+                      <h4 className="font-semibold text-gray-700 mb-1">No students enrolled yet</h4>
                       <p className="text-gray-500 text-sm mb-4">Add students to this class so they can access materials and assignments.</p>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 text-sm font-medium"
                       >
                         <Plus className="w-4 h-4" />
                         Add First Student
                       </button>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto border border-white/10 rounded-xl">
+                    <div className="overflow-x-auto border border-gray-200 rounded-xl">
                       <table className="w-full">
-                        <thead className="bg-black/20">
+                        <thead className="bg-gray-50">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
@@ -2417,29 +2417,29 @@ export function ClassDetail() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
                           </tr>
                         </thead>
-                        <tbody className="bg-gray-900/60 divide-y divide-white/10">
+                        <tbody className="bg-white divide-y divide-white/10">
                           {filteredStudents.map((student) => (
-                            <tr key={student.id} className="hover:bg-black/20 transition-colors">
-                              <td className="px-6 py-4 text-sm font-medium text-emerald-600">{student.studentId}</td>
+                            <tr key={student.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 text-sm font-medium text-green-600">{student.studentId}</td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                                  <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-gray-900 text-sm font-bold flex-shrink-0">
                                     {student.name.charAt(0).toUpperCase()}
                                   </div>
-                                  <span className="text-sm font-medium text-white">{student.name}</span>
+                                  <span className="text-sm font-medium text-gray-900">{student.name}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-xs text-gray-400">
+                              <td className="px-6 py-4 text-xs text-gray-600">
                                 {student.email && <div className="flex items-center gap-1 mb-0.5"><Mail className="w-3 h-3" />{student.email}</div>}
                                 {student.phone && <div className="flex items-center gap-1"><Phone className="w-3 h-3" />{student.phone}</div>}
                               </td>
                               <td className="px-6 py-4">
-                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">{student.status ?? "Active"}</span>
+                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700">{student.status ?? "Active"}</span>
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <button
                                   onClick={() => requestDeleteStudent(student)}
-                                  className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  className="p-1.5 text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -2458,14 +2458,14 @@ export function ClassDetail() {
                 <div>
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Class Materials</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">Class Materials</h3>
                       <p className="text-sm text-gray-500 mt-0.5">Upload files visible to all enrolled students</p>
                       {matError && <p className="text-sm text-red-500 mt-2">{matError}</p>}
-                      {matSuccess && <p className="text-sm text-emerald-500 mt-2">{matSuccess}</p>}
+                      {matSuccess && <p className="text-sm text-green-600 mt-2">{matSuccess}</p>}
                     </div>
                     <button
                       onClick={openCreateMaterialModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm"
+                      className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
                     >
                       <Upload className="w-4 h-4" />
                       Upload Material
@@ -2473,15 +2473,15 @@ export function ClassDetail() {
                   </div>
 
                   {materials.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-white/10 rounded-xl">
-                      <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <BookOpen className="w-7 h-7 text-emerald-400" />
+                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
+                      <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <BookOpen className="w-7 h-7 text-green-600" />
                       </div>
-                      <h4 className="font-semibold text-gray-300 mb-1">No materials uploaded yet</h4>
+                      <h4 className="font-semibold text-gray-700 mb-1">No materials uploaded yet</h4>
                       <p className="text-gray-500 text-sm mb-4">Upload lecture notes, slides, or reference files for your students.</p>
                       <button
                         onClick={openCreateMaterialModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 text-sm"
                       >
                         <Upload className="w-4 h-4" />
                         Upload First Material
@@ -2492,15 +2492,15 @@ export function ClassDetail() {
                       {materials.map((mat) => (
                         <div
                           key={mat.id}
-                          className="flex items-center gap-4 p-4 bg-black/20 rounded-xl border border-white/10 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all"
+                          className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-200 hover:bg-green-50/30 transition-all"
                         >
-                          <div className="w-10 h-10 bg-gray-900/60 rounded-lg flex items-center justify-center border border-white/10 flex-shrink-0">
+                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-gray-200 flex-shrink-0">
                             {getFileIcon(mat.fileType)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-white text-sm">{mat.title}</p>
+                            <p className="font-semibold text-gray-900 text-sm">{mat.title}</p>
                             {mat.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mat.description}</p>}
-                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-600">
                               <span>{mat.fileType}</span>
                               <span>|</span>
                               <span>{new Date(mat.uploadDate).toLocaleDateString()}</span>
@@ -2519,7 +2519,7 @@ export function ClassDetail() {
                                     href={attachment.fileUrl || attachment.filePath || "#"}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-xs hover:bg-emerald-500/20"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-300 text-xs hover:bg-green-500/20"
                                   >
                                     <File className="w-3 h-3" />
                                     {attachment.fileName || `File ${index + 1}`}
@@ -2532,7 +2532,7 @@ export function ClassDetail() {
                             <button
                               type="button"
                               onClick={() => openEditMaterialModal(mat)}
-                              className="p-2 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                              className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                             >
                               <FileText className="w-4 h-4" />
                             </button>
@@ -2543,7 +2543,7 @@ export function ClassDetail() {
                                 event.stopPropagation();
                                 handleDeleteMaterial(mat.id);
                               }}
-                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                              className="p-2 text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -2560,10 +2560,10 @@ export function ClassDetail() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Assignments &amp; Activities</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">Assignments &amp; Activities</h3>
                       <p className="text-sm text-gray-500 mt-0.5">Post tasks for students to accomplish and submit</p>
                       {asgError && <p className="text-sm text-red-500 mt-2">{asgError}</p>}
-                      {asgSuccess && <p className="text-sm text-emerald-500 mt-2">{asgSuccess}</p>}
+                      {asgSuccess && <p className="text-sm text-green-600 mt-2">{asgSuccess}</p>}
                     </div>
                     <div className="flex items-center gap-3">
                       <button
@@ -2579,14 +2579,14 @@ export function ClassDetail() {
                             },
                           });
                         }}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all font-medium text-sm"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-green-600/20 hover:bg-green-600/30 text-green-600 border border-green-300 rounded-lg transition-all font-medium text-sm"
                       >
                         <TrendingUp className="w-4 h-4" />
                         Grade Students
                       </button>
                       <button
                         onClick={openCreateAssignmentModal}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                       >
                         <Plus className="w-4 h-4" />
                         Create Task
@@ -2595,15 +2595,15 @@ export function ClassDetail() {
                   </div>
 
                   {assignments.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-white/10 rounded-xl">
+                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
                       <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                         <FileText className="w-7 h-7 text-blue-400" />
                       </div>
-                      <h4 className="font-semibold text-gray-300 mb-1">No assignments yet</h4>
+                      <h4 className="font-semibold text-gray-700 mb-1">No assignments yet</h4>
                       <p className="text-gray-500 text-sm mb-4">Create assignments or activities for your students to complete.</p>
                       <button
                         onClick={openCreateAssignmentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 text-sm"
                       >
                         <Plus className="w-4 h-4" />
                         Create First Task
@@ -2655,7 +2655,7 @@ export function ClassDetail() {
                                 },
                               });
                             }}
-                            className="p-5 bg-gray-900/60 border border-white/10 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                            className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500/60"
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
@@ -2667,11 +2667,11 @@ export function ClassDetail() {
                                     {due.label}
                                   </span>
                                 </div>
-                                <h4 className="font-semibold text-white text-sm">{asg.title}</h4>
+                                <h4 className="font-semibold text-gray-900 text-sm">{asg.title}</h4>
                                 {asg.description && (
                                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{asg.description}</p>
                                 )}
-                                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                                <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
                                   <span className="flex items-center gap-1">
                                     <Calendar className="w-3 h-3" />
                                     Due: {new Date(asg.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
@@ -2719,7 +2719,7 @@ export function ClassDetail() {
                                       },
                                     });
                                   }}
-                                  className="p-2 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors"
+                                  className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                                   title="Grade this activity"
                                 >
                                   <TrendingUp className="w-4 h-4" />
@@ -2731,7 +2731,7 @@ export function ClassDetail() {
                                     event.stopPropagation();
                                     openEditAssignmentModal(asg.id);
                                   }}
-                                  className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                                  className="p-2 text-gray-600 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
                                 >
                                   <FileText className="w-4 h-4" />
                                 </button>
@@ -2742,7 +2742,7 @@ export function ClassDetail() {
                                     event.stopPropagation();
                                     handleDeleteAssignment(asg);
                                   }}
-                                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                  className="p-2 text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -2761,14 +2761,14 @@ export function ClassDetail() {
                 <div>
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <h3 className="text-lg font-semibold text-white">Class Announcements</h3>
+                      <h3 className="text-lg font-semibold text-gray-900">Class Announcements</h3>
                       <p className="text-sm text-gray-500 mt-0.5">Post updates visible to all students in this class</p>
                       {annError && <p className="text-sm text-red-500 mt-2">{annError}</p>}
-                      {annSuccess && <p className="text-sm text-emerald-500 mt-2">{annSuccess}</p>}
+                      {annSuccess && <p className="text-sm text-green-600 mt-2">{annSuccess}</p>}
                     </div>
                     <button
                       onClick={openCreateAnnouncementModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
+                      className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-gray-900 rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
                     >
                       <Megaphone className="w-4 h-4" />
                       Post Announcement
@@ -2776,15 +2776,15 @@ export function ClassDetail() {
                   </div>
 
                   {announcements.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-white/10 rounded-xl">
+                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
                       <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                         <Megaphone className="w-7 h-7 text-purple-400" />
                       </div>
-                      <h4 className="font-semibold text-gray-300 mb-1">No announcements yet</h4>
+                      <h4 className="font-semibold text-gray-700 mb-1">No announcements yet</h4>
                       <p className="text-gray-500 text-sm mb-4">Post important updates, reminders, or news for your class.</p>
                       <button
                         onClick={openCreateAnnouncementModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-gray-900 rounded-lg hover:bg-purple-700 text-sm"
                       >
                         <Megaphone className="w-4 h-4" />
                         Post First Announcement
@@ -2793,19 +2793,19 @@ export function ClassDetail() {
                   ) : (
                     <div className="space-y-4">
                       {announcements.map((ann) => (
-                        <div key={ann.id} className="p-5 bg-gray-900/60 border border-white/10 rounded-xl hover:border-purple-200 hover:shadow-sm transition-all">
+                        <div key={ann.id} className="p-5 bg-white border border-gray-200 rounded-xl hover:border-purple-200 hover:shadow-sm transition-all">
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${getPriorityColor(ann.priority)}`}>
                                   {ann.priority} Priority
                                 </span>
-                                <span className="text-xs text-gray-400">
+                                <span className="text-xs text-gray-600">
                                   {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                 </span>
                               </div>
-                              <h4 className="font-semibold text-white text-sm">{ann.title}</h4>
-                              <p className="text-sm text-gray-400 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
+                              <h4 className="font-semibold text-gray-900 text-sm">{ann.title}</h4>
+                              <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
                               {ann.fileUrl && (() => {
                                 const attachmentKind = getAnnouncementAttachmentKind(ann);
 
@@ -2815,7 +2815,7 @@ export function ClassDetail() {
                                       <img
                                         src={ann.fileUrl}
                                         alt={ann.fileName || "Announcement attachment"}
-                                        className="max-h-80 w-full rounded-xl border border-white/10 object-cover bg-black/20"
+                                        className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
                                       />
                                     </a>
                                   );
@@ -2823,7 +2823,7 @@ export function ClassDetail() {
 
                                 if (attachmentKind === "video") {
                                   return (
-                                    <div className="mt-3 overflow-hidden rounded-xl border border-white/10 bg-black/20">
+                                    <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
                                       <video
                                         controls
                                         src={ann.fileUrl}
@@ -2838,7 +2838,7 @@ export function ClassDetail() {
                                     href={ann.fileUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-purple-500/10 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
+                                    className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-purple-50 text-purple-300 text-xs font-medium hover:bg-purple-500/20"
                                   >
                                     <File className="w-3 h-3" />
                                     {ann.fileName || "Attached file"}
@@ -2850,14 +2850,14 @@ export function ClassDetail() {
                               <button
                                 type="button"
                                 onClick={() => openEditAnnouncementModal(ann)}
-                                className="p-2 text-gray-400 hover:text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
+                                className="p-2 text-gray-600 hover:text-purple-500 hover:bg-purple-50 rounded-lg transition-colors"
                               >
                                 <FileText className="w-4 h-4" />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => requestDeleteAnnouncement(ann)}
-                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-2 text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -2877,14 +2877,14 @@ export function ClassDetail() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ UPLOAD MATERIAL MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {showMaterialModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-lg w-full shadow-2xl">
-            <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                  <Upload className="w-5 h-5 text-emerald-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Upload className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">{isEditingMaterial ? "Edit Class Material" : "Upload Class Material"}</h3>
+                  <h3 className="text-lg font-bold text-gray-900">{isEditingMaterial ? "Edit Class Material" : "Upload Class Material"}</h3>
                   <p className="text-sm text-gray-500">
                     {isEditingMaterial ? "Update details and attachment for this material" : `Visible to all students in ${classData.code}`}
                   </p>
@@ -2895,38 +2895,38 @@ export function ClassDetail() {
                   setShowMaterialModal(false);
                   resetMaterialForm();
                 }}
-                className="p-2 hover:bg-white/5 rounded-lg"
+                className="p-2 hover:bg-gray-50 rounded-lg"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Title <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   placeholder="e.g. Chapter 1 - Introduction"
                   value={matForm.title}
                   onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
                 <textarea
                   rows={3}
                   placeholder="Optional short description..."
                   value={matForm.description}
                   onChange={(e) => setMatForm({ ...matForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm resize-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">File Type</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">File Type</label>
                 <select
                   value={matForm.fileType}
                   onChange={(e) => setMatForm({ ...matForm, fileType: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 >
                   {["PDF", "DOCX", "PPTX", "XLSX", "TXT", "ZIP", "Other"].map((t) => (
                     <option key={t} value={t}>{t}</option>
@@ -2934,11 +2934,11 @@ export function ClassDetail() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Attach File</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attach File</label>
                 {isEditingMaterial && Array.isArray(matOriginalFiles.fileNames) && matOriginalFiles.fileNames.length > 0 && (
-                  <div className="mb-3 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                    <p className="text-xs text-gray-300 mb-1">Current files:</p>
-                    <p className="text-xs text-emerald-300">{matOriginalFiles.fileNames.join(", ")}</p>
+                  <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
+                    <p className="text-xs text-gray-700 mb-1">Current files:</p>
+                    <p className="text-xs text-green-300">{matOriginalFiles.fileNames.join(", ")}</p>
                   </div>
                 )}
                 <input
@@ -2955,35 +2955,35 @@ export function ClassDetail() {
                 />
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center hover:border-emerald-500 cursor-pointer transition-colors"
+                  className="border-2 border-dashed border-white/20 rounded-xl p-6 text-center hover:border-green-500 cursor-pointer transition-colors"
                 >
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
                   <p className="text-sm text-gray-500">
                     {matFileNames.length > 0
                       ? `${matFileNames.length} file${matFileNames.length === 1 ? "" : "s"} selected`
                       : "Click to select file(s)"}
                   </p>
                   {matFileNames.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1 truncate">{matFileNames.join(", ")}</p>
+                    <p className="text-xs text-gray-600 mt-1 truncate">{matFileNames.join(", ")}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-1">PDF, DOCX, PPTX, ZIP (max 50MB)</p>
+                  <p className="text-xs text-gray-600 mt-1">PDF, DOCX, PPTX, ZIP (max 50MB)</p>
                 </div>
               </div>
             </div>
-            <div className="border-t border-white/10 px-6 py-4 flex gap-3">
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3">
               <button
                 onClick={() => {
                   setShowMaterialModal(false);
                   resetMaterialForm();
                 }}
-                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 text-sm font-medium"
+                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={isEditingMaterial ? handleEditMaterial : handleAddMaterial}
                 disabled={isUploadingMaterial}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isUploadingMaterial ? (isEditingMaterial ? "Updating..." : "Uploading...") : (isEditingMaterial ? "Update Material" : "Upload Material")}
               </button>
@@ -2995,14 +2995,14 @@ export function ClassDetail() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ CREATE ASSIGNMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {showAssignmentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between sticky top-0 bg-gray-900/60 z-10">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
                   <FileText className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">
+                  <h3 className="text-lg font-bold text-gray-900">
                     {isEditingAssignment ? "Edit Assignment / Activity" : "Create Assignment / Activity"}
                   </h3>
                   <p className="text-sm text-gray-500">{isEditingAssignment ? "Update the task details" : `Students in ${classData.code} will see this task`}</p>
@@ -3013,20 +3013,20 @@ export function ClassDetail() {
                   setShowAssignmentModal(false);
                   resetAssignmentForm();
                 }}
-                className="p-2 hover:bg-white/5 rounded-lg"
+                className="p-2 hover:bg-gray-50 rounded-lg"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Type</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Type</label>
                 <div className="flex gap-3">
                   {["assignment", "activity"].map((t) => (
                     <button
                       key={t}
                       onClick={() => setAsgForm({ ...asgForm, type: t })}
-                      className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium capitalize transition-all ${asgForm.type === t ? "border-blue-600 bg-blue-50 text-blue-700" : "border-white/10 text-gray-400 hover:border-white/20"}`}
+                      className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium capitalize transition-all ${asgForm.type === t ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:border-white/20"}`}
                     >
                       {t}
                     </button>
@@ -3034,54 +3034,54 @@ export function ClassDetail() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Title <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   placeholder="e.g. Problem Set 1"
                   value={asgForm.title}
                   onChange={(e) => setAsgForm({ ...asgForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Instructions / Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Instructions / Description</label>
                 <textarea
                   rows={3}
                   placeholder="Describe what students need to do..."
                   value={asgForm.description}
                   onChange={(e) => setAsgForm({ ...asgForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Due Date <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Due Date <span className="text-red-500">*</span></label>
                   <input
                     type="date"
                     value={asgForm.dueDate}
                     onChange={(e) => setAsgForm({ ...asgForm, dueDate: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">Max Points</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Max Points</label>
                   <input
                     type="number"
                     value={asgForm.maxPoints}
                     onChange={(e) => setAsgForm({ ...asgForm, maxPoints: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                   />
                 </div>
               </div>
               <div>
                 {asgSupportsFiles ? (
                   <>
-                    <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
                       {isEditingAssignment ? "Replace Reference File (Optional)" : "Attach Reference File (Optional)"}
                     </label>
                     {isEditingAssignment && Array.isArray(asgOriginalFile?.fileNames) && asgOriginalFile.fileNames.length > 0 && (
-                      <div className="mb-3 p-2 bg-blue-50/10 border border-blue-500/20 rounded-lg">
-                        <p className="text-xs text-gray-400">Current files:</p>
+                      <div className="mb-3 p-2 bg-blue-50/10 border border-blue-200 rounded-lg">
+                        <p className="text-xs text-gray-600">Current files:</p>
                         <div className="mt-1 flex flex-wrap gap-2">
                           {asgOriginalFile.fileNames.map((fileName, index) => (
                             <span key={`${fileName}-${index}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs">
@@ -3108,38 +3108,38 @@ export function ClassDetail() {
                       onClick={() => asgFileRef.current?.click()}
                       className="border-2 border-dashed border-white/20 rounded-xl p-5 text-center hover:border-blue-500 cursor-pointer transition-colors"
                     >
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                      <Upload className="w-6 h-6 text-gray-600 mx-auto mb-1" />
                       <p className="text-sm text-gray-500">
                         {asgFileNames.length > 0
                           ? `${asgFileNames.length} file${asgFileNames.length === 1 ? "" : "s"} selected`
                           : "Click to attach files"}
                       </p>
                       {asgFileNames.length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1 truncate">{asgFileNames.join(", ")}</p>
+                        <p className="text-xs text-gray-600 mt-1 truncate">{asgFileNames.join(", ")}</p>
                       )}
                     </div>
                   </>
                 ) : (
-                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
                     <p className="text-xs text-amber-200">File attachments are not supported with the current database schema.</p>
                   </div>
                 )}
               </div>
             </div>
-            <div className="border-t border-white/10 px-6 py-4 flex gap-3 sticky bottom-0 bg-gray-900/60">
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 sticky bottom-0 bg-white">
               <button
                 onClick={() => {
                   setShowAssignmentModal(false);
                   resetAssignmentForm();
                 }}
-                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 text-sm font-medium"
+                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={isEditingAssignment ? handleEditAssignment : handleAddAssignment}
                 disabled={isPostingAssignment}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-gray-900 rounded-lg hover:from-blue-700 hover:to-blue-800 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isPostingAssignment ? (isEditingAssignment ? "Updating..." : "Saving...") : (isEditingAssignment ? "Update Task" : "Post Task")}
               </button>
@@ -3151,14 +3151,14 @@ export function ClassDetail() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ POST ANNOUNCEMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {showAnnouncementModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-lg w-full shadow-2xl">
-            <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-purple-100 rounded-lg">
                   <Megaphone className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">{isEditingAnnouncement ? "Edit Announcement" : "Post Announcement"}</h3>
+                  <h3 className="text-lg font-bold text-gray-900">{isEditingAnnouncement ? "Edit Announcement" : "Post Announcement"}</h3>
                   <p className="text-sm text-gray-500">{isEditingAnnouncement ? "Update this class announcement" : `All students in ${classData.code} will be notified`}</p>
                 </div>
               </div>
@@ -3167,37 +3167,37 @@ export function ClassDetail() {
                   setShowAnnouncementModal(false);
                   resetAnnouncementForm();
                 }}
-                className="p-2 hover:bg-white/5 rounded-lg"
+                className="p-2 hover:bg-gray-50 rounded-lg"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Subject / Title <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Subject / Title <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   placeholder="e.g. Reminder: Quiz next Monday"
                   value={annForm.title}
                   onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Message</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Message</label>
                 <textarea
                   rows={5}
                   placeholder="Write your announcement here..."
                   value={annForm.content}
                   onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
+                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Attachment (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachment (Optional)</label>
                 {isEditingAnnouncement && annOriginalFile.fileName && (
-                  <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg">
-                    <p className="text-xs text-gray-300 mb-1">Current file:</p>
+                  <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
+                    <p className="text-xs text-gray-700 mb-1">Current file:</p>
                     <p className="text-xs text-purple-300">{annOriginalFile.fileName}</p>
                   </div>
                 )}
@@ -3216,12 +3216,12 @@ export function ClassDetail() {
                   onClick={() => annFileRef.current?.click()}
                   className="border-2 border-dashed border-white/20 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors"
                 >
-                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                  <Upload className="w-6 h-6 text-gray-600 mx-auto mb-1" />
                   <p className="text-sm text-gray-500">{annFileName || "Click to attach a file"}</p>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Priority</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
                 <div className="flex gap-2">
                   {["Low", "Medium", "High"].map((p) => (
                     <button
@@ -3231,8 +3231,8 @@ export function ClassDetail() {
                         annForm.priority === p
                           ? p === "High" ? "border-red-500 bg-red-50 text-red-700"
                             : p === "Medium" ? "border-blue-500 bg-blue-50 text-blue-700"
-                            : "border-gray-400 bg-white/5 text-gray-300"
-                          : "border-white/10 text-gray-400 hover:border-white/20"
+                            : "border-gray-400 bg-gray-50 text-gray-700"
+                          : "border-gray-200 text-gray-600 hover:border-white/20"
                       }`}
                     >
                       {p}
@@ -3241,20 +3241,20 @@ export function ClassDetail() {
                 </div>
               </div>
             </div>
-            <div className="border-t border-white/10 px-6 py-4 flex gap-3">
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3">
               <button
                 onClick={() => {
                   setShowAnnouncementModal(false);
                   resetAnnouncementForm();
                 }}
-                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 text-sm font-medium"
+                className="flex-1 px-4 py-2.5 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveAnnouncement}
                 disabled={isPostingAnnouncement}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-gray-900 rounded-lg hover:from-purple-700 hover:to-purple-800 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {isPostingAnnouncement
                   ? (isEditingAnnouncement ? "Updating..." : "Posting...")
@@ -3268,18 +3268,18 @@ export function ClassDetail() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ADD STUDENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-3xl w-full shadow-2xl">
-            <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                  <Users className="w-5 h-5 text-emerald-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Users className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Add Student</h3>
+                  <h3 className="text-lg font-bold text-gray-900">Add Student</h3>
                   <p className="text-sm text-gray-500">Enroll a student in {classData.code} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â {classData.section}</p>
                 </div>
               </div>
-              <button onClick={() => setShowStudentModal(false)} className="p-2 hover:bg-white/5 rounded-lg">
+              <button onClick={() => setShowStudentModal(false)} className="p-2 hover:bg-gray-50 rounded-lg">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
@@ -3290,22 +3290,22 @@ export function ClassDetail() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1.5">Search Students</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Students</label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <input
                     type="text"
                     placeholder="Search by Name, ID, or Year Level"
                     value={studentPickerQuery}
                     onChange={(e) => setStudentPickerQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                   />
                 </div>
               </div>
 
-              <div className="border border-white/10 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
                 <table className="w-full">
-                  <thead className="bg-black/20 sticky top-0">
+                  <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
                       <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
@@ -3322,7 +3322,7 @@ export function ClassDetail() {
                       filteredAvailableStudents.map((student) => (
                         <tr
                           key={student.id}
-                          className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-emerald-500/10" : "hover:bg-white/5"}`}
+                          className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
                           onClick={() => toggleStudentSelection(student.id)}
                         >
                           <td className="px-4 py-3">
@@ -3330,12 +3330,12 @@ export function ClassDetail() {
                               type="checkbox"
                               checked={selectedStudentIds.includes(student.id)}
                               onChange={() => toggleStudentSelection(student.id)}
-                              className="accent-emerald-500"
+                              className="accent-green-500"
                             />
                           </td>
-                          <td className="px-4 py-3 text-sm text-white">{getStudentFullName(student)}</td>
-                          <td className="px-4 py-3 text-sm text-emerald-400">{student.lrn || "N/A"}</td>
-                          <td className="px-4 py-3 text-sm text-gray-400">{student.year_level || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">{getStudentFullName(student)}</td>
+                          <td className="px-4 py-3 text-sm text-green-600">{student.lrn || "N/A"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{student.year_level || "N/A"}</td>
                         </tr>
                       ))
                     )}
@@ -3344,9 +3344,9 @@ export function ClassDetail() {
               </div>
             </div>
 
-            <div className="border-t border-white/10 px-6 py-4 flex gap-3">
-              <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 text-sm font-medium">Cancel</button>
-              <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">{isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}</button>
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3">
+              <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
+              <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">{isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}</button>
             </div>
           </div>
         </div>

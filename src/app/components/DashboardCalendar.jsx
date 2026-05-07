@@ -343,36 +343,36 @@ function DashboardCalendar({ viewerRole }) {
   const upcomingEvents = useMemo(() => visibleEvents.slice(0, 4), [visibleEvents]);
 
   return (
-    <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden h-full">
-      <div className="p-4 bg-black/20 border-b border-white/5 flex items-center justify-between">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full">
+      <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-            <CalendarIcon className="w-4 h-4 text-emerald-400" />
+          <div className="p-1.5 bg-green-50 rounded-lg border border-green-200">
+            <CalendarIcon className="w-4 h-4 text-green-600" />
           </div>
-          <h3 className="font-semibold text-white text-sm">School Calendar</h3>
+          <h3 className="font-semibold text-gray-900 text-sm">School Calendar</h3>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={prevMonth} className="p-1 hover:bg-white/10 text-gray-400 hover:text-white rounded-md transition-colors cursor-pointer border border-transparent hover:border-white/10">
+          <button onClick={prevMonth} className="p-1 hover:bg-gray-100 text-gray-600 hover:text-gray-900 rounded-md transition-colors cursor-pointer border border-transparent hover:border-gray-200">
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <button onClick={nextMonth} className="p-1 hover:bg-white/10 text-gray-400 hover:text-white rounded-md transition-colors cursor-pointer border border-transparent hover:border-white/10">
+          <button onClick={nextMonth} className="p-1 hover:bg-gray-100 text-gray-600 hover:text-gray-900 rounded-md transition-colors cursor-pointer border border-transparent hover:border-gray-200">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       <div className="p-4">
-        {errorMessage && <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 text-red-200 text-xs px-3 py-2">{errorMessage}</div>}
+        {errorMessage && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 text-red-200 text-xs px-3 py-2">{errorMessage}</div>}
 
         <div className="text-center mb-4">
-          <span className="text-sm font-bold text-white">
+          <span className="text-sm font-bold text-gray-900">
             {monthNames[month]} {year}
           </span>
         </div>
 
         <div className="grid grid-cols-7 gap-1 mb-2">
           {days.map((day) => (
-            <div key={day} className="text-[10px] font-bold text-gray-400 uppercase text-center">
+            <div key={day} className="text-[10px] font-bold text-gray-600 uppercase text-center">
               {day}
             </div>
           ))}
@@ -407,11 +407,11 @@ function DashboardCalendar({ viewerRole }) {
                 }}
                 title={[holidayLabel, ...dayEvents.map((event) => event.title)].filter(Boolean).join(" • ") || void 0}
                 className={`h-14 px-1 flex flex-col items-center justify-center text-sm rounded-lg transition-colors cursor-pointer border outline-none
-                  ${isSelected ? "ring-2 ring-emerald-500 ring-offset-0" : ""}
-                  ${isToday ? "bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 border-emerald-500/20" : "border-transparent"}
-                  ${!isToday && isHoliday ? "bg-red-500/10 text-red-200 border-red-500/20" : ""}
-                  ${!isToday && !isHoliday && dayEvents.length > 0 ? "bg-blue-500/10 text-blue-200 border-blue-500/20" : ""}
-                  ${!isToday && !isHoliday && dayEvents.length === 0 ? "text-gray-300 hover:bg-white/10 hover:text-white" : ""}`}
+                  ${isSelected ? "ring-2 ring-green-500 ring-offset-0" : ""}
+                  ${isToday ? "bg-green-600 text-gray-900 font-bold shadow-lg shadow-green-500/20 border-green-200" : "border-transparent"}
+                  ${!isToday && isHoliday ? "bg-red-50 text-red-200 border-red-200" : ""}
+                  ${!isToday && !isHoliday && dayEvents.length > 0 ? "bg-blue-50 text-blue-200 border-blue-200" : ""}
+                  ${!isToday && !isHoliday && dayEvents.length === 0 ? "text-gray-700 hover:bg-gray-100 hover:text-gray-900" : ""}`}
               >
                 <span>{day}</span>
                 <div className="flex items-center gap-1 mt-0.5">
@@ -419,7 +419,7 @@ function DashboardCalendar({ viewerRole }) {
                   {dayEvents.length > 0 && !isToday && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
                 </div>
                 {firstEventTitle && (
-                  <p className={`mt-0.5 text-[9px] leading-none truncate max-w-full ${isToday ? "text-white" : "text-blue-200"}`}>
+                  <p className={`mt-0.5 text-[9px] leading-none truncate max-w-full ${isToday ? "text-gray-900" : "text-blue-200"}`}>
                     {firstEventTitle}
                   </p>
                 )}
@@ -428,11 +428,11 @@ function DashboardCalendar({ viewerRole }) {
           })}
         </div>
 
-        <div className="mt-4 p-3 rounded-lg border border-white/5 bg-black/10">
+        <div className="mt-4 p-3 rounded-lg border border-gray-100 bg-black/10">
           <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-red-500/20 bg-red-500/10 text-red-200">Holiday</span>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-blue-500/20 bg-blue-500/10 text-blue-200">Event</span>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-200">Today</span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-200">Holiday</span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-blue-200 bg-blue-50 text-blue-200">Event</span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-green-200 bg-green-50 text-green-200">Today</span>
           </div>
 
           <div className="text-sm text-gray-200 font-medium">
@@ -464,17 +464,17 @@ function DashboardCalendar({ viewerRole }) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-white truncate">{event.title}</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-gray-300">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{event.title}</p>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-gray-200 text-gray-700">
                       {getAudienceIcon(event.targetAudience)}
                       {event.targetAudience || "Not set"}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
                     <Clock className="w-3 h-3" />
                     {formatEventTime(event.eventTime)}
                   </p>
-                  {event.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{event.description}</p>}
+                  {event.description && <p className="text-xs text-gray-600 mt-1 line-clamp-2">{event.description}</p>}
                 </div>
               </button>
             )) : !selectedHoliday && (
@@ -483,7 +483,7 @@ function DashboardCalendar({ viewerRole }) {
           </div>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-white/5">
+        <div className="mt-4 pt-4 border-t border-gray-100">
           <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Upcoming School Events</p>
           <div className="space-y-2">
             {loading ? (
@@ -496,13 +496,13 @@ function DashboardCalendar({ viewerRole }) {
                   setSelectedDay(event.eventDate || selectedDay);
                   setSelectedEvent(event);
                 }}
-                className="w-full text-left flex items-start gap-3 p-2 bg-white/5 rounded-lg border border-white/10 hover:border-emerald-400/30 transition-colors"
+                className="w-full text-left flex items-start gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-400/30 transition-colors"
               >
-                <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full mt-1.5" />
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full mt-1.5" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs font-medium text-gray-200 truncate">{event.title || "Untitled event"}</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-white/10 text-gray-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-gray-200 text-gray-700">
                       {getAudienceIcon(event.targetAudience)}
                       {event.targetAudience || "Not set"}
                     </span>
@@ -521,13 +521,13 @@ function DashboardCalendar({ viewerRole }) {
 
       {selectedEvent && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-gray-900 border border-white/10 shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-              <h4 className="text-white font-semibold">Event Details</h4>
+          <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h4 className="text-gray-900 font-semibold">Event Details</h4>
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="p-1.5 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-1.5 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -536,7 +536,7 @@ function DashboardCalendar({ viewerRole }) {
             <div className="px-5 py-4 space-y-3">
               <div>
                 <p className="text-[11px] text-gray-500 uppercase tracking-widest">Title</p>
-                <p className="text-white text-sm mt-1">{selectedEvent.title || "Untitled event"}</p>
+                <p className="text-gray-900 text-sm mt-1">{selectedEvent.title || "Untitled event"}</p>
               </div>
 
               <div>

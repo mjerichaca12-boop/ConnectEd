@@ -81,7 +81,7 @@ function EnrollmentManagement() {
   const getStatusColor = (status) => {
     switch (status) {
       case "Approved":
-        return "bg-emerald-100 text-emerald-700";
+        return "bg-green-100 text-green-700";
       case "Pending":
         return "bg-blue-100 text-blue-700";
       case "Rejected":
@@ -104,10 +104,10 @@ function EnrollmentManagement() {
   };
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
             <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
             <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
           </div>
@@ -116,9 +116,9 @@ function EnrollmentManagement() {
       </div>
     );
   }
-  return <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+  return <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -126,12 +126,12 @@ function EnrollmentManagement() {
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Enrollment Management</h2>
+                <h2 className="text-lg font-bold text-gray-900">Enrollment Management</h2>
               </div>
               <NotificationDropdown
     notifications={notificationList}
@@ -143,19 +143,19 @@ function EnrollmentManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Enrollment Management</h1>
-                <p className="text-gray-400">{enrollments.length} enrollment requests</p>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Enrollment Management</h1>
+                <p className="text-gray-600">{enrollments.length} enrollment requests</p>
               </div>
-              <button onClick={() => setShowEnrollModal(true)} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20">
+              <button onClick={() => setShowEnrollModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
                 <UserPlus className="w-5 h-5" />
                 Enroll Student
               </button>
@@ -163,77 +163,77 @@ function EnrollmentManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Approved</p>
-              <p className="text-3xl font-bold text-emerald-400">{enrollments.filter((e) => e.status === "Approved").length}</p>
+              <p className="text-3xl font-bold text-green-600">{enrollments.filter((e) => e.status === "Approved").length}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Pending</p>
               <p className="text-3xl font-bold text-blue-400">{enrollments.filter((e) => e.status === "Pending").length}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8 shadow-sm">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Rejected</p>
               <p className="text-3xl font-bold text-red-500">{enrollments.filter((e) => e.status === "Rejected").length}</p>
             </div>
           </div>
 
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8">
+          <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input type="text" placeholder="Search by student name or subject..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-emerald-500/50" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                <input type="text" placeholder="Search by student name or subject..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50" />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-sm">Status</span>
+                <span className="text-gray-600 text-sm">Status</span>
                 <CustomSelect value={filterStatus} onChange={setFilterStatus} options={[{ value: "all", label: "All Status" }, { value: "approved", label: "Approved" }, { value: "pending", label: "Pending" }, { value: "rejected", label: "Rejected" }]} icon={<Filter className="w-5 h-5" />} className="min-w-[160px]" />
               </div>
-              <button className="flex items-center gap-2 px-4 py-3 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-colors border border-white/10">
+              <button className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
             </div>
           </div>
 
-          <div className="bg-gray-900/80 rounded-xl border border-white/10 overflow-hidden">
+          <div className="bg-gray-1000 rounded-xl border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-black/40 border-b border-white/10">
+                <thead className="bg-black/40 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Student</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Subject</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Enrollment Date</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Student</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Subject</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Enrollment Date</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {filteredEnrollments.map((enrollment) => <tr key={enrollment.id} className="hover:bg-white/5 transition-colors">
+                  {filteredEnrollments.map((enrollment) => <tr key={enrollment.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-white">{enrollment.studentName}</p>
+                        <p className="font-semibold text-gray-900">{enrollment.studentName}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{enrollment.studentId}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-300">{enrollment.subjectName}</p>
-                        <p className="text-xs text-emerald-500 mt-0.5">{enrollment.subjectCode}</p>
+                        <p className="font-semibold text-gray-700">{enrollment.subjectName}</p>
+                        <p className="text-xs text-green-600 mt-0.5">{enrollment.subjectCode}</p>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
-                          enrollment.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                          enrollment.status === 'Pending' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                          'bg-red-500/10 text-red-400 border-red-500/20'
+                          enrollment.status === 'Approved' ? 'bg-green-50 text-green-600 border-green-200' :
+                          enrollment.status === 'Pending' ? 'bg-blue-50 text-blue-400 border-blue-200' :
+                          'bg-red-50 text-red-400 border-red-200'
                         }`}>
                           {getStatusIcon(enrollment.status)}{enrollment.status}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-400">
+                      <td className="px-6 py-4 text-sm text-gray-600">
                         {new Date(enrollment.enrollmentDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           {enrollment.status === "Pending" ? <>
-                              <button onClick={() => handleStatusChange(enrollment.id, "Approved")} className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/20 transition-colors text-xs font-semibold uppercase tracking-wider">Approve</button>
-                              <button onClick={() => handleStatusChange(enrollment.id, "Rejected")} className="px-3 py-1 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors text-xs font-semibold uppercase tracking-wider">Reject</button>
-                            </> : <button onClick={() => handleOpenStatusModal(enrollment)} className="px-3 py-1 bg-white/5 border border-white/10 text-gray-300 rounded-lg hover:bg-white/10 transition-colors text-xs font-semibold uppercase tracking-wider">Change Status</button>}
+                              <button onClick={() => handleStatusChange(enrollment.id, "Approved")} className="px-3 py-1 bg-green-50 border border-green-200 text-green-600 rounded-lg hover:bg-green-500/20 transition-colors text-xs font-semibold uppercase tracking-wider">Approve</button>
+                              <button onClick={() => handleStatusChange(enrollment.id, "Rejected")} className="px-3 py-1 bg-red-50 border border-red-200 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors text-xs font-semibold uppercase tracking-wider">Reject</button>
+                            </> : <button onClick={() => handleOpenStatusModal(enrollment)} className="px-3 py-1 bg-gray-50 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors text-xs font-semibold uppercase tracking-wider">Change Status</button>}
                         </div>
                       </td>
                     </tr>)}
@@ -242,7 +242,7 @@ function EnrollmentManagement() {
             </div>
             {filteredEnrollments.length === 0 && <div className="p-16 text-center">
                 <UserPlus className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">No enrollments yet.</p>
+                <p className="text-gray-600">No enrollments yet.</p>
               </div>}
           </div>
         </div>
@@ -270,7 +270,7 @@ function EnrollmentManagement() {
     setShowEnrollModal(false);
     setFormData({ studentId: "", subjectCode: "" });
   }} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                <button onClick={handleEnrollStudent} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">Enroll Student</button>
+                <button onClick={handleEnrollStudent} className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors">Enroll Student</button>
               </div>
             </div>
           </div>
@@ -312,7 +312,7 @@ function EnrollmentManagement() {
                 <button onClick={() => handleUpdateStatus("Pending")} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border-2 border-blue-200">
                   <Clock className="w-5 h-5" /><span className="font-medium">Pending</span>
                 </button>
-                <button onClick={() => handleUpdateStatus("Approved")} className="w-full flex items-center gap-3 px-4 py-3 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors border-2 border-emerald-200">
+                <button onClick={() => handleUpdateStatus("Approved")} className="w-full flex items-center gap-3 px-4 py-3 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors border-2 border-green-200">
                   <CheckCircle className="w-5 h-5" /><span className="font-medium">Approved</span>
                 </button>
                 <button onClick={() => handleUpdateStatus("Rejected")} className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors border-2 border-red-200">

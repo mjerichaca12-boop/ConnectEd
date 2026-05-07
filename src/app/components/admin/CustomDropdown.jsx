@@ -23,7 +23,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", l
       <button
     type="button"
     onClick={() => setIsOpen(!isOpen)}
-    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-gray-50 hover:bg-white transition-all duration-200 text-left cursor-pointer group relative"
+    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-gray-50 hover:bg-white transition-all duration-200 text-left cursor-pointer group relative"
   >
         <div className={`pr-10 ${selectedOption ? "text-gray-900 font-medium" : "text-gray-500"}`}>
           {selectedOption ? <div>
@@ -32,7 +32,7 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", l
             </div> : placeholder}
         </div>
         <div className={`absolute top-1/2 -translate-y-1/2 right-3 pointer-events-none transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
-          <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-emerald-600" />
+          <ChevronDown className="w-5 h-5 text-gray-600 group-hover:text-green-600" />
         </div>
       </button>
 
@@ -43,17 +43,17 @@ function CustomDropdown({ value, onChange, options, placeholder = "Select...", l
     type="button"
     onClick={() => handleSelect(option.value)}
     disabled={!option.value}
-    className={`w-full px-4 py-3 text-left transition-all duration-150 flex items-center justify-between group ${!option.value ? "bg-gray-50 text-gray-400 cursor-not-allowed" : option.value === value ? "bg-emerald-50 text-emerald-700 font-medium" : "hover:bg-gray-50 text-gray-900"}`}
+    className={`w-full px-4 py-3 text-left transition-all duration-150 flex items-center justify-between group ${!option.value ? "bg-gray-50 text-gray-600 cursor-not-allowed" : option.value === value ? "bg-green-50 text-green-700 font-medium" : "hover:bg-gray-50 text-gray-900"}`}
   >
                 <div className="flex-1">
                   <div className={`${option.value === value ? "font-semibold" : "font-medium"}`}>
                     {option.label}
                   </div>
-                  {option.sublabel && <div className={`text-sm mt-0.5 ${option.value === value ? "text-emerald-600" : "text-gray-500"}`}>
+                  {option.sublabel && <div className={`text-sm mt-0.5 ${option.value === value ? "text-green-600" : "text-gray-500"}`}>
                       {option.sublabel}
                     </div>}
                 </div>
-                {option.value === value && <Check className="w-5 h-5 text-emerald-600 animate-scaleIn" />}
+                {option.value === value && <Check className="w-5 h-5 text-green-600 animate-scaleIn" />}
               </button>)}
           </div>
         </div>}

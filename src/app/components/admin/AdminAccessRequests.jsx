@@ -8,11 +8,11 @@ const getStatusColor = (status) => {
       return "bg-yellow-500/10 text-yellow-300 border-yellow-500/30";
     case "approved":
     case "invited":
-      return "bg-emerald-500/10 text-emerald-300 border-emerald-500/30";
+      return "bg-green-50 text-green-300 border-green-300";
     case "rejected":
-      return "bg-red-500/10 text-red-300 border-red-500/30";
+      return "bg-red-50 text-red-300 border-red-500/30";
     default:
-      return "bg-gray-500/10 text-gray-300 border-gray-500/30";
+      return "bg-gray-500/10 text-gray-700 border-gray-500/30";
   }
 };
 
@@ -155,18 +155,18 @@ function AdminAccessRequests() {
   return (
     <div className="space-y-6">
       {loadError && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-center gap-2">
+        <div className="p-4 rounded-lg bg-red-50 border border-red-500/30 text-red-300 text-sm flex items-center gap-2">
           <XCircle className="w-4 h-4" />
           {loadError}
         </div>
       )}
 
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white">Teacher Access Requests</h2>
+        <h2 className="text-xl font-bold text-gray-900">Teacher Access Requests</h2>
         <button
           onClick={loadAccessRequests}
           disabled={loading}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
@@ -174,28 +174,28 @@ function AdminAccessRequests() {
 
       {/* Messages */}
       {actionMessage && (
-        <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm flex items-center gap-2">
+        <div className="p-4 rounded-lg bg-green-50 border border-green-300 text-green-300 text-sm flex items-center gap-2">
           <CheckCircle className="w-4 h-4" />
           {actionMessage}
         </div>
       )}
       {actionError && (
-        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-center gap-2">
+        <div className="p-4 rounded-lg bg-red-50 border border-red-500/30 text-red-300 text-sm flex items-center gap-2">
           <XCircle className="w-4 h-4" />
           {actionError}
         </div>
       )}
 
       {/* Filter Tabs */}
-      <div className="flex gap-2 border-b border-white/10">
+      <div className="flex gap-2 border-b border-gray-200">
         {["all", "pending", "approved", "rejected", "invited"].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
               filter === status
-                ? "text-emerald-400 border-emerald-400"
-                : "text-gray-400 border-transparent hover:text-gray-300"
+                ? "text-green-600 border-green-400"
+                : "text-gray-600 border-transparent hover:text-gray-700"
             }`}
           >
             {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -210,7 +210,7 @@ function AdminAccessRequests() {
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             <p className="text-gray-500">Loading requests...</p>
           </div>
         </div>
@@ -220,15 +220,15 @@ function AdminAccessRequests() {
           <p className="text-gray-500">No access requests found.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-white/10">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
-            <thead className="bg-white/5 border-b border-white/10">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-gray-300 font-semibold">Email</th>
-                <th className="px-6 py-3 text-left text-gray-300 font-semibold">Name</th>
-                <th className="px-6 py-3 text-left text-gray-300 font-semibold">Status</th>
-                <th className="px-6 py-3 text-left text-gray-300 font-semibold">Requested</th>
-                <th className="px-6 py-3 text-right text-gray-300 font-semibold">Actions</th>
+                <th className="px-6 py-3 text-left text-gray-700 font-semibold">Email</th>
+                <th className="px-6 py-3 text-left text-gray-700 font-semibold">Name</th>
+                <th className="px-6 py-3 text-left text-gray-700 font-semibold">Status</th>
+                <th className="px-6 py-3 text-left text-gray-700 font-semibold">Requested</th>
+                <th className="px-6 py-3 text-right text-gray-700 font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -242,7 +242,7 @@ function AdminAccessRequests() {
                       {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
                     </span>
                   </td>
-                  <td className="px-6 py-3 text-gray-400 text-xs">
+                  <td className="px-6 py-3 text-gray-600 text-xs">
                     {new Date(request.requested_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-3 text-right">
@@ -252,7 +252,7 @@ function AdminAccessRequests() {
                           <button
                             onClick={() => handleApproveAndSendInvite(request)}
                             disabled={loadingId === request.id}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50 text-sm font-medium"
+                            className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-gray-900 transition-colors disabled:opacity-50 text-sm font-medium"
                             title="Approve request"
                           >
                             {loadingId === request.id ? "Approving..." : "Approve"}
@@ -260,7 +260,7 @@ function AdminAccessRequests() {
                           <button
                             onClick={() => handleDeclineRequest(request)}
                             disabled={loadingId === request.id}
-                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50 text-sm font-medium"
+                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-gray-900 transition-colors disabled:opacity-50 text-sm font-medium"
                             title="Decline request"
                           >
                             {loadingId === request.id ? "Declining..." : "Decline"}

@@ -823,16 +823,16 @@ function GradesManagement() {
   if (loading) return <LoadingScreen message="Loading grades..." />;
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         {/* Top bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-white">Grades Management</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Grades Management</h2>
                 {hasUnsavedChanges && <span className="text-sm text-amber-400 font-medium animate-pulse">● Unsaved changes</span>}
               </div>
               <NotificationDropdown
@@ -846,12 +846,12 @@ function GradesManagement() {
 
         <div className="p-6 space-y-6">
           {/* Hero */}
-          <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Grade Management</h1>
-                <p className="text-emerald-50 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
+                <p className="text-green-50 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
               </div>
             </div>
           </div>
@@ -859,14 +859,14 @@ function GradesManagement() {
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Class Average", value: `${classAverage}%`, icon: <TrendingUp className="w-5 h-5" />, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-              { label: "Lowest Grade", value: `${lowestGrade}%`, icon: <TrendingDown className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
-              { label: "Passing Rate", value: `${passingRate}%`, icon: <Target className="w-5 h-5" />, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20" },
+              { label: "Class Average", value: `${classAverage}%`, icon: <TrendingUp className="w-5 h-5" />, color: "text-green-600", bg: "bg-green-50 border-green-200" },
+              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-50 border-blue-200" },
+              { label: "Lowest Grade", value: `${lowestGrade}%`, icon: <TrendingDown className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-50 border-red-200" },
+              { label: "Passing Rate", value: `${passingRate}%`, icon: <Target className="w-5 h-5" />, color: "text-purple-400", bg: "bg-purple-50 border-purple-200" },
             ].map(({ label, value, icon, color, bg }) => (
               <div key={label} className={`rounded-xl p-5 border ${bg}`}>
                 <div className={`${color} mb-2`}>{icon}</div>
-                <p className="text-gray-400 text-xs mb-1">{label}</p>
+                <p className="text-gray-600 text-xs mb-1">{label}</p>
                 <p className={`text-2xl font-bold ${color}`}>{value}</p>
               </div>
             ))}
@@ -874,29 +874,29 @@ function GradesManagement() {
 
           {/* Success banner */}
           {saveSuccess && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-emerald-400" />
-              <p className="text-emerald-300 font-medium">Grades saved successfully!</p>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              <p className="text-green-300 font-medium">Grades saved successfully!</p>
             </div>
           )}
 
           {autoSaveMessage && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-300" />
-              <p className="text-emerald-200 text-sm">{autoSaveMessage}</p>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-300" />
+              <p className="text-green-200 text-sm">{autoSaveMessage}</p>
             </div>
           )}
 
           {/* Filters */}
-          <div className="bg-gray-900/60 rounded-xl p-5 border border-white/10 space-y-4">
+          <div className="bg-white rounded-xl p-5 border border-gray-200 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+                <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wider">
                   <Filter className="w-3.5 h-3.5 inline mr-1.5" />
                   Select Subject / Section
                 </label>
                 {classes.length === 0 ? (
-                  <div className="w-full px-4 py-3 border border-white/10 rounded-lg bg-black/20 text-gray-400 text-sm">No classes available</div>
+                  <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 text-sm">No classes available</div>
                 ) : (
                   <CustomSelect
                     value={selectedClass}
@@ -908,7 +908,7 @@ function GradesManagement() {
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">
+                <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wider">
                   <Search className="w-3.5 h-3.5 inline mr-1.5" />
                   Search Student
                 </label>
@@ -917,7 +917,7 @@ function GradesManagement() {
                   placeholder="Search by name or LRN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-3 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                  className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 />
               </div>
             </div>
@@ -926,26 +926,26 @@ function GradesManagement() {
           {/* Grade Table */}
           {selectedClass && (
             <>
-            <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Table header row */}
-              <div className="p-5 border-b border-white/10 flex flex-wrap items-center justify-between gap-4">
+              <div className="p-5 border-b border-gray-200 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-semibold text-white">{selectedClassName || "Select a class to view grades"}</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
+                  <h3 className="text-base font-semibold text-gray-900">{selectedClassName || "Select a class to view grades"}</h3>
+                  <p className="text-xs text-gray-600 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
                 </div>
 
                 <div className="flex items-center gap-3 flex-wrap">
                   {/* Pass/Fail filter tabs */}
-                  <div className="flex bg-black/20 rounded-lg p-1 border border-white/10">
+                  <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200">
                     {[
                       { key: "all", label: `All (${studentGrades.length})` },
-                      { key: "passed", label: `Passed (${passingCount})`, color: "text-emerald-400" },
+                      { key: "passed", label: `Passed (${passingCount})`, color: "text-green-600" },
                       { key: "failed", label: `Failed (${failingCount})`, color: "text-red-400" },
                     ].map(({ key, label, color }) => (
                       <button
                         key={key}
                         onClick={() => setActiveView(key)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === key ? "bg-white/10 text-white" : `text-gray-400 hover:text-white ${color || ""}`}`}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === key ? "bg-gray-100 text-gray-900" : `text-gray-600 hover:text-gray-900 ${color || ""}`}`}
                       >
                         {label}
                       </button>
@@ -955,7 +955,7 @@ function GradesManagement() {
                   <button
                     onClick={handleSave}
                     disabled={!hasUnsavedChanges || !selectedClass || saving}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Save className="w-4 h-4" />
                     {saving ? "Saving…" : "Save All"}
@@ -971,7 +971,7 @@ function GradesManagement() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-black/20">
+                    <thead className="bg-gray-50">
                       <tr>
                         <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quiz Avg</th>
@@ -987,14 +987,14 @@ function GradesManagement() {
                       {filteredByView.map((student) => {
                         const isPassed = student.overallGrade >= 75;
                         return (
-                          <tr key={student.id} className={`hover:bg-white/5 transition-colors ${!isPassed ? "bg-red-500/5" : ""}`}>
+                          <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${!isPassed ? "bg-red-500/5" : ""}`}>
                             <td className="px-5 py-4">
                               <div className="flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${isPassed ? "bg-emerald-600" : "bg-red-600"}`}>
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-gray-900 ${isPassed ? "bg-green-600" : "bg-red-600"}`}>
                                   {student.studentName.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-white">{student.studentName}</p>
+                                  <p className="font-medium text-gray-900">{student.studentName}</p>
                                   <p className="text-xs text-gray-500">{student.studentId}</p>
                                 </div>
                               </div>
@@ -1003,8 +1003,8 @@ function GradesManagement() {
                               { field: "quizAverage", value: student.quizAverage, color: "ring-violet-500" },
                               { field: "activityGrade", value: student.activityGrade, color: "ring-orange-500" },
                               { field: "projectGrade", value: student.projectGrade, color: "ring-sky-500" },
-                              { field: "midtermGrade", value: student.midtermGrade, color: "ring-emerald-500" },
-                              { field: "finalGrade", value: student.finalGrade, color: "ring-emerald-500" },
+                              { field: "midtermGrade", value: student.midtermGrade, color: "ring-green-500" },
+                              { field: "finalGrade", value: student.finalGrade, color: "ring-green-500" },
                             ].map(({ field, value, color }) => (
                               <td key={field} className="px-5 py-4 text-center">
                                 <input
@@ -1013,17 +1013,17 @@ function GradesManagement() {
                                   max="100"
                                   value={value}
                                   onChange={(e) => handleGradeChange(student.id, field, e.target.value)}
-                                  className={`w-20 px-2 py-1.5 text-center bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 ${color} text-sm`}
+                                  className={`w-20 px-2 py-1.5 text-center bg-gray-50 text-gray-900 border border-white/20 rounded-lg focus:outline-none focus:ring-2 ${color} text-sm`}
                                 />
                               </td>
                             ))}
                             <td className="px-5 py-4 text-center">
-                              <span className={`inline-block px-3 py-1.5 rounded-full text-sm font-bold ${isPassed ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>
+                              <span className={`inline-block px-3 py-1.5 rounded-full text-sm font-bold ${isPassed ? "bg-green-500/20 text-green-600" : "bg-red-500/20 text-red-400"}`}>
                                 {student.overallGrade}%
                               </span>
                             </td>
                             <td className="px-5 py-4 text-center">
-                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${isPassed ? "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20" : "bg-red-500/10 text-red-300 border border-red-500/20"}`}>
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${isPassed ? "bg-green-50 text-green-300 border border-green-200" : "bg-red-50 text-red-300 border border-red-200"}`}>
                                 {student.remarks}
                               </span>
                             </td>
@@ -1037,24 +1037,24 @@ function GradesManagement() {
 
               {/* Summary footer */}
               {studentGrades.length > 0 && (
-                <div className="p-4 border-t border-white/10 flex items-center justify-between bg-black/10 flex-wrap gap-3">
+                <div className="p-4 border-t border-gray-200 flex items-center justify-between bg-black/10 flex-wrap gap-3">
                   <div className="flex items-center gap-6 text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                      <span className="text-gray-400">Passed: <span className="text-emerald-400 font-semibold">{passingCount}</span></span>
+                      <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+                      <span className="text-gray-600">Passed: <span className="text-green-600 font-semibold">{passingCount}</span></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                      <span className="text-gray-400">Failed: <span className="text-red-400 font-semibold">{failingCount}</span></span>
+                      <span className="text-gray-600">Failed: <span className="text-red-400 font-semibold">{failingCount}</span></span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />
-                      <span className="text-gray-400">Total: <span className="text-white font-semibold">{studentGrades.length}</span></span>
+                      <span className="text-gray-600">Total: <span className="text-gray-900 font-semibold">{studentGrades.length}</span></span>
                     </div>
                   </div>
                   <button
                     onClick={() => exportToExcel(studentGrades, selectedClassName)}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-sm transition-all"
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 border border-green-300 text-green-300 rounded-lg text-sm transition-all"
                   >
                     <Download className="w-4 h-4" />
                     Download Excel Report
@@ -1063,10 +1063,10 @@ function GradesManagement() {
               )}
             </div>
 
-            <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-white/10">
-                <h3 className="text-base font-semibold text-white">Assessment-Based Grading</h3>
-                <p className="text-xs text-gray-400 mt-0.5">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-gray-200">
+                <h3 className="text-base font-semibold text-gray-900">Assessment-Based Grading</h3>
+                <p className="text-xs text-gray-600 mt-0.5">
                   Review student submissions and assign grades for each assessment.
                 </p>
               </div>
@@ -1074,14 +1074,14 @@ function GradesManagement() {
               {assessmentItems.length === 0 ? (
                 <div className="p-8 text-center">
                   <EmptyStateIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm">No assessments found for this class yet.</p>
+                  <p className="text-gray-600 text-sm">No assessments found for this class yet.</p>
                 </div>
               ) : (
                 <div className="p-4">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-white/10">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">1. Assessments</p>
+                    <div className="lg:col-span-4 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-200">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">1. Assessments</p>
                       </div>
                       <div className="max-h-[460px] overflow-y-auto dark-scrollbar p-2 space-y-2">
                         {assessmentItems.map((assessment) => {
@@ -1097,10 +1097,10 @@ function GradesManagement() {
                                 setHasViewedSubmission(false);
                                 setFocusedAssessmentId(assessment.id);
                               }}
-                              className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 hover:bg-white/5"}`}
+                              className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-green-400/50 bg-green-50" : "border-gray-200 hover:bg-gray-50"}`}
                             >
-                              <p className="text-sm font-semibold text-white line-clamp-1">{assessment.title}</p>
-                              <p className="text-xs text-gray-400 mt-0.5">
+                              <p className="text-sm font-semibold text-gray-900 line-clamp-1">{assessment.title}</p>
+                              <p className="text-xs text-gray-600 mt-0.5">
                                 {assessment.type.charAt(0).toUpperCase() + assessment.type.slice(1)} • Max {assessment.maxPoints}
                               </p>
                             </button>
@@ -1109,9 +1109,9 @@ function GradesManagement() {
                       </div>
                     </div>
 
-                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-white/10">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">2. Students</p>
+                    <div className="lg:col-span-4 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-200">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">2. Students</p>
                       </div>
                       <div className="max-h-[460px] overflow-y-auto dark-scrollbar p-2 space-y-2">
                         {!selectedAssessment ? (
@@ -1132,27 +1132,27 @@ function GradesManagement() {
                                   setSelectedStudentId(student.id);
                                   setHasViewedSubmission(true);
                                 }}
-                                className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-emerald-400/50 bg-emerald-500/10" : "border-white/10 hover:bg-white/5"}`}
+                                className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-green-400/50 bg-green-50" : "border-gray-200 hover:bg-gray-50"}`}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <p className="text-sm font-medium text-white line-clamp-1">{student.studentName}</p>
+                                  <p className="text-sm font-medium text-gray-900 line-clamp-1">{student.studentName}</p>
                                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                                     {student.isSubmitted ? (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Submitted</span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-300 border border-green-200">Submitted</span>
                                     ) : (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">No Submission</span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-300 border border-amber-200">No Submission</span>
                                     )}
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${gradingStatus === "Graded" ? "bg-blue-500/10 text-blue-300 border-blue-500/20" : "bg-gray-500/10 text-gray-300 border-gray-500/20"}`}>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${gradingStatus === "Graded" ? "bg-blue-50 text-blue-300 border-blue-200" : "bg-gray-500/10 text-gray-700 border-gray-500/20"}`}>
                                       {gradingStatus}
                                     </span>
                                     {rowSaveState === "saving" ? (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">Saving…</span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-300 border border-amber-200">Saving…</span>
                                     ) : null}
                                     {rowSaveState === "saved" ? (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">Saved</span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-50 text-green-300 border border-green-200">Saved</span>
                                     ) : null}
                                     {rowSaveState === "error" ? (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 border border-red-500/20">Save Failed</span>
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-300 border border-red-200">Save Failed</span>
                                     ) : null}
                                   </div>
                                 </div>
@@ -1164,9 +1164,9 @@ function GradesManagement() {
                       </div>
                     </div>
 
-                    <div className="lg:col-span-4 rounded-xl border border-white/10 bg-black/20 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-white/10">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">3. Submission & Grade</p>
+                    <div className="lg:col-span-4 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-gray-200">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">3. Submission & Grade</p>
                       </div>
                       <div className="p-4 space-y-4">
                         {!selectedAssessment || !selectedStudentId ? (
@@ -1175,8 +1175,8 @@ function GradesManagement() {
                           </div>
                         ) : (
                           <>
-                            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Submission Output</p>
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                              <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Submission Output</p>
 
                               {selectedStudentSubmission ? (
                                 <div className="space-y-3">
@@ -1194,7 +1194,7 @@ function GradesManagement() {
                                         href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-300 text-xs border border-emerald-500/20 hover:bg-emerald-500/20"
+                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-300 text-xs border border-green-200 hover:bg-green-500/20"
                                       >
                                         {selectedStudentSubmission.fileName || "Open submitted file"}
                                       </a>
@@ -1212,8 +1212,8 @@ function GradesManagement() {
                               )}
                             </div>
 
-                            <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Grade Input</p>
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                              <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Grade Input</p>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
@@ -1223,14 +1223,14 @@ function GradesManagement() {
                                   value={assessmentGradesMap?.[selectedAssessment.id]?.[selectedStudentId] ?? ""}
                                   onChange={(e) => handleAssessmentGradeChange(selectedAssessment.id, selectedStudentId, selectedAssessment.maxPoints, e.target.value)}
                                   disabled={!hasViewedSubmission}
-                                  className="w-full px-3 py-2 text-sm bg-black/20 text-white border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full px-3 py-2 text-sm bg-gray-50 text-gray-900 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="Enter grade"
                                 />
-                                <span className="text-xs text-gray-400 whitespace-nowrap">/ {selectedAssessment.maxPoints}</span>
+                                <span className="text-xs text-gray-600 whitespace-nowrap">/ {selectedAssessment.maxPoints}</span>
                               </div>
                               {selectedAssessment && selectedStudentId ? (
-                                <p className="text-[11px] text-gray-400 mt-2">
-                                  Status: <span className="text-white font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
+                                <p className="text-[11px] text-gray-600 mt-2">
+                                  Status: <span className="text-gray-900 font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
                                 </p>
                               ) : null}
                               {!hasViewedSubmission ? (
@@ -1251,12 +1251,12 @@ function GradesManagement() {
 
           {/* Empty state when no class selected */}
           {!selectedClass && (
-            <div className="bg-gray-900/40 rounded-xl border border-white/5 p-16 text-center">
-              <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Award className="w-8 h-8 text-emerald-400" />
+            <div className="bg-gray-500 rounded-xl border border-gray-100 p-16 text-center">
+              <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Award className="w-8 h-8 text-green-600" />
               </div>
-              <h3 className="text-white font-semibold mb-1">Select a class to view grades</h3>
-              <p className="text-gray-400 text-sm">Grades are automatically consolidated from activities, quizzes, and assignments.</p>
+              <h3 className="text-gray-900 font-semibold mb-1">Select a class to view grades</h3>
+              <p className="text-gray-600 text-sm">Grades are automatically consolidated from activities, quizzes, and assignments.</p>
             </div>
           )}
         </div>

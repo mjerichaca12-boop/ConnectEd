@@ -339,7 +339,7 @@ function ClassMaterials() {
       case "DOC":
         return <File className="w-5 h-5 text-blue-600" />;
       default:
-        return <File className="w-5 h-5 text-gray-400" />;
+        return <File className="w-5 h-5 text-gray-600" />;
     }
   };
 
@@ -506,27 +506,27 @@ function ClassMaterials() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-white">Class Materials & Activities</h2>
-                <p className="text-sm text-gray-400">Upload and manage educational resources</p>
+                <h2 className="text-xl font-semibold text-gray-900">Class Materials & Activities</h2>
+                <p className="text-sm text-gray-600">Upload and manage educational resources</p>
               </div>
             </div>
           </div>
         </div>
 
         <div className="p-6">
-          <div className="bg-gray-900/60 rounded-xl shadow-sm border border-white/10 mb-6">
-            <div className="flex border-b border-white/10">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+            <div className="flex border-b border-gray-200">
               <button
                 onClick={() => setActiveTab("materials")}
-                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "materials" ? "text-emerald-600 border-b-2 border-emerald-600" : "text-gray-400 hover:text-white"}`}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "materials" ? "text-green-600 border-b-2 border-green-600" : "text-gray-600 hover:text-gray-900"}`}
               >
                 <div className="flex items-center justify-center gap-2">
                   <FolderOpen className="w-5 h-5" />
@@ -535,7 +535,7 @@ function ClassMaterials() {
               </button>
               <button
                 onClick={() => setActiveTab("activities")}
-                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "activities" ? "text-emerald-600 border-b-2 border-emerald-600" : "text-gray-400 hover:text-white"}`}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === "activities" ? "text-green-600 border-b-2 border-green-600" : "text-gray-600 hover:text-gray-900"}`}
               >
                 <div className="flex items-center justify-center gap-2">
                   <BookOpen className="w-5 h-5" />
@@ -557,7 +557,7 @@ function ClassMaterials() {
                     </p>
                   )}
                   {materialSuccess && (
-                    <p className="text-sm text-emerald-500">{materialSuccess}</p>
+                    <p className="text-sm text-green-600">{materialSuccess}</p>
                   )}
                 </div>
                 <button
@@ -565,7 +565,7 @@ function ClassMaterials() {
                     setShowUploadModal(true);
                     setMaterialError("");
                   }}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg shadow-emerald-600/20"
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all shadow-lg shadow-green-600/20"
                 >
                   <Upload className="w-5 h-5" />
                   Upload Material
@@ -574,19 +574,19 @@ function ClassMaterials() {
 
               <div className="grid grid-cols-1 gap-4">
                 {loadingMaterials ? (
-                  <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 text-gray-400">Loading materials...</div>
+                  <div className="bg-white rounded-xl p-6 border border-gray-200 text-gray-600">Loading materials...</div>
                 ) : materials.length === 0 ? (
-                  <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 text-gray-400">No materials uploaded yet.</div>
+                  <div className="bg-white rounded-xl p-6 border border-gray-200 text-gray-600">No materials uploaded yet.</div>
                 ) : (
                   materials.map((material) => (
-                    <div key={material.id} className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm hover:shadow-md transition-shadow">
+                    <div key={material.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 bg-white/5 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
                           {getFileIcon(material.file_type)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-semibold text-white mb-1">{material.title}</h3>
-                          <p className="text-sm text-gray-400 mb-3">{material.description || "No description provided"}</p>
+                          <h3 className="text-lg font-semibold text-gray-900 mb-1">{material.title}</h3>
+                          <p className="text-sm text-gray-600 mb-3">{material.description || "No description provided"}</p>
                           <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                             {material.subject && (
                               <span className="flex items-center gap-1">
@@ -612,7 +612,7 @@ function ClassMaterials() {
                               href={material.file_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="flex items-center gap-1 text-emerald-500 hover:text-emerald-400"
+                              className="flex items-center gap-1 text-green-600 hover:text-green-600"
                             >
                               <Eye className="w-4 h-4" />
                               View
@@ -620,7 +620,7 @@ function ClassMaterials() {
                             <a
                               href={material.file_url}
                               download={material.file_name || material.title}
-                              className="flex items-center gap-1 text-emerald-500 hover:text-emerald-400"
+                              className="flex items-center gap-1 text-green-600 hover:text-green-600"
                             >
                               <Download className="w-4 h-4" />
                               Download
@@ -628,10 +628,10 @@ function ClassMaterials() {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <a href={material.file_url} target="_blank" rel="noreferrer" className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                          <a href={material.file_url} target="_blank" rel="noreferrer" className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                             <Eye className="w-5 h-5" />
                           </a>
-                          <button className="p-2 text-gray-500 hover:bg-white/5 rounded-lg transition-colors" disabled>
+                          <button className="p-2 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors" disabled>
                             <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
@@ -648,7 +648,7 @@ function ClassMaterials() {
               <div className="flex justify-end">
                 <button
                   onClick={() => setShowActivityModal(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg shadow-emerald-600/20"
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all shadow-lg shadow-green-600/20"
                 >
                   <Plus className="w-5 h-5" />
                   Create Activity
@@ -657,11 +657,11 @@ function ClassMaterials() {
 
               <div className="grid grid-cols-1 gap-4">
                 {activities.map((activity) => (
-                  <div key={activity.id} className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm hover:shadow-md transition-shadow">
+                  <div key={activity.id} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-white mb-1">{activity.title}</h3>
-                        <p className="text-sm text-gray-400 mb-3">{activity.description}</p>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">{activity.title}</h3>
+                        <p className="text-sm text-gray-600 mb-3">{activity.description}</p>
                         <div className="flex flex-wrap gap-4 text-sm text-gray-500 mb-3">
                           <span className="flex items-center gap-1">
                             <BookOpen className="w-4 h-4" />
@@ -676,17 +676,17 @@ function ClassMaterials() {
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-gray-200 rounded-full h-2">
                             <div
-                              className="bg-emerald-600 h-2 rounded-full transition-all"
+                              className="bg-green-600 h-2 rounded-full transition-all"
                               style={{ width: `${(activity.submissions / activity.totalStudents) * 100}%` }}
                             />
                           </div>
-                          <span className="text-sm text-gray-400">
+                          <span className="text-sm text-gray-600">
                             {activity.submissions}/{activity.totalStudents} submitted
                           </span>
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
                           <Eye className="w-5 h-5" />
                         </button>
                         <button className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
@@ -704,51 +704,51 @@ function ClassMaterials() {
 
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide">
-            <div className="sticky top-0 bg-gray-900/60 border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-white">Upload Class Material</h3>
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Upload Class Material</h3>
               <button
                 onClick={() => {
                   setShowUploadModal(false);
                   clearMaterialForm();
                 }}
-                className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-400" />
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               {materialError && (
-                <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-400 flex items-center gap-2">
+                <div className="rounded-lg border border-red-500/40 bg-red-50 p-3 text-sm text-red-400 flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   {materialError}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Title *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
                 <input
                   type="text"
                   value={materialForm.title}
                   onChange={(e) => setMaterialForm((prev) => ({ ...prev, title: e.target.value }))}
-                  className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="e.g., Chapter 5 Notes"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                 <textarea
                   rows={3}
                   value={materialForm.description}
                   onChange={(e) => setMaterialForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="Brief description of the material"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">File Type *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">File Type *</label>
                 <CustomSelect
                   options={FILE_TYPE_OPTIONS}
                   value={materialForm.fileType}
@@ -758,7 +758,7 @@ function ClassMaterials() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Subject (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subject (optional)</label>
                 <CustomSelect
                   options={subjectOptions}
                   value={materialForm.subject}
@@ -768,7 +768,7 @@ function ClassMaterials() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Section/Class (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Section/Class (optional)</label>
                 <CustomSelect
                   options={sectionOptions}
                   value={materialForm.section}
@@ -778,7 +778,7 @@ function ClassMaterials() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Attach File *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attach File *</label>
                 <input
                   ref={materialFileInputRef}
                   type="file"
@@ -787,10 +787,10 @@ function ClassMaterials() {
                 />
                 <div
                   onClick={handleMaterialFileClick}
-                  className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                  className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-green-500 transition-colors cursor-pointer"
                 >
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm text-gray-400 mb-1">
+                  <Upload className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                  <p className="text-sm text-gray-600 mb-1">
                     {materialFileName || "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-500">Supported file uploads up to your storage limit</p>
@@ -803,14 +803,14 @@ function ClassMaterials() {
                     setShowUploadModal(false);
                     clearMaterialForm();
                   }}
-                  className="flex-1 px-6 py-3 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 transition-colors"
+                  className="flex-1 px-6 py-3 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleUploadMaterial}
                   disabled={isUploadingMaterial}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isUploadingMaterial ? "Uploading..." : "Upload Material"}
                 </button>
@@ -822,38 +822,38 @@ function ClassMaterials() {
 
       {showActivityModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-900/60 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide">
-            <div className="sticky top-0 bg-gray-900/60 border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-white">Create Activity</h3>
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">Create Activity</h3>
               <button
                 onClick={() => setShowActivityModal(false)}
-                className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-50 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-400" />
+                <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Activity Title *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Activity Title *</label>
                 <input
                   type="text"
-                  className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="e.g., Problem Set 1"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Instructions *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Instructions *</label>
                 <textarea
                   rows={4}
-                  className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                   placeholder="Detailed instructions for students"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Subject *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject *</label>
                   <CustomSelect
                     options={ACTIVITY_SUBJECT_OPTIONS}
                     value=""
@@ -862,25 +862,25 @@ function ClassMaterials() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Max Points *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Max Points *</label>
                   <input
                     type="number"
-                    className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="100"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Due Date *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Due Date *</label>
                 <input
                   type="date"
-                  className="w-full px-4 py-2 bg-black/20 text-white placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Attach File (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Attach File (optional)</label>
                 <input
                   ref={activityFileInputRef}
                   type="file"
@@ -889,10 +889,10 @@ function ClassMaterials() {
                 />
                 <div
                   onClick={handleActivityFileClick}
-                  className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-emerald-500 transition-colors cursor-pointer"
+                  className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-green-500 transition-colors cursor-pointer"
                 >
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400 mb-1">
+                  <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600 mb-1">
                     {activityFileName || "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 50MB)</p>
@@ -902,11 +902,11 @@ function ClassMaterials() {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowActivityModal(false)}
-                  className="flex-1 px-6 py-3 border border-white/20 text-gray-300 rounded-lg hover:bg-black/20 transition-colors"
+                  className="flex-1 px-6 py-3 border border-white/20 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancel
                 </button>
-                <button className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all">
+                <button className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all">
                   Create Activity
                 </button>
               </div>

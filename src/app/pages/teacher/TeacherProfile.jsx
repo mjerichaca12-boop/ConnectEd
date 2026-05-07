@@ -60,12 +60,12 @@ const extractStoragePathFromPublicUrl = (url) => {
 function StatCard({ icon, label, value, color }) {
   return (
     <div className={`rounded-xl p-5 border ${color} flex items-center gap-4`}>
-      <div className="p-3 rounded-xl bg-white/5">
+      <div className="p-3 rounded-xl bg-gray-50">
         {icon}
       </div>
       <div>
-        <p className="text-gray-400 text-xs">{label}</p>
-        <p className="text-white font-semibold">{value}</p>
+        <p className="text-gray-600 text-xs">{label}</p>
+        <p className="text-gray-900 font-semibold">{value}</p>
       </div>
     </div>
   );
@@ -75,9 +75,9 @@ function StatCard({ icon, label, value, color }) {
 function InfoRow({ icon, label, value, children }) {
   return (
     <div className="group">
-      <label className="block text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2.5">{label}</label>
-      <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/8 hover:border-white/20 transition-colors">
-        <span className="text-gray-400 shrink-0">{icon}</span>
+      <label className="block text-sm font-semibold text-gray-600 uppercase tracking-wider mb-2.5">{label}</label>
+      <div className="flex items-center gap-4 px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 hover:border-white/20 transition-colors">
+        <span className="text-gray-600 shrink-0">{icon}</span>
         {children || <span className="text-gray-100 text-base">{value || "Not available"}</span>}
       </div>
     </div>
@@ -320,26 +320,26 @@ function TeacherProfile() {
   if (loading) return <LoadingScreen message="Loading profile..." />;
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide">
         {/* Top bar */}
-        <div className="bg-gray-900/60 border-b border-white/10 sticky top-0 z-20">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Teacher Profile</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Teacher Profile</h2>
             {!isEditing ? (
-              <button onClick={handleEdit} className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg transition-all text-sm font-medium">
+              <button onClick={handleEdit} className="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-600 border border-green-300 rounded-lg transition-all text-sm font-medium">
                 <Edit3 className="w-4 h-4" />
                 Edit Profile
               </button>
             ) : (
               <div className="flex items-center gap-3">
-                <button onClick={handleCancel} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-all text-sm font-medium">
+                <button onClick={handleCancel} className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg transition-all text-sm font-medium">
                   <X className="w-4 h-4" />
                   Cancel
                 </button>
-                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-5 py-2 bg-green-600 hover:bg-green-700 text-gray-900 rounded-lg transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
                   <Save className="w-4 h-4" />
                   {isSaving ? "Saving…" : "Save Changes"}
                 </button>
@@ -351,13 +351,13 @@ function TeacherProfile() {
         <div className="p-8 space-y-7">
           {/* Alert messages */}
           {successMessage && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-5 py-4 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-              <p className="text-emerald-300 text-sm font-medium">{successMessage}</p>
+            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+              <p className="text-green-300 text-sm font-medium">{successMessage}</p>
             </div>
           )}
           {errorMessage && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-5 py-4 flex items-center gap-3">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
               <p className="text-red-300 text-sm">{errorMessage}</p>
             </div>
@@ -366,20 +366,20 @@ function TeacherProfile() {
           {/* Profile Hero Card */}
           <div className="relative rounded-2xl overflow-hidden">
             {/* Background gradient */}
-            <div className="h-56 bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 relative">
+            <div className="h-56 bg-gradient-to-br from-green-600 via-teal-600 to-cyan-700 relative">
               <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(circle at 20% 80%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "25px 25px" }} />
             </div>
 
             {/* Profile content */}
-            <div className="bg-gray-900/80 border border-white/10 px-10 pb-10">
+            <div className="bg-gray-1000 border border-gray-200 px-10 pb-10">
               <div className="flex items-end gap-8 -mt-18 flex-wrap">
                 {/* Avatar */}
                 <div className="relative group">
-                  <div className="w-36 h-36 rounded-3xl border-4 border-gray-900 overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-2xl">
+                  <div className="w-36 h-36 rounded-3xl border-4 border-gray-900 overflow-hidden bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center shrink-0 shadow-2xl">
                     {avatarSource ? (
                       <img src={avatarSource} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-5xl font-bold text-white">{initials}</span>
+                      <span className="text-5xl font-bold text-gray-900">{initials}</span>
                     )}
                   </div>
                   {isEditing && (
@@ -387,7 +387,7 @@ function TeacherProfile() {
                       onClick={() => profileFileInputRef.current?.click()}
                       className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-3xl opacity-0 group-hover:opacity-100 transition-all"
                     >
-                      <Camera className="w-8 h-8 text-white" />
+                      <Camera className="w-8 h-8 text-gray-900" />
                     </button>
                   )}
                   <input ref={profileFileInputRef} type="file" accept="image/*" onChange={handleProfilePictureChange} className="hidden" />
@@ -396,14 +396,14 @@ function TeacherProfile() {
                 <div className="flex-1 min-w-0 pt-20">
                   <div className="flex items-start justify-between flex-wrap gap-4">
                     <div>
-                      <h1 className="text-4xl font-extrabold text-white tracking-tight">{profile.fullName || "Teacher"}</h1>
-                      <p className="text-gray-400 text-base mt-1">{profile.email}</p>
+                      <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">{profile.fullName || "Teacher"}</h1>
+                      <p className="text-gray-600 text-base mt-1">{profile.email}</p>
                       <div className="flex items-center gap-3 mt-3 flex-wrap">
-                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 rounded-full text-sm font-semibold">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-green-50 border border-green-200 text-green-300 rounded-full text-sm font-semibold">
                           <BadgeCheck className="w-4 h-4" />
                           {profile.role}
                         </span>
-                        <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold border ${profile.status === "Active" ? "bg-blue-500/10 border-blue-500/20 text-blue-300" : "bg-gray-500/10 border-gray-500/20 text-gray-400"}`}>
+                        <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold border ${profile.status === "Active" ? "bg-blue-50 border-blue-200 text-blue-300" : "bg-gray-500/10 border-gray-500/20 text-gray-600"}`}>
                           <div className={`w-2 h-2 rounded-full ${profile.status === "Active" ? "bg-blue-400 animate-pulse" : "bg-gray-400"}`} />
                           {profile.status}
                         </span>
@@ -416,7 +416,7 @@ function TeacherProfile() {
           </div>
 
           {/* Section tabs */}
-          <div className="flex gap-1 bg-gray-900/60 border border-white/10 rounded-2xl p-1.5">
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-2xl p-1.5">
             {[
               { key: "profile", label: "Personal Info", icon: <User className="w-5 h-5" /> },
               { key: "security", label: "Security", icon: <Shield className="w-5 h-5" /> },
@@ -424,7 +424,7 @@ function TeacherProfile() {
               <button
                 key={key}
                 onClick={() => setActiveSection(key)}
-                className={`flex-1 flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-base font-semibold transition-all ${activeSection === key ? "bg-white/10 text-white shadow-md" : "text-gray-400 hover:text-white"}`}
+                className={`flex-1 flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-base font-semibold transition-all ${activeSection === key ? "bg-gray-100 text-gray-900 shadow-md" : "text-gray-600 hover:text-gray-900"}`}
               >
                 {icon}{label}
               </button>
@@ -433,9 +433,9 @@ function TeacherProfile() {
 
           {/* Personal Info Section */}
           {activeSection === "profile" && (
-            <div className="bg-gray-900/60 rounded-2xl border border-white/10 p-8 space-y-7">
-              <h3 className="text-lg font-bold text-white flex items-center gap-3">
-                <User className="w-5 h-5 text-emerald-400" />
+            <div className="bg-white rounded-2xl border border-gray-200 p-8 space-y-7">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
+                <User className="w-5 h-5 text-green-600" />
                 Personal Information
               </h3>
 
@@ -456,7 +456,7 @@ function TeacherProfile() {
                     onChange={(e) => setEditedPhone(normalizePhoneInput(e.target.value))}
                     maxLength={11}
                     placeholder="09XXXXXXXXX"
-                    className="flex-1 outline-none bg-transparent text-white text-sm placeholder-gray-500"
+                    className="flex-1 outline-none bg-transparent text-gray-900 text-sm placeholder-gray-500"
                   />
                 ) : (
                   <span className="text-gray-100 text-sm">{profile.phone || "Not set"}</span>
@@ -469,22 +469,22 @@ function TeacherProfile() {
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Profile Picture</label>
                   <div
                     onClick={() => profileFileInputRef.current?.click()}
-                    className="flex items-center gap-4 px-4 py-4 bg-white/5 rounded-xl border border-dashed border-white/20 hover:border-emerald-500/50 cursor-pointer transition-all group"
+                    className="flex items-center gap-4 px-4 py-4 bg-gray-50 rounded-xl border border-dashed border-white/20 hover:border-green-500/50 cursor-pointer transition-all group"
                   >
                     <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-700 shrink-0 flex items-center justify-center">
                       {avatarSource ? (
                         <img src={avatarSource} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
-                        <Camera className="w-5 h-5 text-gray-400" />
+                        <Camera className="w-5 h-5 text-gray-600" />
                       )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm text-white font-medium group-hover:text-emerald-300 transition-colors">
+                      <p className="text-sm text-gray-900 font-medium group-hover:text-green-300 transition-colors">
                         {profilePictureFile ? profilePictureFile.name : "Click to upload profile picture"}
                       </p>
-                      <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WEBP up to 5MB</p>
+                      <p className="text-xs text-gray-600 mt-0.5">PNG, JPG, WEBP up to 5MB</p>
                     </div>
-                    <Upload className="w-4 h-4 text-gray-400 group-hover:text-emerald-400 transition-colors" />
+                    <Upload className="w-4 h-4 text-gray-600 group-hover:text-green-600 transition-colors" />
                   </div>
                 </div>
               )}
@@ -493,39 +493,39 @@ function TeacherProfile() {
 
           {/* Security Section */}
           {activeSection === "security" && (
-            <div className="bg-gray-900/60 rounded-2xl border border-white/10 p-8 space-y-7">
-              <h3 className="text-lg font-bold text-white flex items-center gap-3">
-                <Shield className="w-5 h-5 text-emerald-400" />
+            <div className="bg-white rounded-2xl border border-gray-200 p-8 space-y-7">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
+                <Shield className="w-5 h-5 text-green-600" />
                 Security Settings
               </h3>
 
               {/* Password */}
               <div>
-                <label className="block text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Password</label>
+                <label className="block text-sm font-semibold text-gray-600 uppercase tracking-wider mb-2.5">Password</label>
                 {isEditing ? (
-                  <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/10">
-                    <Lock className="w-5 h-5 text-gray-400 shrink-0" />
+                  <div className="flex items-center gap-4 px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200">
+                    <Lock className="w-5 h-5 text-gray-600 shrink-0" />
                     <input
                       type={showPassword ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter a new password"
-                      className="flex-1 outline-none bg-transparent text-white text-base placeholder-gray-500"
+                      className="flex-1 outline-none bg-transparent text-gray-900 text-base placeholder-gray-500"
                     />
-                    <button type="button" onClick={() => setShowPassword((p) => !p)} className="text-gray-400 hover:text-white transition-colors">
+                    <button type="button" onClick={() => setShowPassword((p) => !p)} className="text-gray-600 hover:text-gray-900 transition-colors">
                       {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-4 px-5 py-4 bg-white/5 rounded-2xl border border-white/10">
-                    <Lock className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-400 text-base">Password is managed securely through Supabase Auth</span>
+                  <div className="flex items-center gap-4 px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200">
+                    <Lock className="w-5 h-5 text-gray-600" />
+                    <span className="text-gray-600 text-base">Password is managed securely through Supabase Auth</span>
                   </div>
                 )}
               </div>
 
               {/* Tips */}
-              <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6 space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 space-y-3">
                 <p className="text-sm font-semibold text-blue-300 uppercase tracking-wider">Security Tips</p>
                 {[
                   "Use at least 8 characters with a mix of letters, numbers & symbols",
@@ -542,7 +542,7 @@ function TeacherProfile() {
               {!isEditing && (
                 <button
                   onClick={handleEdit}
-                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 rounded-2xl text-base font-semibold transition-all"
+                  className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-2xl text-base font-semibold transition-all"
                 >
                   <Lock className="w-5 h-5" />
                   Change Password

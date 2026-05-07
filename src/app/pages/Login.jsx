@@ -645,10 +645,10 @@ function Login() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
 
       {/* â”€â”€ LEFT PANEL â”€â”€ */}
-      <div className="hidden lg:flex flex-col justify-between w-[52%] relative overflow-hidden p-12">
+      <div className="hidden lg:flex flex-col justify-between w-[52%] relative overflow-hidden p-12 bg-green-600">
         {/* DepEd tri-color top accent bar */}
         <div className="absolute top-0 left-0 right-0 h-1 flex">
           <div className="flex-1 bg-emerald-500" />
@@ -657,13 +657,12 @@ function Login() {
         </div>
 
         {/* Background */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff06_1px,transparent_1px),linear-gradient(to_bottom,#ffffff06_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-emerald-500/6 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-1/4 right-0 w-[300px] h-[300px] bg-blue-600/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff15_1px,transparent_1px),linear-gradient(to_bottom,#ffffff15_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-white/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 right-0 w-[300px] h-[300px] bg-white/5 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top */}
         <div className="relative">
-          <button onClick={() => navigate("/")} className="inline-flex items-center gap-2 text-gray-500 hover:text-emerald-400 text-sm font-medium transition-colors mb-16">
+          <button onClick={() => navigate("/")} className="inline-flex items-center gap-2 text-green-100 hover:text-white text-sm font-medium transition-colors mb-16">
             <ArrowLeft className="w-4 h-4" /> Back to Home
           </button>
 
@@ -671,60 +670,65 @@ function Login() {
           <div className="flex items-center gap-3 mb-2">
             <div>
               <p className="text-white font-extrabold text-2xl tracking-tight leading-none">
-                Connect<span className="text-emerald-400">Ed</span>
+                Connect<span className="text-green-300">Ed</span>
               </p>
-              <p className="text-gray-500 text-xs font-medium mt-0.5">Teacher Portal Â· Web Platform</p>
+              <p className="text-green-200 text-xs font-medium mt-0.5">Teacher Portal Â· Web Platform</p>
             </div>
           </div>
 
           <h1 className="text-4xl xl:text-5xl font-extrabold text-white leading-tight mt-10 mb-4 tracking-tight">
             Welcome back,<br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-blue-400 to-red-400">
+            <span className="text-white">
               Educator.
             </span>
           </h1>
-          <p className="text-gray-400 text-base leading-relaxed max-w-md">
+          <p className="text-green-100 text-base leading-relaxed max-w-md">
             Log in to manage your classes, record grades, track attendance, and stay connected with your students.
           </p>
         </div>
 
         {/* Bottom */}
-        <div className="relative border-t border-white/8 pt-6">
-          <p className="text-gray-600 text-xs">
+        <div className="mt-auto">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-1 bg-green-400 rounded" />
+            <div className="w-8 h-1 bg-blue-400 rounded" />
+            <div className="w-8 h-1 bg-red-400 rounded" />
+          </div>
+          <p className="text-green-200 text-xs">
             ConnectEd Â· Official School Management System Â· DasmariÃ±as, Cavite
           </p>
         </div>
       </div>
 
       {/* â”€â”€ RIGHT PANEL â”€â”€ */}
-      <div className="flex-1 flex flex-col justify-center items-center px-6 py-12 relative">
+      <div className="flex-1 flex flex-col justify-center items-center px-6 py-12 relative bg-white">
         {/* DepEd tri-color right accent */}
         <div className="absolute top-0 right-0 bottom-0 w-0.5 flex flex-col lg:flex">
-          <div className="flex-1 bg-emerald-500/40" />
+          <div className="flex-1 bg-green-500/40" />
           <div className="flex-1 bg-blue-600/40" />
           <div className="flex-1 bg-red-600/40" />
         </div>
 
-        <button onClick={() => navigate("/")} className="lg:hidden absolute top-6 left-6 inline-flex items-center gap-2 text-gray-500 hover:text-emerald-400 text-sm transition-colors">
+        <button onClick={() => navigate("/")} className="lg:hidden absolute top-6 left-6 inline-flex items-center gap-2 text-gray-500 hover:text-green-600 text-sm transition-colors">
           <ArrowLeft className="w-4 h-4" /> Home
         </button>
 
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-10 justify-center">
-            <span className="text-white font-extrabold text-xl">Connect<span className="text-emerald-400">Ed</span></span>
+            <span className="text-gray-900 font-extrabold text-xl">Connect<span className="text-green-600">Ed</span></span>
           </div>
 
           {/* Heading */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-white mb-1">Sign in to your account</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">Sign in to your account</h2>
             <p className="text-gray-500 text-sm">Enter your credentials to continue</p>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="mb-5 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl">
-              <p className="text-red-400 text-sm">{error}</p>
+            <div className="mb-5 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-red-600 text-sm">{error}</p>
             </div>
           )}
 
@@ -739,17 +743,17 @@ function Login() {
             {googleLoading ? "Connecting to Google..." : "Continue with Google"}
           </button>
           {googleNotice && (
-            <div className="mb-3 px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-              <p className="text-emerald-300 text-xs">{googleNotice}</p>
+            <div className="mb-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+              <p className="text-green-700 text-xs">{googleNotice}</p>
             </div>
           )}
-          {googleError && <p className="text-red-400 text-xs mb-3">{googleError}</p>}
+          {googleError && <p className="text-red-600 text-xs mb-3">{googleError}</p>}
           {showGoogleResend && (
             <button
               type="button"
               onClick={handleGoogleResendVerification}
               disabled={googleResendLoading || googleVerificationSending || googleResendCooldown > 0}
-              className="w-full mb-4 px-4 py-2.5 text-xs font-semibold rounded-xl border border-emerald-400/40 text-emerald-300 hover:text-white hover:bg-emerald-500/20 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full mb-4 px-4 py-2.5 text-xs font-semibold rounded-xl border border-green-200 text-green-700 hover:text-green-800 hover:bg-green-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {googleVerificationSending
                 ? "Sending verification email..."
@@ -763,17 +767,17 @@ function Login() {
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px bg-white/10" />
-            <span className="text-gray-600 text-xs font-medium">or sign in with credentials</span>
-            <div className="flex-1 h-px bg-white/10" />
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-gray-500 text-xs font-medium">or sign in with credentials</span>
+            <div className="flex-1 h-px bg-gray-200" />
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Username or Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Username or Email</label>
               <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type="text"
                   name="usernameOrEmail"
@@ -781,18 +785,18 @@ function Login() {
                   onChange={handleInputChange}
                   placeholder="e.g. teacher@school.edu.ph"
                   autoComplete="username"
-                  className="w-full bg-gray-900 border border-white/10 text-white placeholder-gray-600 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition-all text-sm"
+                  className="w-full bg-white border border-gray-300 text-gray-900 placeholder-gray-400 pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all text-sm"
                 />
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-300">Password</label>
-                <Link to="/forgot-password" className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">Forgot password?</Link>
+                <label className="block text-sm font-medium text-gray-700">Password</label>
+                <Link to="/forgot-password" className="text-xs text-green-600 hover:text-green-700 transition-colors">Forgot password?</Link>
               </div>
               <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
@@ -800,9 +804,9 @@ function Login() {
                   onChange={handleInputChange}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  className="w-full bg-gray-900 border border-white/10 text-white placeholder-gray-600 pl-11 pr-12 py-3 rounded-xl focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30 transition-all text-sm"
+                  className="w-full bg-white border border-gray-300 text-gray-900 placeholder-gray-400 pl-11 pr-12 py-3 rounded-xl focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all text-sm"
                 />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -811,7 +815,7 @@ function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-700 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 text-sm mt-2"
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-all shadow-sm text-sm mt-2"
             >
               {loading ? (
                 <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Signing in...</>
@@ -819,14 +823,14 @@ function Login() {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-white/8 text-center">
+          <div className="mt-8 pt-6 border-t border-gray-200 text-center">
             {/* Tri-color dots */}
             <div className="flex items-center justify-center gap-1.5 mb-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <div className="w-2 h-2 rounded-full bg-green-500" />
               <div className="w-2 h-2 rounded-full bg-blue-500" />
               <div className="w-2 h-2 rounded-full bg-red-500" />
             </div>
-            <p className="text-gray-600 text-xs">ConnectEd Teacher Portal Â· Official Web Platform</p>
+            <p className="text-gray-500 text-xs">ConnectEd Teacher Portal Â· Official Web Platform</p>
           </div>
         </div>
       </div>

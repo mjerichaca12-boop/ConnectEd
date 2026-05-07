@@ -1053,10 +1053,10 @@ function TeacherManagement() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: "0ms" }} />
             <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "150ms" }} />
             <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "300ms" }} />
           </div>
@@ -1067,9 +1067,9 @@ function TeacherManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
       </div>
 
@@ -1077,12 +1077,12 @@ function TeacherManagement() {
       <div className="hidden lg:block w-72 flex-shrink-0" />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Teacher Management</h2>
+                <h2 className="text-lg font-bold text-gray-900">Teacher Management</h2>
               </div>
               <NotificationDropdown
                 notifications={notificationList}
@@ -1094,19 +1094,19 @@ function TeacherManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-emerald-400">Teacher Registry</h1>
-                <p className="text-gray-400">{teachers.length} teachers loaded from Supabase</p>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Registry</h1>
+                <p className="text-gray-600">{teachers.length} teachers loaded from Supabase</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 transition-colors font-semibold shadow-lg shadow-emerald-500/20">
+              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
                 <UserPlus className="w-5 h-5" />
                 Add Teacher
               </button>
@@ -1114,51 +1114,51 @@ function TeacherManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8">
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Total Teachers</p>
-              <p className="text-3xl font-bold text-white">{teachers.length}</p>
+              <p className="text-3xl font-bold text-gray-900">{teachers.length}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8">
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Active Teachers</p>
-              <p className="text-3xl font-bold text-emerald-400">{activeCount}</p>
+              <p className="text-3xl font-bold text-green-600">{activeCount}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8">
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Assigned Classes</p>
               <p className="text-3xl font-bold text-blue-400">{assignedCount}</p>
             </div>
-            <div className="bg-gray-900/60 rounded-xl p-6 border border-white/8">
+            <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Inactive Teachers</p>
               <p className="text-3xl font-bold text-red-500">{inactiveCount}</p>
             </div>
           </div>
 
           {errorMessage && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {successMessage && (
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
               {successMessage}
             </div>
           )}
 
-          <div className="bg-gray-900/60 rounded-xl p-4 border border-white/8">
+          <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
                   placeholder="Search by teacher, subject, or class/section..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-black/20 text-white placeholder-gray-500 pl-10 pr-4 py-3 border border-white/10 rounded-xl focus:outline-none focus:border-blue-500/50"
+                  className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
                 />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-sm">Status</span>
+                <span className="text-gray-600 text-sm">Status</span>
                 <CustomSelect
                   value={filterStatus}
                   onChange={setFilterStatus}
@@ -1171,46 +1171,46 @@ function TeacherManagement() {
                   className="min-w-[160px]"
                 />
               </div>
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-colors border border-white/10">
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
             </div>
           </div>
 
-          <div className="bg-gray-900/80 rounded-xl border border-white/10 overflow-hidden">
+          <div className="bg-gray-1000 rounded-xl border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-black/40 border-b border-white/10">
+                <thead className="bg-black/40 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Teacher</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Assigned Subjects</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Assigned Class/Section</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Subjects</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Class/Section</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredTeachers.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-white/5 transition-colors">
+                    <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
                       {(() => {
                         const assignments = getTeacherAssignments(teacher);
                         return (
                           <>
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-white">{getTeacherName(teacher)}</p>
+                        <p className="font-semibold text-gray-900">{getTeacherName(teacher)}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{teacher.email || "Teacher Profile"}</p>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-400">
+                      <td className="px-6 py-4 text-sm text-gray-600">
                         {teacher.email || "-"}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1">
                           {assignments.length > 0 ? (
                             assignments.map((item, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-md text-xs font-medium border border-emerald-500/20">
+                              <span key={idx} className="px-2 py-1 bg-green-50 text-green-600 rounded-md text-xs font-medium border border-green-200">
                                 {item.subjectLabel}
                               </span>
                             ))
@@ -1223,7 +1223,7 @@ function TeacherManagement() {
                         <div className="flex flex-wrap gap-1">
                           {assignments.length > 0 ? (
                             assignments.map((item, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-blue-500/10 text-blue-300 rounded-md text-xs font-medium border border-blue-500/20">
+                              <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-300 rounded-md text-xs font-medium border border-blue-200">
                                 {item.classLabel}
                               </span>
                             ))
@@ -1233,22 +1233,22 @@ function TeacherManagement() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${isTeacherActive(teacher.status) ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
+                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${isTeacherActive(teacher.status) ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-400 border-red-200"}`}>
                           {normalizeTeacherStatus(teacher.status)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-400">
+                      <td className="px-6 py-4 text-sm text-gray-600">
                         {formatDate(teacher.created_at)}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="View">
-                            <Eye className="w-4 h-4 text-gray-400" />
+                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
+                            <Eye className="w-4 h-4 text-gray-600" />
                           </button>
-                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-white/10 rounded-lg transition-colors" title="Edit">
+                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
                             <Edit className="w-4 h-4 text-blue-400" />
                           </button>
-                          <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-500/10 rounded-lg transition-colors" title="Delete">
+                          <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
                             <Trash2 className="w-4 h-4 text-red-400" />
                           </button>
                         </div>
@@ -1264,7 +1264,7 @@ function TeacherManagement() {
             {filteredTeachers.length === 0 && (
               <div className="p-16 text-center">
                 <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400">No teachers found.</p>
+                <p className="text-gray-600">No teachers found.</p>
               </div>
             )}
           </div>
@@ -1290,7 +1290,7 @@ function TeacherManagement() {
                       value={teacherFormData.first_name}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "first_name", e.target.value)}
                       placeholder="Enter first name"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.first_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.first_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.first_name && <p className="text-red-500 text-sm mt-1">{formErrors.first_name}</p>}
                   </div>
@@ -1301,7 +1301,7 @@ function TeacherManagement() {
                       value={teacherFormData.last_name}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "last_name", e.target.value)}
                       placeholder="Enter last name"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
@@ -1312,7 +1312,7 @@ function TeacherManagement() {
                       value={teacherFormData.middle_name}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "middle_name", e.target.value)}
                       placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
                   </div>
@@ -1323,7 +1323,7 @@ function TeacherManagement() {
                       value={teacherFormData.email}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "email", e.target.value)}
                       placeholder="teacher@example.com"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
                   </div>
@@ -1336,7 +1336,7 @@ function TeacherManagement() {
                       inputMode="numeric"
                       maxLength={11}
                       placeholder="11-digit phone number"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
                   </div>
@@ -1364,7 +1364,7 @@ function TeacherManagement() {
                   <button onClick={resetAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Teacher"}
                   </button>
@@ -1394,7 +1394,7 @@ function TeacherManagement() {
                       value={editFormData.first_name}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "first_name", e.target.value)}
                       placeholder="Enter first name"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.first_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.first_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {editFormErrors.first_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.first_name}</p>}
                   </div>
@@ -1405,7 +1405,7 @@ function TeacherManagement() {
                       value={editFormData.last_name}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "last_name", e.target.value)}
                       placeholder="Enter last name"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
                   </div>
@@ -1416,7 +1416,7 @@ function TeacherManagement() {
                       value={editFormData.middle_name}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "middle_name", e.target.value)}
                       placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
                   </div>
@@ -1427,7 +1427,7 @@ function TeacherManagement() {
                       value={editFormData.email}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "email", e.target.value)}
                       placeholder="teacher@example.com"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
                   </div>
@@ -1440,7 +1440,7 @@ function TeacherManagement() {
                       inputMode="numeric"
                       maxLength={11}
                       placeholder="11-digit phone number"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {editFormErrors.phone && <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>}
                   </div>
@@ -1486,7 +1486,7 @@ function TeacherManagement() {
                   <button onClick={resetEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Teacher"}
                   </button>
@@ -1538,7 +1538,7 @@ function TeacherManagement() {
                     });
                   }}
                   placeholder="e.g. 9-STEM A or Grade 10 - Section B"
-                  className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${assignFormErrors.assigned_class ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-emerald-500"}`}
+                  className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${assignFormErrors.assigned_class ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                 />
                 {assignFormErrors.assigned_class && <p className="text-red-500 text-sm mt-1">{assignFormErrors.assigned_class}</p>}
               </div>
@@ -1551,7 +1551,7 @@ function TeacherManagement() {
                 <button onClick={resetAssignModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isSubmitting ? "Saving..." : "Add Class"}
                 </button>
@@ -1572,13 +1572,13 @@ function TeacherManagement() {
             </div>
             <div className="p-6">
               <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
-                <div className="w-20 h-20 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
+                <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center text-gray-900 text-2xl font-bold">
                   {getTeacherName(selectedTeacher).charAt(0) || "T"}
                 </div>
                 <div>
                   <h4 className="text-2xl font-bold text-gray-900">{getTeacherName(selectedTeacher)}</h4>
                   <p className="text-gray-600">{selectedTeacher.id}</p>
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${isTeacherActive(selectedTeacher.status) ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${isTeacherActive(selectedTeacher.status) ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {normalizeTeacherStatus(selectedTeacher.status)}
                   </span>
                 </div>
@@ -1588,21 +1588,21 @@ function TeacherManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
                     <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-emerald-600" />
+                      <Mail className="w-4 h-4 text-green-600" />
                       <p className="text-gray-900">{selectedTeacher.email}</p>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Phone Number</label>
                     <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-emerald-600" />
+                      <Phone className="w-4 h-4 text-green-600" />
                       <p className="text-gray-900">{selectedTeacher.phone}</p>
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Assigned Classes</label>
                     <div className="flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-emerald-600" />
+                      <BookOpen className="w-4 h-4 text-green-600" />
                       <p className="text-gray-900">{getTeacherAssignments(selectedTeacher).length > 0 ? getTeacherAssignments(selectedTeacher).map((item) => item.classLabel).join(", ") : "No assignments yet."}</p>
                     </div>
                   </div>
@@ -1611,7 +1611,7 @@ function TeacherManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Created At</label>
                     <div className="flex items-center gap-2">
-                      <CalendarDays className="w-4 h-4 text-emerald-600" />
+                      <CalendarDays className="w-4 h-4 text-green-600" />
                       <p className="text-gray-900">{formatDate(selectedTeacher.created_at)}</p>
                     </div>
                   </div>
@@ -1620,7 +1620,7 @@ function TeacherManagement() {
                     <div className="flex flex-wrap gap-2">
                       {normalizeSubjects(selectedTeacher.subjects).length > 0 ? (
                         normalizeSubjects(selectedTeacher.subjects).map((subjectId, idx) => (
-                          <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
+                          <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
                             <BookOpen className="w-4 h-4" />
                             {getSubjectLabel(subjectId)}
                           </span>
@@ -1638,12 +1638,12 @@ function TeacherManagement() {
                     setShowViewModal(false);
                     handleEditTeacher(selectedTeacher);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Edit className="w-4 h-4" />
                   Edit Teacher
                 </button>
-                <button onClick={() => handlePromptAssignClass(selectedTeacher)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <button onClick={() => handlePromptAssignClass(selectedTeacher)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors">
                   <BookOpen className="w-4 h-4" />
                   Assign Class
                 </button>

@@ -11,7 +11,12 @@ import {
   FileText,
   Megaphone,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Zap,
+  Sparkles,
+  UserPlus,
+  BarChart2,
+  Shield
 } from "lucide-react";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -429,7 +434,7 @@ export function AdminDashboard() {
     } else if (status === "updated") {
       iconColor = "text-blue-600";
     } else if (status === "created") {
-      iconColor = type === "teacher" ? "text-emerald-600" : "text-blue-600";
+      iconColor = type === "teacher" ? "text-green-600" : "text-blue-600";
     }
 
     // Determine icon based on type
@@ -459,32 +464,32 @@ export function AdminDashboard() {
   const getActivityColor = (type, status) => {
     // Color by status first
     if (status === "deleted") {
-      return "bg-red-500/10 border-red-500/20";
+      return "bg-red-50 border-red-200 text-red-900";
     }
     if (status === "assigned") {
-      return "bg-amber-500/10 border-amber-500/20";
+      return "bg-amber-50 border-amber-200 text-amber-900";
     }
     if (status === "updated") {
-      return "bg-blue-500/10 border-blue-500/20";
+      return "bg-blue-50 border-blue-200 text-blue-900";
     }
     if (status === "created") {
-      return type === "teacher" ? "bg-emerald-500/10 border-emerald-500/20" : "bg-blue-500/10 border-blue-500/20";
+      return type === "teacher" ? "bg-green-50 border-green-200 text-green-900" : "bg-blue-50 border-blue-200 text-blue-900";
     }
 
     // Fallback to type-based color
     switch (type) {
       case "student":
-        return "bg-blue-500/10 border-blue-500/20";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       case "teacher":
-        return "bg-emerald-500/10 border-emerald-500/20";
+        return "bg-green-50 border-green-200 text-green-900";
       case "subject":
-        return "bg-blue-500/10 border-blue-500/20";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       case "enrollment":
-        return "bg-blue-500/10 border-blue-500/20";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       case "announcement":
-        return status === "deleted" ? "bg-red-500/10 border-red-500/20" : "bg-emerald-500/10 border-emerald-500/20";
+        return status === "deleted" ? "bg-red-50 border-red-200 text-red-900" : "bg-green-50 border-green-200 text-green-900";
       default:
-        return "bg-gray-500/10 border-gray-500/20";
+        return "bg-gray-50 border-gray-200 text-gray-900";
     }
   };
 
@@ -511,10 +516,10 @@ export function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-bounce" style={{animationDelay:'0ms'}} />
+            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
             <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
             <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
           </div>
@@ -525,11 +530,11 @@ export function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex relative overflow-hidden">
+    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-600/5 rounded-full blur-[150px]" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
-        <div className="absolute top-1/2 right-1/4 w-[300px] h-[300px] bg-red-600/3 rounded-full blur-[100px]" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-100/50 rounded-full blur-[150px]" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-50/50 rounded-full blur-[120px]" />
+        <div className="absolute top-1/2 right-1/4 w-[300px] h-[300px] bg-red-50/50 rounded-full blur-[100px]" />
       </div>
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
@@ -537,12 +542,12 @@ export function AdminDashboard() {
 
       <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10">
         {/* Top Bar */}
-        <div className="bg-gray-950/80 backdrop-blur-md border-b border-white/8 sticky top-0 z-20 relative">
+        <div className="bg-gray-1000 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative shadow-sm">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-white">Admin Dashboard</h2>
+                <h2 className="text-lg font-bold text-gray-900">Admin Dashboard</h2>
               </div>
               <NotificationDropdown
                 notifications={notificationList}
@@ -559,23 +564,23 @@ export function AdminDashboard() {
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Welcome Section â€” DepEd tri-color */}
-          <div className="relative rounded-2xl p-8 text-white shadow-lg overflow-hidden bg-gray-900 border border-white/10">
+          {/* Welcome Section */}
+          <div className="relative rounded-2xl p-8 shadow-sm overflow-hidden bg-white border border-gray-200">
             {/* Tri-color left accent */}
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
-              <div className="flex-1 bg-emerald-500" />
+              <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
               <div className="flex-1 bg-red-600" />
             </div>
             {/* Subtle glow */}
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/8 via-blue-500/5 to-red-500/5 pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-50 via-blue-50/30 to-red-50/30 pointer-events-none" />
             <div className="relative pl-4">
               <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-emerald-400 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
               </div>
-              <h1 className="text-3xl font-bold mb-1">Welcome back, {adminName}!</h1>
-              <p className="text-gray-400">ConnectEd system overview and management center</p>
+              <h1 className="text-3xl font-bold mb-1 text-gray-900">Welcome back, {adminName}!</h1>
+              <p className="text-gray-600">ConnectEd system overview and management center</p>
             </div>
           </div>
 
@@ -583,7 +588,7 @@ export function AdminDashboard() {
           <div className="grid grid-cols-1 gap-6">
             <div className="space-y-6">
               {statsError && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
                   <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>{statsError}</span>
                 </div>
@@ -591,59 +596,59 @@ export function AdminDashboard() {
 
               {/* Primary Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors">
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-blue-300 transition-colors">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                      <Users className="w-6 h-6 text-blue-400" />
+                    <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                      <Users className="w-6 h-6 text-blue-500" />
                     </div>
                   </div>
-                  <p className="text-gray-400 text-sm mb-1">Total Students</p>
-                  <p className="text-3xl font-bold text-white">
-                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-400" /> : stats.totalStudents.toLocaleString()}
+                  <p className="text-gray-600 text-sm mb-1">Total Students</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalStudents.toLocaleString()}
                   </p>
                 </div>
 
-                <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors">
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-green-300 transition-colors">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                      <UserCog className="w-6 h-6 text-emerald-400" />
+                    <div className="p-3 bg-green-50 rounded-xl border border-green-100">
+                      <UserCog className="w-6 h-6 text-green-500" />
                     </div>
                   </div>
-                  <p className="text-gray-400 text-sm mb-1">Total Teachers</p>
-                  <p className="text-3xl font-bold text-white">
-                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-400" /> : stats.totalTeachers.toLocaleString()}
+                  <p className="text-gray-600 text-sm mb-1">Total Teachers</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalTeachers.toLocaleString()}
                   </p>
                 </div>
 
-                <div className="bg-gray-900/60 rounded-xl p-6 border border-white/10 shadow-sm hover:border-emerald-500/30 transition-colors">
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-purple-300 transition-colors">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-teal-500/10 rounded-xl border border-teal-500/20">
-                      <BookOpen className="w-6 h-6 text-teal-400" />
+                    <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
+                      <BookOpen className="w-6 h-6 text-purple-500" />
                     </div>
                   </div>
-                  <p className="text-gray-400 text-sm mb-1">Total Subjects</p>
-                  <p className="text-3xl font-bold text-white">
-                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-400" /> : stats.totalSubjects.toLocaleString()}
+                  <p className="text-gray-600 text-sm mb-1">Total Subjects</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalSubjects.toLocaleString()}
                   </p>
                 </div>
               </div>
 
               {/* Recent Activity */}
-              <div className="bg-gray-900/60 rounded-xl border border-white/10 shadow-sm overflow-hidden">
-                <div className="p-6 border-b border-white/5 bg-black/20">
-                  <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-emerald-400" />
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-100 bg-gray-50">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-green-500" />
                     Recent Activity
                   </h3>
                 </div>
                 <div className="p-6">
                   {activityLoading ? (
-                    <div className="flex items-center justify-center py-8 text-gray-400">
+                    <div className="flex items-center justify-center py-8 text-gray-500">
                       <Loader2 className="w-5 h-5 animate-spin mr-2" />
                       Loading recent activity...
                     </div>
                   ) : activityError ? (
-                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 flex items-start gap-3">
                       <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                       <span>{activityError}</span>
                     </div>
@@ -664,8 +669,8 @@ export function AdminDashboard() {
                         >
                           <div className="mt-0.5">{getActivityIcon(activity.type, activity.status)}</div>
                           <div className="flex-1">
-                            <p className="font-medium text-white">{activity.action}</p>
-                            <p className="text-sm text-gray-400">{activity.user}</p>
+                            <p className="font-medium text-gray-900">{activity.action}</p>
+                            <p className="text-sm text-gray-600">{activity.user}</p>
                           </div>
                           <p className="text-xs text-gray-500 whitespace-nowrap">
                             {formatTimestamp(activity.timestamp)}
@@ -676,9 +681,46 @@ export function AdminDashboard() {
                   )}
                 </div>
               </div>
+
+              {/* Quick Actions */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-green-500" />
+                  Quick Actions
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { icon: UserPlus, label: "Add Student", path: "/admin/students" },
+                    { icon: Megaphone, label: "Post Announcement", path: "/admin/announcements" },
+                    { icon: BarChart2, label: "View Reports", path: "/admin/reports" },
+                    { icon: Shield, label: "Manage Access", path: "/admin/access-requests" },
+                  ].map((action) => {
+                    const ActionIcon = action.icon;
+                    return (
+                      <button
+                        key={action.label}
+                        onClick={() => navigate(action.path)}
+                        className="bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-green-300 rounded-xl p-4 text-center transition-all duration-200 cursor-pointer"
+                      >
+                        <ActionIcon className="w-6 h-6 text-green-500 mx-auto mb-2" />
+                        <p className="text-gray-700 text-sm font-medium">{action.label}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
+        
+        {/* Floating AI Assistant Button */}
+        <button 
+          onClick={() => navigate("/admin/ai-assistant")}
+          className="fixed bottom-6 right-6 z-50 bg-green-600 hover:bg-green-700 text-white rounded-2xl px-4 py-3 flex items-center gap-2 shadow-lg shadow-green-600/20 transition-all"
+        >
+          <Sparkles className="w-5 h-5" />
+          Ask AI Assistant
+        </button>
       </main>
     </div>
   );
