@@ -586,7 +586,7 @@ function Login() {
         const sessionEmail = String(data.session.user.email || "").trim().toLowerCase();
         if (sessionEmail) {
           try {
-            const teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
+            let teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
             if (teacherRecord && isGoogleProfileVerified(teacherRecord)) {
               console.log("User is verified, completing login");
               teacherRecord = await ensureTeacherIsActive(teacherRecord, sessionEmail);
