@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Compare Input - Minus 2px</title>
+  <link rel="stylesheet" href="./dist/assets/index-CAfdP8Ao.css">
+  <style>
+    body { background:#071125; color:#fff; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; padding:32px }
+    .panel { max-width:980px; margin:16px auto; padding:24px; border-radius:12px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.04) }
+    .row { display:flex; gap:16px; align-items:center }
+    .label { width:180px; color:#9aa7b7; font-size:13px }
+    .bubble { flex:1 }
+    .input-like { display:flex; align-items:center; gap:12px; border:1px solid rgba(255,255,255,0.08); background:rgba(0,0,0,0.2); padding:0; }
+    .icon-btn { display:inline-flex; align-items:center; justify-content:center; }
+    .paperclip, .send { width:16px; height:16px; opacity:0.9 }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Baseline vs -2px (radius/padding)</h2>
+    <p class="label">Baseline (current)</p>
+    <div class="row" style="margin-bottom:18px">
+      <div class="label">Baseline</div>
+      <div class="bubble">
+        <div class="input-like rounded-[14px] h-10" style="padding-left:12px;padding-right:12px">
+          <button class="icon-btn h-10 w-10 rounded-lg text-gray-300 bg-transparent" aria-label="Attach">
+            <!-- paperclip -->
+            <svg class="paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05L12.7 19.79a4.5 4.5 0 01-6.36 0 4.5 4.5 0 010-6.36L14.3 5.77a2.75 2.75 0 013.89 3.89L10.2 17.86a1.75 1.75 0 11-2.48-2.48l8.47-8.47" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input class="min-w-0 flex-1 h-10 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none" placeholder="Message Student Student..." />
+          <button class="icon-btn h-10 w-10 rounded-lg bg-emerald-600 text-white" aria-label="Send">
+            <!-- send -->
+            <svg class="send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2L11 13" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-bottom:18px">
+      <div class="label">Minus 2px</div>
+      <div class="bubble">
+        <div class="input-like rounded-[12px] h-8" style="padding-left:8px;padding-right:8px">
+          <button class="icon-btn h-8 w-8 rounded-md text-gray-300 bg-transparent" aria-label="Attach">
+            <svg class="paperclip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21.44 11.05L12.7 19.79a4.5 4.5 0 01-6.36 0 4.5 4.5 0 010-6.36L14.3 5.77a2.75 2.75 0 013.89 3.89L10.2 17.86a1.75 1.75 0 11-2.48-2.48l8.47-8.47" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <input class="min-w-0 flex-1 h-8 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none" placeholder="Message Student Student..." />
+          <button class="icon-btn h-8 w-8 rounded-md bg-emerald-600 text-white" aria-label="Send">
+            <svg class="send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2L11 13" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2l-7 20-4-9-9-4 20-7z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p style="color:#9aa7b7; font-size:13px">Notes: Baseline uses rounded 14px / input height 40px (h-10) / padding 12px. Minus uses rounded 12px / input height 32px / padding 8px.</p>
+  </div>
+</body>
+</html>
