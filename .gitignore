@@ -8,9 +8,14 @@ obj/
 
 # Sensitive Data
 .env
-.env.local
+.env*
+**/.env
+**/.env*
 *.key
 *.pem
+credentials.json
+google-services.json
+context-factory/
 
 # IDEs
 .vscode/

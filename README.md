@@ -1,38 +1,48 @@
+# ConnectEd 🎓
 
-  # ConnectEd
+ConnectEd is a modern Learning Management System (LMS) designed for seamless interaction between students and teachers. It features real-time messaging, AI-powered learning assistance, and streamlined material management.
 
-  This is a code bundle for ConnectEd. The original project is available at https://www.figma.com/design/Ewdw6q5CWum2wsbsCYvypl/ConnectEd.
+## 🚀 Features
 
-Run `npm i` to install the dependencies.
+- **AI Learning Coach:** Context-aware assistant powered by Groq Cloud (Qwen 2.5).
+- **Real-time Messaging:** Direct and group chats for instant collaboration.
+- **Subject Management:** Organized view of materials, assignments, and announcements.
+- **Cross-Platform:** Built with React Native (Expo) for iOS and Android.
 
-Run `npm run dev` to start the development server.
+## 🛠️ Project Structure
 
-## Environment Setup (REQUIRED)
+- `/mobile`: React Native Expo application.
+- `/backend`: Node.js Express server with Supabase integration.
 
-Before running the application, you must configure Supabase environment variables:
+## 📦 Getting Started
 
-1. Copy `.env.example` to `.env`:
-     ```
-     cp .env.example .env
-     ```
+### Prerequisites
+- Node.js (v18+)
+- Expo CLI
+- Supabase Account
+- Groq Cloud API Key
 
-2. Fill in your Supabase credentials in `.env`:
-     - `VITE_SUPABASE_URL`: Your Supabase project URL (from Supabase dashboard → Settings → API)
-     - `VITE_SUPABASE_ANON_KEY`: Your Supabase anon/public key (from Supabase dashboard → Settings → API)
-     - `VITE_SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key (from Supabase dashboard → Settings → API)
+### Installation
 
-**Without these variables, the application will fail to load calendar events, upload files, and perform other database operations.**
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/mjerichaca12-boop/ConnectEd.git
+   ```
 
-## Static Admin Login
+2. Setup Backend:
+   ```bash
+   cd backend
+   npm install
+   # Create a .env file based on .env.example
+   node index.js
+   ```
 
-Admin access now uses a single static account via the main login page (`/login`).
+3. Setup Mobile:
+   ```bash
+   cd mobile
+   npm install
+   npx expo start
+   ```
 
-Optional environment variables:
-
-- `VITE_STATIC_ADMIN_EMAIL` (default: `admin.connected.local`)
-- `VITE_STATIC_ADMIN_PASSWORD_HASH` (SHA-256 hex, default corresponds to `@dminConnected`)
-
-Example hash command:
-
-- `node -e "const crypto=require('crypto'); console.log(crypto.createHash('sha256').update('Admin@123').digest('hex'))"`
-  
+## 📄 License
+MIT
