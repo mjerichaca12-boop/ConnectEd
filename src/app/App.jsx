@@ -90,21 +90,6 @@ function TeacherRouteGuard({ children }) {
           }
         }
 
-        const teacherLookup = await supabase
-          .from("teachers")
-          .select("id, role")
-          .ilike("email", email)
-          .limit(1)
-          .maybeSingle();
-
-        if (!teacherLookup.error && teacherLookup.data?.id) {
-          const teacherRole = String(teacherLookup.data.role || "").trim().toLowerCase();
-          if (!teacherRole || teacherRole === "teacher") {
-            if (isMounted) setStatus("allowed");
-            return;
-          }
-        }
-
         if (isMounted) {
           localStorage.removeItem("currentUser");
           setStatus("denied");

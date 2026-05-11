@@ -79,20 +79,6 @@ function Login() {
           return profileLookup.data;
         }
       }
-
-      const teacherLookup = await supabase
-        .from("teachers")
-        .select("*")
-        .ilike("email", normalizedEmail)
-        .limit(1)
-        .maybeSingle();
-
-      if (!teacherLookup.error && teacherLookup.data) {
-        const teacherRole = String(teacherLookup.data.role || "").trim().toLowerCase();
-        if (!teacherRole || teacherRole === "teacher") {
-          return teacherLookup.data;
-        }
-      }
     } catch (queryError) {
       // If we get auth errors, just return null - we'll handle this in createTeacherProfileFromGoogle
       console.warn("Auth error during teacher lookup:", queryError);
@@ -568,12 +554,13 @@ function Login() {
         // Continue with normal flow after manual processing
       }
 
+      // Always try to get current session from Supabase
       const { data, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
         console.warn("Session error:", sessionError);
         window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
         if (isMounted) {
-          setGoogleError(sessionError.message);
+          setGoogleError("Session error: " + sessionError.message);
         }
         return;
       }
@@ -744,7 +731,7 @@ function Login() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: `${window.location.origin}${window.location.pathname}`,
         queryParams: {
           prompt: "select_account"
         }
@@ -814,6 +801,31 @@ function Login() {
     }
 
     console.log("===================");
+  };
+
+  const handleGoogleResendVerification = async () => {
+    if (!googleResendEmail) {
+      setGoogleError("No email address found for resend.");
+      return;
+    }
+
+    setGoogleResendLoading(true);
+    setGoogleError("");
+
+    try {
+      const displayName = getGoogleUserDisplayName({ user_metadata: {} }, googleResendEmail);
+      await sendVerificationEmail({ email: googleResendEmail, name: displayName });
+      
+      const verificationSentKey = getGoogleVerificationSentKey(googleResendEmail, "");
+      window.sessionStorage.setItem(verificationSentKey, "1");
+      
+      setGoogleNotice("Verification email resent. Please check your inbox.");
+      setGoogleResendCooldown(GOOGLE_RESEND_COOLDOWN_SECONDS);
+    } catch (error) {
+      setGoogleError(error instanceof Error ? error.message : "Failed to resend verification email.");
+    } finally {
+      setGoogleResendLoading(false);
+    }
   };
 
   const highlights = [
