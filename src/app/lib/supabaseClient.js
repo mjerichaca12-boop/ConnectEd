@@ -24,22 +24,36 @@ if (supabaseUrl && !supabaseUrl.startsWith('https://')) {
   );
 }
 
-export const supabase = (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('https://'))
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+// Use globalThis to ensure truly global singleton across the entire app
+if (!globalThis.supabaseClientInstance) {
+  if (supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('https://')) {
+    console.log("🔗 Creating Supabase client (global singleton)");
+    globalThis.supabaseClientInstance = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
         storage: window.localStorage
       }
-    })
-  : null;
+    });
+  } else {
+    globalThis.supabaseClientInstance = null;
+  }
+}
 
-export const supabaseAdmin = (supabaseUrl && supabaseServiceRoleKey && supabaseUrl.startsWith('https://'))
-  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+if (!globalThis.supabaseAdminClientInstance) {
+  if (supabaseUrl && supabaseServiceRoleKey && supabaseUrl.startsWith('https://')) {
+    console.log("🔗 Creating Supabase admin client (global singleton)");
+    globalThis.supabaseAdminClientInstance = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false
       }
-    })
-  : null;
+    });
+  } else {
+    globalThis.supabaseAdminClientInstance = null;
+  }
+}
+
+export const supabase = globalThis.supabaseClientInstance;
+export const supabaseAdmin = globalThis.supabaseAdminClientInstance;

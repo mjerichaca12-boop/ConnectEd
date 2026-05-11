@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, forwardRef, useImperativeHandle, useRef } from "react";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -123,7 +123,7 @@ const getMonthGrid = (year, month) => {
   return cells;
 };
 
-function DashboardCalendar({ viewerRole }) {
+function DashboardCalendarComponent({ viewerRole }, ref) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +131,7 @@ function DashboardCalendar({ viewerRole }) {
   const [calendarTable, setCalendarTable] = useState("");
   const [selectedDay, setSelectedDay] = useState(new Date().toISOString().slice(0, 10));
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const loadEventsRef = useRef(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -214,6 +215,20 @@ function DashboardCalendar({ viewerRole }) {
     setEvents((current) => current.filter((item) => item.id !== eventId));
     setSelectedEvent((current) => (current?.id === eventId ? null : current));
   };
+
+  useImperativeHandle(ref, () => ({
+    refreshCalendar: async () => {
+      try {
+        const tableName = calendarTable || (await getCalendarTableName());
+        const rows = await loadEvents(tableName);
+        setEvents(rows);
+        setErrorMessage("");
+      } catch (error) {
+        console.error("Failed to refresh calendar:", error);
+        setErrorMessage(error instanceof Error ? error.message : "Failed to refresh calendar");
+      }
+    }
+  }), [calendarTable]);
 
   useEffect(() => {
     let isMounted = true;
@@ -566,4 +581,5 @@ function DashboardCalendar({ viewerRole }) {
   );
 }
 
+const DashboardCalendar = forwardRef(DashboardCalendarComponent);
 export { DashboardCalendar };

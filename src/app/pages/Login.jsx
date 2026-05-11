@@ -45,19 +45,8 @@ function Login() {
     return `${GOOGLE_VERIFICATION_SENT_KEY_PREFIX}:${normalizedUserId || normalizedEmail}`;
   };
 
-  const hasOAuthCallbackParams = () => {
-    const searchParams = new URLSearchParams(window.location.search || "");
-    const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
-
-    const hasSearchParams = searchParams.has("code") || searchParams.has("access_token") || searchParams.has("refresh_token") || searchParams.has("provider_token") || searchParams.has("error");
-    const hasHashParams = hashParams.has("access_token") || hashParams.has("refresh_token") || hashParams.has("provider_token") || hashParams.has("error");
-
-    console.log("OAuth callback check:", { hasSearchParams, hasHashParams, search: window.location.search, hash: window.location.hash });
-
-    return hasSearchParams || hasHashParams;
-  };
-
   const resolveTeacherRecordByEmail = async (email) => {
+    console.log("=== resolveTeacherRecordByEmail called for:", email, " ===");
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
@@ -66,6 +55,7 @@ function Login() {
     if (!normalizedEmail) return null;
 
     try {
+      console.log("Looking up teacher profile for:", normalizedEmail);
       const profileLookup = await supabase
         .from("profiles")
         .select("*")
@@ -73,10 +63,16 @@ function Login() {
         .limit(1)
         .maybeSingle();
 
+      console.log("Profile lookup result:", { data: profileLookup.data, error: profileLookup.error });
+
       if (!profileLookup.error && profileLookup.data) {
         const profileRole = String(profileLookup.data.role || "").trim().toLowerCase();
+        console.log("Found profile with role:", profileRole);
         if (profileRole === "teacher") {
+          console.log("Teacher profile found, returning:", profileLookup.data);
           return profileLookup.data;
+        } else {
+          console.log("Profile found but not a teacher, role:", profileRole);
         }
       }
     } catch (queryError) {
@@ -84,6 +80,7 @@ function Login() {
       console.warn("Auth error during teacher lookup:", queryError);
     }
 
+    console.log("No teacher profile found, returning null");
     return null;
   };
 
@@ -174,6 +171,7 @@ function Login() {
   };
 
   const createTeacherProfileFromGoogle = async (sessionUser, email) => {
+    console.log("=== createTeacherProfileFromGoogle called for:", email, " ===");
     if (!supabase) {
       throw new Error("Supabase client is not configured.");
     }
@@ -197,6 +195,8 @@ function Login() {
       is_verified: true  // Google emails are pre-verified
     };
 
+    console.log("Creating teacher profile with payload:", payload);
+
     try {
       const { data, error } = await supabase
         .from("profiles")
@@ -204,14 +204,20 @@ function Login() {
         .select("*")
         .single();
 
+      console.log("Profile creation result:", { data, error });
+
       if (error) {
+        console.log("Profile creation failed, checking if it's a duplicate:", error);
         // Check if it's a duplicate key error (profile already exists)
         if (error.code === '23505' || error.message?.includes('duplicate key') || error.message?.includes('already exists')) {
+          console.log("Duplicate profile detected, trying to find existing profile");
           // Try to find the existing profile
           const existingProfile = await findProfileByEmail(normalizedEmail);
+          console.log("Found existing profile:", existingProfile);
           if (existingProfile) {
             const existingRole = String(existingProfile.role || "").trim().toLowerCase();
             if (existingRole === "teacher") {
+              console.log("Existing profile is a teacher, updating provider if needed");
               // Update the provider to google if not set
               if (!existingProfile.provider) {
                 try {
@@ -233,8 +239,10 @@ function Login() {
         throw new Error(error.message || "Unable to create teacher profile.");
       }
 
+      console.log("Teacher profile created successfully:", data);
       return data;
     } catch (createError) {
+      console.log("Profile creation failed, trying fallback:", createError);
       // If creation fails, try to find existing profile as fallback
       const existingProfile = await findProfileByEmail(normalizedEmail);
       if (existingProfile) {
@@ -304,6 +312,10 @@ function Login() {
   };
 
   const completeTeacherSession = (email, teacherRecord) => {
+    console.log("=== completeTeacherSession called ===");
+    console.log("Email:", email);
+    console.log("Teacher record:", teacherRecord);
+    
     const nextUser = {
       id: String(teacherRecord?.id || ""),
       name: resolveDisplayName(teacherRecord, email),
@@ -313,8 +325,11 @@ function Login() {
       role: "teacher"
     };
 
+    console.log("User object to store:", nextUser);
     localStorage.setItem("currentUser", JSON.stringify(nextUser));
+    console.log("User stored in localStorage, navigating to teacher dashboard...");
     navigate("/teacher/dashboard", { replace: true });
+    console.log("=== completeTeacherSession completed ===");
   };
 
   const isGoogleProfileVerified = (record) => record?.is_verified !== false;
@@ -371,18 +386,9 @@ function Login() {
     }
 
     let isMounted = true;
-    const hasIntent = window.sessionStorage.getItem(GOOGLE_OAUTH_INTENT_KEY) === "1";
-    const isOAuthCallback = hasOAuthCallbackParams();
-    const shouldProcessOAuthSession = hasIntent || isOAuthCallback;
-
-    console.log("OAuth processing check:", { hasIntent, isOAuthCallback, shouldProcessOAuthSession });
-
-    if (!shouldProcessOAuthSession) {
-      console.log("Not processing OAuth session - no intent or callback params");
-      return undefined;
-    }
 
     const handleOAuthSession = async (session) => {
+      console.log("=== handleOAuthSession called ===");
       if (oauthSessionProcessingRef.current) {
         console.log("OAuth session already processing, skipping");
         return;
@@ -419,23 +425,19 @@ function Login() {
       try {
         console.log("Looking up teacher record for:", sessionEmail);
         let teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
-        let isNewGoogleUser = false;
 
         if (!teacherRecord) {
-          console.log("No existing teacher record found (or auth error), creating new one");
+          console.log("No existing teacher record found, creating new one");
           teacherRecord = await createTeacherProfileFromGoogle(session?.user, sessionEmail);
-          isNewGoogleUser = true;
         } else {
           console.log("Found existing teacher record:", teacherRecord);
         }
 
-        // For existing users, assume they need verification unless explicitly verified
-        // But for Google users, consider them verified since Google validates emails
+        // For Google users, consider them verified since Google validates emails
         const needsVerification = !isGoogleProfileVerified(teacherRecord) && teacherRecord.provider !== "google";
 
         if (needsVerification) {
           console.log("User needs verification, showing verification UI");
-          // Don't sign out - keep session active so user can verify email
           window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
           if (isMounted) {
             setGoogleResendEmail(sessionEmail);
@@ -443,7 +445,7 @@ function Login() {
             setGoogleLoading(false);
           }
 
-          // Always try to send verification email for unverified users
+          // Try to send verification email for unverified users
           const verificationSentKey = getGoogleVerificationSentKey(sessionEmail, session?.user?.id);
           const alreadySent = window.sessionStorage.getItem(verificationSentKey) === "1";
 
@@ -466,7 +468,6 @@ function Login() {
             } catch (verificationError) {
               console.error("Verification email error:", verificationError);
               if (isMounted) {
-                // Don't fail the login if email sending fails - just show a warning
                 setGoogleNotice("Login successful, but we could not send verification email. Please contact support if needed.");
                 setGoogleResendCooldown(GOOGLE_RESEND_COOLDOWN_SECONDS);
               }
@@ -487,6 +488,7 @@ function Login() {
         teacherRecord = await ensureTeacherIsActive(teacherRecord, sessionEmail);
 
         if (isMounted) {
+          console.log("About to call completeTeacherSession for:", sessionEmail);
           window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
           completeTeacherSession(sessionEmail, teacherRecord);
         }
@@ -507,115 +509,39 @@ function Login() {
       }
     };
 
-    const initializeSession = async () => {
-      console.log("Initializing session...");
-      console.log("Current URL:", window.location.href);
-      console.log("localStorage keys:", Object.keys(localStorage).filter(key => key.includes('supabase') || key.includes('sb-')));
-      console.log("Supabase auth keys:", Object.keys(localStorage).filter(key => key.startsWith('sb-')));
-
-      // First check if there are OAuth callback params in URL
-      const isOAuthCallback = hasOAuthCallbackParams();
-      console.log("Is OAuth callback:", isOAuthCallback);
-
-      if (isOAuthCallback) {
-        console.log("Detected OAuth callback, manually processing session...");
-        try {
-          // Manually extract tokens from URL hash
-          const hashParams = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
-          const accessToken = hashParams.get("access_token");
-          const refreshToken = hashParams.get("refresh_token");
-
-          console.log("Extracted tokens from hash:", { hasAccessToken: !!accessToken, hasRefreshToken: !!refreshToken });
-
-          if (accessToken && refreshToken) {
-            console.log("Setting session from hash tokens...");
-            const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken
-            });
-
-            if (sessionError) {
-              console.warn("Error setting session from hash:", sessionError);
-            } else {
-              console.log("Session set successfully from hash");
-
-              // Clean up the URL by removing hash params
-              if (window.location.hash) {
-                console.log("Cleaning up URL hash...");
-                window.history.replaceState(null, '', window.location.pathname + window.location.search);
-              }
-            }
-          } else {
-            console.warn("No access_token or refresh_token found in hash");
-          }
-        } catch (manualError) {
-          console.warn("Manual session processing failed:", manualError);
-        }
-        // Continue with normal flow after manual processing
-      }
-
-      // Always try to get current session from Supabase
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        console.warn("Session error:", sessionError);
-        window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
-        if (isMounted) {
-          setGoogleError("Session error: " + sessionError.message);
-        }
-        return;
-      }
-
-      console.log("Session data:", data);
-
-      if (data?.session?.user) {
-        console.log("Found existing session for:", data.session.user.email);
-        // Check if user just came back from verification
-        const sessionEmail = String(data.session.user.email || "").trim().toLowerCase();
-        if (sessionEmail) {
-          try {
-            let teacherRecord = await resolveTeacherRecordByEmail(sessionEmail);
-            if (teacherRecord && isGoogleProfileVerified(teacherRecord)) {
-              console.log("User is verified, completing login");
-              teacherRecord = await ensureTeacherIsActive(teacherRecord, sessionEmail);
-              if (isMounted) {
-                window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
-                completeTeacherSession(sessionEmail, teacherRecord);
-              }
-              return;
-            } else {
-              console.log("User not verified, showing verification UI");
-            }
-          } catch (checkError) {
-            console.warn("Error checking verification status:", checkError);
-          }
-        }
-
-        // Handle normal OAuth session
-        await handleOAuthSession(data.session);
+    // Set up auth state listener - Supabase will automatically detect OAuth params in URL
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("Auth state change:", _event, session?.user?.email, !!session);
+      
+      if (session?.user) {
+        console.log("Session established for:", session.user.email);
+        await handleOAuthSession(session);
       } else {
-        console.log("No existing session found");
+        console.log("No session in auth state change");
         window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
         if (isMounted) {
           setGoogleLoading(false);
         }
       }
+    });
+
+    // Check for existing session on mount
+    const checkExistingSession = async () => {
+      try {
+        console.log("=== Checking existing session ===");
+        const { data, error } = await supabase.auth.getSession();
+        console.log("getSession result:", { hasSession: !!data?.session, email: data?.session?.user?.email, error });
+        
+        if (!data?.session) {
+          console.log("No existing session found");
+          window.sessionStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
+        }
+      } catch (err) {
+        console.error("Error checking session:", err);
+      }
     };
 
-    initializeSession();
-
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log("Auth state change:", _event, session?.user?.email, !!session);
-      if (session?.user) {
-        console.log("Session established for:", session.user.email);
-        console.log("Session object:", session);
-        // Check if localStorage has the session now
-        const storedKeys = Object.keys(localStorage).filter(key => key.startsWith('sb-'));
-        console.log("Stored session keys after auth change:", storedKeys);
-        await handleOAuthSession(session);
-      } else {
-        console.log("No session in auth state change");
-      }
-    });
+    checkExistingSession();
 
     return () => {
       isMounted = false;
@@ -725,9 +651,6 @@ function Login() {
     setGoogleLoading(true);
     window.sessionStorage.setItem(GOOGLE_OAUTH_INTENT_KEY, "1");
 
-    // Clear any stale auth session so Google always shows account selection.
-    await supabase.auth.signOut();
-
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -760,46 +683,6 @@ function Login() {
     window.sessionStorage.clear();
 
     console.log("Storage cleared. Please refresh the page and try login again.");
-    console.log("===================");
-  };
-
-  const testSession = async () => {
-    console.log("=== SESSION TEST ===");
-    console.log("Current URL:", window.location.href);
-    console.log("localStorage keys:", Object.keys(localStorage));
-    const supabaseKeys = Object.keys(localStorage).filter(key => key.includes('supabase') || key.includes('sb-'));
-    console.log("Supabase-related keys:", supabaseKeys);
-
-    supabaseKeys.forEach(key => {
-      try {
-        const value = localStorage.getItem(key);
-        console.log(`${key}:`, value ? JSON.parse(value) : 'null/empty');
-      } catch (e) {
-        console.log(`${key}:`, localStorage.getItem(key));
-      }
-    });
-
-    const { data, error } = await supabase.auth.getSession();
-    console.log("getSession result:", { data, error });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    console.log("getUser result:", { userData, error: userError });
-
-    // Test manual session setting if we have URL params
-    const isOAuthCallback = hasOAuthCallbackParams();
-    if (isOAuthCallback && data?.session) {
-      console.log("Trying manual session set...");
-      try {
-        const setResult = await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
-        });
-        console.log("Manual setSession result:", setResult);
-      } catch (setError) {
-        console.warn("Manual setSession failed:", setError);
-      }
-    }
-
     console.log("===================");
   };
 
@@ -933,23 +816,7 @@ function Login() {
             {googleLoading ? "Connecting to Google..." : "Continue with Google"}
           </button>
 
-          {/* Debug Test Button */}
-          <button
-            type="button"
-            onClick={testSession}
-            className="w-full flex items-center justify-center gap-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-xl border border-gray-300 transition-all text-xs mb-2"
-          >
-            🔍 Check Session Status
-          </button>
 
-          {/* Clear Storage Button */}
-          <button
-            type="button"
-            onClick={clearStorageAndTest}
-            className="w-full flex items-center justify-center gap-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium px-4 py-2 rounded-xl border border-red-300 transition-all text-xs mb-5"
-          >
-            🗑️ Clear Storage & Test
-          </button>
           {googleNotice && (
             <div className="mb-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
               <p className="text-green-700 text-xs">{googleNotice}</p>

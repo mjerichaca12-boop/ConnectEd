@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { useNavigate } from "react-router-dom";
 import { Calendar as CalendarIcon, Plus, Trash2, X, School, Users, Clock, Loader2, AlertTriangle } from "lucide-react";
@@ -10,6 +10,7 @@ import { supabase } from "../../lib/supabaseClient";
 
 export function AdminCalendar() {
   const navigate = useNavigate();
+  const calendarRef = useRef(null);
   const [adminName, setAdminName] = useState("");
   const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
@@ -420,6 +421,13 @@ export function AdminCalendar() {
 
       await refreshEvents(tableName);
 
+      // Refresh the calendar preview
+      if (calendarRef.current?.refreshCalendar) {
+        await calendarRef.current.refreshCalendar().catch(() => {
+          // Calendar refresh failed but event was added
+        });
+      }
+
       setSuccessMessage("Event added successfully.");
       handleCloseEventModal();
     } catch (error) {
@@ -450,6 +458,13 @@ export function AdminCalendar() {
       void refreshEvents(tableName).catch(() => {
         // Keep the optimistic UI if the refresh fails.
       });
+
+      // Refresh the calendar preview
+      if (calendarRef.current?.refreshCalendar) {
+        await calendarRef.current.refreshCalendar().catch(() => {
+          // Calendar refresh failed but event was deleted
+        });
+      }
     } catch (error) {
       setEventsError(error instanceof Error ? error.message : "Unable to delete event.");
     }
@@ -519,7 +534,7 @@ export function AdminCalendar() {
           <div className="flex flex-col md:flex-row gap-6">
             {/* Calendar Preview */}
             <div className="w-full md:w-1/3">
-              <DashboardCalendar viewerRole="admin" />
+              <DashboardCalendar ref={calendarRef} viewerRole="admin" />
             </div>
 
             {/* Event Management */}
