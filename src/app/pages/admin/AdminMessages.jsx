@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
 import {
   Search,
   Send,
@@ -327,7 +327,7 @@ export function AdminMessages() {
       
       // Approach 1: Direct participant lookup using service role client
       console.log("[AdminMessages] Looking for admin participants with ID:", currentAdminId);
-      const { data: participantRows, error: participantError } = await supabaseAdmin
+      const { data: participantRows, error: participantError } = await supabase
         .from("conversation_participants")
         .select("conversation_id, profile_id")
         .eq("profile_id", currentAdminId);
@@ -362,7 +362,7 @@ export function AdminMessages() {
       if (!participantError && participantRows && participantRows.length > 0) {
         const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
         
-        const { data: conversationData, error: convError } = await supabaseAdmin
+        const { data: conversationData, error: convError } = await supabase
           .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
