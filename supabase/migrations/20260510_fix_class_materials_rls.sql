@@ -24,7 +24,8 @@ CREATE POLICY class_materials_insert_teachers
       SELECT 1 FROM public.profiles 
       WHERE id = auth.uid() 
       AND role = 'teacher'
-    )
+    ) AND
+    (auth.uid() = teacher_id OR auth.uid() = created_by)
   );
 
 -- Policy: Only teachers who created the material can update it
@@ -33,7 +34,7 @@ CREATE POLICY class_materials_update_own
   FOR UPDATE
   TO authenticated
   USING (
-    teacher_id = auth.uid() AND
+    (teacher_id = auth.uid() OR created_by = auth.uid()) AND
     EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE id = auth.uid() 
@@ -41,7 +42,7 @@ CREATE POLICY class_materials_update_own
     )
   )
   WITH CHECK (
-    teacher_id = auth.uid() AND
+    (teacher_id = auth.uid() OR created_by = auth.uid()) AND
     EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE id = auth.uid() 
@@ -55,7 +56,7 @@ CREATE POLICY class_materials_delete_own
   FOR DELETE
   TO authenticated
   USING (
-    teacher_id = auth.uid() AND
+    (teacher_id = auth.uid() OR created_by = auth.uid()) AND
     EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE id = auth.uid() 

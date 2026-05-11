@@ -5,6 +5,7 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { supabase } from "@/app/lib/supabaseClient";
+import { v4 as uuidv4 } from "uuid";
 import {
   sanitizeFileName,
   isColumnMissingError,
@@ -49,6 +50,7 @@ import { streamMessage } from "@/app/lib/groqClient";
 
 const STORAGE_BUCKET = "class-materials";
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
+const ASSESSMENT_TABLE = "teacher_assessment_grades";
 const ANNOUNCEMENT_TABLE = "announcements";
 
 const normalizeMaterialRecord = (row) => {
@@ -74,7 +76,7 @@ const normalizeMaterialRecord = (row) => {
 
 const normalizeAssignmentRecord = (row) => {
   const attachments = buildAssignmentAttachments(row);
-  const assessmentType = String(row?.assessment_type || row?.type || row?.activity_type || row?.task_type || "assignment").trim().toLowerCase();
+  const assessmentType = String(row?.assessment_type || row?.type || row?.task_type || "assignment").trim().toLowerCase();
   
   let type = "assignment";
   if (assessmentType === "activity") type = "activity";
@@ -494,6 +496,11 @@ export function ClassDetail() {
     return resolveAssignmentTable();
   };
 
+  const getAssessmentTableName = async (assignmentType) => {
+    // Always use the regular assignment table for now
+    return getAssignmentTableName();
+  };
+
   const resolveAssignmentColumns = async (tableNameOverride) => {
     if (!supabase) {
       return [];
@@ -508,15 +515,13 @@ export function ClassDetail() {
     const defaultColumns = [
       "id",
       "type",
-      "activity_type",
+      "assessment_type",
       "task_type",
       "title",
       "name",
       "description",
       "instructions",
       "content",
-      "due_date",
-      "dueDate",
       "deadline",
       "max_points",
       "total_points",
@@ -727,8 +732,8 @@ export function ClassDetail() {
     let query = supabase.from(tableName).select("*");
     const orderColumn = columns.includes("created_at")
       ? "created_at"
-      : columns.includes("due_date")
-        ? "due_date"
+      : columns.includes("deadline")
+        ? "deadline"
         : columns.includes("dueDate")
           ? "dueDate"
           : columns.includes("deadline")
@@ -1153,175 +1158,183 @@ export function ClassDetail() {
   };
 
   // Upload Material
-  const handleAddMaterial = async () => {
-    const title = String(matForm.title || "").trim();
-    const fileType = String(matForm.fileType || "").trim();
+ const handleAddMaterial = async () => {
+  const title = String(matForm.title || "").trim();
+  const fileType = String(matForm.fileType || "").trim();
 
-    if (!title) {
-      setMatError("Title is required.");
-      return;
+  if (!title) {
+    setMatError("Title is required.");
+    return;
+  }
+
+  if (!fileType) {
+    setMatError("File Type is required.");
+    return;
+  }
+
+  if (matFiles.length === 0) {
+    setMatError("Attach File is required.");
+    return;
+  }
+
+  if (!supabase) {
+    setMatError("Supabase client is not configured. Check your .env file.");
+    return;
+  }
+
+  // Ensure we have a teacher ID - try to resolve it now if missing
+  let effectiveTeacherId = teacherProfileId;
+  if (!effectiveTeacherId) {
+    const userData = localStorage.getItem("currentUser");
+    const user = userData ? JSON.parse(userData) : null;
+    if (user?.email) {
+      effectiveTeacherId = await resolveTeacherProfileId(user.email);
+      if (effectiveTeacherId) setTeacherProfileId(effectiveTeacherId);
     }
-
-    if (!fileType) {
-      setMatError("File Type is required.");
-      return;
-    }
-
-    if (matFiles.length === 0) {
-      setMatError("Attach File is required.");
-      return;
-    }
-
-    if (!supabase) {
-      setMatError("Supabase client is not configured. Check your .env file.");
-      return;
-    }
-
-    // Ensure we have a teacher ID - try to resolve it now if missing
-    let effectiveTeacherId = teacherProfileId;
     if (!effectiveTeacherId) {
-      const userData = localStorage.getItem("currentUser");
-      const user = userData ? JSON.parse(userData) : null;
-      if (user?.email) {
-        effectiveTeacherId = await resolveTeacherProfileId(user.email);
-        if (effectiveTeacherId) setTeacherProfileId(effectiveTeacherId);
-      }
-      if (!effectiveTeacherId) {
-        setMatError("Unable to identify your teacher account. Please log out and log in again.");
-        return;
-      }
+      setMatError("Unable to identify your teacher account. Please log out and log in again.");
+      return;
     }
+  }
 
-    setIsUploadingMaterial(true);
-    setMatError("");
-    setMatSuccess("");
+  setIsUploadingMaterial(true);
+  setMatError("");
+  setMatSuccess("");
 
-    try {
-      const uploadedFiles = [];
+  try {
+    const uploadedFiles = [];
 
-      for (const file of matFiles) {
-        const timestamp = Date.now();
-        const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
-        const storagePath = `${effectiveTeacherId}/${storedFileName}`;
+    for (const file of matFiles) {
+      const timestamp = Date.now();
+      const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
+      const storagePath = `${effectiveTeacherId}/${storedFileName}`;
 
-        console.log("[ClassDetail] Material upload selected file:", file.name, "size:", file.size);
+      console.log("[ClassDetail] Material upload selected file:", file.name, "size:", file.size);
 
-        const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert: false });
-        console.log("[ClassDetail] Storage upload response:", uploadResult.error ? uploadResult.error : "OK");
+      const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert: false });
+      console.log("[ClassDetail] Storage upload response:", uploadResult.error ? uploadResult.error : "OK");
 
-        if (uploadResult.error) {
-          const errCode = String(uploadResult.error?.statusCode || uploadResult.error?.status || uploadResult.error?.error || "");
-          console.error("[ClassDetail] Storage upload failed:", uploadResult.error);
-          if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
-            setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
-          } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-            setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
-          } else {
-            setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
-          }
-          const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
-          if (rollbackResult.error) {
-            console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
-          }
-          return;
-        }
-
-        const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-        const fileUrl = String(publicData?.publicUrl || "").trim();
-
-        if (!fileUrl) {
-          const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove([...uploadedFiles.map((item) => item.filePath), storagePath]);
-          if (rollbackResult.error) {
-            console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
-          }
-          setMatError("Unable to get uploaded file URL.");
-          return;
-        }
-
-        uploadedFiles.push({
-          fileName: storedFileName,
-          filePath: storagePath,
-          fileUrl
-        });
-      }
-
-      const fileNamesValue = JSON.stringify(uploadedFiles.map((item) => item.fileName));
-      const filePathsValue = JSON.stringify(uploadedFiles.map((item) => item.filePath));
-      const fileUrlsValue = JSON.stringify(uploadedFiles.map((item) => item.fileUrl));
-
-      const columns = await getMaterialColumns();
-      const payload = {
-        title,
-        description: String(matForm.description || "").trim() || null,
-        file_type: fileType,
-        file_url: fileUrlsValue
-      };
-
-      // Only add file_name if the column exists in the database
-      if (columns.includes("file_name")) {
-        payload.file_name = fileNamesValue;
-      }
-
-      if (columns.includes("file_path")) {
-        payload.file_path = filePathsValue;
-      }
-
-      if (columns.includes("subject")) {
-        payload.subject = String(classData?.code || "").trim() || null;
-      }
-
-      if (columns.includes("section")) {
-        payload.section = String(classData?.section || "").trim() || null;
-      }
-
-      if (columns.includes("teacher_id")) {
-        payload.teacher_id = effectiveTeacherId;
-      }
-
-      if (columns.includes("created_by")) {
-        payload.created_by = effectiveTeacherId;
-      }
-
-      if (columns.includes("created_at")) {
-        payload.created_at = new Date().toISOString();
-      }
-
-      console.log("[ClassDetail] DB insert payload:", payload);
-
-      const insertResult = await supabase.from("class_materials").insert(payload).select("*").single();
-      console.log("[ClassDetail] DB insert response:", insertResult);
-
-      if (insertResult.error) {
-        console.error("[ClassDetail] DB insert failed:", insertResult.error);
-        const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
-        if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-          setMatError(`Database blocked by Row Level Security. In Supabase: Table Editor → class_materials → RLS Policies → Allow INSERT for authenticated users.`);
+      if (uploadResult.error) {
+        const errCode = String(uploadResult.error?.statusCode || uploadResult.error?.status || uploadResult.error?.error || "");
+        console.error("[ClassDetail] Storage upload failed:", uploadResult.error);
+        if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
+          setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
+        } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
+          setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
         } else {
-          setMatError(`Failed to save material record: ${insertResult.error.message || "Unknown error"}`);
+          setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
         }
-
-        if (uploadedFiles.length > 0) {
-          await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+        const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+        if (rollbackResult.error) {
+          console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
         }
         return;
       }
 
-      if (insertResult.data) {
-        const normalized = normalizeMaterialRecord(insertResult.data);
-        setMaterials((current) => [normalized, ...current]);
+      const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+      const fileUrl = String(publicData?.publicUrl || "").trim();
+
+      if (!fileUrl) {
+        const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove([...uploadedFiles.map((item) => item.filePath), storagePath]);
+        if (rollbackResult.error) {
+          console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
+        }
+        setMatError("Unable to get uploaded file URL.");
+        return;
       }
 
-      await fetchClassMaterials(teacherProfileId, classData);
-      setMatSuccess("Material uploaded successfully.");
-      resetMaterialForm(true);
-      setShowMaterialModal(false);
-    } catch (error) {
-      console.error("[ClassDetail] Unexpected upload flow error:", error);
-      setMatError(error instanceof Error ? error.message : "Unexpected error while uploading material.");
-    } finally {
-      setIsUploadingMaterial(false);
+      uploadedFiles.push({
+        fileName: storedFileName,
+        filePath: storagePath,
+        fileUrl
+      });
     }
-  };
+
+    // ✅ FIXED: Use FIRST file URL as plain string (not JSON array)
+    const firstFileUrl = uploadedFiles[0]?.fileUrl;
+    
+    const columns = await getMaterialColumns();
+    const payload = {
+      title,
+      description: String(matForm.description || "").trim() || null,
+      file_type: fileType,
+      file_url: firstFileUrl,  // 👈 Plain URL string - CRITICAL FIX
+      teacher_id: effectiveTeacherId  // 👈 Always include
+    };
+
+    // ✅ FIXED: Conditionally add fields ONLY if columns exist
+    if (columns.includes("file_name")) {
+      payload.file_name = uploadedFiles[0]?.fileName;  // Single file
+    }
+
+    if (columns.includes("file_path")) {
+      payload.file_path = uploadedFiles[0]?.filePath;  // Single file
+    }
+
+    if (columns.includes("subject_id") || columns.includes("subject")) {  // 👈 Likely your column name
+      payload.subject_id = classData?.id || classData?.subject_id;  // 👈 Use class/subject UUID
+      if (!payload.subject_id) {
+        console.warn("[ClassDetail] No subject_id found in classData:", classData);
+      }
+    } else if (columns.includes("subject")) {
+      payload.subject = String(classData?.code || classData?.name || "").trim() || null;
+    }
+
+    if (columns.includes("section")) {
+      payload.section = String(classData?.section || "").trim() || null;
+    }
+
+    if (columns.includes("created_by")) {
+      payload.created_by = effectiveTeacherId;
+    }
+
+    // Let DB handle timestamps if possible
+    if (columns.includes("created_at") && !columns.find(col => col.includes('default'))) {
+      payload.created_at = new Date().toISOString();
+    }
+
+    console.log("[ClassDetail] ✅ FIXED DB insert payload:", payload);
+
+    const insertResult = await supabase
+      .from("class_materials")
+      .insert(payload)
+      .select("id, *")
+      .single();
+
+    console.log("[ClassDetail] DB insert response:", insertResult);
+
+    if (insertResult.error) {
+      console.error("[ClassDetail] DB insert failed:", insertResult.error);
+      const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
+      if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
+        setMatError(`RLS policy violation. Check: 1) subject_id present? 2) file_url is plain string? 3) teacher_id matches auth.uid()`);
+      } else {
+        setMatError(`Failed to save: ${insertResult.error.message}`);
+      }
+
+      // Rollback storage
+      if (uploadedFiles.length > 0) {
+        await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+      }
+      return;
+    }
+
+    if (insertResult.data) {
+      const normalized = normalizeMaterialRecord(insertResult.data);
+      setMaterials((current) => [normalized, ...current]);
+    }
+
+    await fetchClassMaterials(teacherProfileId, classData);
+    setMatSuccess("Material uploaded successfully!");
+    resetMaterialForm(true);
+    setShowMaterialModal(false);
+  } catch (error) {
+    console.error("[ClassDetail] Unexpected error:", error);
+    setMatError(error instanceof Error ? error.message : "Upload failed.");
+  } finally {
+    setIsUploadingMaterial(false);
+  }
+};
 
   const deleteMaterialRecord = async (targetMaterial) => {
     if (!supabase || !targetMaterial?.id) return;
@@ -1791,7 +1804,7 @@ export function ClassDetail() {
       }
     }
 
-    const tableName = await getAssignmentTableName();
+    const tableName = await getAssessmentTableName(assignmentType);
     if (!tableName) {
       setAsgError("Assignment table is not available.");
       return;
@@ -1803,6 +1816,9 @@ export function ClassDetail() {
 
     try {
       const columns = await getAssignmentColumns(tableName);
+      console.log("[DEBUG] Table name:", tableName);
+      console.log("[DEBUG] Available columns:", columns);
+      
       const uploadedFiles = asgFiles.length > 0 ? await uploadAssignmentFiles(asgFiles, effectiveTeacherId) : [];
       const fileNamesValue = JSON.stringify(uploadedFiles.map((item) => item.fileName));
       const filePathsValue = JSON.stringify(uploadedFiles.map((item) => item.filePath));
@@ -1812,9 +1828,16 @@ export function ClassDetail() {
 
       const titleColumn = resolveColumnName(columns, ["title", "name"]);
       const descriptionColumn = resolveColumnName(columns, ["description", "instructions", "content"]);
-      const dueDateColumn = resolveColumnName(columns, ["due_date", "dueDate", "deadline"]);
+      const dueDateColumn = resolveColumnName(columns, ["deadline"]);
       const maxPointsColumn = resolveColumnName(columns, ["max_points", "total_points", "maxPoints"]);
-      const typeColumns = ["type", "activity_type", "task_type", "assessment_type"];
+      const typeColumns = ["assessment_type"];
+      
+      console.log("[DEBUG] Column detection results:");
+      console.log("  - titleColumn:", titleColumn);
+      console.log("  - descriptionColumn:", descriptionColumn);
+      console.log("  - dueDateColumn:", dueDateColumn);
+      console.log("  - maxPointsColumn:", maxPointsColumn);
+      console.log("  - asgForm.maxPoints:", asgForm.maxPoints);
 
       typeColumns.forEach((columnName) => {
         if (columns.includes(columnName)) {
@@ -1823,9 +1846,33 @@ export function ClassDetail() {
       });
 
       if (titleColumn) payload[titleColumn] = title;
-      if (descriptionColumn) payload[descriptionColumn] = String(asgForm.description || "").trim() || null;
+      
+      // Include max_points in description if it exists in the form and the table doesn't have max_points column
+      let descriptionValue = String(asgForm.description || "").trim() || null;
+      if (asgForm.maxPoints && !maxPointsColumn) {
+        descriptionValue = descriptionValue ? `${descriptionValue}\n\nMax Points: ${asgForm.maxPoints}` : `Max Points: ${asgForm.maxPoints}`;
+      }
+      if (descriptionColumn) payload[descriptionColumn] = descriptionValue;
+      
       if (dueDateColumn) payload[dueDateColumn] = dueDate;
-      if (maxPointsColumn) payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
+      
+      console.log("[DEBUG] Before maxPoints check - payload:", payload);
+      console.log("[DEBUG] maxPointsColumn exists:", !!maxPointsColumn);
+      console.log("[DEBUG] asgForm.maxPoints:", asgForm.maxPoints);
+      console.log("[DEBUG] tableName:", tableName);
+      
+      // Only add max_points if the column actually exists in the table AND it's not assignments_activity
+      // assignments_activity table doesn't have max_points column according to schema
+      if (maxPointsColumn && tableName !== 'assignments_activity') {
+        payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
+        console.log("[DEBUG] Added max_points to payload with key:", maxPointsColumn);
+      } else {
+        if (tableName === 'assignments_activity') {
+          console.log("[DEBUG] Skipped adding max_points - assignments_activity table doesn't have this column");
+        } else {
+          console.log("[DEBUG] Skipped adding max_points - column not found in table");
+        }
+      }
 
       if (columns.includes("file_url")) payload.file_url = fileUrlsValue;
       if (columns.includes("file_name")) payload.file_name = fileNamesValue;
@@ -1843,6 +1890,9 @@ export function ClassDetail() {
       if (columns.includes("author")) payload.author = teacherName;
       if (columns.includes("teacher_name")) payload.teacher_name = teacherName;
       if (columns.includes("created_at")) payload.created_at = new Date().toISOString();
+
+      console.log("[DEBUG] Final payload before insertion:", payload);
+      console.log("[DEBUG] Payload keys:", Object.keys(payload));
 
       const insertResult = await supabase.from(tableName).insert(payload).select("*").single();
 
@@ -1926,7 +1976,7 @@ export function ClassDetail() {
       return;
     }
 
-    const tableName = await getAssignmentTableName();
+    const tableName = await getAssessmentTableName(assignmentType);
     if (!tableName) {
       setAsgError("Assignment table is not available.");
       return;
@@ -1955,9 +2005,9 @@ export function ClassDetail() {
 
       const titleColumn = resolveColumnName(columns, ["title", "name"]);
       const descriptionColumn = resolveColumnName(columns, ["description", "instructions", "content"]);
-      const dueDateColumn = resolveColumnName(columns, ["due_date", "dueDate", "deadline"]);
+      const dueDateColumn = resolveColumnName(columns, ["deadline"]);
       const maxPointsColumn = resolveColumnName(columns, ["max_points", "total_points", "maxPoints"]);
-      const typeColumns = ["type", "activity_type", "task_type", "assessment_type"];
+      const typeColumns = ["assessment_type", "type", "task_type"];
 
       typeColumns.forEach((columnName) => {
         if (columns.includes(columnName)) {
@@ -1966,9 +2016,21 @@ export function ClassDetail() {
       });
 
       if (titleColumn) payload[titleColumn] = title;
-      if (descriptionColumn) payload[descriptionColumn] = String(asgForm.description || "").trim() || null;
+      
+      // Include max_points in description if it exists in form and table doesn't have max_points column
+      let descriptionValue = String(asgForm.description || "").trim() || null;
+      if (asgForm.maxPoints && !maxPointsColumn) {
+        descriptionValue = descriptionValue ? `${descriptionValue}\n\nMax Points: ${asgForm.maxPoints}` : `Max Points: ${asgForm.maxPoints}`;
+      }
+      if (descriptionColumn) payload[descriptionColumn] = descriptionValue;
+      
       if (dueDateColumn) payload[dueDateColumn] = dueDate;
-      if (maxPointsColumn) payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
+      
+      // Only add max_points if the column actually exists in the table AND it's not assignments_activity
+      // assignments_activity table doesn't have max_points column according to schema
+      if (maxPointsColumn && tableName !== 'assignments_activity') {
+        payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
+      }
 
       if (columns.includes("file_url")) payload.file_url = fileUrlsValue;
       if (columns.includes("file_name")) payload.file_name = fileNamesValue;

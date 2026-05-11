@@ -102,7 +102,7 @@ const normalizeAssignmentRecord = (row) => {
 
   return {
     id: String(row?.id || ""),
-    type: String(row?.type || row?.activity_type || row?.task_type || "assignment").trim().toLowerCase() === "activity" ? "activity" : "assignment",
+    type: String(row?.type || row?.assessment_type || row?.task_type || "assignment").trim().toLowerCase() === "activity" ? "activity" : "assignment",
     title: String(row?.title || row?.name || "").trim(),
     description: String(row?.description || row?.instructions || row?.content || "").trim(),
     dueDate: String(row?.due_date || row?.dueDate || row?.deadline || "").trim(),
@@ -172,7 +172,7 @@ function StudentMaterials() {
       return [];
     }
 
-    const candidates = ["id", "type", "activity_type", "task_type", "title", "name", "description", "instructions", "content", "due_date", "dueDate", "deadline", "max_points", "total_points", "maxPoints", "file_url", "file_name", "file_path", "subject", "class_code", "class_name", "course_id", "author", "teacher_name", "created_at"];
+    const candidates = ["id", "type", "assessment_type", "task_type", "title", "name", "description", "instructions", "content", "deadline", "max_points", "total_points", "maxPoints", "file_url", "file_name", "file_path", "subject", "class_code", "class_name", "course_id", "author", "teacher_name", "created_at"];
     const detected = [];
 
     for (const col of candidates) {
@@ -204,7 +204,7 @@ function StudentMaterials() {
     }
 
     const columns = columnsOverride || assignmentColumns || [];
-    const orderColumn = columns.includes("created_at") ? "created_at" : columns.includes("due_date") ? "due_date" : columns.includes("deadline") ? "deadline" : "";
+    const orderColumn = columns.includes("created_at") ? "created_at" : columns.includes("deadline") ? "deadline" : "";
 
     let query = supabase.from(tableName).select("*");
     if (orderColumn) {

@@ -75,7 +75,7 @@ const exportToExcel = (studentGrades, className) => {
 };
 
 const normalizeAssessment = (row) => {
-  const assessmentType = String(row?.assessment_type || row?.type || row?.activity_type || row?.task_type || "assignment").trim().toLowerCase();
+  const assessmentType = String(row?.assessment_type || row?.type || row?.task_type || "assignment").trim().toLowerCase();
   const maxPoints = Number(row?.max_points ?? row?.total_points ?? row?.maxPoints ?? 100) || 100;
   
   // Parse attachments
