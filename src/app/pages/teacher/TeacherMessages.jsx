@@ -512,7 +512,7 @@ function TeacherMessages() {
           id: conversationId,
           name: memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName,
           is_group: true,
-          created_by: teacherId,
+          created_by: (await supabase.auth.getUser()).data.user?.id,
         });
       
       if (convError) {

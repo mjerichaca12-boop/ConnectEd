@@ -1641,6 +1641,18 @@ export function ClassDetail() {
     setShowAssignmentModal(true);
   };
 
+  const openCreateQuizModal = () => {
+    resetAssignmentForm();
+    setAsgForm({
+      title: quizTopic ? `Quiz: ${quizTopic}` : "AI Generated Quiz",
+      description: quizGenerated || "",
+      type: "quiz",
+      dueDate: "",
+      maxPoints: "100",
+    });
+    setShowAssignmentModal(true);
+  };
+
   const requestDeleteAssignment = (assignmentId) => {
     const target = assignments.find((item) => String(item.id) === String(assignmentId));
     if (!target) return;
@@ -3244,6 +3256,14 @@ export function ClassDetail() {
 
                       {quizGenerated && (
                         <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={openCreateQuizModal}
+                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-semibold transition-all"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Create Quiz
+                          </button>
                           <button
                             type="button"
                             onClick={() => { navigator.clipboard.writeText(quizGenerated); }}
