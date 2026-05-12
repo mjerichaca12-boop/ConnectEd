@@ -813,22 +813,19 @@ function ClassMaterials() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Attach File *</label>
-                <input
-                  ref={materialFileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleMaterialFileChange}
-                />
-                <div
-                  onClick={handleMaterialFileClick}
-                  className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-green-500 transition-colors cursor-pointer"
-                >
-                  <Upload className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                <label className="block border-2 border-dashed border-white/20 rounded-lg p-8 text-center hover:border-green-500 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-green-500">
+                  <input
+                    ref={materialFileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleMaterialFileChange}
+                  />
+                  <Upload className="w-12 h-12 text-gray-600 mx-auto mb-3 group-hover:text-green-500 transition-colors" />
                   <p className="text-sm text-gray-600 mb-1">
                     {materialFileName || "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-500">Supported file uploads up to your storage limit</p>
-                </div>
+                </label>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -915,22 +912,19 @@ function ClassMaterials() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Attach File (optional)</label>
-                <input
-                  ref={activityFileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleActivityFileChange}
-                />
-                <div
-                  onClick={handleActivityFileClick}
-                  className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-green-500 transition-colors cursor-pointer"
-                >
-                  <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+                <label className="block border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-green-500 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-green-500">
+                  <input
+                    ref={activityFileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleActivityFileChange}
+                  />
+                  <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2 group-hover:text-green-500 transition-colors" />
                   <p className="text-sm text-gray-600 mb-1">
                     {activityFileName || "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 50MB)</p>
-                </div>
+                </label>
               </div>
 
               <div className="flex gap-3 pt-4">

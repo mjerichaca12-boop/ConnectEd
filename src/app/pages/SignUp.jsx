@@ -53,7 +53,13 @@ function SignUp() {
     return Object.keys(newErrors).length === 0;
   };
   const redirectToDashboard = (role) => {
-    navigate("/teacher/dashboard");
+    if (role === "admin") {
+      navigate("/admin/dashboard");
+    } else if (role === "teacher") {
+      navigate("/teacher/dashboard");
+    } else {
+      navigate("/dashboard");
+    }
   };
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -61,7 +67,9 @@ function SignUp() {
     setLoading(true);
     setSuccessMessage("");
     setTimeout(() => {
-      const detectedRole = "teacher";
+      // In a real app, this would be determined by a role selector or email domain
+      // For now, let's assume if it contains 'teacher' it's a teacher, otherwise student
+      const detectedRole = formData.usernameOrEmail.toLowerCase().includes("teacher") ? "teacher" : "student";
       const userData = {
         name: formData.usernameOrEmail,
         email: formData.usernameOrEmail,
@@ -84,7 +92,7 @@ function SignUp() {
       setGoogleError("Enter a valid email address");
       return;
     }
-    const detectedRole = "teacher";
+    const detectedRole = googleEmail.toLowerCase().includes("teacher") ? "teacher" : "student";
     const googleUser = {
       name: googleEmail.split("@")[0],
       email: googleEmail,

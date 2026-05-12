@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { supabase } from "@/app/lib/supabaseClient";
+import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+// supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
+const db = supabaseAdmin || supabase;
 import {
   Search,
   Send,
@@ -17,7 +19,12 @@ import {
   Circle,
   Shield,
   UserCog,
+  Paperclip,
+  Download,
 } from "lucide-react";
+
+const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
+const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024;
 const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
@@ -33,6 +40,8 @@ const FILTERS = [
 export function AdminMessages() {
   const navigate = useNavigate();
   const bottomRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const adminIdRef = useRef("");
 
   const [adminName, setAdminName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
@@ -50,6 +59,8 @@ export function AdminMessages() {
   const [allTeachers, setAllTeachers] = useState([]);
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -58,13 +69,10 @@ export function AdminMessages() {
     if (user.role !== "admin") { navigate("/login"); return; }
     setAdminName(user.name);
 
-    const savedConvs = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
-    setConversations(savedConvs);
-
     // Load all teachers and students from Supabase
     const loadAllUsers = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from("profiles")
           .select("id, first_name, middle_name, last_name, email, role")
           .order("role", { ascending: true })
@@ -95,7 +103,7 @@ export function AdminMessages() {
     // Resolve admin's profile id
     const ensureHardcodedAdminProfileExists = async () => {
       try {
-        const { data: existingAdmin, error: selectError } = await supabase
+        const { data: existingAdmin, error: selectError } = await db
           .from("profiles")
           .select("id")
           .eq("id", HARDCODED_ADMIN_ID)
@@ -107,16 +115,20 @@ export function AdminMessages() {
         }
 
         if (!existingAdmin) {
-          const { error: insertError } = await supabase.from("profiles").insert({
+          const { error: insertError } = await db.from("profiles").insert({
             id: HARDCODED_ADMIN_ID,
             first_name: "Connected",
             last_name: "Admin",
             email: HARDCODED_ADMIN_EMAIL,
             role: "admin",
+            status: "Active",
+            is_verified: true,
             created_at: new Date().toISOString(),
           });
           if (insertError) {
             console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
+          } else {
+            console.log("[AdminMessages] Hardcoded admin profile created successfully");
           }
         }
       } catch (err) {
@@ -130,25 +142,25 @@ export function AdminMessages() {
         
         // For hardcoded admin, use hardcoded UUID instead of database lookup
         if (user.email === HARDCODED_ADMIN_EMAIL) {
-          console.log("[AdminMessages] Using hardcoded admin ID:", HARDCODED_ADMIN_ID);
+          adminIdRef.current = HARDCODED_ADMIN_ID;
           setAdminId(HARDCODED_ADMIN_ID);
           await ensureHardcodedAdminProfileExists();
           await loadConversationsFromDB();
           return;
         }
-        
-        const { data } = await supabase
+
+        const { data } = await db
           .from("profiles")
           .select("id")
           .ilike("email", user.email)
           .maybeSingle();
         if (data?.id) {
-          console.log("[AdminMessages] Found admin ID from database:", data.id);
-          setAdminId(String(data.id));
-          // Load conversations after adminId is resolved
+          const resolvedId = String(data.id);
+          adminIdRef.current = resolvedId;
+          setAdminId(resolvedId);
           await loadConversationsFromDB();
         } else {
-          console.log("[AdminMessages] No admin profile found for email:", user.email);
+          console.warn("[AdminMessages] No admin profile found for email:", user.email);
         }
       } catch (err) {
         console.error("[AdminMessages] Failed to resolve admin id:", err);
@@ -176,54 +188,35 @@ export function AdminMessages() {
 
   const saveConversations = (updated) => {
     setConversations(updated);
-    localStorage.setItem("admin_conversations", JSON.stringify(updated));
   };
 
   const loadConversationsFromDB = async () => {
     try {
-      // Handle case where adminId is null - use hardcoded admin UUID
-      const adminFilter = adminId
-        ? `sender_id.eq.${adminId},receiver_id.eq.${adminId}`
-        : `sender_id.eq.${HARDCODED_ADMIN_ID},receiver_id.eq.${HARDCODED_ADMIN_ID}`;
-      
+      const effectiveAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+      const adminFilter = `sender_id.eq.${effectiveAdminId},receiver_id.eq.${effectiveAdminId}`;
+
       // Load direct messages (exclude group messages)
-      const { data: messageRows, error } = await supabase
+      const { data: messageRows, error } = await db
         .from("messages")
         .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size")
         .or(adminFilter)
-        .is("conversation_id", null) // Only load direct messages, not group messages
+        .is("conversation_id", null)
         .order("created_at", { ascending: true });
-      
+
       if (error) {
         console.error("[AdminMessages] Failed to load messages from DB:", error);
         return;
       }
-      
       const counterpartIds = [...new Set((messageRows || []).map((row) => {
-        const senderId = row.sender_id;
-        const receiverId = row.receiver_id;
-        
-        // Determine if this is an admin message and get the counterpart
-        let counterpartId = null;
-        if (adminId) {
-          // If we have adminId, use normal logic
-          counterpartId = senderId === adminId ? receiverId : senderId;
-        } else {
-          // If adminId is null, use hardcoded admin UUID
-          if (senderId === HARDCODED_ADMIN_ID) {
-            counterpartId = receiverId; // Admin sent to this user
-          } else if (receiverId === HARDCODED_ADMIN_ID) {
-            counterpartId = senderId; // This user sent to admin
-          }
-        }
-        
-        return counterpartId;
+        const senderId = String(row.sender_id || "");
+        const receiverId = String(row.receiver_id || "");
+        return senderId === effectiveAdminId ? receiverId : senderId;
       }).filter(Boolean))];
       
       // Fetch profiles for all counterparts
       const profileMap = new Map();
       if (counterpartIds.length > 0) {
-        const { data: profiles } = await supabase
+        const { data: profiles } = await db
           .from("profiles")
           .select("id, first_name, middle_name, last_name, email, role")
           .in("id", counterpartIds);
@@ -246,9 +239,7 @@ export function AdminMessages() {
       (messageRows || []).forEach((row) => {
         const senderId = String(row.sender_id || "");
         const receiverId = String(row.receiver_id || "");
-        const counterpartId = senderId === adminId || senderId === HARDCODED_ADMIN_ID
-          ? receiverId
-          : senderId;
+        const counterpartId = senderId === effectiveAdminId ? receiverId : senderId;
         if (!counterpartId) return;
         
         const profile = profileMap.get(counterpartId) || { name: "Unknown User", role: "student" };
@@ -269,14 +260,7 @@ export function AdminMessages() {
         const conversation = conversationsByParticipant.get(counterpartId);
         
         // Determine if this is an admin message
-        let isAdmin = false;
-        if (adminId) {
-          // Normal logic with adminId
-          isAdmin = senderId === adminId;
-        } else {
-          // Handle null admin ID - use hardcoded admin UUID
-          isAdmin = senderId === HARDCODED_ADMIN_ID;
-        }
+        const isAdmin = senderId === effectiveAdminId;
         
         let fileUrl = String(row.file_url || "").trim();
         let fileName = String(row.file_name || "").trim();
@@ -320,49 +304,19 @@ export function AdminMessages() {
       });
       
       // Load group conversations
-      const currentAdminId = adminId || HARDCODED_ADMIN_ID;
-      
-      // Try multiple approaches to ensure we find admin's group conversations
+      const currentAdminId = effectiveAdminId;
+
       let groupConversations = [];
-      
-      // Approach 1: Direct participant lookup using service role client
-      console.log("[AdminMessages] Looking for admin participants with ID:", currentAdminId);
-      const { data: participantRows, error: participantError } = await supabase
+
+      const { data: participantRows, error: participantError } = await db
         .from("conversation_participants")
         .select("conversation_id, profile_id")
         .eq("profile_id", currentAdminId);
-      
-      console.log("[AdminMessages] Participant query result:", { participantRows, participantError });
-
-      // Test: Check what's actually in conversation_participants table
-      const { data: allParticipants, error: allError } = await supabase
-        .from("conversation_participants")
-        .select("*")
-        .limit(5);
-      
-      console.log("[AdminMessages] Sample of all conversation_participants:", allParticipants);
-
-      // Test: Simple query to verify database connection
-      const { data: testProfiles, error: testError } = await supabase
-        .from("profiles")
-        .select("id, email")
-        .limit(3);
-      
-      console.log("[AdminMessages] Database connection test - profiles:", { testProfiles, testError });
-
-      // Check if admin ID from data matches what we're looking for
-      const adminIdInData = "11111111-1111-1111-1111-111111111111";
-      const adminIdInCode = currentAdminId;
-      console.log("[AdminMessages] Admin ID comparison:", { 
-        inData: adminIdInData, 
-        inCode: adminIdInCode, 
-        matches: adminIdInData === adminIdInCode 
-      });
 
       if (!participantError && participantRows && participantRows.length > 0) {
         const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
         
-        const { data: conversationData, error: convError } = await supabase
+        const { data: conversationData, error: convError } = await db
           .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
@@ -374,7 +328,7 @@ export function AdminMessages() {
         if (!convError && conversationData) {
           for (const conv of conversationData) {
             // Load participants for this group
-            const { data: groupParticipants, error: groupPartError } = await supabase
+            const { data: groupParticipants, error: groupPartError } = await db
               .from("conversation_participants")
               .select("profile_id")
               .eq("conversation_id", conv.id);
@@ -383,7 +337,7 @@ export function AdminMessages() {
               const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
               
               // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await supabase
+              const { data: groupMessages, error: groupMsgError } = await db
                 .from("messages")
                 .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read")
                 .eq("conversation_id", conv.id)
@@ -541,11 +495,29 @@ export function AdminMessages() {
     setRecipientSearch("");
   };
 
+  const handleAttachmentChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) { setAttachmentFile(null); return; }
+    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      setPageError("File too large. Max 50 MB.");
+      setAttachmentFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setAttachmentFile(file);
+    setPageError("");
+  };
+
+  const clearAttachment = () => {
+    setAttachmentFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
-    
+
     // Validation checks
-    if (!messageInput.trim()) {
+    if (!messageInput.trim() && !attachmentFile) {
       console.warn("[AdminMessages] Cannot send empty message");
       return;
     }
@@ -556,79 +528,75 @@ export function AdminMessages() {
     // Admin ID can be null for the hardcoded login, so we use a fixed sender_id instead
     
     const now = new Date().toISOString();
-    const msg = {
-      id: Date.now().toString(),
-      from: "admin",
-      senderName: adminName,
-      text: messageInput.trim(),
-      time: now,
-    };
+    const adminSenderId = adminId || HARDCODED_ADMIN_ID;
+    setIsUploading(true);
 
-    console.log("[AdminMessages] Sending message:", {
-      adminId,
-      participantId: selectedConv.participantId,
-      message: messageInput.trim()
-    });
+    // Upload attachment if present
+    let uploadedFileUrl = "";
+    let uploadedFileName = "";
+    let uploadedFileType = "";
+    let uploadedFileSize = 0;
 
-    // Save to Supabase messages table
-    try {
-      // Use hardcoded admin UUID for the hardcoded admin system
-      const adminSenderId = adminId || HARDCODED_ADMIN_ID;
-      
-      let insertPayload;
-      if (selectedConv.isGroup) {
-        // For group messages, create a single message with conversation_id
-        insertPayload = {
-          sender_id: adminSenderId,
-          receiver_id: null, // No specific receiver for group messages
-          conversation_id: selectedConv.id,
-          message_text: messageInput.trim(),
-          content: messageInput.trim(),
-          timestamp: now,
-        };
-      } else {
-        // For direct messages, create message with receiver_id
-        insertPayload = {
-          sender_id: adminSenderId,
-          receiver_id: selectedConv.participantId,
-          conversation_id: null,
-          message_text: messageInput.trim(),
-          content: messageInput.trim(),
-          timestamp: now,
-        };
+    if (attachmentFile) {
+      const safeName = String(attachmentFile.name)
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .replace(/_+/g, "_");
+      const filePath = `${adminSenderId}/${selectedConv.participantId || "group"}/${Date.now()}_${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from(MESSAGE_ATTACHMENT_BUCKET)
+        .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) {
+        console.error("[AdminMessages] Attachment upload failed:", uploadError);
+        setPageError("File upload failed. Message not sent.");
+        setIsUploading(false);
+        return;
       }
-      
-      const { data, error } = await supabase.from("messages").insert(insertPayload).select();
-      
+
+      const { data: urlData } = supabase.storage
+        .from(MESSAGE_ATTACHMENT_BUCKET)
+        .getPublicUrl(filePath);
+      uploadedFileUrl = String(urlData?.publicUrl || "").trim();
+      uploadedFileName = safeName;
+      uploadedFileType = String(attachmentFile.type || "application/octet-stream");
+      uploadedFileSize = attachmentFile.size;
+    }
+
+    const textContent = messageInput.trim() || (attachmentFile ? "Sent an attachment" : "");
+
+    try {
+      const base = {
+        sender_id: adminSenderId,
+        message_text: textContent,
+        content: textContent,
+        timestamp: now,
+        file_url: uploadedFileUrl || null,
+        file_name: uploadedFileName || null,
+        file_type: uploadedFileType || null,
+        file_size: uploadedFileSize || null,
+      };
+
+      const insertPayload = selectedConv.isGroup
+        ? { ...base, receiver_id: null, conversation_id: selectedConv.id }
+        : { ...base, receiver_id: selectedConv.participantId, conversation_id: null };
+
+      const { data, error } = await db.from("messages").insert(insertPayload).select();
+
       if (error) {
         console.error("[AdminMessages] Supabase insert failed:", error);
-        // Fallback to localStorage only if database fails
-        const updated = conversations.map((c) =>
-          c.id === selectedConv.id
-            ? { ...c, messages: [...(c.messages || []), msg], lastMessageTime: msg.time }
-            : c
-        );
-        saveConversations(updated);
-        console.log("[AdminMessages] Message saved to localStorage fallback");
+        setPageError(`Failed to send: ${error.message}`);
       } else {
         console.log("[AdminMessages] Message saved to database:", data);
-        // Reload conversations from database to get latest
         await loadConversationsFromDB();
       }
     } catch (err) {
       console.error("[AdminMessages] Supabase send error:", err);
-      // Fallback to localStorage
-      const updated = conversations.map((c) =>
-        c.id === selectedConv.id
-          ? { ...c, messages: [...(c.messages || []), msg], lastMessageTime: msg.time }
-          : c
-      );
-      saveConversations(updated);
-      console.log("[AdminMessages] Message saved to localStorage after error");
+      setPageError("Failed to send message. Please try again.");
     }
-    
-    // Clear input field
+
     setMessageInput("");
+    clearAttachment();
+    setIsUploading(false);
   };
 
   const handleSelectConv = (conv) => {
@@ -659,14 +627,6 @@ export function AdminMessages() {
       return matches;
     }
   );
-
-  // Debug logging
-  console.log("[AdminMessages] Search state:", {
-    recipientSearch,
-    allTeachersCount: allTeachers.length,
-    filteredCount: filteredRecipients.length,
-    showNewModal
-  });
 
   const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
@@ -959,8 +919,15 @@ export function AdminMessages() {
                                   {msg.attachmentKind === "image" ? (
                                     <img
                                       src={msg.fileUrl}
-                                      alt={msg.fileName}
-                                      className="max-w-full rounded-lg border border-gray-200"
+                                      alt={msg.fileName || "attachment"}
+                                      className="max-w-full rounded-lg border border-white/20"
+                                      style={{ maxHeight: "200px" }}
+                                    />
+                                  ) : msg.attachmentKind === "video" ? (
+                                    <video
+                                      controls
+                                      src={msg.fileUrl}
+                                      className="max-w-full rounded-lg"
                                       style={{ maxHeight: "200px" }}
                                     />
                                   ) : (
@@ -971,12 +938,16 @@ export function AdminMessages() {
                                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
                                         isAdmin
                                           ? "bg-blue-500/30 text-blue-100 hover:bg-blue-500/40"
-                                          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                       }`}
                                     >
-                                      <MessageSquare className="w-4 h-4" />
-                                      <span className="truncate max-w-[200px]">{msg.fileName}</span>
-                                      <span className="text-xs opacity-70">({(msg.fileSize / 1024).toFixed(1)} KB)</span>
+                                      <Download className="w-4 h-4 flex-shrink-0" />
+                                      <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
+                                      {msg.fileSize > 0 && (
+                                        <span className="text-xs opacity-70 flex-shrink-0">
+                                          ({(msg.fileSize / 1024).toFixed(1)} KB)
+                                        </span>
+                                      )}
                                     </a>
                                   )}
                                 </div>
@@ -995,22 +966,60 @@ export function AdminMessages() {
                   {/* Input */}
                   <form
                     onSubmit={handleSend}
-                    className="px-6 py-4 border-t border-gray-200 flex items-center gap-3 flex-shrink-0"
+                    className="px-6 py-4 border-t border-gray-200 flex-shrink-0"
                   >
-                    <input
-                      type="text"
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      placeholder={`Message ${selectedConv.participantName}...`}
-                      className="flex-1 px-4 py-2.5 bg-gray-50 border border-white/20 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!messageInput.trim()}
-                      className="p-2.5 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                    >
-                      <Send className="w-5 h-5" />
-                    </button>
+                    {pageError && (
+                      <p className="text-xs text-red-500 mb-2">{pageError}</p>
+                    )}
+                    {attachmentFile && (
+                      <div className="flex items-center justify-between gap-3 px-3 py-2 mb-2 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Paperclip className="w-4 h-4 flex-shrink-0 text-blue-500" />
+                          <span className="truncate">{attachmentFile.name}</span>
+                          <span className="text-xs text-blue-400 flex-shrink-0">
+                            ({(attachmentFile.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearAttachment}
+                          className="text-blue-400 hover:text-red-500 flex-shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3">
+                      <label className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer flex-shrink-0 group">
+                        <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          className="sr-only"
+                          onChange={handleAttachmentChange}
+                          accept="*/*"
+                          disabled={isUploading}
+                        />
+                      </label>
+                      <input
+                        type="text"
+                        value={messageInput}
+                        onChange={(e) => setMessageInput(e.target.value)}
+                        placeholder={`Message ${selectedConv.participantName}...`}
+                        disabled={isUploading}
+                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60"
+                      />
+                      <button
+                        type="submit"
+                        disabled={(!messageInput.trim() && !attachmentFile) || isUploading}
+                        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                      >
+                        {isUploading
+                          ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          : <Send className="w-5 h-5" />
+                        }
+                      </button>
+                    </div>
                   </form>
                 </>
               ) : (

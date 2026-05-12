@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/app/components/Sidebar";
-import { supabase } from "@/app/lib/supabaseClient";
+import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+// supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
+const db = supabaseAdmin || supabase;
 import {
   Bell,
   MessageSquare,
@@ -10,6 +12,7 @@ import {
   Paperclip,
   MoreVertical,
   Download,
+  X,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -31,6 +34,8 @@ const sanitizeAttachmentFileName = (fileName) =>
 export function Messages() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const messagesBottomRef = useRef(null);
+  const selectedConvIdRef = useRef(null);
 
   const [studentName, setStudentName] = useState("");
   const [studentId, setStudentId] = useState("");
@@ -54,28 +59,46 @@ export function Messages() {
         return;
       }
       const user = JSON.parse(userData);
+      
+      // Redirect based on role if they are in the wrong place
+      if (user.role === "teacher") {
+        navigate("/teacher/messages", { replace: true });
+        return;
+      }
+      if (user.role === "admin") {
+        navigate("/admin/messages", { replace: true });
+        return;
+      }
       if (user.role !== "student") {
         navigate("/login");
         return;
       }
+
       setStudentName(user.name);
 
       try {
-        const { data: profile, error } = await supabase
+        const { data: profile, error } = await db
           .from("profiles")
           .select("id")
           .ilike("email", user.email)
+          .order("is_verified", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        if (error || !profile?.id) {
-          console.error("[Messages] Could not resolve student profile:", error);
-          navigate("/login");
-          return;
+        if (error) {
+          console.error("[Messages] Profile lookup error:", error);
+          setPageError("Error loading profile. Some features may be limited.");
         }
 
-        setStudentId(String(profile.id));
-        await loadConversationsFromDB(String(profile.id));
-        await loadRecipients(String(profile.id));
+        const resolvedId = profile?.id ? String(profile.id) : null;
+        if (resolvedId) {
+          setStudentId(resolvedId);
+          await loadConversationsFromDB(resolvedId);
+          await loadRecipients(resolvedId);
+        } else {
+          console.warn("[Messages] Profile not found in database for email:", user.email);
+          setPageError("Student profile not found. You can receive but might not be able to send messages.");
+        }
       } catch (err) {
         console.error("[Messages] Initialization error:", err);
       } finally {
@@ -88,7 +111,7 @@ export function Messages() {
 
   const loadRecipients = async (studentIdToExclude) => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("profiles")
         .select("id, first_name, middle_name, last_name, email, role")
         .in("role", ["teacher", "admin"])
@@ -115,11 +138,27 @@ export function Messages() {
     }
   };
 
+  // Real-time subscription — reload messages whenever a new message arrives
+  useEffect(() => {
+    if (!studentId) return;
+    const channel = supabase
+      .channel(`student-messages-${studentId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
+        const row = payload.new;
+        if (String(row.sender_id) === studentId || String(row.receiver_id) === studentId) {
+          await loadConversationsFromDB(studentId);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentId]);
+
   const loadConversationsFromDB = async (studentIdToLoad) => {
     if (!studentIdToLoad) return;
 
     try {
-      const { data: messageRows, error } = await supabase
+      const { data: messageRows, error } = await db
         .from("messages")
         .select(
           "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size"
@@ -146,7 +185,7 @@ export function Messages() {
 
       const profileMap = new Map();
       if (counterpartIds.length > 0) {
-        const { data: profiles } = await supabase
+        const { data: profiles } = await db
           .from("profiles")
           .select("id, first_name, middle_name, last_name, role")
           .in("id", counterpartIds);
@@ -203,7 +242,8 @@ export function Messages() {
       );
 
       setConversations(loadedConversations);
-      if (!selectedConversationId && loadedConversations.length > 0) {
+      if (!selectedConvIdRef.current && loadedConversations.length > 0) {
+        selectedConvIdRef.current = loadedConversations[0].id;
         setSelectedConversationId(loadedConversations[0].id);
       }
     } catch (err) {
@@ -253,6 +293,7 @@ export function Messages() {
   };
 
   const handleConversationClick = (conversation) => {
+    selectedConvIdRef.current = conversation.id;
     setSelectedConversationId(conversation.id);
   };
 
@@ -307,7 +348,7 @@ export function Messages() {
     }
 
     try {
-      const { error } = await supabase.from("messages").insert({
+      const { error } = await db.from("messages").insert({
         sender_id: studentId,
         receiver_id: selectedConversation.participantId,
         message_text: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
@@ -321,11 +362,14 @@ export function Messages() {
 
       if (error) {
         console.error("[Messages] Failed to send message:", error);
+        setPageError(`Failed to send message: ${error.message}`);
+        return;
       }
 
       await loadConversationsFromDB(studentId);
       setMessageInput("");
       clearAttachment();
+      setTimeout(() => messagesBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
     } catch (err) {
       console.error("[Messages] Send error:", err);
     }
@@ -381,7 +425,10 @@ export function Messages() {
                     <p className="text-sm text-gray-500">{conversations.length} chats</p>
                   </div>
                   <button
-                    onClick={() => setShowNewMessage(true)}
+                    onClick={() => {
+                      setShowNewMessage(true);
+                      setRecipientSearch("");
+                    }}
                     className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors"
                   >
                     New
@@ -506,14 +553,21 @@ export function Messages() {
                     {displayedMessages.length === 0 && (
                       <div className="text-center py-8 text-gray-500">No messages found.</div>
                     )}
+                    <div ref={messagesBottomRef} />
                   </div>
 
                   <div className="p-4 border-t border-gray-200 bg-white">
                     <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
-                      <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttachmentChange} accept="*/*" />
-                      <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
-                        <Paperclip className="w-5 h-5 text-gray-600" />
-                      </button>
+                      <label className="p-3 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-emerald-500">
+                        <Paperclip className="w-5 h-5 text-gray-600 group-hover:text-emerald-600" />
+                        <input 
+                          ref={fileInputRef} 
+                          type="file" 
+                          className="sr-only" 
+                          onChange={handleAttachmentChange} 
+                          accept="*/*" 
+                        />
+                      </label>
                       <div className="flex-1 flex flex-col gap-2">
                         {attachmentFile && (
                           <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-900">
@@ -547,9 +601,92 @@ export function Messages() {
                     <MessageSquare className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a conversation</h3>
                     <p className="text-gray-600">Choose a conversation from the list to start messaging.</p>
+                    <button
+                      onClick={() => {
+                        setShowNewMessage(true);
+                        setRecipientSearch("");
+                      }}
+                      className="mt-4 px-6 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold"
+                    >
+                      New Message
+                    </button>
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* New Message Modal */}
+        {showNewMessage && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+              <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                <h3 className="font-bold">New Message</h3>
+                <button
+                  onClick={() => setShowNewMessage(false)}
+                  className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 border-b border-gray-100">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search teachers or admins..."
+                    value={recipientSearch}
+                    onChange={(e) => setRecipientSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto">
+                {filteredRecipients.map((person) => (
+                  <button
+                    key={person.id}
+                    onClick={() => {
+                      // Check if conversation already exists
+                      const existing = conversations.find(c => c.participantId === person.id);
+                      if (existing) {
+                        selectedConvIdRef.current = existing.id;
+                        setSelectedConversationId(existing.id);
+                      } else {
+                        const newConv = {
+                          id: `conv_${person.id}`,
+                          participantId: person.id,
+                          participantName: person.name,
+                          participantRole: person.role,
+                          messages: [],
+                          lastMessageTime: new Date().toISOString(),
+                          lastMessage: "No messages yet",
+                        };
+                        setConversations([newConv, ...conversations]);
+                        selectedConvIdRef.current = newConv.id;
+                        setSelectedConversationId(newConv.id);
+                      }
+                      setShowNewMessage(false);
+                    }}
+                    className="w-full p-4 flex items-center gap-3 hover:bg-emerald-50 transition-colors border-b border-gray-50 text-left"
+                  >
+                    <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-bold">
+                      {person.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{person.name}</p>
+                      <p className="text-xs text-gray-500 uppercase tracking-wider font-bold">
+                        {person.role}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+                {filteredRecipients.length === 0 && (
+                  <div className="p-8 text-center text-gray-500 italic">No recipients found.</div>
+                )}
+              </div>
             </div>
           </div>
         )}

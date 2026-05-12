@@ -567,16 +567,21 @@ function Login() {
     const normalizedEmail = normalizeEmail(formData.usernameOrEmail);
 
     if (normalizedEmail === STATIC_ADMIN_EMAIL) {
-      const adminValidation = await validateStaticAdminCredentials(formData.usernameOrEmail, formData.password);
-      if (!adminValidation.ok) {
-        setError(adminValidation.message);
+      try {
+        const adminValidation = await validateStaticAdminCredentials(formData.usernameOrEmail, formData.password);
+        if (!adminValidation.ok) {
+          setError(adminValidation.message);
+          setLoading(false);
+          return;
+        }
+        localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser()));
         setLoading(false);
-        return;
+        navigate("/admin/dashboard", { replace: true });
+      } catch (adminErr) {
+        console.error("Admin login error:", adminErr);
+        setError("Admin login failed. Please try again.");
+        setLoading(false);
       }
-
-      localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser()));
-      setLoading(false);
-      navigate("/admin/dashboard", { replace: true });
       return;
     }
 
@@ -587,6 +592,7 @@ function Login() {
           .from("profiles")
           .select("is_verified, status, role")
           .ilike("email", normalizedEmail)
+          .order("is_verified", { ascending: false })
           .limit(1)
           .maybeSingle();
 
@@ -604,6 +610,9 @@ function Login() {
               .maybeSingle();
 
             // If no valid invitation, ask them to request access or contact admin
+            // Note: If used_at is true but is_verified is false, it might be a duplicate
+            // but we prioritized is_verified in the query above, so this should only
+            // happen if NO verified account exists.
             if (!invitation || invitation.used_at) {
               setError("Your account is not yet verified. Please request access or contact an administrator.");
               setLoading(false);
@@ -627,15 +636,50 @@ function Login() {
       // Continue with login attempt anyway in case of error
     }
 
-    setTimeout(() => {
+    try {
+      let userRole = "student"; // Default to student
+      let displayName = formData.usernameOrEmail.split("@")[0] || "User";
+
+      if (supabase) {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, role, first_name, last_name, email, is_verified, status")
+          .ilike("email", normalizedEmail)
+          .order("is_verified", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!profileError && profile) {
+          userRole = String(profile.role || "student").toLowerCase();
+          const firstName = String(profile.first_name || "").trim();
+          const lastName = String(profile.last_name || "").trim();
+          if (firstName || lastName) {
+            displayName = [firstName, lastName].filter(Boolean).join(" ");
+          }
+        }
+      }
+
       localStorage.setItem("currentUser", JSON.stringify({
-        name: formData.usernameOrEmail.split("@")[0] || "Teacher",
-        email: formData.usernameOrEmail,
-        role: "teacher",
+        name: displayName,
+        email: normalizedEmail,
+        role: userRole,
       }));
+
       setLoading(false);
-      navigate("/teacher/dashboard", { replace: true });
-    }, 900);
+      
+      // Redirect based on role
+      if (userRole === "admin") {
+        navigate("/admin/dashboard", { replace: true });
+      } else if (userRole === "teacher") {
+        navigate("/teacher/dashboard", { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("An unexpected error occurred. Please try again.");
+      setLoading(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {

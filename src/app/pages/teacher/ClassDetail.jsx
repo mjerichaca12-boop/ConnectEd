@@ -3430,24 +3430,21 @@ export function ClassDetail() {
                     <p className="text-xs text-green-700">{matOriginalFiles.fileNames.join(", ")}</p>
                   </div>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="*/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const selectedFiles = Array.from(e.target.files || []);
-                    setMatFiles(selectedFiles);
-                    setMatFileNames(selectedFiles.map((file) => file.name));
-                    setMatError("");
-                  }}
-                />
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-green-500 cursor-pointer transition-colors"
-                >
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-green-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-green-500">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="*/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const selectedFiles = Array.from(e.target.files || []);
+                      setMatFiles(selectedFiles);
+                      setMatFileNames(selectedFiles.map((file) => file.name));
+                      setMatError("");
+                    }}
+                  />
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2 group-hover:text-green-500 transition-colors" />
                   <p className="text-sm text-gray-500">
                     {matFileNames.length > 0
                       ? `${matFileNames.length} file${matFileNames.length === 1 ? "" : "s"} selected`
@@ -3457,7 +3454,7 @@ export function ClassDetail() {
                     <p className="text-xs text-gray-400 mt-1 truncate">{matFileNames.join(", ")}</p>
                   )}
                   <p className="text-xs text-gray-400 mt-1">All file formats accepted (PDF, DOCX, PPTX, images, videos, ZIP, etc.)</p>
-                </div>
+                </label>
               </div>
             </div>
             <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
@@ -3708,24 +3705,21 @@ export function ClassDetail() {
                         </div>
                       </div>
                     )}
-                    <input
-                      ref={asgFileRef}
-                      type="file"
-                      multiple
-                      accept="*/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const selectedFiles = Array.from(e.target.files || []);
-                        setAsgFiles(selectedFiles);
-                        setAsgFileNames(selectedFiles.map((file) => file.name));
-                        setAsgError("");
-                      }}
-                    />
-                    <div
-                      onClick={() => asgFileRef.current?.click()}
-                      className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-blue-500 cursor-pointer transition-colors"
-                    >
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
+                    <label className="block border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-blue-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-blue-500">
+                      <input
+                        ref={asgFileRef}
+                        type="file"
+                        multiple
+                        accept="*/*"
+                        className="sr-only"
+                        onChange={(e) => {
+                          const selectedFiles = Array.from(e.target.files || []);
+                          setAsgFiles(selectedFiles);
+                          setAsgFileNames(selectedFiles.map((file) => file.name));
+                          setAsgError("");
+                        }}
+                      />
+                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-blue-500 transition-colors" />
                       <p className="text-sm text-gray-500">
                         {asgFileNames.length > 0
                           ? `${asgFileNames.length} file${asgFileNames.length === 1 ? "" : "s"} selected`
@@ -3734,7 +3728,7 @@ export function ClassDetail() {
                       {asgFileNames.length > 0 && (
                         <p className="text-xs text-gray-400 mt-1 truncate">{asgFileNames.join(", ")}</p>
                       )}
-                    </div>
+                    </label>
                   </>
                 ) : (
                   <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
@@ -3818,25 +3812,24 @@ export function ClassDetail() {
                     <p className="text-xs text-purple-700">{annOriginalFile.fileName}</p>
                   </div>
                 )}
-                <input
-                  ref={annFileRef}
-                  type="file"
-                  accept="*/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const selected = e.target.files?.[0] || null;
-                    setAnnFile(selected);
-                    setAnnFileName(selected ? selected.name : "");
-                    setAnnError("");
-                  }}
-                />
-                <div
-                  onClick={() => annFileRef.current?.click()}
-                  className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors"
-                >
-                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1" />
-                  <p className="text-sm text-gray-500">{annFileName || "Click to attach a file"}</p>
-                </div>
+                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-purple-500">
+                  <input
+                    ref={annFileRef}
+                    type="file"
+                    accept="*/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const selected = e.target.files?.[0] || null;
+                      setAnnFile(selected);
+                      setAnnFileName(selected ? selected.name : "");
+                      setAnnError("");
+                    }}
+                  />
+                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-purple-500 transition-colors" />
+                  <p className="text-sm text-gray-500 group-hover:text-purple-600 transition-colors">
+                    {annFileName || "Click to attach a file"}
+                  </p>
+                </label>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>

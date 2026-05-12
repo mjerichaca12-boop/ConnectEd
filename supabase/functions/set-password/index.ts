@@ -272,14 +272,21 @@ serve(async (req) => {
     })();
     const phone = String(accessRequest?.phone || accessRequest?.phone_number || "").trim() || null;
 
-    const { data: existingProfile } = await supabase
+    // Check for existing profile by ID (Auth ID) or by Email
+    const { data: profileByAuthId } = await supabase
       .from("profiles")
       .select("id")
       .eq("id", resolvedAuthUserId)
-      .single();
+      .maybeSingle();
 
-    if (existingProfile) {
-      // Update existing profile
+    const { data: profileByEmail } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("email", resolvedAuthUserEmail)
+      .maybeSingle();
+
+    if (profileByAuthId) {
+      // Update the profile that already matches the Auth ID
       const { error: profileUpdateError } = await supabase
         .from("profiles")
         .update({
@@ -297,11 +304,56 @@ serve(async (req) => {
         .eq("id", resolvedAuthUserId);
 
       if (profileUpdateError) {
-        console.error("Failed to update profile:", profileUpdateError);
+        console.error("Failed to update profile by ID:", profileUpdateError);
         return jsonResponse(500, { ok: false, message: "Failed to update teacher profile." });
       }
+    } else if (profileByEmail) {
+      // "Merge" logic: If a profile exists with this email but a different ID,
+      // update its ID to match the Auth ID and set it as verified.
+      const { error: profileIdUpdateError } = await supabase
+        .from("profiles")
+        .update({
+          id: resolvedAuthUserId,
+          first_name: firstName,
+          middle_name: middleName,
+          last_name: lastName,
+          role: "teacher",
+          is_verified: true,
+          status: "Active",
+          phone,
+          subjects,
+          provider: "email"
+        })
+        .eq("id", profileByEmail.id);
+
+      if (profileIdUpdateError) {
+        console.error("Failed to migrate profile ID by email:", profileIdUpdateError);
+        // Fallback: If ID update fails (e.g. constraints), try deleting and re-inserting
+        await supabase.from("profiles").delete().eq("id", profileByEmail.id);
+        
+        const { error: profileInsertError } = await supabase
+          .from("profiles")
+          .insert({
+            id: resolvedAuthUserId,
+            email: resolvedAuthUserEmail,
+            first_name: firstName,
+            middle_name: middleName,
+            last_name: lastName,
+            role: "teacher",
+            is_verified: true,
+            status: "Active",
+            phone,
+            subjects,
+            provider: "email"
+          });
+
+        if (profileInsertError) {
+          console.error("Failed to create new profile after fallback:", profileInsertError);
+          return jsonResponse(500, { ok: false, message: "Failed to create teacher profile." });
+        }
+      }
     } else {
-      // Create new profile
+      // Create a brand new profile
       const { error: profileInsertError } = await supabase
         .from("profiles")
         .insert({
@@ -319,7 +371,7 @@ serve(async (req) => {
         });
 
       if (profileInsertError) {
-        console.error("Failed to create profile:", profileInsertError);
+        console.error("Failed to create brand new profile:", profileInsertError);
         return jsonResponse(500, { ok: false, message: "Failed to create teacher profile." });
       }
     }

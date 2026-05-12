@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { TeacherSidebar } from "@/app/components/TeacherSidebar";
+import { Sidebar } from "@/app/components/Sidebar";
 import { FileUploadZone } from "@/app/components/ai/FileUploadZone";
 import { AIToolbar } from "@/app/components/ai/AIToolbar";
 import { AISettings } from "@/app/components/ai/AISettings";
@@ -10,28 +10,26 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 
 const WELCOME_MSG = {
   role: "assistant",
-  content: `👋 **Hello, Teacher!** I'm your AI Teaching Assistant, powered by Groq AI.
+  content: `👋 **Hello, Student!** I'm your AI Study Assistant, powered by Groq AI.
 
-I can help you create:
-- 📝 Activities and quizzes from your class materials
-- 📋 Lesson plans in DepEd **DLL format**
-- 📊 Rubrics and assessment tools
-- 📖 Summaries of uploaded materials
-- ✉️ Parent communication letters
-- 🌐 Filipino/English translations
+I can help you:
+- 📖 Understand complex topics
+- 📝 Summarize your class materials
+- ❓ Practice for quizzes
+- 🌐 Translate content between Filipino and English
 
 **To get started:**
-1. Upload your class materials on the left panel
-2. Select your grade level and subject in Settings
-3. Click a **Quick Action** or type your request below
+1. Upload your study materials on the left panel (optional)
+2. Type your question or request below
 
-*What would you like to create today?* 🎓`,
+*How can I help you study today?* 🎓`,
   timestamp: Date.now()
 };
 
-export function AIAssistant() {
+export function StudentAIAssistant() {
   const navigate = useNavigate();
   const inputRef = useRef(null);
+  const [studentName, setStudentName] = useState("");
   
   const [messages, setMessages] = useState([WELCOME_MSG]);
   const [inputText, setInputText] = useState("");
@@ -41,13 +39,28 @@ export function AIAssistant() {
   
   const [settings, setSettings] = useState({
     gradeLevel: "7",
-    subject: "English",
+    subject: "General",
     difficulty: "Medium",
     language: "English",
-    itemCount: 10,
+    itemCount: 5,
   });
 
+  useEffect(() => {
+    const userData = localStorage.getItem("currentUser");
+    if (!userData) {
+      navigate("/login");
+      return;
+    }
+    const user = JSON.parse(userData);
+    if (user.role !== "student") {
+      navigate("/login");
+      return;
+    }
+    setStudentName(user.name);
+  }, [navigate]);
+
   const handleLogout = () => {
+    localStorage.removeItem("currentUser");
     navigate("/login");
   };
 
@@ -70,7 +83,7 @@ export function AIAssistant() {
     await streamMessage({
       messages: currentMessages.map(m => ({ role: m.role, content: m.content })),
       fileContents,
-      role: "teacher",
+      role: "student",
       onChunk: (text) => {
         assistantMessage += text;
         setMessages([...currentMessages, { role: "assistant", content: assistantMessage + "▌", timestamp: Date.now() }]);
@@ -89,18 +102,18 @@ export function AIAssistant() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <TeacherSidebar teacherName="Teacher" onLogout={handleLogout} />
+      <Sidebar studentName={studentName} onLogout={handleLogout} />
 
-      {/* Main content — offset by sidebar width */}
-      <div className="flex-1 flex flex-col overflow-hidden lg:pl-64">
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
             <div>
-              <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
+              <p className="text-blue-600 text-xs font-bold uppercase tracking-widest">Student Portal</p>
               <h2 className="text-xl font-bold text-gray-900">
-                AI Assistant
+                AI Study Assistant
               </h2>
             </div>
             <NotificationDropdown 
@@ -112,10 +125,10 @@ export function AIAssistant() {
         </div>
 
         {/* Two-panel content */}
-        <div className="flex-1 flex gap-4 p-6 overflow-hidden min-h-0">
+        <div className="flex-1 flex flex-col lg:flex-row gap-4 p-6 overflow-hidden min-h-0">
 
           {/* LEFT PANEL — fixed width, scrollable internally */}
-          <div className="w-72 flex-shrink-0 flex flex-col gap-4 overflow-y-auto" style={{scrollbarWidth: "none"}}>
+          <div className="w-full lg:w-72 flex-shrink-0 flex flex-col gap-4 overflow-y-auto" style={{scrollbarWidth: "none"}}>
             
             {/* File Upload Zone */}
             <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
@@ -132,11 +145,12 @@ export function AIAssistant() {
                 setInputText={setInputText} 
                 settings={settings} 
                 inputRef={inputRef} 
+                role="student"
               />
             </div>
 
             {/* Settings */}
-            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+            <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hidden lg:block">
               <AISettings 
                 settings={settings} 
                 setSettings={setSettings} 
@@ -145,7 +159,7 @@ export function AIAssistant() {
           </div>
 
           {/* RIGHT PANEL — chat, fills remaining space */}
-          <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm min-h-[500px]">
             <AIChat 
               messages={messages}
               setMessages={setMessages}

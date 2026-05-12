@@ -770,17 +770,19 @@ function StudentMaterials() {
               {/* File Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Upload Your Work <span className="text-red-500">*</span></label>
-                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer"
-                >
-                  <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                <label className="block border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-emerald-500 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-emerald-500">
+                  <input 
+                    ref={fileInputRef} 
+                    type="file" 
+                    className="sr-only" 
+                    onChange={handleFileChange} 
+                  />
+                  <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3 group-hover:text-emerald-500 transition-colors" />
                   <p className="text-sm text-gray-600 mb-1">
                     {selectedFileName ? selectedFileName : "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-400">PDF, DOC, DOCX, ZIP (max 20MB)</p>
-                </div>
+                </label>
               </div>
 
               {/* Comments */}

@@ -150,7 +150,14 @@ function TeacherProfile() {
     }
     if (!profileRow) {
       for (const email of candidateEmails) {
-        const { data } = await supabase.from("profiles").select("*").eq("email", email).eq("role", "teacher").maybeSingle();
+        const { data } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("email", email)
+          .eq("role", "teacher")
+          .order("is_verified", { ascending: false })
+          .limit(1)
+          .maybeSingle();
         if (data) { profileRow = data; break; }
       }
     }

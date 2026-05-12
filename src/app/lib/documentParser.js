@@ -12,9 +12,15 @@ export async function parsePDF(file) {
     const arrayBuffer = await file.arrayBuffer();
     
     // Load PDF with worker
+    // disableStream + disableAutoFetch: fixes "ReadableStream is not iterable" on
+    // older mobile browsers (iOS Safari < 16.4) which lack ReadableStream async iteration.
+    // isOffscreenCanvasSupported: false fixes canvas errors on Android WebView / mobile Safari.
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
-      isEvalSupported: false
+      isEvalSupported: false,
+      disableStream: true,
+      disableAutoFetch: true,
+      isOffscreenCanvasSupported: false,
     });
     
     const pdf = await loadingTask.promise;

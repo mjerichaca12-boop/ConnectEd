@@ -5,7 +5,7 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomSelect } from "../../components/admin/CustomSelect";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
 import {
   Search,
@@ -25,6 +25,19 @@ import {
   Users
 } from "lucide-react";
 
+const db = supabaseAdmin || supabase;
+const generateUUID = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+};
+const generateTempPassword = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+};
+
 const teacherSelectColumns = "*";
 const subjectSelectColumns = "id, code, name, section";
 const emptyTeacherForm = {
@@ -34,7 +47,8 @@ const emptyTeacherForm = {
   email: "",
   phone: "",
   subjects: [],
-  status: "Active"
+  status: "Active",
+  password: ""
 };
 const emptyAssignForm = {
   assigned_class: ""
@@ -243,11 +257,11 @@ function TeacherManagement() {
   };
 
   const fetchSubjects = async () => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("subjects")
       .select(subjectSelectColumns)
       .order("code", { ascending: true });
@@ -260,7 +274,7 @@ function TeacherManagement() {
   };
 
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
@@ -269,7 +283,7 @@ function TeacherManagement() {
       return;
     }
 
-    const { data: subjectRows, error: subjectError } = await supabase
+    const { data: subjectRows, error: subjectError } = await db
       .from("subjects")
       .select("id, teacher_id")
       .in("teacher_id", uniqueTeacherIds);
@@ -283,7 +297,7 @@ function TeacherManagement() {
         .filter((subject) => String(subject.teacher_id) === String(teacherId))
         .map((subject) => subject.id);
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await db
         .from("profiles")
         .update({ subjects: assignedSubjectIds })
         .eq("id", teacherId);
@@ -295,7 +309,7 @@ function TeacherManagement() {
   };
 
   const syncTeacherSubjectAssignments = async ({ teacherId, previousSubjectIds = [], nextSubjectIds = [] }) => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
@@ -308,7 +322,7 @@ function TeacherManagement() {
       return { affectedTeacherIds: [teacherId] };
     }
 
-    const { data: currentSubjects, error: subjectFetchError } = await supabase
+    const { data: currentSubjects, error: subjectFetchError } = await db
       .from("subjects")
       .select("id, teacher_id")
       .in("id", affectedSubjectIds);
@@ -324,7 +338,7 @@ function TeacherManagement() {
 
     try {
       if (addSubjectIds.length > 0) {
-        const { error: assignError } = await supabase
+        const { error: assignError } = await db
           .from("subjects")
           .update({ teacher_id: teacherId })
           .in("id", addSubjectIds);
@@ -340,7 +354,7 @@ function TeacherManagement() {
           .map((subject) => subject.id);
 
         if (removableIds.length > 0) {
-          const { error: removeError } = await supabase
+          const { error: removeError } = await db
             .from("subjects")
             .update({ teacher_id: null })
             .in("id", removableIds);
@@ -361,7 +375,7 @@ function TeacherManagement() {
       return { affectedTeacherIds: [teacherId, ...displacedTeacherIds] };
     } catch (error) {
       await Promise.all((currentSubjects ?? []).map(async (subject) => {
-        const { error: restoreError } = await supabase
+        const { error: restoreError } = await db
           .from("subjects")
           .update({ teacher_id: snapshot.get(subject.id) ?? null })
           .eq("id", subject.id);
@@ -376,11 +390,11 @@ function TeacherManagement() {
   };
 
   const fetchTeachers = async () => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("profiles")
       .select(teacherSelectColumns)
       .eq("role", "teacher")
@@ -456,12 +470,12 @@ function TeacherManagement() {
       return errors;
     }
 
-    if (!supabase) {
+    if (!db) {
       errors.form = "Supabase client is not configured.";
       return errors;
     }
 
-    const emailQuery = supabase.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
+    const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
     const [emailResult] = await Promise.all([excludeId ? emailQuery.neq("id", excludeId) : emailQuery]);
 
     if (emailResult.error) {
@@ -519,7 +533,7 @@ function TeacherManagement() {
 
     const initializeTeachers = async () => {
       try {
-        if (!supabase) {
+        if (!db) {
           setErrorMessage("Supabase client is not configured.");
           return;
         }
@@ -676,7 +690,7 @@ function TeacherManagement() {
       return;
     }
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
@@ -691,7 +705,7 @@ function TeacherManagement() {
       const selectedSubjectIds = normalizeSubjects(teacherFormData.subjects);
       const fullName = composeTeacherName(teacherFormData);
       const payload = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         role: "teacher",
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
@@ -701,7 +715,7 @@ function TeacherManagement() {
         status: normalizeTeacherStatus(teacherFormData.status)
       };
 
-      const { data, error } = await supabase.from("profiles").insert(payload).select(teacherSelectColumns).single();
+      const { data, error } = await db.from("profiles").insert(payload).select(teacherSelectColumns).single();
 
       if (error) {
         throw error;
@@ -718,6 +732,7 @@ function TeacherManagement() {
 
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
       const nextTeacherName = getTeacherName(nextTeacher);
+      const savedPassword = teacherFormData.password;
       logActivity({
         actionType: selectedSubjectIds.length > 0 ? "assigned_subject_to_teacher" : "added",
         entityType: "teacher",
@@ -726,17 +741,18 @@ function TeacherManagement() {
         details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
         timestamp: nextTeacher.created_at
       });
-      setSuccessMessage(`${nextTeacherName} added successfully`);
+      setSuccessMessage(`${nextTeacherName} added successfully.${savedPassword ? ` Temporary password: ${savedPassword}` : ""}`);
       resetAddModal();
     } catch (error) {
       if (createdTeacherId) {
         try {
-          await supabase.from("profiles").delete().eq("id", createdTeacherId);
+          await db.from("profiles").delete().eq("id", createdTeacherId);
         } catch {
           // Ignore rollback failures and surface the original error.
         }
       }
-      setErrorMessage(error instanceof Error ? error.message : "Unable to add teacher.");
+      console.error("Add teacher error:", error);
+      setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add teacher."));
     } finally {
       setIsSubmitting(false);
     }
@@ -753,7 +769,7 @@ function TeacherManagement() {
       return;
     }
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
@@ -785,7 +801,7 @@ function TeacherManagement() {
         throw new Error("Teacher ID is missing.");
       }
 
-      const { data, error } = await supabase.from("profiles").update(payload).eq("id", selectedTeacher.id).select(teacherSelectColumns).single();
+      const { data, error } = await db.from("profiles").update(payload).eq("id", selectedTeacher.id).select(teacherSelectColumns).single();
 
       if (error) {
         throw error;
@@ -836,7 +852,7 @@ function TeacherManagement() {
       if (updateSucceeded) {
         try {
           const previousSubjectIds = normalizeSubjects(selectedTeacher.subjects);
-          await supabase
+          await db
             .from("profiles")
             .update({
               first_name: selectedTeacher.first_name ?? "",
@@ -870,7 +886,7 @@ function TeacherManagement() {
   const handleDeleteTeacher = async () => {
     if (!teacherToDelete) return;
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
@@ -888,7 +904,7 @@ function TeacherManagement() {
     try {
       const subjectIdsToRelease = normalizeSubjects(teacherToDelete.subjects);
       if (subjectIdsToRelease.length > 0) {
-        const { error: subjectError } = await supabase
+        const { error: subjectError } = await db
           .from("subjects")
           .update({ teacher_id: null })
           .in("id", subjectIdsToRelease);
@@ -898,7 +914,7 @@ function TeacherManagement() {
         }
       }
 
-      const { error } = await supabase.from("profiles").delete().eq("id", teacherId);
+      const { error } = await db.from("profiles").delete().eq("id", teacherId);
 
       if (error) {
         throw error;
@@ -953,7 +969,7 @@ function TeacherManagement() {
       return;
     }
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
@@ -969,7 +985,7 @@ function TeacherManagement() {
         return;
       }
 
-      const { data: teacherRows, error: teacherRowsError } = await supabase
+      const { data: teacherRows, error: teacherRowsError } = await db
         .from("profiles")
         .select(teacherSelectColumns)
         .eq("role", "teacher")
@@ -987,7 +1003,7 @@ function TeacherManagement() {
 
       const nextAssignedClass = [...currentClasses, assignedClass].join(", ");
 
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("profiles")
         .update({ assigned_class: nextAssignedClass })
         .eq("id", teacherToAssign.id)
@@ -1105,7 +1121,7 @@ function TeacherManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Registry</h1>
                 <p className="text-gray-600">{teachers.length} teachers loaded from Supabase</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
+              <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
                 <UserPlus className="w-5 h-5" />
                 Add Teacher
               </button>
@@ -1352,6 +1368,14 @@ function TeacherManagement() {
                       className="min-w-[180px]"
                     />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={teacherFormData.password} onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "password", e.target.value)} placeholder="Auto-generated temporary password" className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono" />
+                      <button type="button" onClick={() => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "password", generateTempPassword())} className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 text-sm text-gray-700 transition-colors">Regenerate</button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Teacher uses this password to log in. Share it securely.</p>
                   </div>
                 </div>
                 {formErrors.form && (

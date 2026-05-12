@@ -265,6 +265,7 @@ function VideoConferencing() {
       .select("id")
       .ilike("email", email)
       .eq("role", "teacher")
+      .order("is_verified", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!profileData?.id) return;
@@ -450,6 +451,8 @@ function VideoConferencing() {
           .select("id")
           .ilike("email", teacherEmail)
           .eq("role", "teacher")
+          .order("is_verified", { ascending: false })
+          .limit(1)
           .maybeSingle();
         creatorId = String(teacherProfile?.id || "").trim();
       }

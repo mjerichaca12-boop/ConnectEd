@@ -24,6 +24,7 @@ import { StudentEnrollment } from "./pages/StudentEnrollment";
 import { Messages } from "./pages/Messages";
 import { Profile } from "./pages/Profile";
 import { VideoConferencing } from "./pages/VideoConferencing";
+import { StudentAIAssistant } from "./pages/StudentAIAssistant";
 import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { Classes } from "./pages/teacher/Classes";
 import { ClassDetail } from "./pages/teacher/ClassDetail";
@@ -195,6 +196,7 @@ export default function App() {
         <Route path="/messages" element={<Messages />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/video-conference" element={<VideoConferencing />} />
+        <Route path="/ai-assistant" element={<StudentAIAssistant />} />
 
         {/* Teacher Routes */}
         <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />

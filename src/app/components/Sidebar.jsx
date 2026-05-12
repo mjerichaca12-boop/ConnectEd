@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import {
   LayoutDashboard, BookOpen, GraduationCap, Calendar,
-  Video, MessageSquare, User, Menu, X, LogOut, ChevronRight, Shield
+  Video, MessageSquare, User, Menu, X, LogOut, ChevronRight, Shield, Sparkles
 } from "lucide-react";
 
 function Sidebar({ studentName, onLogout }) {
@@ -13,6 +13,7 @@ function Sidebar({ studentName, onLogout }) {
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard",        path: "/dashboard",        color: "blue" },
+    { icon: Sparkles,        label: "AI Assistant",     path: "/ai-assistant",     color: "green" },
     { icon: BookOpen,        label: "Subjects",         path: "/subjects",         color: "green" },
     { icon: GraduationCap,   label: "Grades",           path: "/grades",           color: "green" },
     { icon: Calendar,        label: "Attendance",       path: "/attendance",       color: "blue" },

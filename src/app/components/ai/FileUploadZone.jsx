@@ -47,16 +47,24 @@ export function FileUploadZone({ uploadedFiles, setUploadedFiles, setFileContent
     <div>
       <h3 className="text-xs font-bold text-green-600 uppercase tracking-widest mb-3">📎 Upload Materials</h3>
 
-      <div
+      <label
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
-        onClick={() => !isProcessing && fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-colors ${
+        className={`block border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-green-500 ${
           isProcessing 
             ? 'border-gray-300 bg-gray-100 cursor-not-allowed' 
             : 'border-gray-300 hover:border-green-400 bg-gray-50 hover:bg-green-50'
         }`}
       >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={acceptString}
+          className="sr-only"
+          onChange={(e) => handleFiles(e.target.files)}
+          disabled={isProcessing}
+        />
         {isProcessing ? (
           <div>
             <p className="text-xs text-gray-500">Processing files...</p>
@@ -72,16 +80,7 @@ export function FileUploadZone({ uploadedFiles, setUploadedFiles, setFileContent
             <p className="text-xs text-gray-300 mt-1">{supportedTypes.extensions.join(', ')}</p>
           </>
         )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={acceptString}
-          className="hidden"
-          onChange={(e) => handleFiles(e.target.files)}
-          disabled={isProcessing}
-        />
-      </div>
+      </label>
 
       {uploadedFiles.length > 0 && (
         <div className="mt-3 space-y-2">

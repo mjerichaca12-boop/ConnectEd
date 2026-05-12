@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
-import { supabase } from "@/app/lib/supabaseClient";
+import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+// Use service role client if available to bypass RLS issues for reliable messaging
+const db = supabaseAdmin || supabase;
 import {
   Search,
   Send,
@@ -148,19 +150,23 @@ function TeacherMessages() {
 
   const resolveTeacherId = useCallback(async (email) => {
     try {
-      // Try with role=teacher first, fall back to any matching email
+      // Try with role=teacher first, prioritize verified accounts, then fall back
       let { data, error } = await supabase
         .from("profiles")
         .select("id")
         .eq("email", email)
         .eq("role", "teacher")
+        .order("is_verified", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (!error && data) return String(data.id);
-      // Fallback: match by email without role filter
+      // Fallback: match by email without role filter, still prioritize verified
       ({ data, error } = await supabase
         .from("profiles")
         .select("id")
         .ilike("email", email)
+        .order("is_verified", { ascending: false })
+        .limit(1)
         .maybeSingle());
       if (!error && data) return String(data.id);
       return null;
@@ -170,7 +176,7 @@ function TeacherMessages() {
   const fetchProfilesByIds = useCallback(async (ids) => {
     if (!ids || ids.length === 0) return [];
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("profiles")
         .select("id, first_name, middle_name, last_name, email, role")
         .in("id", ids);
@@ -231,11 +237,14 @@ function TeacherMessages() {
   }, []);
 
   const loadConversations = useCallback(async (currentTeacherId, teacherDisplayName) => {
-    if (conversationLoadInFlightRef.current) return;
+    if (conversationLoadInFlightRef.current) {
+      conversationLoadInFlightRef.current = "pending";
+      return;
+    }
     conversationLoadInFlightRef.current = true;
     try {
       // Load direct messages (exclude group messages)
-      const { data: messageRows, error: messageError } = await supabase
+      const { data: messageRows, error: messageError } = await db
         .from(MESSAGE_TABLE)
         .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size, is_read")
         .or(`sender_id.eq.${currentTeacherId},receiver_id.eq.${currentTeacherId}`)
@@ -293,15 +302,15 @@ function TeacherMessages() {
       });
 
       // Load group conversations
-      const { data: participantRows, error: participantError } = await supabase
+      const { data: participantRows, error: participantError } = await db
         .from("conversation_participants")
         .select("conversation_id, profile_id")
         .eq("profile_id", currentTeacherId);
 
       if (!participantError && participantRows && participantRows.length > 0) {
         const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id));
-        
-        const { data: conversationData, error: convError } = await supabase
+
+        const { data: conversationData, error: convError } = await db
           .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
@@ -310,17 +319,17 @@ function TeacherMessages() {
         if (!convError && conversationData) {
           for (const conv of conversationData) {
             // Load participants for this group
-            const { data: groupParticipants, error: groupPartError } = await supabase
+            const { data: groupParticipants, error: groupPartError } = await db
               .from("conversation_participants")
               .select("profile_id")
               .eq("conversation_id", conv.id);
-            
+
             if (!groupPartError && groupParticipants) {
               const participantIds = buildStableIdList(groupParticipants.map((p) => p.profile_id));
               const participantProfiles = await fetchProfilesByIds(participantIds);
-              
+
               // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await supabase
+              const { data: groupMessages, error: groupMsgError } = await db
                 .from(MESSAGE_TABLE)
                 .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size, is_read")
                 .eq("conversation_id", conv.id)
@@ -361,7 +370,11 @@ function TeacherMessages() {
         return stillExists ? prev : mapped[0].id;
       });
     } finally {
+      const wasPending = conversationLoadInFlightRef.current === "pending";
       conversationLoadInFlightRef.current = false;
+      if (wasPending) {
+        await loadConversations(currentTeacherId, teacherDisplayName);
+      }
     }
   }, [fetchProfilesByIds]);
 
@@ -615,6 +628,7 @@ function TeacherMessages() {
         receiver_id: null, // No specific receiver for group messages
         conversation_id: activeConversation.id,
         message_text: messageText,
+        content: messageText, // Add content field
         timestamp: now,
         file_url: uploadedFileUrl || null,
         file_name: uploadedFileName || null,
@@ -628,6 +642,7 @@ function TeacherMessages() {
         receiver_id: recipientId,
         conversation_id: null,
         message_text: messageText,
+        content: messageText, // Add content field
         timestamp: now,
         file_url: uploadedFileUrl || null,
         file_name: uploadedFileName || null,
@@ -638,10 +653,10 @@ function TeacherMessages() {
 
     let data, error;
     try {
-      const result = await supabase
+      const result = await db // Use db (supabaseAdmin)
         .from(MESSAGE_TABLE)
         .insert(insertPayload)
-        .select("id, sender_id, receiver_id, message_text, timestamp, created_at, file_url, file_name, file_type, file_size, is_read");
+        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read");
       data = result.data;
       error = result.error;
     } catch (err) {

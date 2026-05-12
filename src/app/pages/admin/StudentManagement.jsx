@@ -4,9 +4,22 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
 import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, ChevronDown, CheckCircle2, Sparkles } from "lucide-react";
+
+const db = supabaseAdmin || supabase;
+const generateUUID = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+};
+const generateTempPassword = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+};
 
 function StudentManagement() {
   const navigate = useNavigate();
@@ -31,7 +44,8 @@ function StudentManagement() {
     year_level: "",
     phone: "",
     section: "",
-    status: "Active"
+    status: "Active",
+    password: ""
   });
   const [editFormData, setEditFormData] = useState({
     first_name: "",
@@ -73,12 +87,12 @@ function StudentManagement() {
           setLoading(true);
         }
 
-        if (!supabase) {
+        if (!db) {
           setErrorMessage("Supabase client is not configured.");
           return;
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from("profiles")
           .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
           .eq("role", "student")
@@ -117,9 +131,9 @@ function StudentManagement() {
   };
 
   const refreshStudents = async () => {
-    if (!supabase) return;
+    if (!db) return;
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("profiles")
       .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
       .eq("role", "student")
@@ -238,13 +252,13 @@ function StudentManagement() {
       return errors;
     }
 
-    if (!supabase) {
+    if (!db) {
       errors.form = "Supabase client is not configured.";
       return errors;
     }
 
-    const emailQuery = supabase.from("profiles").select("id").eq("email", formData.email.trim().toLowerCase()).limit(1);
-    const lrnQuery = supabase.from("profiles").select("id").eq("lrn", normalizeLrn(formData.lrn)).limit(1);
+    const emailQuery = db.from("profiles").select("id").eq("email", formData.email.trim().toLowerCase()).limit(1);
+    const lrnQuery = db.from("profiles").select("id").eq("lrn", normalizeLrn(formData.lrn)).limit(1);
 
     const [emailResult, lrnResult] = await Promise.all([
       excludeId ? emailQuery.neq("id", excludeId) : emailQuery,
@@ -281,55 +295,60 @@ function StudentManagement() {
     setFormErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
 
     setIsSubmitting(true);
 
-    const newStudentId = crypto.randomUUID();
+    try {
+      const newStudentId = generateUUID();
+      const { data, error } = await db
+        .from("profiles")
+        .insert({ id: newStudentId, ...buildPayload(studentFormData) })
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .single();
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .insert({ id: newStudentId, ...buildPayload(studentFormData) })
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-      .single();
+      if (error) {
+        throw error;
+      }
 
-    setIsSubmitting(false);
+      const savedPassword = studentFormData.password;
+      if (data) {
+        setStudents((current) => [data, ...current.filter((student) => student.id !== data.id)]);
+        const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
+        logActivity({
+          actionType: "added",
+          entityType: "student",
+          entityId: data.id,
+          entityName: studentName,
+          details: { email: data.email, lrn: data.lrn, section: data.section },
+          timestamp: data.created_at
+        });
+      }
 
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
-
-    if (data) {
-      setStudents((current) => [data, ...current.filter((student) => student.id !== data.id)]);
-      const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
-      logActivity({
-        actionType: "added",
-        entityType: "student",
-        entityId: data.id,
-        entityName: studentName,
-        details: { email: data.email, lrn: data.lrn, section: data.section },
-        timestamp: data.created_at
+      setStudentFormData({
+        first_name: "",
+        middle_name: "",
+        last_name: "",
+        email: "",
+        lrn: "",
+        year_level: "",
+        phone: "",
+        section: "",
+        status: "Active",
+        password: ""
       });
+      setFormErrors({});
+      setShowAddModal(false);
+      setSuccessMessage(`Student account added successfully.${savedPassword ? ` Temporary password: ${savedPassword}` : ""}`);
+    } catch (error) {
+      console.error("Add student error:", error);
+      setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add student."));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setStudentFormData({
-      first_name: "",
-      middle_name: "",
-      last_name: "",
-      email: "",
-      lrn: "",
-      year_level: "",
-      phone: "",
-      section: "",
-      status: "Active"
-    });
-    setFormErrors({});
-    setShowAddModal(false);
-    setSuccessMessage("Student account added successfully.");
   };
 
   const handleUpdateStudent = async (e) => {
@@ -343,55 +362,58 @@ function StudentManagement() {
     setEditFormErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) return;
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
 
     setIsSubmitting(true);
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .update(buildPayload(editFormData))
-      .eq("id", selectedStudent.id)
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-      .single();
+    try {
+      const { data, error } = await db
+        .from("profiles")
+        .update(buildPayload(editFormData))
+        .eq("id", selectedStudent.id)
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .single();
 
-    setIsSubmitting(false);
+      if (error) {
+        throw error;
+      }
 
-    if (error) {
-      setErrorMessage(error.message);
-      return;
-    }
+      if (data) {
+        setStudents((current) => current.map((student) => (student.id === data.id ? data : student)));
+        setSelectedStudent(data);
+        const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
+        logActivity({
+          actionType: "updated",
+          entityType: "student",
+          entityId: data.id,
+          entityName: studentName,
+          details: { email: data.email, lrn: data.lrn, section: data.section },
+          timestamp: new Date().toISOString()
+        });
+      }
 
-    if (data) {
-      setStudents((current) => current.map((student) => (student.id === data.id ? data : student)));
-      setSelectedStudent(data);
-      const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
-      logActivity({
-        actionType: "updated",
-        entityType: "student",
-        entityId: data.id,
-        entityName: studentName,
-        details: { email: data.email, lrn: data.lrn, section: data.section },
-        timestamp: new Date().toISOString()
+      setEditFormData({
+        first_name: "",
+        middle_name: "",
+        last_name: "",
+        email: "",
+        lrn: "",
+        year_level: "",
+        phone: "",
+        section: "",
+        status: "Active"
       });
+      setEditFormErrors({});
+      setShowEditModal(false);
+      setSuccessMessage("Student account updated successfully.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update student.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setEditFormData({
-      first_name: "",
-      middle_name: "",
-      last_name: "",
-      email: "",
-      lrn: "",
-      year_level: "",
-      phone: "",
-      section: "",
-      status: "Active"
-    });
-    setEditFormErrors({});
-    setShowEditModal(false);
-    setSuccessMessage("Student account updated successfully.");
   };
 
   const handleViewStudent = (student) => {
@@ -426,7 +448,8 @@ function StudentManagement() {
       year_level: "",
       phone: "",
       section: "",
-      status: "Active"
+      status: "Active",
+      password: ""
     });
     setFormErrors({});
   };
@@ -465,7 +488,7 @@ function StudentManagement() {
     const studentName = getFullName(studentToDelete) || "this student";
     const previousStudents = students;
 
-    if (!supabase) {
+    if (!db) {
       setErrorMessage("Supabase client is not configured.");
       return;
     }
@@ -487,7 +510,7 @@ function StudentManagement() {
     setStudentToDelete(null);
 
     try {
-      const { error } = await supabase.from("profiles").delete().eq("id", studentId);
+      const { error } = await db.from("profiles").delete().eq("id", studentId);
 
       if (error) {
         throw new Error(error.message);
@@ -591,7 +614,7 @@ function StudentManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Database</h1>
                 <p className="text-gray-600">{students.length} student profiles loaded from Supabase</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20">
+              <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20">
                 <UserPlus className="w-5 h-5" />
                 Add Student
               </button>
@@ -766,6 +789,14 @@ function StudentManagement() {
                       <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={studentFormData.password} onChange={(e) => handleAddStudentFieldChange("password", e.target.value)} placeholder="Auto-generated temporary password" className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono" />
+                      <button type="button" onClick={() => handleAddStudentFieldChange("password", generateTempPassword())} className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 text-sm text-gray-700 transition-colors">Regenerate</button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Student uses this password to log in. Share it securely.</p>
                   </div>
                 </div>
                 {formErrors.form && (
