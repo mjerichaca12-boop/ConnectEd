@@ -24,25 +24,27 @@ function SignUp() {
       return;
     }
 
-    const isMobile = window.innerWidth < 1024;
+    // Use a more generous threshold for mobile/tablet (1280px to include most tablets)
+    const isMobile = window.innerWidth <= 1280;
 
     // Block Student sign-up on Desktop
     if (selectedRole === "student" && !isMobile) {
-      setError("Students can only create an account using a Mobile device.");
+      setError("Students can only create an account using a Mobile or Tablet device.");
       return;
     }
 
     // Block Teacher sign-up on Mobile
-    if (selectedRole === "teacher" && isMobile) {
-      setError("Teachers can only create an account using a Desktop/Laptop.");
+    if (selectedRole === "teacher" && isMobile && window.innerWidth < 768) {
+      // Allow teachers on tablets (>= 768) but not small phones
+      setError("Teachers should create an account using a Desktop/Laptop for the best experience.");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    // Store the intended role for the login redirect to pick up
-    sessionStorage.setItem("connected_signup_role", selectedRole);
+    // Use localStorage instead of sessionStorage for better reliability on mobile redirects
+    localStorage.setItem("connected_signup_role", selectedRole);
 
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({

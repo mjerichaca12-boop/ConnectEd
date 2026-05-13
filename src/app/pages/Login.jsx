@@ -46,12 +46,12 @@ function Login() {
   const createProfileFromGoogle = async (sessionUser, email) => {
     const normalizedEmail = email.toLowerCase();
     
-    // Pick up the role from sessionStorage if it was set during SignUp
-    const storedRole = sessionStorage.getItem("connected_signup_role");
+    // Pick up the role from localStorage (switched from sessionStorage for mobile reliability)
+    const storedRole = localStorage.getItem("connected_signup_role");
     const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
     
     // Clear the stored role after use
-    sessionStorage.removeItem("connected_signup_role");
+    localStorage.removeItem("connected_signup_role");
 
     const displayName = getGoogleUserDisplayName(sessionUser, normalizedEmail);
     const { firstName, lastName } = splitFullName(displayName, normalizedEmail);
@@ -120,23 +120,23 @@ function Login() {
           profile = existingProfile;
         } else {
           // If no profile exists, check device restrictions BEFORE creating one
-          const isMobile = isMobileDevice();
+          const isMobile = window.innerWidth <= 1280;
           const normalizedEmail = email.toLowerCase();
-          const storedRole = sessionStorage.getItem("connected_signup_role");
+          const storedRole = localStorage.getItem("connected_signup_role");
           const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
 
           if (detectedRole === "student" && !isMobile) {
             throw new Error("Student accounts cannot be created on Desktop. Please use a Mobile device.");
           }
-          if (detectedRole === "teacher" && isMobile) {
-            throw new Error("Teacher accounts cannot be created on Mobile. Please use a Desktop/Laptop.");
+          if (detectedRole === "teacher" && isMobile && window.innerWidth < 768) {
+            throw new Error("Teacher accounts should be created on Desktop for the best experience.");
           }
 
           profile = await createProfileFromGoogle(session.user, email);
         }
 
         const role = String(profile.role || "student").toLowerCase();
-        const isMobile = isMobileDevice();
+        const isMobile = window.innerWidth < 1024; // Use standard 1024 for dashboard redirect logic
 
         // Check device restrictions
         if (role === "teacher" && isMobile) {
