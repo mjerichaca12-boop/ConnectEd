@@ -49,11 +49,83 @@ import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
+import { Smartphone, Monitor, ShieldAlert } from "lucide-react";
+
+const isMobileDevice = () => window.innerWidth < 1024;
+
+function DeviceRestricted({ role, allowed }) {
+  const Icon = allowed === "Desktop" ? Monitor : Smartphone;
+  
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
+      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
+        <ShieldAlert className="w-10 h-10 text-red-600" />
+      </div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Restricted Access</h1>
+      <p className="text-gray-600 max-w-md mb-8">
+        The <span className="font-semibold">{role} Portal</span> is only accessible via <span className="font-semibold text-green-600">{allowed}</span> devices. 
+        Please switch to a {allowed.toLowerCase()} to continue.
+      </p>
+      <div className="flex flex-col items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+        <Icon className="w-12 h-12 text-gray-400" />
+        <p className="text-sm font-medium text-gray-500 italic">Expected Device: {allowed}</p>
+      </div>
+      <button 
+        onClick={() => {
+          localStorage.removeItem("currentUser");
+          window.location.href = "/login";
+        }}
+        className="mt-10 text-green-600 font-semibold hover:underline"
+      >
+        Back to Login
+      </button>
+    </div>
+  );
+}
+
+function StudentRouteGuard({ children }) {
+  const [status, setStatus] = useState("checking");
+
+  useEffect(() => {
+    if (!isMobileDevice()) {
+      setStatus("device-restricted");
+      return;
+    }
+
+    const rawUser = localStorage.getItem("currentUser");
+    if (!rawUser) {
+      setStatus("denied");
+      return;
+    }
+
+    try {
+      const parsedUser = JSON.parse(rawUser);
+      if (parsedUser?.role === "student") {
+        setStatus("allowed");
+      } else {
+        setStatus("denied");
+      }
+    } catch {
+      setStatus("denied");
+    }
+  }, []);
+
+  if (status === "checking") return null;
+  if (status === "device-restricted") return <DeviceRestricted role="Student" allowed="Mobile" />;
+  if (status === "denied") return <Navigate to="/login" replace />;
+
+  return children;
+}
 
 function TeacherRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
 
   useEffect(() => {
+    if (isMobileDevice()) {
+      setStatus("device-restricted");
+      return;
+    }
+
     let isMounted = true;
 
     const verifyAccess = async () => {
@@ -118,9 +190,8 @@ function TeacherRouteGuard({ children }) {
     );
   }
 
-  if (status === "denied") {
-    return <Navigate to="/login" replace />;
-  }
+  if (status === "device-restricted") return <DeviceRestricted role="Teacher" allowed="Desktop" />;
+  if (status === "denied") return <Navigate to="/login" replace />;
 
   return children;
 }
@@ -129,6 +200,11 @@ function AdminRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
 
   useEffect(() => {
+    if (isMobileDevice()) {
+      setStatus("device-restricted");
+      return;
+    }
+
     try {
       const rawUser = localStorage.getItem("currentUser");
       if (!rawUser) {
@@ -158,9 +234,8 @@ function AdminRouteGuard({ children }) {
     );
   }
 
-  if (status === "denied") {
-    return <Navigate to="/login" replace />;
-  }
+  if (status === "device-restricted") return <DeviceRestricted role="Administrator" allowed="Desktop" />;
+  if (status === "denied") return <Navigate to="/login" replace />;
 
   return children;
 }
@@ -184,19 +259,19 @@ export default function App() {
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
         {/* Student Routes */}
-        <Route path="/dashboard" element={<StudentDashboard />} />
-        <Route path="/subjects" element={<Subjects />} />
-        <Route path="/subject/:id" element={<SubjectDetail />} />
-        <Route path="/grades" element={<Grades />} />
-        <Route path="/attendance" element={<Attendance />} />
-        <Route path="/announcements" element={<Announcements />} />
-        <Route path="/content" element={<StudentContent />} />
-        <Route path="/materials" element={<StudentMaterials />} />
-        <Route path="/enrollment" element={<StudentEnrollment />} />
-        <Route path="/messages" element={<Messages />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/video-conference" element={<VideoConferencing />} />
-        <Route path="/ai-assistant" element={<StudentAIAssistant />} />
+        <Route path="/dashboard" element={<StudentRouteGuard><StudentDashboard /></StudentRouteGuard>} />
+        <Route path="/subjects" element={<StudentRouteGuard><Subjects /></StudentRouteGuard>} />
+        <Route path="/subject/:id" element={<StudentRouteGuard><SubjectDetail /></StudentRouteGuard>} />
+        <Route path="/grades" element={<StudentRouteGuard><Grades /></StudentRouteGuard>} />
+        <Route path="/attendance" element={<StudentRouteGuard><Attendance /></StudentRouteGuard>} />
+        <Route path="/announcements" element={<StudentRouteGuard><Announcements /></StudentRouteGuard>} />
+        <Route path="/content" element={<StudentRouteGuard><StudentContent /></StudentRouteGuard>} />
+        <Route path="/materials" element={<StudentRouteGuard><StudentMaterials /></StudentRouteGuard>} />
+        <Route path="/enrollment" element={<StudentRouteGuard><StudentEnrollment /></StudentRouteGuard>} />
+        <Route path="/messages" element={<StudentRouteGuard><Messages /></StudentRouteGuard>} />
+        <Route path="/profile" element={<StudentRouteGuard><Profile /></StudentRouteGuard>} />
+        <Route path="/video-conference" element={<StudentRouteGuard><VideoConferencing /></StudentRouteGuard>} />
+        <Route path="/ai-assistant" element={<StudentRouteGuard><StudentAIAssistant /></StudentRouteGuard>} />
 
         {/* Teacher Routes */}
         <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />

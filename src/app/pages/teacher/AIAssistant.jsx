@@ -67,8 +67,19 @@ export function AIAssistant() {
     // Create a temporary message placeholder for the assistant
     setMessages([...currentMessages, { role: "assistant", content: "", timestamp: Date.now() }]);
 
+    // Filter out the welcome message and any empty messages from the history
+    // only send actual user/assistant conversation to the LLM
+    const apiMessages = currentMessages
+      .filter(m => {
+        // Don't send the welcome message or messages with no content
+        const isWelcome = m.content && m.content.includes("Hello, Teacher!");
+        const hasContent = m.content && m.content.trim() !== "";
+        return !isWelcome && hasContent;
+      })
+      .map(m => ({ role: m.role, content: m.content }));
+
     await streamMessage({
-      messages: currentMessages.map(m => ({ role: m.role, content: m.content })),
+      messages: apiMessages,
       fileContents,
       role: "teacher",
       onChunk: (text) => {
@@ -76,12 +87,21 @@ export function AIAssistant() {
         setMessages([...currentMessages, { role: "assistant", content: assistantMessage + "▌", timestamp: Date.now() }]);
       },
       onDone: (fullText) => {
-        setMessages([...currentMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
+        if (fullText) {
+          setMessages([...currentMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
+        } else {
+          // If something went wrong and we got no text, just keep the history as is
+          setMessages(currentMessages);
+        }
         setIsStreaming(false);
       },
       onError: (err) => {
         console.error("Groq Error:", err);
-        setMessages([...currentMessages, { role: "assistant", content: "⚠️ Sorry, I encountered an error while processing your request. Please try again later.", timestamp: Date.now() }]);
+        const errorContent = err?.status === 429 
+          ? "⚠️ I'm receiving too many requests right now. Please wait a moment before trying again."
+          : "⚠️ Sorry, I encountered an error while processing your request. Please try again later.";
+          
+        setMessages([...currentMessages, { role: "assistant", content: errorContent, timestamp: Date.now() }]);
         setIsStreaming(false);
       }
     });

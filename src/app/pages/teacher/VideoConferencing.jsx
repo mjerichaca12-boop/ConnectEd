@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
-import { supabase } from "@/app/lib/supabaseClient";
+import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 import {
   Bell,
   Search,
@@ -333,7 +333,9 @@ function VideoConferencing() {
         room_name: effectiveRoomName,
         meeting_link: effectiveMeetingLink,
       };
-      await supabase.from(tableName).update(payload).eq("id", Number(meeting.id));
+      // Use supabaseAdmin to bypass RLS for updates
+      const client = supabaseAdmin || supabase;
+      await client.from(tableName).update(payload).eq("id", Number(meeting.id));
 
       const updated = meetings.map((m) => (
         String(m.id) === String(meeting.id)
@@ -363,7 +365,8 @@ function VideoConferencing() {
           ended_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        await supabase.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
+        const client = supabaseAdmin || supabase;
+        await client.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
       } catch (error) {
         console.error("Failed to end meeting:", error);
       }
@@ -396,6 +399,7 @@ function VideoConferencing() {
       userInfo: {
         displayName: teacherName || "Teacher",
         email: teacherEmail || "",
+        role: "moderator", // Signal to Jitsi that this user is the host
       },
       configOverwrite: {
         disableDeepLinking: true,
@@ -405,7 +409,20 @@ function VideoConferencing() {
         },
         startWithAudioMuted: false,
         startWithVideoMuted: false,
+        enableUserRolesBasedOnToken: false, // Ensure roles are checked
+        defaultRemoteDisplayName: "Student",
       },
+      interfaceConfigOverwrite: {
+        // Ensure moderator-specific buttons are visible if possible
+        TOOLBAR_BUTTONS: [
+          'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+          'fodeviceselection', 'hangup', 'profile', 'chat', 'recording',
+          'livestreaming', 'etherpad', 'sharedvideo', 'settings', 'raisehand',
+          'videoquality', 'filmstrip', 'invite', 'feedback', 'stats', 'shortcuts',
+          'tileview', 'videobackgroundblur', 'download', 'help', 'mute-everyone',
+          'security'
+        ],
+      }
     });
 
     jitsiApiRef.current = api;
@@ -482,7 +499,9 @@ function VideoConferencing() {
         updated_at: now,
       };
 
-      const { data, error } = await supabase.from(tableName).insert(payload).select("*").single();
+      // Use supabaseAdmin to bypass RLS for inserts
+      const client = supabaseAdmin || supabase;
+      const { data, error } = await client.from(tableName).insert(payload).select("*").single();
       if (error) {
         console.error("Failed to save meeting:", {
           message: error.message,
@@ -516,7 +535,9 @@ function VideoConferencing() {
     if (!window.confirm("Delete this meeting?")) return;
     try {
       const tableName = MEETING_TABLE;
-      await supabase.from(tableName).delete().eq("id", Number(id));
+      // Use supabaseAdmin to bypass RLS for deletes
+      const client = supabaseAdmin || supabase;
+      await client.from(tableName).delete().eq("id", Number(id));
     } catch (error) {
       console.error("Failed to delete meeting:", error);
     }

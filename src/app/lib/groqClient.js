@@ -101,6 +101,22 @@ export const streamMessage = async ({
     onError?.(new Error("Groq API key not configured. Add VITE_GROQ_API_KEY to .env"));
     return;
   }
+
+  // Sanitize and validate messages
+  const validatedMessages = messages
+    .filter(m => m && m.content && m.content.trim() !== "")
+    .map(m => ({ 
+      role: m.role || "user", 
+      content: m.content.toString() 
+    }));
+
+  if (validatedMessages.length === 0) {
+    onError?.(new Error("No valid messages to send"));
+    return;
+  }
+
+  const systemPrompt = buildSystemPrompt(fileContents, role);
+
   try {
     const stream = await groq.chat.completions.create({
       model: MODEL_PRIMARY,
@@ -108,8 +124,8 @@ export const streamMessage = async ({
       temperature: 0.7,
       stream: true,
       messages: [
-        { role: "system", content: buildSystemPrompt(fileContents, role) },
-        ...messages,
+        { role: "system", content: systemPrompt },
+        ...validatedMessages,
       ],
     });
 
@@ -124,8 +140,14 @@ export const streamMessage = async ({
     onDone?.(fullText);
 
   } catch (error) {
-    // Fallback to smaller model if rate limited
-    if (error?.status === 429) {
+    console.error(`Groq Primary Model Error (${MODEL_PRIMARY}):`, error);
+
+    // Fallback to smaller model if rate limited or other common errors
+    const isRateLimit = error?.status === 429 || (error?.message && error.message.includes("rate limit"));
+    const isOverloaded = error?.status === 503 || (error?.message && error.message.includes("overloaded"));
+    
+    if (isRateLimit || isOverloaded || error?.status === 400) {
+      console.log(`Attempting fallback to ${MODEL_FALLBACK}...`);
       try {
         const fallbackStream = await groq.chat.completions.create({
           model: MODEL_FALLBACK,
@@ -133,8 +155,8 @@ export const streamMessage = async ({
           temperature: 0.7,
           stream: true,
           messages: [
-            { role: "system", content: buildSystemPrompt(fileContents, role) },
-            ...messages,
+            { role: "system", content: systemPrompt },
+            ...validatedMessages,
           ],
         });
 
@@ -149,6 +171,7 @@ export const streamMessage = async ({
         onDone?.(fullText);
 
       } catch (fallbackError) {
+        console.error(`Groq Fallback Model Error (${MODEL_FALLBACK}):`, fallbackError);
         onError?.(fallbackError);
       }
     } else {
