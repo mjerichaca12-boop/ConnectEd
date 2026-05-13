@@ -119,6 +119,19 @@ function Login() {
         if (existingProfile) {
           profile = existingProfile;
         } else {
+          // If no profile exists, check device restrictions BEFORE creating one
+          const isMobile = isMobileDevice();
+          const normalizedEmail = email.toLowerCase();
+          const storedRole = sessionStorage.getItem("connected_signup_role");
+          const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
+
+          if (detectedRole === "student" && !isMobile) {
+            throw new Error("Student accounts cannot be created on Desktop. Please use a Mobile device.");
+          }
+          if (detectedRole === "teacher" && isMobile) {
+            throw new Error("Teacher accounts cannot be created on Mobile. Please use a Desktop/Laptop.");
+          }
+
           profile = await createProfileFromGoogle(session.user, email);
         }
 
