@@ -45,7 +45,14 @@ function Login() {
 
   const createProfileFromGoogle = async (sessionUser, email) => {
     const normalizedEmail = email.toLowerCase();
-    const detectedRole = normalizedEmail.includes("teacher") ? "teacher" : "student";
+    
+    // Pick up the role from sessionStorage if it was set during SignUp
+    const storedRole = sessionStorage.getItem("connected_signup_role");
+    const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
+    
+    // Clear the stored role after use
+    sessionStorage.removeItem("connected_signup_role");
+
     const displayName = getGoogleUserDisplayName(sessionUser, normalizedEmail);
     const { firstName, lastName } = splitFullName(displayName, normalizedEmail);
 
@@ -117,13 +124,16 @@ function Login() {
 
         const role = String(profile.role || "student").toLowerCase();
         const isMobile = isMobileDevice();
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168.");
 
-        // Check device restrictions
-        if (role === "teacher" && isMobile) {
-          throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
-        }
-        if (role === "student" && !isMobile) {
-          throw new Error("The Student Portal is only accessible via Mobile devices.");
+        // Check device restrictions (bypass for localhost/local network)
+        if (!isLocalhost) {
+          if (role === "teacher" && isMobile) {
+            throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
+          }
+          if (role === "student" && !isMobile) {
+            throw new Error("The Student Portal is only accessible via Mobile devices.");
+          }
         }
 
         const currentUser = {

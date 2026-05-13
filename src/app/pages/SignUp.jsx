@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabaseClient";
 function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedRole, setSelectedRole] = useState("student");
   const navigate = useNavigate();
 
   const GoogleLogo = () => (
@@ -25,6 +26,9 @@ function SignUp() {
 
     setLoading(true);
     setError("");
+
+    // Store the intended role for the login redirect to pick up
+    sessionStorage.setItem("connected_signup_role", selectedRole);
 
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -97,6 +101,28 @@ function SignUp() {
                     <p className="text-red-600 text-sm font-medium">{error}</p>
                   </div>
                 )}
+
+                <div className="mb-8">
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 text-center">I am a...</label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole("student")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${selectedRole === "student" ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-md" : "border-gray-100 bg-white text-gray-500 hover:border-gray-200"}`}
+                    >
+                      <span className="text-2xl mb-1">🎓</span>
+                      <span className="text-sm font-bold">Student</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRole("teacher")}
+                      className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${selectedRole === "teacher" ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-md" : "border-gray-100 bg-white text-gray-500 hover:border-gray-200"}`}
+                    >
+                      <span className="text-2xl mb-1">👨‍🏫</span>
+                      <span className="text-sm font-bold">Teacher</span>
+                    </button>
+                  </div>
+                </div>
 
                 <div className="space-y-6">
                   <button
