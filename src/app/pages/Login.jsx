@@ -228,6 +228,7 @@ function Login() {
     }
 
     try {
+      // Check manual credentials for Students
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -240,10 +241,23 @@ function Login() {
         return;
       }
 
-      const role = String(profile.role || "student").toLowerCase();
-      const isMobile = isMobileDevice();
+      // Check for manual password if it exists (for manual student accounts)
+      if (profile.password && profile.password !== formData.password) {
+        setError("Invalid password.");
+        setLoading(false);
+        return;
+      }
 
-      if (role === "teacher" && isMobile) {
+      if (profile.status === "Pending") {
+        setError("Your account is still pending admin approval.");
+        setLoading(false);
+        return;
+      }
+
+      const role = String(profile.role || "student").toLowerCase();
+      const isMobile = window.innerWidth <= 1280;
+
+      if (role === "teacher" && isMobile && window.innerWidth < 768) {
         setError("Teachers can only sign in on Desktop.");
         setLoading(false);
         return;
