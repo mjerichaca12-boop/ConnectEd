@@ -124,16 +124,13 @@ function Login() {
 
         const role = String(profile.role || "student").toLowerCase();
         const isMobile = isMobileDevice();
-        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname.startsWith("192.168.");
 
-        // Check device restrictions (bypass for localhost/local network)
-        if (!isLocalhost) {
-          if (role === "teacher" && isMobile) {
-            throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
-          }
-          if (role === "student" && !isMobile) {
-            throw new Error("The Student Portal is only accessible via Mobile devices.");
-          }
+        // Check device restrictions
+        if (role === "teacher" && isMobile) {
+          throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
+        }
+        if (role === "student" && !isMobile) {
+          throw new Error("The Student Portal is only accessible via Mobile devices.");
         }
 
         const currentUser = {
