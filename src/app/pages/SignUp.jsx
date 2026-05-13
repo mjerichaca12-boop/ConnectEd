@@ -24,6 +24,20 @@ function SignUp() {
       return;
     }
 
+    const isMobile = window.innerWidth < 1024;
+
+    // Block Student sign-up on Desktop
+    if (selectedRole === "student" && !isMobile) {
+      setError("Students can only create an account using a Mobile device.");
+      return;
+    }
+
+    // Block Teacher sign-up on Mobile
+    if (selectedRole === "teacher" && isMobile) {
+      setError("Teachers can only create an account using a Desktop/Laptop.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
