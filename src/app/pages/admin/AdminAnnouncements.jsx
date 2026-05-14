@@ -27,6 +27,7 @@ const emptyForm = {
   title: "",
   content: "",
   targetAudience: "",
+  category: "General",
   priority: ""
 };
 
@@ -34,6 +35,7 @@ const emptyTouchedFields = {
   title: false,
   content: false,
   targetAudience: false,
+  category: false,
   priority: false
 };
 
@@ -45,6 +47,7 @@ let announcementAttachmentsTableStatus = "unknown";
 
 const ALLOWED_AUDIENCES = ["School-wide", "Students", "Teacher"];
 const ALLOWED_PRIORITIES = ["Low", "Medium", "High"];
+const ALLOWED_CATEGORIES = ["General", "Lesson Plan", "Task", "School Info"];
 
 const audienceOptions = [
   { value: "School-wide", label: "School-wide" },
@@ -56,6 +59,13 @@ const priorityOptions = [
   { value: "Low", label: "Low" },
   { value: "Medium", label: "Medium" },
   { value: "High", label: "High" }
+];
+
+const categoryOptions = [
+  { value: "General", label: "General" },
+  { value: "Lesson Plan", label: "Lesson Plan" },
+  { value: "Task", label: "Task" },
+  { value: "School Info", label: "School Info" }
 ];
 
 const normalizeAudience = (value) => {
@@ -81,11 +91,7 @@ const normalizePriority = (value) => {
   return "Medium";
 };
 
-const toDatabaseAudience = (value) => {
-  const normalized = normalizeAudience(value);
-
-  return normalized;
-};
+const toDatabaseAudience = (value) => normalizeAudience(value);
 
 const toDatabaseAudienceType = (value) => {
   const normalized = String(value ?? "")
@@ -105,10 +111,7 @@ const audienceLabelFromType = (audienceType) => {
   return "School-wide";
 };
 
-const toDatabasePriority = (value) => {
-  const normalized = normalizePriority(value);
-  return normalized;
-};
+const toDatabasePriority = (value) => normalizePriority(value);
 
 const isAllowedAudience = (value) => {
   const normalized = String(value ?? "")
@@ -248,6 +251,7 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
           "School-wide"
         ),
     audienceType,
+    category: row?.category || "General",
     priority: normalizePriority(
       row?.priority ??
       row?.announcement_priority ??
@@ -267,12 +271,12 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
 
 const sortAnnouncements = (items) =>
   [...items].sort((left, right) => {
-    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
-    if (priorityDiff !== 0) return priorityDiff;
-
     const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime();
     const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime();
-    if (rightTime !== leftTime) return rightTime - leftTime;
+    if (rightTime !== leftTime) return rightTime - leftTime; // Newest first
+
+    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
+    if (priorityDiff !== 0) return priorityDiff;
 
     return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
   });
@@ -328,11 +332,20 @@ const getPriorityStyles = (priority) => {
   return "bg-amber-50 text-amber-700 border-amber-200";
 };
 
+const getCategoryStyles = (category) => {
+  const normalized = String(category ?? "").toLowerCase();
+  if (normalized === "lesson plan") return "bg-purple-50 text-purple-700 border-purple-200";
+  if (normalized === "task") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (normalized === "school info") return "bg-orange-50 text-orange-700 border-orange-200";
+  return "bg-gray-50 text-gray-700 border-gray-200";
+};
+
 const getAnnouncementValidationErrors = (data) => {
   const errors = {};
   const title = String(data?.title || "").trim();
   const content = String(data?.content || "").trim();
   const targetAudience = String(data?.targetAudience || "").trim();
+  const category = String(data?.category || "").trim();
   const priority = String(data?.priority || "").trim();
 
   if (!title) {
@@ -353,6 +366,12 @@ const getAnnouncementValidationErrors = (data) => {
     errors.targetAudience = "Target audience is required";
   } else if (!isAllowedAudience(targetAudience)) {
     errors.targetAudience = "Target audience must be school wide, student, or teacher";
+  }
+
+  if (!category) {
+    errors.category = "Category is required";
+  } else if (!ALLOWED_CATEGORIES.includes(category)) {
+    errors.category = "Invalid category";
   }
 
   if (!priority) {
@@ -512,6 +531,15 @@ function AdminAnnouncements() {
       ...formData,
       [field]: value
     };
+    
+    // If audience changes to something other than Teacher, and category was a teacher-only category, reset it
+    if (field === "targetAudience" && value !== "Teacher") {
+      const teacherOnlyCategories = ["Lesson Plan", "Task", "School Info"];
+      if (teacherOnlyCategories.includes(nextForm.category)) {
+        nextForm.category = "General";
+      }
+    }
+    
     setFormData(nextForm);
     applyCreateValidationState(nextForm, formTouched, hasTriedCreateSubmit);
   };
@@ -521,8 +549,24 @@ function AdminAnnouncements() {
       ...editFormData,
       [field]: value
     };
+    
+    // If audience changes to something other than Teacher, and category was a teacher-only category, reset it
+    if (field === "targetAudience" && value !== "Teacher") {
+      const teacherOnlyCategories = ["Lesson Plan", "Task", "School Info"];
+      if (teacherOnlyCategories.includes(nextForm.category)) {
+        nextForm.category = "General";
+      }
+    }
+    
     setEditFormData(nextForm);
     applyEditValidationState(nextForm, editFormTouched, hasTriedEditSubmit);
+  };
+
+  const getFilteredCategoryOptions = (audience) => {
+    if (audience === "Teacher") {
+      return categoryOptions;
+    }
+    return categoryOptions.filter(opt => opt.value === "General");
   };
 
   const handleCreateFieldBlur = (field) => {
@@ -603,7 +647,23 @@ function AdminAnnouncements() {
       return announcementColumns;
     }
 
-    const columns = [
+    const tableName = await getAnnouncementTableName();
+    
+    // Attempt dynamic detection
+    try {
+      const { data, error } = await supabase.from(tableName).select("*").limit(1);
+      if (!error && data) {
+        if (data.length > 0) {
+          const detected = Object.keys(data[0]);
+          setAnnouncementColumns(detected);
+          return detected;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to detect columns dynamically:", err);
+    }
+
+    const fallbackColumns = [
       "id",
       "title",
       "content",
@@ -615,6 +675,7 @@ function AdminAnnouncements() {
       "created_by_name",
       "school_id",
       "target_audience",
+      "audience_type",
       "announcement_priority",
       "importance",
       "priority_level",
@@ -623,8 +684,8 @@ function AdminAnnouncements() {
       "timestamp"
     ];
 
-    setAnnouncementColumns(columns);
-    return columns;
+    setAnnouncementColumns(fallbackColumns);
+    return fallbackColumns;
   };
 
   const fetchAttachmentRowsByAnnouncementId = async (tableName, rows) => {
@@ -734,11 +795,12 @@ function AdminAnnouncements() {
           title: String(source.title || "Announcement").trim() || "Announcement",
           content: String(source.content || "Attachment").trim() || "Attachment",
           target_audience: normalizeAudience(source.target_audience || "School-wide"),
+          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide"),
           priority: normalizePriority(source.priority || "Medium"),
           author: String(source.author || source.created_by_name || "Admin Office").trim() || "Admin Office",
-          created_by: source.created_by || null,
+          created_by: isUuid(source.created_by) ? source.created_by : null,
           created_by_name: source.created_by_name || null,
-          school_id: source.school_id || null,
+          school_id: isUuid(source.school_id) ? source.school_id : null,
           created_at: source.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
         },
@@ -746,6 +808,7 @@ function AdminAnnouncements() {
           title: String(source.title || "Announcement").trim() || "Announcement",
           content: String(source.content || "Attachment").trim() || "Attachment",
           target_audience: normalizeAudience(source.target_audience || "School-wide"),
+          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide"),
           priority: normalizePriority(source.priority || "Medium")
         },
         {
@@ -927,11 +990,15 @@ function AdminAnnouncements() {
   const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
     const user = getCurrentUser();
     const targetAudience = toDatabaseAudience(data.targetAudience);
+    const audienceType = toDatabaseAudienceType(data.targetAudience);
     const priority = toDatabasePriority(data.priority);
+    const category = data.category || "General";
 
     const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
+    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
     const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
     const audienceColumn = resolveColumnName(columns, audienceCandidates);
+    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
     const priorityColumn = resolveColumnName(columns, priorityCandidates);
     const timestampColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp"]);
 
@@ -941,9 +1008,9 @@ function AdminAnnouncements() {
 
     if (columns.includes("author") && user?.name) metadata.author = user.name;
     if (columns.includes("created_by_name") && user?.name) metadata.created_by_name = user.name;
-    if (columns.includes("created_by") && user?.id) metadata.created_by = user.id;
-    if (columns.includes("createdBy") && user?.id) metadata.createdBy = user.id;
-    if (columns.includes("author_id") && user?.id) metadata.author_id = user.id;
+    if (columns.includes("created_by") && isUuid(user?.id)) metadata.created_by = user.id;
+    if (columns.includes("createdBy") && isUuid(user?.id)) metadata.createdBy = user.id;
+    if (columns.includes("author_id") && isUuid(user?.id)) metadata.author_id = user.id;
     if (columns.includes("school_id") && isUuid(user?.school_id || user?.schoolId)) metadata.school_id = user.school_id || user.schoolId;
     if (columns.includes("schoolId") && isUuid(user?.school_id || user?.schoolId)) metadata.schoolId = user.school_id || user.schoolId;
 
@@ -953,6 +1020,13 @@ function AdminAnnouncements() {
       ...metadata
     };
 
+    if (columns.includes("category")) {
+      basePayload.category = category;
+    }
+
+    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
+    basePayload[priorityColumn || "priority"] = priority;
+
     if (announcementId && columns.includes("id")) {
       basePayload.id = announcementId;
     }
@@ -961,8 +1035,7 @@ function AdminAnnouncements() {
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceColumn ? { [audienceColumn]: targetAudience } : {}),
-      ...(priorityColumn ? { [priorityColumn]: priority } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
     };
 
     return [strictPayload, basePayload];
@@ -970,10 +1043,14 @@ function AdminAnnouncements() {
 
   const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
     const targetAudience = toDatabaseAudience(data.targetAudience);
+    const audienceType = toDatabaseAudienceType(data.targetAudience);
     const priority = toDatabasePriority(data.priority);
+    const category = data.category || "General";
     const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
+    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
     const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
     const audienceColumn = resolveColumnName(columns, audienceCandidates);
+    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
     const priorityColumn = resolveColumnName(columns, priorityCandidates);
     const timestampColumn = resolveColumnName(columns, ["updated_at"]);
 
@@ -986,19 +1063,24 @@ function AdminAnnouncements() {
       ...metadata
     };
 
+    if (columns.includes("category")) {
+      basePayload.category = category;
+    }
+
+    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
+    basePayload[priorityColumn || "priority"] = priority;
+
     if (attachments) {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
     }
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceColumn ? { [audienceColumn]: targetAudience } : {}),
-      ...(priorityColumn ? { [priorityColumn]: priority } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
     };
 
     return [strictPayload, basePayload];
   };
-
   const writeAnnouncement = async (tableName, mode, payloads, id) => {
     let lastError = null;
     const attemptErrors = [];
@@ -1667,7 +1749,7 @@ function AdminAnnouncements() {
           </div>
 
           {(errorMessage || successMessage) && (
-            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-200 bg-red-50 text-red-200" : "border-green-200 bg-green-50 text-green-200"}`}>
+            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700"}`}>
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMessage || successMessage}</span>
             </div>
@@ -1700,6 +1782,9 @@ function AdminAnnouncements() {
                       <div className="flex-1">
                         <div className="flex flex-wrap items-start gap-3 mb-3">
                           <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getCategoryStyles(announcement.category)}`}>
+                            {announcement.category || "General"}
+                          </span>
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getPriorityStyles(announcement.priority)}`}>
                             {formatPriorityLabel(announcement.priority)}
                           </span>
@@ -1829,6 +1914,19 @@ function AdminAnnouncements() {
                   {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
+                  <CustomSelect
+                    value={formData.category}
+                    onChange={(value) => handleCreateFieldChange("category", value)}
+                    onBlur={() => handleCreateFieldBlur("category")}
+                    options={getFilteredCategoryOptions(formData.targetAudience)}
+                    placeholder="Select category"
+                    icon={<Megaphone className="w-5 h-5" />}
+                    className={`w-full ${formErrors.category ? "border-red-500" : ""}`}
+                  />
+                  {formErrors.category && <p className="mt-1 text-sm text-red-600">{formErrors.category}</p>}
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
                   <CustomSelect
                     value={formData.priority}
@@ -1941,6 +2039,19 @@ function AdminAnnouncements() {
                     className={`w-full ${editFormErrors.targetAudience ? "border-red-500" : ""}`}
                   />
                   {editFormErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{editFormErrors.targetAudience}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
+                  <CustomSelect
+                    value={editFormData.category}
+                    onChange={(value) => handleEditFieldChange("category", value)}
+                    onBlur={() => handleEditFieldBlur("category")}
+                    options={getFilteredCategoryOptions(editFormData.targetAudience)}
+                    placeholder="Select category"
+                    icon={<Megaphone className="w-5 h-5" />}
+                    className={`w-full ${editFormErrors.category ? "border-red-500" : ""}`}
+                  />
+                  {editFormErrors.category && <p className="mt-1 text-sm text-red-600">{editFormErrors.category}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>

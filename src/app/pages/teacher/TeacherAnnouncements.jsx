@@ -198,6 +198,7 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
         row?.priority_level ??
         "Medium"
     ),
+    category: row?.category || "General",
     createdAt: normalizeTimestamp(row),
     subject: String(row?.subject ?? row?.course ?? row?.course_name ?? row?.class_name ?? row?.topic ?? "").trim(),
     ...buildAnnouncementAttachments(row, attachmentRows),
@@ -206,14 +207,14 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
 
 const sortAnnouncements = (items) =>
   [...items].sort((left, right) => {
+    const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime();
+    const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime();
+    if (leftTime !== rightTime) return leftTime - rightTime;
+
     const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
     if (priorityDiff !== 0) return priorityDiff;
 
-    const leftTime = new Date(left?.createdAt || 0).getTime();
-    const rightTime = new Date(right?.createdAt || 0).getTime();
-    if (rightTime !== leftTime) return rightTime - leftTime;
-
-    return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
+    return String(left?.id ?? "").localeCompare(String(right?.id ?? ""));
   });
 
 function TeacherAnnouncements() {
@@ -463,6 +464,13 @@ function TeacherAnnouncements() {
         return "bg-gray-50 text-gray-700";
     }
   };
+  const getCategoryStyles = (category) => {
+    const normalized = String(category ?? "").toLowerCase();
+    if (normalized === "lesson plan") return "bg-purple-100 text-purple-700 border-purple-200";
+    if (normalized === "task") return "bg-blue-100 text-blue-700 border-blue-200";
+    if (normalized === "school info") return "bg-orange-100 text-orange-700 border-orange-200";
+    return "bg-gray-100 text-gray-700 border-gray-200";
+  };
   const filteredAnnouncements = sortAnnouncements(
     announcements.filter((announcement) => matchesTeacherAudience(announcement))
   );
@@ -541,7 +549,12 @@ function TeacherAnnouncements() {
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first announcement</button>
                     </div> : filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
                       <div className="flex items-start justify-between mb-3">
-                        <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getCategoryStyles(announcement.category)}`}>
+                            {announcement.category || "General"}
+                          </span>
+                        </div>
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(announcement.priority)}`}>{announcement.priority}</span>
                       </div>
                       <p className="text-gray-700 mb-4">{announcement.content}</p>

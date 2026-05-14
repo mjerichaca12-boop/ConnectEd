@@ -49,6 +49,7 @@ import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { Smartphone, Monitor, ShieldAlert } from "lucide-react";
 
 const isMobileDevice = () => window.innerWidth < 1024;
@@ -272,6 +273,7 @@ export default function App() {
         <Route path="/profile" element={<StudentRouteGuard><Profile /></StudentRouteGuard>} />
         <Route path="/video-conference" element={<StudentRouteGuard><VideoConferencing /></StudentRouteGuard>} />
         <Route path="/ai-assistant" element={<StudentRouteGuard><StudentAIAssistant /></StudentRouteGuard>} />
+        <Route path="/notifications" element={<StudentRouteGuard><NotificationsPage /></StudentRouteGuard>} />
 
         {/* Teacher Routes */}
         <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />
@@ -299,6 +301,7 @@ export default function App() {
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
         <Route path="/admin/ai-assistant" element={<AdminRouteGuard><AIAdminAssistant /></AdminRouteGuard>} />
+        <Route path="/admin/notifications" element={<AdminRouteGuard><NotificationsPage /></AdminRouteGuard>} />
 
         {/* Teacher AI */}
         <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />

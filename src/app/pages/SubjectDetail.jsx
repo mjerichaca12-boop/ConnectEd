@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { supabase } from "../lib/supabaseClient";
 import { Sidebar } from "@/app/components/Sidebar";
 import {
   Bell,
@@ -21,67 +22,58 @@ function SubjectDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [studentName, setStudentName] = useState("");
-  const [notifications, setNotifications] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-  const [subject] = useState({
-    id: id || "MATH101",
-    code: "MATH 101",
-    name: "Advanced Mathematics",
-    teacher: "Dr. Maria Santos",
-    teacherId: "T001",
-    description: "Advanced topics in calculus and algebra including differential equations, complex analysis, and linear transformations.",
-    credits: 3,
-    quarter: "1st Quarter 2026",
-    room: "Room 301, Math Building",
-    enrolled: 35,
-    capacity: 40,
-    syllabus: "https://example.com/syllabus.pdf",
-    objectives: [
-      "Understand and apply advanced calculus concepts",
-      "Solve complex differential equations",
-      "Master linear algebra transformations",
-      "Develop analytical and problem-solving skills"
-    ],
-    grading: [
-      { component: "Quizzes", percentage: 20 },
-      { component: "Assignments", percentage: 20 },
-      { component: "Midterm Exam", percentage: 25 },
-      { component: "Final Exam", percentage: 35 }
-    ],
-    modules: [
-      {
-        id: "M1",
-        title: "Introduction to Differential Equations",
-        description: "Learn the fundamentals of differential equations and their applications",
-        type: "video",
-        completed: true
-      },
-      {
-        id: "M2",
-        title: "Linear Transformations",
-        description: "Understanding linear transformations in vector spaces",
-        type: "document",
-        completed: true
-      },
-      {
-        id: "M3",
-        title: "Quiz 1: Differential Equations",
-        description: "Assessment covering modules 1-2",
-        type: "quiz",
-        completed: false,
-        dueDate: "2026-02-15"
-      },
-      {
-        id: "M4",
-        title: "Complex Analysis Introduction",
-        description: "Introduction to complex numbers and complex functions",
-        type: "video",
-        completed: false,
-        dueDate: "2026-02-20"
-      }
-    ]
-  });
+  const [subject, setSubject] = useState(null);
+
+  const fetchSubjectDetail = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("subjects")
+        .select(`
+          *,
+          profiles!teacher_id (
+            first_name,
+            last_name
+          )
+        `)
+        .eq("id", id)
+        .single();
+
+      if (error) throw error;
+
+      setSubject({
+        id: data.id,
+        code: data.code,
+        name: data.name,
+        teacher: data.profiles ? `${data.profiles.first_name} ${data.profiles.last_name}` : "Unknown Teacher",
+        description: data.description || "No description available",
+        credits: 3,
+        quarter: "1st Quarter 2026",
+        room: data.room || "TBA",
+        enrolled: data.enrolled || 0,
+        capacity: 40,
+        objectives: [
+          "Understand course fundamentals",
+          "Apply key concepts in practice",
+          "Develop problem-solving skills"
+        ],
+        grading: [
+          { component: "Quizzes", percentage: 20 },
+          { component: "Assignments", percentage: 20 },
+          { component: "Midterm Exam", percentage: 25 },
+          { component: "Final Exam", percentage: 35 }
+        ],
+        modules: []
+      });
+    } catch (err) {
+      console.error("Error fetching subject detail:", err);
+      navigate("/subjects");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -94,8 +86,8 @@ function SubjectDetail() {
       return;
     }
     setStudentName(user.name);
-    setTimeout(() => setLoading(false), 600);
-  }, [navigate]);
+    fetchSubjectDetail();
+  }, [id, navigate]);
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");

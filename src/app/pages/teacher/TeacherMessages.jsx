@@ -744,17 +744,28 @@ function TeacherMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await supabase.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
+      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       saveConversations(updated);
       setShowRenameModal(false);
       setPageError("");
-    } catch { setPageError("Unable to rename group."); }
+    } catch (err) { 
+      console.error("[TeacherMessages] Rename error:", err);
+      setPageError(err.message || "Unable to rename group."); 
+    }
   };
 
   const handleLeaveConversation = async () => {
     if (!selectedConv) return;
+    try {
+      const { error } = await db.from("conversation_participants").delete().eq("conversation_id", selectedConv.id).eq("profile_id", teacherId);
+      if (error) throw error;
+    } catch (err) {
+      console.error("[TeacherMessages] Leave error:", err);
+      setPageError("Unable to leave group chat.");
+      return;
+    }
     const remaining = conversations.filter((c) => c.id !== selectedConv.id);
     saveConversations(remaining);
     setShowDeleteConfirm(false);
@@ -765,7 +776,14 @@ function TeacherMessages() {
 
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
-    try { await supabase.from("conversations").delete().eq("id", selectedConv.id); } catch {}
+    try { 
+      const { error } = await db.from("conversations").delete().eq("id", selectedConv.id);
+      if (error) throw error;
+    } catch (err) {
+      console.error("[TeacherMessages] Delete error:", err);
+      setPageError("Unable to delete conversation.");
+      return;
+    }
     const remaining = conversations.filter((c) => c.id !== selectedConv.id);
     saveConversations(remaining);
     setShowDeleteConfirm(false);

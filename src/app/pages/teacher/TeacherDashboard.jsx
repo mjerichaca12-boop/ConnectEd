@@ -495,7 +495,13 @@ export function TeacherDashboard() {
         <div className="flex-1 p-6 space-y-6">
 
           {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md">
+          <div className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-20">
+              <div className="flex flex-col items-end gap-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY 2026-2027</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">Term 1</span>
+              </div>
+            </div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-2 h-2 rounded-full bg-green-200 animate-pulse" />
               <p className="text-green-100 text-xs font-bold uppercase tracking-widest">{getGreeting()}</p>
@@ -503,7 +509,7 @@ export function TeacherDashboard() {
             <h1 className="text-2xl font-bold text-white">
               Welcome back, {teacherFirstName || getFirstName(teacherName)}!
             </h1>
-            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities.</p>
+            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities for the current term.</p>
           </div>
 
           {/* Stats Row */}

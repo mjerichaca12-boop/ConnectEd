@@ -11,8 +11,11 @@ import {
   Send,
   Paperclip,
   MoreVertical,
+  Edit2,
+  Users,
   Download,
   X,
+  ArrowLeft,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -49,7 +52,80 @@ export function Messages() {
   const [recipientSearch, setRecipientSearch] = useState("");
   const [allRecipients, setAllRecipients] = useState([]);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showThread, setShowThread] = useState(false);
   const [pageError, setPageError] = useState("");
+
+  // Group management states
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMode, setDeleteMode] = useState("leave"); // "leave" | "delete"
+
+  const handleOpenRename = () => {
+    if (!selectedConversation || !selectedConversation.isGroup) return;
+    setShowGroupMenu(false);
+    setRenameValue(String(selectedConversation.participantName || ""));
+    setShowRenameModal(true);
+  };
+
+  const handleRenameSubmit = async () => {
+    const newName = String(renameValue || "").trim();
+    if (!newName) { setPageError("Group name cannot be empty."); return; }
+    if (!selectedConversation) return;
+    try {
+      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConversation.id);
+      if (error) throw error;
+      const updated = conversations.map((c) => c.id === selectedConversation.id ? { ...c, participantName: newName } : c);
+      setConversations(updated);
+      setShowRenameModal(false);
+      setPageError("");
+    } catch (err) { 
+      console.error("[Messages] Rename error:", err);
+      setPageError(err.message || "Unable to rename group."); 
+    }
+  };
+
+  const handleLeaveConversation = async () => {
+    if (!selectedConversation || !studentId) return;
+    try {
+      const { error } = await db
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", selectedConversation.id)
+        .eq("profile_id", studentId);
+      
+      if (error) throw error;
+      
+      const remaining = conversations.filter((c) => c.id !== selectedConversation.id);
+      setConversations(remaining);
+      setShowDeleteConfirm(false);
+      setShowGroupMenu(false);
+      setSelectedConversationId(remaining.length ? remaining[0].id : null);
+      setPageError("");
+    } catch (err) {
+      console.error("[Messages] Leave error:", err);
+      setPageError("Unable to leave group chat.");
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedConversation) return;
+    try { 
+      const { error } = await db.from("conversations").delete().eq("id", selectedConversation.id);
+      if (error) throw error;
+      
+      const remaining = conversations.filter((c) => c.id !== selectedConversation.id);
+      setConversations(remaining);
+      setShowDeleteConfirm(false);
+      setShowGroupMenu(false);
+      setSelectedConversationId(remaining.length ? remaining[0].id : null);
+      setPageError("");
+    } catch (err) {
+      console.error("[Messages] Delete error:", err);
+      setPageError("Unable to delete conversation.");
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -295,6 +371,7 @@ export function Messages() {
   const handleConversationClick = (conversation) => {
     selectedConvIdRef.current = conversation.id;
     setSelectedConversationId(conversation.id);
+    setShowThread(true);
   };
 
   const handleAttachmentChange = (event) => {
@@ -417,7 +494,7 @@ export function Messages() {
         ) : (
           <div className="flex-1 flex overflow-hidden">
             {/* Conversations List */}
-            <div className="w-full md:w-96 border-r border-gray-200 bg-white flex flex-col">
+            <div className={`${showThread ? "hidden md:flex" : "flex"} w-full md:w-96 border-r border-gray-200 bg-white flex-col`}>
               <div className="p-4 border-b border-gray-200">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -491,19 +568,27 @@ export function Messages() {
             </div>
 
             {/* Message Thread */}
-            <div className="flex-1 flex flex-col bg-white">
+            <div className={`${showThread ? "flex" : "hidden md:flex"} flex-1 flex-col bg-white min-w-0`}>
               {selectedConversation ? (
                 <>
                   <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-emerald-50 to-teal-50">
                     <div className="flex items-center justify-between flex-wrap gap-4">
                       <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowThread(false)}
+                          className="md:hidden p-1.5 hover:bg-emerald-100 rounded-lg transition-colors -ml-1 mr-1"
+                          aria-label="Back to conversations"
+                        >
+                          <ArrowLeft className="w-5 h-5 text-gray-600" />
+                        </button>
                         <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
                           {selectedConversation.participantName.charAt(0)}
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">{selectedConversation.participantName}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRoleColor(selectedConversation.participantRole)}`}>
-                            {selectedConversation.participantRole}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${getRoleColor(selectedConversation.participantRole)}`}>
+                            {selectedConversation.isGroup ? <><Users className="w-3 h-3" /> Group</> : selectedConversation.participantRole}
                           </span>
                         </div>
                       </div>
@@ -518,12 +603,30 @@ export function Messages() {
                             className="w-full pl-9 pr-3 py-1.5 text-sm border border-emerald-200 rounded-lg bg-white/80 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all placeholder:text-emerald-400 text-emerald-900"
                           />
                         </div>
-                        <button className="p-2 hover:bg-emerald-100/50 rounded-lg transition-colors flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShowGroupMenu((c) => !c)}
+                          className="p-2 hover:bg-emerald-100/50 rounded-lg transition-colors flex-shrink-0"
+                          title="Group options"
+                        >
                           <MoreVertical className="w-5 h-5 text-gray-600" />
                         </button>
                       </div>
                     </div>
                   </div>
+
+                  {selectedConversation.isGroup && showGroupMenu && (
+                    <div className="relative z-10">
+                      <div className="absolute right-6 top-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                        <button type="button" onClick={handleOpenRename} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
+                          <Edit2 className="w-4 h-4 text-emerald-600" /> Rename Group
+                        </button>
+                        <button type="button" onClick={() => { setDeleteMode("leave"); setShowGroupMenu(false); setShowDeleteConfirm(true); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
+                          <X className="w-4 h-4 text-yellow-500" /> Leave Chat
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex-1 overflow-y-auto scrollbar-hide p-4 space-y-4 bg-gray-50">
                     {displayedMessages.map((message) => (
@@ -669,6 +772,7 @@ export function Messages() {
                         setSelectedConversationId(newConv.id);
                       }
                       setShowNewMessage(false);
+                      setShowThread(true);
                     }}
                     className="w-full p-4 flex items-center gap-3 hover:bg-emerald-50 transition-colors border-b border-gray-50 text-left"
                   >
@@ -691,8 +795,79 @@ export function Messages() {
           </div>
         )}
       </main>
+
+      <RenameModal
+        isOpen={showRenameModal}
+        onClose={() => setShowRenameModal(false)}
+        value={renameValue}
+        onChange={setRenameValue}
+        onSubmit={handleRenameSubmit}
+      />
+
+      <DeleteConfirmModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        mode={deleteMode}
+        onSubmit={deleteMode === "delete" ? handleDeleteConversation : handleLeaveConversation}
+      />
     </div>
   );
 }
+
+const RenameModal = ({ isOpen, onClose, value, onChange, onSubmit }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-100 bg-emerald-600 text-white">
+          <h3 className="text-lg font-bold">Rename Group</h3>
+        </div>
+        <div className="px-6 py-4 mt-2">
+          <input
+            autoFocus
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Group name..."
+            className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+        <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
+          <button onClick={onClose} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
+          <button onClick={onSubmit} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DeleteConfirmModal = ({ isOpen, onClose, mode, onSubmit }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
+        <div className={`px-6 py-5 border-b border-gray-100 ${mode === 'delete' ? 'bg-red-600' : 'bg-yellow-500'} text-white`}>
+          <h3 className="text-lg font-bold">{mode === "delete" ? "Delete Conversation" : "Leave Conversation"}</h3>
+        </div>
+        <div className="px-6 py-4 mt-2">
+          <p className="text-gray-700 text-sm leading-relaxed">
+            {mode === "delete" 
+              ? "Are you sure you want to delete this conversation for everyone? This action cannot be undone." 
+              : "Are you sure you want to leave this group chat? You will no longer see new messages."}
+          </p>
+        </div>
+        <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
+          <button onClick={onClose} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
+          <button 
+            onClick={onSubmit} 
+            className={`px-4 py-2 ${mode === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-yellow-500 hover:bg-yellow-600'} text-white rounded-xl text-sm font-bold transition-all shadow-sm`}
+          >
+            {mode === "delete" ? "Delete" : "Leave"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default Messages;

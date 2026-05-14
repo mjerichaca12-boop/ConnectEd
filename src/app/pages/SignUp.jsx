@@ -1,29 +1,18 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RefreshCw, Copy, Check } from "lucide-react";
 import { supabase, supabaseAdmin } from "../lib/supabaseClient";
 
-const generateUUID = () => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
-  });
+const generateTempPassword = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
-
-const GoogleLogo = () => (
-  <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-  </svg>
-);
 
 function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [copied, setCopied] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1280);
   const [formData, setFormData] = useState({
     firstName: "",
@@ -31,6 +20,12 @@ function SignUp() {
     email: "",
     password: "",
     confirmPassword: ""
+  });
+  const [teacherForm, setTeacherForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    tempPassword: generateTempPassword()
   });
   const navigate = useNavigate();
 
@@ -45,13 +40,13 @@ function SignUp() {
     setError("");
   };
 
+  // Student signup (mobile)
   const handleManualSignUp = async (e) => {
     e.preventDefault();
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
       setError("Please fill in all fields.");
       return;
     }
-
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -61,21 +56,17 @@ function SignUp() {
     setError("");
 
     try {
+      const admin = supabaseAdmin;
       const db = supabaseAdmin || supabase;
-      if (!db) {
-        throw new Error("Database connection not configured.");
-      }
+      if (!admin || !db) throw new Error("Database connection not configured.");
 
       const normalizedEmail = formData.email.trim().toLowerCase();
-      
-      // Check if email already exists
-      const { data: existing, error: checkError } = await supabase
+
+      const { data: existing } = await supabase
         .from("profiles")
         .select("id")
         .ilike("email", normalizedEmail)
         .maybeSingle();
-
-      if (checkError) throw checkError;
 
       if (existing) {
         setError("This email is already registered.");
@@ -83,27 +74,31 @@ function SignUp() {
         return;
       }
 
-      const payload = {
-        id: generateUUID(),
+      const { data: authData, error: authError } = await admin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: formData.password,
+        email_confirm: true
+      });
+      if (authError) throw authError;
+
+      const { error: insertError } = await db.from("profiles").insert({
+        id: authData.user.id,
         email: normalizedEmail,
         first_name: formData.firstName,
         last_name: formData.lastName,
-        password: formData.password,
         role: "student",
         status: "Pending",
         created_at: new Date().toISOString(),
         subjects: []
-      };
+      });
 
-      const { error: insertError } = await db
-        .from("profiles")
-        .insert(payload);
-
-      if (insertError) throw insertError;
+      if (insertError) {
+        await admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+        throw insertError;
+      }
 
       setSuccess("Registration request sent! Please wait for admin approval.");
       setFormData({ firstName: "", lastName: "", email: "", password: "", confirmPassword: "" });
-      
     } catch (err) {
       console.error("Sign-up Error:", err);
       setError(err.message || "Failed to submit registration. Please try again.");
@@ -112,38 +107,72 @@ function SignUp() {
     }
   };
 
-  const handleGoogleSignUp = async () => {
-    if (!supabase) {
-      setError("Connection error: Supabase not configured.");
+  // Teacher signup (desktop)
+  const handleTeacherSignUp = async (e) => {
+    e.preventDefault();
+    if (!teacherForm.firstName || !teacherForm.lastName || !teacherForm.email) {
+      setError("Please fill in all fields.");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    localStorage.setItem("connected_signup_role", "teacher");
-
     try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/login`,
-          queryParams: {
-            prompt: "select_account"
-          }
-        }
+      const admin = supabaseAdmin;
+      const db = supabaseAdmin || supabase;
+      if (!admin || !db) throw new Error("Admin client not configured.");
+
+      const normalizedEmail = teacherForm.email.trim().toLowerCase();
+
+      const { data: existing } = await supabase
+        .from("profiles")
+        .select("id")
+        .ilike("email", normalizedEmail)
+        .maybeSingle();
+
+      if (existing) {
+        setError("This email is already registered.");
+        setLoading(false);
+        return;
+      }
+
+      const { data: authData, error: authError } = await admin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: teacherForm.tempPassword,
+        email_confirm: true
+      });
+      if (authError) throw authError;
+
+      const { error: insertError } = await db.from("profiles").insert({
+        id: authData.user.id,
+        email: normalizedEmail,
+        first_name: teacherForm.firstName.trim(),
+        last_name: teacherForm.lastName.trim(),
+        role: "teacher",
+        status: "Pending",
+        created_at: new Date().toISOString()
       });
 
-      if (oauthError) {
-        throw oauthError;
+      if (insertError) {
+        await admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+        throw insertError;
       }
-      
-      // The browser will redirect to Google
+
+      setSuccess(teacherForm.tempPassword);
+      setTeacherForm({ firstName: "", lastName: "", email: "", tempPassword: generateTempPassword() });
     } catch (err) {
-      console.error("Google Sign-Up Error:", err);
-      setError("Connection error. Please check your internet and try again.");
+      setError(err.message || "Failed to submit registration. Please try again.");
+    } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyPassword = () => {
+    navigator.clipboard.writeText(success).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
@@ -161,24 +190,15 @@ function SignUp() {
                 <ArrowLeft className="w-4 h-4" />
                 Back to Landing Page
               </button>
-              
+
               <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
                 Welcome to <span className="text-emerald-600">ConnectEd</span>
               </h1>
               <p className="text-lg text-gray-600 leading-relaxed mb-8 max-w-lg">
-                The official portal for students and teachers of Dasmariñas City. 
-                Experience seamless integration of grades, attendance, and communication 
+                The official portal for students and teachers of Dasmariñas City.
+                Experience seamless integration of grades, attendance, and communication
                 in one unified dashboard.
               </p>
-              
-              <div className="flex items-center gap-4 text-sm text-gray-500">
-                <div className="flex -space-x-2">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="w-8 h-8 rounded-full bg-gray-200 border-2 border-white" />
-                  ))}
-                </div>
-                <span>Joined by over 10,000+ users citywide</span>
-              </div>
             </div>
 
             {/* Right Card */}
@@ -186,7 +206,9 @@ function SignUp() {
               <div className="bg-white rounded-3xl shadow-2xl p-10 w-full max-w-md border border-gray-100">
                 <div className="mb-10 text-center">
                   <h2 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h2>
-                  <p className="text-gray-500">Fast and secure access with Google</p>
+                  <p className="text-gray-500 text-sm">
+                    {isMobile ? "Sign up as a Student" : "Sign up as a Teacher"}
+                  </p>
                 </div>
 
                 {error && (
@@ -204,11 +226,12 @@ function SignUp() {
 
                 <div className="space-y-6">
                   {isMobile ? (
+                    /* ── Student form ── */
                     <form onSubmit={handleManualSignUp} className="space-y-4">
                       {success && (
-                        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                        <div className="mb-2 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
                           <p className="text-emerald-700 text-sm font-medium">{success}</p>
-                          <button 
+                          <button
                             type="button"
                             onClick={() => navigate("/login")}
                             className="mt-2 text-emerald-600 font-bold hover:underline text-xs"
@@ -217,7 +240,7 @@ function SignUp() {
                           </button>
                         </div>
                       )}
-                      
+
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">First Name</label>
@@ -288,17 +311,94 @@ function SignUp() {
                         {loading ? "Submitting..." : "Send Request"}
                       </button>
                     </form>
-                  ) : (
-                    <button
-                      onClick={handleGoogleSignUp}
-                      disabled={loading}
-                      className="w-full flex items-center justify-center gap-4 bg-white hover:bg-gray-50 text-gray-700 font-bold px-4 py-4 rounded-2xl border-2 border-emerald-500 transition-all shadow-md active:scale-[0.98] disabled:opacity-70 text-lg group"
-                    >
-                      <div className="group-hover:scale-110 transition-transform">
-                        <GoogleLogo />
+                  ) : success ? (
+                    /* ── Teacher success screen ── */
+                    <div className="space-y-4">
+                      <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
+                        <p className="text-emerald-700 font-semibold mb-1">Registration request sent!</p>
+                        <p className="text-emerald-600 text-sm mb-4">Wait for admin approval. Save your temporary password below.</p>
+                        <div className="flex items-center justify-between gap-2 bg-white border border-emerald-300 rounded-xl px-4 py-3">
+                          <span className="font-mono text-lg font-bold text-gray-800 tracking-widest">{success}</span>
+                          <button
+                            type="button"
+                            onClick={handleCopyPassword}
+                            className="text-emerald-600 hover:text-emerald-800 transition-colors"
+                            title="Copy password"
+                          >
+                            {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">You will use this password to log in once approved.</p>
                       </div>
-                      {loading ? "Connecting..." : "Continue with Google"}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate("/login")}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl transition-all text-sm"
+                      >
+                        Go to Login
+                      </button>
+                    </div>
+                  ) : (
+                    /* ── Teacher form ── */
+                    <form onSubmit={handleTeacherSignUp} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">First Name</label>
+                          <input
+                            type="text"
+                            value={teacherForm.firstName}
+                            onChange={(e) => { setTeacherForm({ ...teacherForm, firstName: e.target.value }); setError(""); }}
+                            placeholder="Juan"
+                            className="w-full px-4 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Last Name</label>
+                          <input
+                            type="text"
+                            value={teacherForm.lastName}
+                            onChange={(e) => { setTeacherForm({ ...teacherForm, lastName: e.target.value }); setError(""); }}
+                            placeholder="Dela Cruz"
+                            className="w-full px-4 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Email Address</label>
+                        <input
+                          type="email"
+                          value={teacherForm.email}
+                          onChange={(e) => { setTeacherForm({ ...teacherForm, email: e.target.value }); setError(""); }}
+                          placeholder="teacher@example.com"
+                          className="w-full px-4 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Temporary Password</label>
+                        <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3.5">
+                          <span className="flex-1 font-mono text-sm font-semibold text-gray-700 tracking-widest">{teacherForm.tempPassword}</span>
+                          <button
+                            type="button"
+                            onClick={() => setTeacherForm({ ...teacherForm, tempPassword: generateTempPassword() })}
+                            className="text-gray-400 hover:text-emerald-600 transition-colors"
+                            title="Regenerate password"
+                          >
+                            <RefreshCw className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1 ml-1">Auto-generated. Save this — you'll use it to log in.</p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-100 transition-all active:scale-[0.98] disabled:opacity-70 text-lg"
+                      >
+                        {loading ? "Submitting..." : "Send Request"}
+                      </button>
+                    </form>
                   )}
 
                   <div className="relative py-4 flex items-center justify-center">

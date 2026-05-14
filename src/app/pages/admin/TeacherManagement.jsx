@@ -704,13 +704,25 @@ function TeacherManagement() {
     try {
       const selectedSubjectIds = normalizeSubjects(teacherFormData.subjects);
       const fullName = composeTeacherName(teacherFormData);
+      const tempPassword = teacherFormData.password || generateTempPassword();
+      const teacherEmail = teacherFormData.email.trim().toLowerCase();
+
+      const { data: authData, error: authError } = await db.auth.admin.createUser({
+        email: teacherEmail,
+        password: tempPassword,
+        email_confirm: true
+      });
+      if (authError) throw authError;
+
+      const resolvedId = authData?.user?.id || generateUUID();
+
       const payload = {
-        id: generateUUID(),
+        id: resolvedId,
         role: "teacher",
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
         last_name: teacherFormData.last_name.trim() || null,
-        email: teacherFormData.email.trim().toLowerCase(),
+        email: teacherEmail,
         phone: normalizePhone(teacherFormData.phone),
         status: normalizeTeacherStatus(teacherFormData.status)
       };
@@ -718,6 +730,7 @@ function TeacherManagement() {
       const { data, error } = await db.from("profiles").insert(payload).select(teacherSelectColumns).single();
 
       if (error) {
+        await db.auth.admin.deleteUser(resolvedId).catch(() => {});
         throw error;
       }
 

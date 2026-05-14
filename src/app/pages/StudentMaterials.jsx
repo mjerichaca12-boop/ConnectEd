@@ -16,6 +16,7 @@ import {
   Search,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
+import { QuizTakingModal, parseQuizText } from "@/app/components/QuizTakingModal";
 
 const STORAGE_BUCKET = "class-materials";
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
@@ -117,6 +118,8 @@ const normalizeAssignmentRecord = (row) => {
     classCode: String(row?.subject || row?.class_code || row?.course_id || "").trim(),
     className: String(row?.class_name || "").trim(),
     teacherName: String(row?.author || row?.teacher_name || "").trim(),
+    teacherId: row?.teacher_id || row?.created_by || null,
+    subjectId: row?.subject_id || row?.course_id || null,
     uploadDate: row?.created_at || row?.date_posted || new Date().toISOString(),
     status: "pending"
   };
@@ -146,6 +149,8 @@ function StudentMaterials() {
   const [selectedFileName, setSelectedFileName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterClass, setFilterClass] = useState("all");
+  const [showQuizTaking, setShowQuizTaking] = useState(false);
+  const [activeQuiz, setActiveQuiz] = useState(null);
   const fileInputRef = useRef(null);
 
   const [materials, setMaterials] = useState([]);
@@ -384,6 +389,65 @@ function StudentMaterials() {
     );
     setShowSubmitModal(false);
     setSelectedActivity(null);
+  };
+
+  const handleQuizComplete = async (score) => {
+    if (!activeQuiz) return;
+
+    try {
+      const userData = localStorage.getItem("currentUser");
+      const user = JSON.parse(userData);
+      const studentId = user.id;
+
+      // 1. Record submission
+      const { data: submission, error: subError } = await supabase
+        .from("teacher_assessment_submissions")
+        .insert([{
+          assessment_id: activeQuiz.id,
+          student_id: studentId,
+          status: "graded",
+          content: "Auto-graded AI Quiz"
+        }])
+        .select()
+        .single();
+
+      if (subError) throw subError;
+
+      // 2. Record grade
+      const { error: gradeError } = await supabase
+        .from("teacher_assessment_grades")
+        .insert([{
+          submission_id: submission.id,
+          assessment_id: activeQuiz.id,
+          student_id: studentId,
+          grade_value: score,
+          max_points: activeQuiz.maxPoints,
+          status: "Graded",
+          designation: "Quiz",
+          assessment_title: activeQuiz.title,
+          subject_id: activeQuiz.subjectId || null
+        }]);
+
+      if (gradeError) throw gradeError;
+
+      // 3. Update local state
+      const updated = [...submittedIds, activeQuiz.id];
+      setSubmittedIds(updated);
+      localStorage.setItem("student_submissions", JSON.stringify(updated));
+
+      setActivities((prev) =>
+        prev.map((a) =>
+          a.id === activeQuiz.id ? { ...a, status: "submitted", submittedDate: new Date().toISOString() } : a
+        )
+      );
+
+      setShowQuizTaking(false);
+      setActiveQuiz(null);
+      alert(`Quiz submitted successfully! Your score: ${score}/${activeQuiz.maxPoints}`);
+    } catch (err) {
+      console.error("Failed to submit quiz results:", err);
+      alert("Failed to save your results. Please try again.");
+    }
   };
 
   const getFileIcon = (fileType = "PDF") => {
@@ -695,27 +759,47 @@ function StudentMaterials() {
                               </span>
                             )}
                             {isSubmitted && submissionFeedbackMap[activity.id] && (
-                              <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-sm text-emerald-900">
-                                <p className="text-xs font-semibold">Teacher Feedback</p>
-                                {submissionFeedbackMap[activity.id].comments && (
-                                  <p className="mt-1"><strong>Comments:</strong> {submissionFeedbackMap[activity.id].comments}</p>
-                                )}
-                              </div>
+                            <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-sm text-emerald-900">
+                              <p className="text-xs font-semibold">Teacher Feedback</p>
+                              {submissionFeedbackMap[activity.id].comments && (
+                                <p className="mt-1"><strong>Comments:</strong> {submissionFeedbackMap[activity.id].comments}</p>
+                              )}
+                            </div>
                             )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
+                            {!isSubmitted && activity.type === "activity" && parseQuizText(activity.description) && (
+                            <button
+                              onClick={() => { setActiveQuiz(activity); setShowQuizTaking(true); }}
+                              className="mt-3 flex items-center justify-center gap-2 w-full px-4 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-all font-bold shadow-sm"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              Start Interactive Quiz
+                            </button>
+                            )}
+                            </div>
+                            </div>
+                            );
+                            })}
+                            </div>
+                            </>
+                            )}
+                            </div>
+                            )}
+                            </div>
+                            </main>
 
-      {/* Submit Activity Modal */}
-      {showSubmitModal && selectedActivity && (
+                            {/* Quiz Taking Modal */}
+                            {showQuizTaking && activeQuiz && (
+                            <QuizTakingModal
+                            isOpen={showQuizTaking}
+                            onClose={() => { setShowQuizTaking(false); setActiveQuiz(null); }}
+                            quizTitle={activeQuiz.title}
+                            quizContent={activeQuiz.description}
+                            maxPoints={activeQuiz.maxPoints}
+                            onComplete={handleQuizComplete}
+                            />
+                            )}
+
+                            {/* Submit Activity Modal */}      {showSubmitModal && selectedActivity && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">

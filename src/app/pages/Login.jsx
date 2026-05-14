@@ -228,7 +228,17 @@ function Login() {
     }
 
     try {
-      // Check manual credentials for Students
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: formData.password
+      });
+
+      if (authError) {
+        setError("Invalid email or password. Please try again.");
+        setLoading(false);
+        return;
+      }
+
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -236,19 +246,14 @@ function Login() {
         .maybeSingle();
 
       if (profileError || !profile) {
+        await supabase.auth.signOut();
         setError("Account not found. Please sign up first.");
         setLoading(false);
         return;
       }
 
-      // Check for manual password if it exists (for manual student accounts)
-      if (profile.password && profile.password !== formData.password) {
-        setError("Invalid password.");
-        setLoading(false);
-        return;
-      }
-
       if (profile.status === "Pending") {
+        await supabase.auth.signOut();
         setError("Your account is still pending admin approval.");
         setLoading(false);
         return;
@@ -257,12 +262,14 @@ function Login() {
       const role = String(profile.role || "student").toLowerCase();
       const isMobile = window.innerWidth <= 1280;
 
-      if (role === "teacher" && isMobile && window.innerWidth < 768) {
+      if (role === "teacher" && isMobile) {
+        await supabase.auth.signOut();
         setError("Teachers can only sign in on Desktop.");
         setLoading(false);
         return;
       }
       if (role === "student" && !isMobile) {
+        await supabase.auth.signOut();
         setError("Students can only sign in on Mobile.");
         setLoading(false);
         return;

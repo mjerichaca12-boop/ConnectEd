@@ -19,6 +19,8 @@ import {
   getPriorityStyles,
   formatAnnouncementDate
 } from "@/app/lib/teacherHelpers";
+import { streamMessage } from "@/app/lib/groqClient";
+import { parseDocument } from "@/app/lib/documentParser";
 import {
   ArrowLeft,
   Users,
@@ -37,6 +39,7 @@ import {
   Plus,
   X,
   File,
+  FilePlus,
   Trash2,
   Calendar,
   AlertCircle,
@@ -46,7 +49,6 @@ import {
   RefreshCw,
   ClipboardList,
 } from "lucide-react";
-import { streamMessage } from "@/app/lib/groqClient";
 
 const STORAGE_BUCKET = "class-materials";
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
@@ -144,6 +146,8 @@ const normalizeAnnouncementRecordLocal = (row) => {
   };
 };
 
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+
 const getAnnouncementAttachmentKind = (announcement) => {
   const fileType = String(announcement?.fileType || announcement?.file_type || "").trim().toLowerCase();
   const fileName = String(announcement?.fileName || announcement?.file_name || "").trim().toLowerCase();
@@ -182,6 +186,9 @@ export function ClassDetail() {
   const [quizInput, setQuizInput] = useState("");
   const [isQuizStreaming, setIsQuizStreaming] = useState(false);
   const [quizGenerated, setQuizGenerated] = useState("");
+  const [quizMaterialFile, setQuizMaterialFile] = useState(null);
+  const [quizMaterialContent, setQuizMaterialContent] = useState("");
+  const quizMaterialInputRef = useRef(null);
 
   // Class data from localStorage
   const [classData, setClassData] = useState(null);
@@ -244,6 +251,10 @@ export function ClassDetail() {
   const [isEditingAssignment, setIsEditingAssignment] = useState(false);
   const [editingAssignmentId, setEditingAssignmentId] = useState(null);
   const [asgOriginalFile, setAsgOriginalFile] = useState(null);
+
+  // Pick materials for assignment
+  const [asgPickedMaterialIds, setAsgPickedMaterialIds] = useState([]);
+  const [asgMaterialAttachments, setAsgMaterialAttachments] = useState({ fileNames: [], filePaths: [], fileUrls: [] });
 
   // Assignment delete confirmation
   const [showDeleteAssignmentModal, setShowDeleteAssignmentModal] = useState(false);
@@ -1637,6 +1648,8 @@ export function ClassDetail() {
     setAsgForm({ title: "", description: "", type: typeFromTab, dueDate: "", maxPoints: "100" });
     setAsgFiles([]);
     setAsgFileNames([]);
+    setAsgPickedMaterialIds([]);
+    setAsgMaterialAttachments({ fileNames: [], filePaths: [], fileUrls: [] });
     if (!preserveMessages) {
       setAsgError("");
       setAsgSuccess("");
@@ -1820,9 +1833,12 @@ export function ClassDetail() {
       console.log("[DEBUG] Available columns:", columns);
       
       const uploadedFiles = asgFiles.length > 0 ? await uploadAssignmentFiles(asgFiles, effectiveTeacherId) : [];
-      const fileNamesValue = JSON.stringify(uploadedFiles.map((item) => item.fileName));
-      const filePathsValue = JSON.stringify(uploadedFiles.map((item) => item.filePath));
-      const fileUrlsValue = JSON.stringify(uploadedFiles.map((item) => item.fileUrl));
+      const nextFileNames = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileName) : asgMaterialAttachments.fileNames;
+      const nextFilePaths = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.filePath) : asgMaterialAttachments.filePaths;
+      const nextFileUrls = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileUrl) : asgMaterialAttachments.fileUrls;
+      const fileNamesValue = JSON.stringify(nextFileNames);
+      const filePathsValue = JSON.stringify(nextFilePaths);
+      const fileUrlsValue = JSON.stringify(nextFileUrls);
 
       const payload = {};
 
@@ -1993,10 +2009,11 @@ export function ClassDetail() {
     try {
       const columns = await getAssignmentColumns(tableName);
       const replacingFiles = asgFiles.length > 0;
+      const replacingWithMaterials = !replacingFiles && asgPickedMaterialIds.length > 0;
       const uploadedFiles = replacingFiles ? await uploadAssignmentFiles(asgFiles) : [];
-      const nextFileNames = replacingFiles ? uploadedFiles.map((item) => item.fileName) : existingFileNames;
-      const nextFilePaths = replacingFiles ? uploadedFiles.map((item) => item.filePath) : existingFilePaths;
-      const nextFileUrls = replacingFiles ? uploadedFiles.map((item) => item.fileUrl) : existingFileUrls;
+      const nextFileNames = replacingFiles ? uploadedFiles.map((item) => item.fileName) : replacingWithMaterials ? asgMaterialAttachments.fileNames : existingFileNames;
+      const nextFilePaths = replacingFiles ? uploadedFiles.map((item) => item.filePath) : replacingWithMaterials ? asgMaterialAttachments.filePaths : existingFilePaths;
+      const nextFileUrls = replacingFiles ? uploadedFiles.map((item) => item.fileUrl) : replacingWithMaterials ? asgMaterialAttachments.fileUrls : existingFileUrls;
       const fileNamesValue = JSON.stringify(nextFileNames);
       const filePathsValue = JSON.stringify(nextFilePaths);
       const fileUrlsValue = JSON.stringify(nextFileUrls);
@@ -2211,19 +2228,21 @@ export function ClassDetail() {
       const titleColumn = resolveColumnName(columns, ["title", "subject", "name"]);
       const contentColumn = resolveColumnName(columns, ["content", "description", "message", "body"]);
       const priorityColumn = resolveColumnName(columns, ["priority", "announcement_priority", "importance", "priority_level"]);
-      const audienceColumn = resolveColumnName(columns, ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience", "audience_type"]);
+      const audienceColumn = resolveColumnName(columns, ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"]);
+      const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType"]);
 
       const payload = {};
 
       if (titleColumn) payload[titleColumn] = title;
       if (contentColumn) payload[contentColumn] = content;
       if (priorityColumn) payload[priorityColumn] = priority;
-      if (audienceColumn) payload[audienceColumn] = "student";
+      if (audienceColumn) payload[audienceColumn] = "Students";
+      if (audienceTypeColumn) payload[audienceTypeColumn] = "student";
 
       if (columns.includes("author")) payload.author = teacherName;
       if (columns.includes("created_by_name")) payload.created_by_name = teacherName;
-      if (columns.includes("created_by")) payload.created_by = teacherProfileId;
-      if (columns.includes("teacher_id")) payload.teacher_id = teacherProfileId;
+      if (columns.includes("created_by") && isUuid(teacherProfileId)) payload.created_by = teacherProfileId;
+      if (columns.includes("teacher_id") && isUuid(teacherProfileId)) payload.teacher_id = teacherProfileId;
       if (columns.includes("subject")) payload.subject = String(classData?.code || "").trim() || null;
       if (columns.includes("class_code")) payload.class_code = String(classData?.code || "").trim() || null;
       if (columns.includes("class_name")) payload.class_name = String(classData?.name || "").trim() || null;
@@ -2438,13 +2457,28 @@ export function ClassDetail() {
     { id: "quiz", label: "AI Quiz Generator", icon: <Sparkles className="w-4 h-4" /> },
   ];
 
+  const handleQuizFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setQuizMaterialFile(file);
+    try {
+      const content = await parseDocument(file);
+      setQuizMaterialContent(content);
+    } catch (err) {
+      console.error("Failed to parse quiz material:", err);
+      alert("Failed to parse the document. Please try a different file.");
+    }
+  };
+
   const handleGenerateQuiz = async () => {
     const topic = String(quizTopic || "").trim();
     if (!topic && !quizInput.trim()) return;
     if (isQuizStreaming) return;
 
+    const materialInfo = quizMaterialContent ? `\n\nREFERENCE MATERIAL:\n${quizMaterialContent}` : "";
     const userPrompt = quizInput.trim() ||
-      `Generate a ${quizType} quiz about "${topic}" for ${classData?.name || "this class"}. Include ${quizItemCount} items. Difficulty: ${quizDifficulty}. Format each item clearly with numbered questions and lettered options (A, B, C, D) if multiple choice. Include the answer key at the end.`;
+      `Generate a ${quizType} quiz about "${topic}" for ${classData?.name || "this class"}. Include ${quizItemCount} items. Difficulty: ${quizDifficulty}. Format each item clearly with numbered questions and lettered options (A, B, C, D) if multiple choice. Include the answer key at the end.${materialInfo}`;
 
     const userMsg = { role: "user", content: userPrompt, timestamp: Date.now() };
     const updatedMessages = [...quizMessages, userMsg];
@@ -2480,6 +2514,13 @@ export function ClassDetail() {
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
       <main className="flex-1 overflow-y-auto scrollbar-hide lg:pl-64">
+        <input
+          type="file"
+          ref={quizMaterialInputRef}
+          onChange={handleQuizFileChange}
+          className="hidden"
+          accept=".pdf,.docx,.doc,.txt"
+        />
         {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -3181,6 +3222,38 @@ export function ClassDetail() {
                         </div>
 
                         <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Reference Material (Optional)</label>
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => quizMaterialInputRef.current?.click()}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-all bg-white"
+                            >
+                              <FilePlus className="w-4 h-4" />
+                              {quizMaterialFile ? "Change File" : "Select Reference File"}
+                            </button>
+                            {quizMaterialFile && (
+                              <div className="flex items-center justify-between px-3 py-2 bg-violet-50 border border-violet-100 rounded-lg">
+                                <span className="text-xs text-violet-700 font-medium truncate max-w-[150px]">
+                                  {quizMaterialFile.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuizMaterialFile(null);
+                                    setQuizMaterialContent("");
+                                    if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
+                                  }}
+                                  className="p-1 text-violet-400 hover:text-violet-600"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Quiz Type</label>
                           <select
                             value={quizType}
@@ -3535,6 +3608,37 @@ export function ClassDetail() {
                       />
                     </div>
                     <div>
+                      <label className="block text-xs text-purple-700 mb-1">Reference Material (Optional)</label>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => quizMaterialInputRef.current?.click()}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-purple-200 rounded-lg text-sm text-purple-600 hover:bg-purple-50 transition-all bg-white"
+                        >
+                          <FilePlus className="w-4 h-4" />
+                          {quizMaterialFile ? "Change File" : "Select Reference File"}
+                        </button>
+                        {quizMaterialFile && (
+                          <div className="flex items-center justify-between px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                            <span className="text-xs text-purple-700 font-medium truncate max-w-[150px]">
+                              {quizMaterialFile.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuizMaterialFile(null);
+                                setQuizMaterialContent("");
+                                if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
+                              }}
+                              className="p-1 text-purple-400 hover:text-purple-600"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
                       <label className="block text-xs text-purple-700 mb-1">Number of Questions</label>
                       <input
                         type="number"
@@ -3590,7 +3694,8 @@ export function ClassDetail() {
                       setIsQuizStreaming(true);
                       setQuizGenerated(""); // Reset before generating
 
-                      const prompt = `Generate a ${quizType} quiz about ${quizTopic} with ${quizItemCount} questions at ${quizDifficulty} difficulty level. Format as a numbered list with clear questions and answers.`;
+                      const materialInfo = quizMaterialContent ? `\n\nREFERENCE MATERIAL:\n${quizMaterialContent}` : "";
+                      const prompt = `Generate a ${quizType} quiz about ${quizTopic} with ${quizItemCount} questions at ${quizDifficulty} difficulty level. Format as a numbered list with clear questions and answers.${materialInfo}`;
                       const userMessage = { role: "user", content: prompt, timestamp: Date.now() };
                       const currentMessages = [...quizMessages, userMessage];
 
@@ -3705,13 +3810,14 @@ export function ClassDetail() {
                         </div>
                       </div>
                     )}
-                    <label className="block border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-blue-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-blue-500">
+                    <label className={`block border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-blue-500 ${asgPickedMaterialIds.length > 0 ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 hover:border-blue-500"}`}>
                       <input
                         ref={asgFileRef}
                         type="file"
                         multiple
                         accept="*/*"
                         className="sr-only"
+                        disabled={asgPickedMaterialIds.length > 0}
                         onChange={(e) => {
                           const selectedFiles = Array.from(e.target.files || []);
                           setAsgFiles(selectedFiles);
@@ -3723,7 +3829,7 @@ export function ClassDetail() {
                       <p className="text-sm text-gray-500">
                         {asgFileNames.length > 0
                           ? `${asgFileNames.length} file${asgFileNames.length === 1 ? "" : "s"} selected`
-                          : "Click to attach files"}
+                          : asgPickedMaterialIds.length > 0 ? "Clear material selection to upload a new file" : "Click to attach files"}
                       </p>
                       {asgFileNames.length > 0 && (
                         <p className="text-xs text-gray-400 mt-1 truncate">{asgFileNames.join(", ")}</p>
@@ -3736,6 +3842,87 @@ export function ClassDetail() {
                   </div>
                 )}
               </div>
+
+              {/* Pick from Class Materials */}
+              {asgSupportsFiles && materials.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <BookOpen className="w-4 h-4 text-green-600" />
+                    <label className="text-sm font-medium text-gray-700">Or Pick from Class Materials</label>
+                    {asgPickedMaterialIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAsgPickedMaterialIds([]);
+                          setAsgMaterialAttachments({ fileNames: [], filePaths: [], fileUrls: [] });
+                        }}
+                        className="ml-auto text-xs text-red-500 hover:text-red-700"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-200 rounded-xl p-2 bg-gray-50">
+                    {materials.map((mat) => {
+                      const isPicked = asgPickedMaterialIds.includes(mat.id);
+                      return (
+                        <button
+                          key={mat.id}
+                          type="button"
+                          onClick={() => {
+                            let newIds;
+                            if (isPicked) {
+                              newIds = asgPickedMaterialIds.filter((mid) => mid !== mat.id);
+                            } else {
+                              newIds = [...asgPickedMaterialIds, mat.id];
+                              // Clear new file uploads when selecting a material
+                              setAsgFiles([]);
+                              setAsgFileNames([]);
+                              if (asgFileRef.current) asgFileRef.current.value = "";
+                            }
+                            setAsgPickedMaterialIds(newIds);
+                            const pickedMats = materials.filter((m) => newIds.includes(m.id));
+                            setAsgMaterialAttachments({
+                              fileNames: pickedMats.flatMap((m) => m.fileNames?.length ? m.fileNames : m.fileName ? [m.fileName] : []),
+                              filePaths: pickedMats.flatMap((m) => m.filePaths?.length ? m.filePaths : m.filePath ? [m.filePath] : []),
+                              fileUrls: pickedMats.flatMap((m) => m.fileUrls?.length ? m.fileUrls : m.fileUrl ? [m.fileUrl] : []),
+                            });
+                          }}
+                          className={`w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all ${
+                            isPicked
+                              ? "border-green-400 bg-green-50"
+                              : "border-gray-100 bg-white hover:border-green-200 hover:bg-green-50/40"
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                            isPicked ? "border-green-500 bg-green-500" : "border-gray-300"
+                          }`}>
+                            {isPicked && <CheckCircle className="w-3 h-3 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{mat.title}</p>
+                            {mat.description && (
+                              <p className="text-xs text-gray-500 truncate">{mat.description}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-xs text-gray-400">{mat.fileType}</span>
+                              {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
+                                <span className="text-xs text-green-600">{mat.attachments.length} file{mat.attachments.length === 1 ? "" : "s"}</span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {asgPickedMaterialIds.length > 0 && (
+                    <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />
+                      {asgPickedMaterialIds.length} material{asgPickedMaterialIds.length === 1 ? "" : "s"} selected as attachment
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             <div className="border-t border-gray-100 px-6 py-4 flex gap-3 sticky bottom-0 bg-white">
               <button

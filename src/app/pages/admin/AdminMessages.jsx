@@ -9,6 +9,7 @@ import {
   Search,
   Send,
   Plus,
+  Edit2,
   X,
   MessageSquare,
   Users,
@@ -421,6 +422,77 @@ export function AdminMessages() {
       saveConversations(allConversations);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
+    }
+  };
+
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMode, setDeleteMode] = useState("leave"); // "leave" | "delete"
+
+  const handleOpenRename = () => {
+    if (!selectedConv || !selectedConv.isGroup) return;
+    setShowGroupMenu(false);
+    setRenameValue(String(selectedConv.participantName || ""));
+    setShowRenameModal(true);
+  };
+
+  const handleRenameSubmit = async () => {
+    const newName = String(renameValue || "").trim();
+    if (!newName) { setPageError("Group name cannot be empty."); return; }
+    if (!selectedConv) return;
+    try {
+      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
+      if (error) throw error;
+      const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
+      setConversations(updated);
+      setShowRenameModal(false);
+      setPageError("");
+    } catch (err) { 
+      console.error("[AdminMessages] Rename error:", err);
+      setPageError(err.message || "Unable to rename group."); 
+    }
+  };
+
+  const handleLeaveConversation = async () => {
+    if (!selectedConv || !adminId) return;
+    try {
+      const { error } = await db
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", selectedConv.id)
+        .eq("profile_id", adminId);
+      
+      if (error) throw error;
+      
+      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+      setConversations(remaining);
+      setShowDeleteConfirm(false);
+      setShowGroupMenu(false);
+      setSelectedConvId(remaining.length ? remaining[0].id : null);
+      setPageError("");
+    } catch (err) {
+      console.error("[AdminMessages] Leave error:", err);
+      setPageError("Unable to leave group chat.");
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedConv) return;
+    try { 
+      const { error } = await db.from("conversations").delete().eq("id", selectedConv.id);
+      if (error) throw error;
+      
+      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+      setConversations(remaining);
+      setShowDeleteConfirm(false);
+      setShowGroupMenu(false);
+      setSelectedConvId(remaining.length ? remaining[0].id : null);
+      setPageError("");
+    } catch (err) {
+      console.error("[AdminMessages] Delete error:", err);
+      setPageError("Unable to delete conversation.");
     }
   };
 
@@ -872,17 +944,47 @@ export function AdminMessages() {
                         selectedConv.participantName.charAt(0).toUpperCase()
                       )}
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <p className="font-semibold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1">
-                        {selectedConv.isVideoMeet ? (
+                        {selectedConv.isGroup ? (
+                          <><Users className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Group Conversation</span></>
+                        ) : selectedConv.isVideoMeet ? (
                           <><Video className="w-3 h-3 text-purple-400" /> <span className="text-purple-400">Video Meet Chat</span></>
                         ) : (
                           <><UserCog className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">{selectedConv.participantRole || "Teacher"}</span></>
                         )}
                       </p>
                     </div>
+                    <div className="flex items-center gap-2">
+                      {selectedConv.isGroup && (
+                        <button
+                          type="button"
+                          onClick={() => setShowGroupMenu((c) => !c)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                          title="Group options"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {selectedConv.isGroup && showGroupMenu && (
+                    <div className="relative z-10">
+                      <div className="absolute right-6 top-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                        <button type="button" onClick={handleOpenRename} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
+                          <Edit2 className="w-4 h-4 text-blue-600" /> Rename Group
+                        </button>
+                        <button type="button" onClick={() => { setDeleteMode("leave"); setShowGroupMenu(false); setShowDeleteConfirm(true); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
+                          <X className="w-4 h-4 text-yellow-500" /> Leave Chat
+                        </button>
+                        <button type="button" onClick={() => { setDeleteMode("delete"); setShowGroupMenu(false); setShowDeleteConfirm(true); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50">
+                          <X className="w-4 h-4 text-red-600" /> Delete Conversation
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Messages */}
                   <div className="flex-1 overflow-y-auto scrollbar-hide p-6 space-y-3">
@@ -1122,6 +1224,57 @@ export function AdminMessages() {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ══ RENAME MODAL ══ */}
+      {showRenameModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 bg-blue-600 text-white">
+              <h3 className="text-lg font-bold">Rename Group</h3>
+            </div>
+            <div className="px-6 py-4 mt-2">
+              <input
+                autoFocus
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="Group name..."
+                className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
+              <button onClick={() => setShowRenameModal(false)} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
+              <button onClick={handleRenameSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-gray-900 rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ DELETE/LEAVE CONFIRM ══ */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
+            <div className={`px-6 py-5 border-b border-gray-100 ${deleteMode === 'delete' ? 'bg-red-600' : 'bg-yellow-500'} text-gray-900`}>
+              <h3 className="text-lg font-bold">{deleteMode === "delete" ? "Delete Conversation" : "Leave Conversation"}</h3>
+            </div>
+            <div className="px-6 py-4 mt-2">
+              <p className="text-gray-700 text-sm leading-relaxed">
+                {deleteMode === "delete" 
+                  ? "Are you sure you want to delete this conversation for everyone? This action cannot be undone." 
+                  : "Are you sure you want to leave this group chat? You will no longer see new messages."}
+              </p>
+            </div>
+            <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
+              <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
+              <button 
+                onClick={deleteMode === "delete" ? handleDeleteConversation : handleLeaveConversation} 
+                className={`px-4 py-2 ${deleteMode === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-yellow-500 hover:bg-yellow-600'} text-gray-900 rounded-xl text-sm font-bold transition-all shadow-sm`}
+              >
+                {deleteMode === "delete" ? "Delete" : "Leave"}
+              </button>
             </div>
           </div>
         </div>

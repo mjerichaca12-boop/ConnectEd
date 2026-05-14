@@ -340,11 +340,12 @@ export const matchesTeacherAudience = (audience) => {
  */
 export const sortAnnouncements = (items) =>
   [...items].sort((left, right) => {
+    const leftTime = getAnnouncementSortTimestamp(left);
+    const rightTime = getAnnouncementSortTimestamp(right);
+    if (rightTime !== leftTime) return rightTime - leftTime;
+
     const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
     if (priorityDiff !== 0) return priorityDiff;
-
-    const dateDiff = getAnnouncementSortTimestamp(right) - getAnnouncementSortTimestamp(left);
-    if (dateDiff !== 0) return dateDiff;
 
     return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
   });
@@ -451,10 +452,9 @@ export const getPriorityColor = (priority) => {
  * Create default grade record with zero values
  */
 export const createDefaultGradeRecord = () => ({
-  quarter1Grade: 0,
-  quarter2Grade: 0,
-  quarter3Grade: 0,
-  quarter4Grade: 0,
+  term1Grade: 0,
+  term2Grade: 0,
+  term3Grade: 0,
   quizAverage: 0,
   activityGrade: 0,
   assignmentGrade: 0,
@@ -482,17 +482,21 @@ export const getGradeRemarks = (overallGrade) => {
 
 /**
  * Calculate overall grade from individual components
- * Weights: 40% quarterly grades (10% each) + 20% quiz + 20% project + 20% activity
+ * New 3-Term Weights:
+ * - Terms (1-3): 60% (20% each)
+ * - Quizzes: 15%
+ * - Activities: 15%
+ * - Assignments: 10%
  */
 export const calculateOverallGrade = (record) => {
-  const quarterlyAverage = Math.round(
-    (record.quarter1Grade + record.quarter2Grade + record.quarter3Grade + record.quarter4Grade) / 4
-  );
-  const overallGrade = Math.round(
-    (quarterlyAverage * 0.4 +
-      (record.quizAverage ?? 0) * 0.2 +
-      (record.projectGrade ?? 0) * 0.2 +
-      (record.activityGrade ?? 0) * 0.2)
-  );
+  const termTotal = (record.term1Grade || 0) * 0.20 + 
+                   (record.term2Grade || 0) * 0.20 + 
+                   (record.term3Grade || 0) * 0.20;
+                   
+  const componentTotal = (record.quizAverage || 0) * 0.15 +
+                        (record.activityGrade || 0) * 0.15 +
+                        (record.assignmentGrade || 0) * 0.10;
+                        
+  const overallGrade = Math.round(termTotal + componentTotal);
   return overallGrade;
 };

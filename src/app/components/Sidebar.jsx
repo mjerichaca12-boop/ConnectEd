@@ -40,7 +40,7 @@ function Sidebar({ studentName, onLogout }) {
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsMobileOpen(!isMobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-3 bg-white text-gray-900 rounded-xl shadow-lg border border-gray-200"
+        className="lg:hidden fixed top-4 left-4 z-50 p-3 bg-white text-green-900 rounded-xl shadow-lg border border-gray-200"
         aria-label="Toggle menu"
       >
         {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -67,7 +67,7 @@ function Sidebar({ studentName, onLogout }) {
         <div className="px-5 py-5 border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center gap-3 mb-5">
             <div>
-              <p className="text-gray-900 font-extrabold text-base tracking-tight leading-none">
+              <p className="text-green-900 font-extrabold text-base tracking-tight leading-none">
                 Connect<span className="text-green-600">Ed</span>
               </p>
               <p className="text-gray-500 text-[11px] mt-0.5">Student Mobile/Web App</p>
@@ -76,11 +76,11 @@ function Sidebar({ studentName, onLogout }) {
 
           {/* Student Info Card */}
           <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-gray-900 font-bold text-sm flex-shrink-0">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-green-900 font-bold text-sm flex-shrink-0">
               {studentName?.charAt(0)?.toUpperCase() || "S"}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900 truncate text-sm">{studentName}</p>
+              <p className="font-semibold text-green-900 truncate text-sm">{studentName}</p>
               <p className="text-xs text-blue-400 font-medium">Student</p>
             </div>
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" />
@@ -102,11 +102,11 @@ function Sidebar({ studentName, onLogout }) {
                   to={item.path}
                   onClick={() => setIsMobileOpen(false)}
                   className={`group flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 border cursor-pointer
-                    ${active ? ac : "text-gray-600 hover:bg-gray-50 border-transparent hover:text-gray-900"}`}
+                    ${active ? ac : "text-gray-600 hover:bg-gray-50 border-transparent hover:text-green-900"}`}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`p-1.5 rounded-lg transition-colors ${active ? "bg-gray-100" : "bg-gray-50 group-hover:bg-gray-100"}`}>
-                      <Icon className={`w-4 h-4 ${active ? ai : "text-gray-500 group-hover:text-gray-900"}`} />
+                      <Icon className={`w-4 h-4 ${active ? ai : "text-gray-500 group-hover:text-green-900"}`} />
                     </div>
                     <span className="font-medium text-sm">{item.label}</span>
                   </div>

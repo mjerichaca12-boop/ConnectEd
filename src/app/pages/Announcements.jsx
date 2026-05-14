@@ -306,16 +306,18 @@ function Announcements() {
       tableNames.map(async (tableName) => {
         const { data, error } = await supabase
           .from(tableName)
-          .select("id, title, content, audience_type, created_at, priority")
+          .select("*")
           .order("created_at", { ascending: false });
 
         if (error) {
+          console.warn(`Failed to fetch from ${tableName}, trying fallback sort:`, error);
           const fallback = await supabase
             .from(tableName)
-            .select("id, title, content, audience_type, created_at, priority")
+            .select("*")
             .order("updated_at", { ascending: false });
 
           if (fallback.error) {
+            console.error(`Fallback fetch from ${tableName} also failed:`, fallback.error);
             return [];
           }
 
@@ -339,6 +341,7 @@ function Announcements() {
     for (const items of tableResults) {
       for (const item of items) {
         const existing = mergedById.get(item.id);
+        // If we have duplicates (unlikely with IDs but possible across tables if merged), keep the newest
         if (!existing || new Date(item.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
           mergedById.set(item.id, item);
         }

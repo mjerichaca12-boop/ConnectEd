@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabaseClient";
 import { Sidebar } from "../components/Sidebar";
 import { NotificationDropdown } from "../components/NotificationDropdown";
 import {
@@ -16,7 +17,55 @@ function Subjects() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationList, setNotificationList] = useState([]);
-  const [subjects] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+
+  const fetchEnrolledSubjects = async (studentId) => {
+    try {
+      const { data, error } = await supabase
+        .from("teacher_student_assignments")
+        .select(`
+          id,
+          subject_id,
+          subjects (
+            id,
+            code,
+            name,
+            description,
+            schedule,
+            section,
+            teacher_id,
+            profiles!teacher_id (
+              first_name,
+              last_name
+            )
+          )
+        `)
+        .eq("student_id", studentId);
+
+      if (error) throw error;
+
+      const formattedSubjects = (data || []).map(item => {
+        const s = item.subjects;
+        const teacher = s.profiles ? `${s.profiles.first_name} ${s.profiles.last_name}` : "Unknown Teacher";
+        return {
+          id: s.id,
+          code: s.code,
+          name: s.name,
+          description: s.description || "No description available",
+          teacher: teacher,
+          credits: 3, // Mock credits if not in DB
+          quarter: "1st Quarter 2026" // Mock quarter
+        };
+      });
+
+      setSubjects(formattedSubjects);
+    } catch (err) {
+      console.error("Error fetching enrolled subjects:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -29,7 +78,7 @@ function Subjects() {
       return;
     }
     setStudentName(user.name);
-    setTimeout(() => setLoading(false), 600);
+    fetchEnrolledSubjects(user.id);
   }, [navigate]);
   const handleLogout = () => {
     localStorage.removeItem("currentUser");

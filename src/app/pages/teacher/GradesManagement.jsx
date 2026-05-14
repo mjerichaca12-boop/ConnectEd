@@ -39,27 +39,27 @@ const exportToExcel = (studentGrades, className) => {
   const failedStudents = studentGrades.filter((s) => s.overallGrade < 75);
 
   const rows = [
-    ["ConnectEd ΓÇô Grade Report"],
+    ["ConnectEd – Grade Report"],
     [`Class: ${className}`],
     [`Generated: ${new Date().toLocaleString()}`],
     [],
-    ["Student Name", "LRN", "Q1", "Q2", "Q3", "Q4", "Quizzes", "Activities", "Assignments", "Overall Grade", "Remarks"],
+    ["Student Name", "LRN", "Term 1", "Term 2", "Term 3", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
     ...studentGrades.map((s) => [
       s.studentName,
       s.studentId,
-      s.quarter1Grade,
-      s.quarter2Grade,
-      s.quarter3Grade,
-      s.quarter4Grade,
+      s.term1Grade,
+      s.term2Grade,
+      s.term3Grade,
       s.quizAverage,
       s.activityGrade,
       s.assignmentGrade,
+      s.examGrade,
       s.overallGrade,
       s.remarks,
     ]),
     [],
-    [`Passed (ΓëÑ 75): ${passedStudents.length}`, "", "", "", "", "", "", "", ""],
-    [`Failed (< 75): ${failedStudents.length}`, "", "", "", "", "", "", "", ""],
+    [`Passed (≥ 75): ${passedStudents.length}`, "", "", "", "", "", "", "", "", ""],
+    [`Failed (< 75): ${failedStudents.length}`, "", "", "", "", "", "", "", "", ""],
   ];
 
   const tsv = rows.map((row) => row.join("\t")).join("\n");
@@ -76,6 +76,8 @@ const exportToExcel = (studentGrades, className) => {
 
 const normalizeAssessment = (row) => {
   const assessmentType = String(row?.assessment_type || row?.type || row?.task_type || "assignment").trim().toLowerCase();
+  const designation = String(row?.designation || (assessmentType === 'quiz' ? 'Quiz' : 'Activity')).trim();
+  const term = String(row?.term || "Term 1").trim();
   const maxPoints = Number(row?.max_points ?? row?.total_points ?? row?.maxPoints ?? 100) || 100;
   
   // Parse attachments
@@ -93,6 +95,8 @@ const normalizeAssessment = (row) => {
     title: String(row?.title || row?.name || "Untitled Assessment").trim() || "Untitled Assessment",
     description: String(row?.description || row?.instructions || row?.content || "").trim(),
     type: assessmentType || "assignment",
+    designation: designation,
+    term: term,
     dueDate: String(row?.due_date || row?.dueDate || row?.deadline || "").trim(),
     maxPoints: Math.max(1, maxPoints),
     attachments: attachments,
@@ -130,6 +134,7 @@ const calculateAssessmentAverages = (assessmentGradesMap, assessmentItems) => {
     quiz: { totalScore: 0, maxPoints: 0, count: 0 },
     activity: { totalScore: 0, maxPoints: 0, count: 0 },
     assignment: { totalScore: 0, maxPoints: 0, count: 0 },
+    exam: { totalScore: 0, maxPoints: 0, count: 0 },
     all: { totalScore: 0, maxPoints: 0, count: 0 }
   };
 
@@ -140,7 +145,10 @@ const calculateAssessmentAverages = (assessmentGradesMap, assessmentItems) => {
     const grades = assessmentGradesMap[assessmentId];
     Object.values(grades).forEach(gradeValue => {
       if (typeof gradeValue === 'number' && gradeValue > 0) {
-        const type = assessment.type || 'assignment';
+        const designation = (assessment.designation || assessment.type || 'Activity').toLowerCase();
+        const type = designation.includes('quiz') ? 'quiz' : 
+                     designation.includes('exam') ? 'exam' :
+                     designation.includes('assignment') ? 'assignment' : 'activity';
         
         if (totals[type]) {
           totals[type].totalScore += gradeValue;
@@ -164,6 +172,7 @@ const calculateAssessmentAverages = (assessmentGradesMap, assessmentItems) => {
     quizAverage: calculatePercentage(totals.quiz.totalScore, totals.quiz.maxPoints),
     activityGrade: calculatePercentage(totals.activity.totalScore, totals.activity.maxPoints),
     assignmentGrade: calculatePercentage(totals.assignment.totalScore, totals.assignment.maxPoints),
+    examGrade: calculatePercentage(totals.exam.totalScore, totals.exam.maxPoints),
     overallGrade: calculatePercentage(totals.all.totalScore, totals.all.maxPoints)
   };
 };
@@ -173,6 +182,7 @@ const calculateStudentAssessmentAverages = (studentId, assessmentGradesMap, asse
     quiz: { totalScore: 0, maxPoints: 0, count: 0 },
     activity: { totalScore: 0, maxPoints: 0, count: 0 },
     assignment: { totalScore: 0, maxPoints: 0, count: 0 },
+    exam: { totalScore: 0, maxPoints: 0, count: 0 },
     all: { totalScore: 0, maxPoints: 0, count: 0 }
   };
 
@@ -182,7 +192,10 @@ const calculateStudentAssessmentAverages = (studentId, assessmentGradesMap, asse
 
     const gradeValue = assessmentGradesMap[assessmentId][studentId];
     if (typeof gradeValue === 'number' && gradeValue > 0) {
-      const type = assessment.type || 'assignment';
+      const designation = (assessment.designation || assessment.type || 'Activity').toLowerCase();
+      const type = designation.includes('quiz') ? 'quiz' : 
+                   designation.includes('exam') ? 'exam' :
+                   designation.includes('assignment') ? 'assignment' : 'activity';
       
       if (totals[type]) {
         totals[type].totalScore += gradeValue;
@@ -205,6 +218,7 @@ const calculateStudentAssessmentAverages = (studentId, assessmentGradesMap, asse
     quizAverage: calculatePercentage(totals.quiz.totalScore, totals.quiz.maxPoints),
     activityGrade: calculatePercentage(totals.activity.totalScore, totals.activity.maxPoints),
     assignmentGrade: calculatePercentage(totals.assignment.totalScore, totals.assignment.maxPoints),
+    examGrade: calculatePercentage(totals.exam.totalScore, totals.exam.maxPoints),
     overallGrade: calculatePercentage(totals.all.totalScore, totals.all.maxPoints)
   };
 };
@@ -237,7 +251,8 @@ function GradesManagement() {
   const [gradesCache, setGradesCache] = useState({});
   const gradesCacheRef = useRef({});
   const [activeView, setActiveView] = useState("all"); // "all" | "passed" | "failed"
-  const [activeQuarter, setActiveQuarter] = useState("all"); // "all" | "q1" | "q2" | "q3" | "q4"
+  const [activeTerm, setActiveTerm] = useState("all"); // "all" | "term1" | "term2" | "term3"
+  const [activeDesignation, setActiveDesignation] = useState("all"); // "all" | "Quiz" | "Activity" | "Assignment" | "Exam"
   const [assessmentItems, setAssessmentItems] = useState([]);
   const [assessmentGradesMap, setAssessmentGradesMap] = useState({});
   const [expandedAssessments, setExpandedAssessments] = useState({});
@@ -548,7 +563,7 @@ function GradesManagement() {
 
     const { data: gradeRows } = await supabase
       .from("teacher_student_grades")
-      .select("student_id, quarter1_grade, quarter2_grade, quarter3_grade, quarter4_grade, quiz_average, activity_grade, assignment_grade, overall_grade")
+      .select("*")
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId)
       .in("student_id", studentIds);
@@ -558,13 +573,13 @@ function GradesManagement() {
       const id = String(row.student_id || "");
       if (!id) return;
       persistedGradeMap[id] = {
-        quarter1Grade: clampGradeValue(row.quarter1_grade),
-        quarter2Grade: clampGradeValue(row.quarter2_grade),
-        quarter3Grade: clampGradeValue(row.quarter3_grade),
-        quarter4Grade: clampGradeValue(row.quarter4_grade),
+        term1Grade: clampGradeValue(row.term1_grade),
+        term2Grade: clampGradeValue(row.term2_grade),
+        term3Grade: clampGradeValue(row.term3_grade),
         quizAverage: clampGradeValue(row.quiz_average),
         activityGrade: clampGradeValue(row.activity_grade ?? 0),
         assignmentGrade: clampGradeValue(row.assignment_grade ?? 0),
+        examGrade: clampGradeValue(row.exam_grade ?? 0),
         overallGrade: clampGradeValue(row.overall_grade ?? 0),
       };
     });
@@ -572,7 +587,7 @@ function GradesManagement() {
     const cacheForClass = gradesCacheRef.current[classId] || {};
     const mapped = (studentRows ?? []).map((student) => {
       const studentId = String(student.id);
-      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || { ...createDefaultGradeRecord(), activityGrade: 0, assignmentGrade: 0 };
+      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || { ...createDefaultGradeRecord(), activityGrade: 0, assignmentGrade: 0, examGrade: 0 };
       const studentName = [student.first_name, student.middle_name, student.last_name]
         .map((part) => String(part || "").trim())
         .filter(Boolean)
@@ -586,14 +601,14 @@ function GradesManagement() {
         id: studentId,
         studentName,
         studentId: String(student.lrn || "N/A"),
-        quarter1Grade: clampGradeValue(cached.quarter1Grade),
-        quarter2Grade: clampGradeValue(cached.quarter2Grade),
-        quarter3Grade: clampGradeValue(cached.quarter3Grade),
-        quarter4Grade: clampGradeValue(cached.quarter4Grade),
+        term1Grade: clampGradeValue(cached.term1Grade),
+        term2Grade: clampGradeValue(cached.term2Grade),
+        term3Grade: clampGradeValue(cached.term3Grade),
         // Use calculated averages from assessments if available, otherwise use cached values
         quizAverage: assessmentAverages.quizAverage > 0 ? assessmentAverages.quizAverage : clampGradeValue(cached.quizAverage),
         activityGrade: assessmentAverages.activityGrade > 0 ? assessmentAverages.activityGrade : clampGradeValue(cached.activityGrade ?? 0),
         assignmentGrade: assessmentAverages.assignmentGrade > 0 ? assessmentAverages.assignmentGrade : (cached.assignmentGrade ?? 0),
+        examGrade: assessmentAverages.examGrade > 0 ? assessmentAverages.examGrade : (cached.examGrade ?? 0),
         overallGrade: assessmentAverages.overallGrade > 0 ? assessmentAverages.overallGrade : clampGradeValue(cached.overallGrade ?? 0),
         projectGrade: cached.projectGrade ?? "",
       };
@@ -952,13 +967,13 @@ function GradesManagement() {
         teacher_id: teacherId,
         subject_id: selectedClass,
         student_id: student.id,
-        quarter1_grade: clampGradeValue(student.quarter1Grade),
-        quarter2_grade: clampGradeValue(student.quarter2Grade),
-        quarter3_grade: clampGradeValue(student.quarter3Grade),
-        quarter4_grade: clampGradeValue(student.quarter4Grade),
+        term1_grade: clampGradeValue(student.term1Grade),
+        term2_grade: clampGradeValue(student.term2Grade),
+        term3_grade: clampGradeValue(student.term3Grade),
         quiz_average: clampGradeValue(student.quizAverage),
         activity_grade: clampGradeValue(student.activityGrade ?? 0),
         assignment_grade: clampGradeValue(student.assignmentGrade ?? 0),
+        exam_grade: clampGradeValue(student.examGrade ?? 0),
         overall_grade: clampGradeValue(student.overallGrade),
         updated_at: new Date().toISOString(),
       }));
@@ -968,7 +983,7 @@ function GradesManagement() {
       const { data, error } = await supabase
         .from("teacher_student_grades")
         .upsert(gradesPayload, { onConflict: "teacher_id,subject_id,student_id" })
-        .select("id, teacher_id, subject_id, student_id, quarter1_grade, quarter2_grade, quarter3_grade, quarter4_grade");
+        .select("*");
 
       if (error) {
         console.error("Failed to save grades:", error);
@@ -1079,7 +1094,7 @@ function GradesManagement() {
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-gray-900">Grades Management</h2>
+                <h2 className="text-xl font-semibold text-green-900">Grades Management</h2>
                 {hasUnsavedChanges && <span className="text-sm text-amber-600 font-medium animate-pulse">⚠ Unsaved changes</span>}
               </div>
               <NotificationDropdown
@@ -1107,7 +1122,7 @@ function GradesManagement() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Class Average", value: `${classAverage}%`, icon: <TrendingUp className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
-              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-blue-600", bg: "bg-white border-gray-200" },
+              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
               { label: "Lowest Grade", value: `${lowestGrade}%`, icon: <TrendingDown className="w-5 h-5" />, color: "text-red-600", bg: "bg-white border-gray-200" },
               { label: "Passing Rate", value: `${passingRate}%`, icon: <Target className="w-5 h-5" />, color: "text-purple-600", bg: "bg-white border-gray-200" },
             ].map(({ label, value, icon, color, bg }) => (
@@ -1138,8 +1153,8 @@ function GradesManagement() {
           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wider">
-                  <Filter className="w-3.5 h-3.5 inline mr-1.5" />
+                <label className="block text-sm font-bold text-green-700 mb-3 uppercase tracking-widest flex items-center gap-2">
+                  <Filter className="w-4 h-4" />
                   Select Subject / Section
                 </label>
                 {classes.length === 0 ? (
@@ -1155,7 +1170,7 @@ function GradesManagement() {
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wider">
+                <label className="block text-xs font-medium text-green-600 mb-2 uppercase tracking-wider">
                   <Search className="w-3.5 h-3.5 inline mr-1.5" />
                   Search Student
                 </label>
@@ -1164,7 +1179,7 @@ function GradesManagement() {
                   placeholder="Search by name or LRN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  className="w-full px-4 py-3 bg-gray-50 text-green-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 />
               </div>
             </div>
@@ -1177,24 +1192,42 @@ function GradesManagement() {
               {/* Table header row */}
               <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">{selectedClassName || "Select a class to view grades"}</h3>
+                  <h3 className="text-base font-semibold text-green-900">{selectedClassName || "Select a class to view grades"}</h3>
                   <p className="text-xs text-gray-600 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
                 </div>
 
                 <div className="flex items-center gap-3 flex-wrap">
-                  {/* Quarter tabs */}
+                  {/* Term tabs */}
                   <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
                     {[
-                      { key: "all", label: "All Quarters" },
-                      { key: "q1", label: "Q1" },
-                      { key: "q2", label: "Q2" },
-                      { key: "q3", label: "Q3" },
-                      { key: "q4", label: "Q4" },
+                      { key: "all", label: "All Terms" },
+                      { key: "term1", label: "T1" },
+                      { key: "term2", label: "T2" },
+                      { key: "term3", label: "T3" },
                     ].map(({ key, label }) => (
                       <button
                         key={key}
-                        onClick={() => setActiveQuarter(key)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeQuarter === key ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+                        onClick={() => setActiveTerm(key)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTerm === key ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-green-900"}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Designation tabs */}
+                  <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
+                    {[
+                      { key: "all", label: "All" },
+                      { key: "Quiz", label: "Quizzes" },
+                      { key: "Activity", label: "Activities" },
+                      { key: "Assignment", label: "Assignments" },
+                      { key: "Exam", label: "Exams" },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setActiveDesignation(key)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeDesignation === key ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-green-900"}`}
                       >
                         {label}
                       </button>
@@ -1211,7 +1244,7 @@ function GradesManagement() {
                       <button
                         key={key}
                         onClick={() => setActiveView(key)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === key ? "bg-white text-gray-900 shadow-sm" : `text-gray-600 hover:text-gray-900 ${color || ""}`}`}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeView === key ? "bg-white text-green-900 shadow-sm" : `text-gray-600 hover:text-green-900 ${color || ""}`}`}
                       >
                         {label}
                       </button>
@@ -1240,43 +1273,49 @@ function GradesManagement() {
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                        {/* Scoring columns - conditionally shown by quarter filter */}
-                        {(activeQuarter === "all" || activeQuarter === "q1") && (
+                        {/* Term columns - conditionally shown by term filter */}
+                        {(activeTerm === "all" || activeTerm === "term1") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q1</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Quarter 1</div>
+                            <div>T1</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 1</div>
                           </th>
                         )}
-                        {(activeQuarter === "all" || activeQuarter === "q2") && (
+                        {(activeTerm === "all" || activeTerm === "term2") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q2</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Quarter 2</div>
+                            <div>T2</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 2</div>
                           </th>
                         )}
-                        {(activeQuarter === "all" || activeQuarter === "q3") && (
+                        {(activeTerm === "all" || activeTerm === "term3") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q3</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Quarter 3</div>
+                            <div>T3</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 3</div>
                           </th>
                         )}
-                        {(activeQuarter === "all" || activeQuarter === "q4") && (
-                          <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q4</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Quarter 4</div>
+                        {(activeDesignation === "all" || activeDesignation === "Quiz") && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-violet-600 uppercase tracking-wider bg-violet-50">
+                            <div>Quiz</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Avg (0-100)</div>
                           </th>
                         )}
-                        <th className="px-3 py-3 text-center text-xs font-medium text-violet-600 uppercase tracking-wider bg-violet-50">
-                          <div>Quiz</div>
-                          <div className="text-[10px] font-normal text-gray-400 normal-case">Avg (0-100)</div>
-                        </th>
-                        <th className="px-3 py-3 text-center text-xs font-medium text-orange-600 uppercase tracking-wider bg-orange-50">
-                          <div>Activity</div>
-                          <div className="text-[10px] font-normal text-gray-400 normal-case">Score (0-100)</div>
-                        </th>
-                        <th className="px-3 py-3 text-center text-xs font-medium text-sky-600 uppercase tracking-wider bg-sky-50">
-                          <div>Assignment</div>
-                          <div className="text-[10px] font-normal text-gray-400 normal-case">Score (0-100)</div>
-                        </th>
+                        {(activeDesignation === "all" || activeDesignation === "Activity") && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-orange-600 uppercase tracking-wider bg-orange-50">
+                            <div>Activity</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Score (0-100)</div>
+                          </th>
+                        )}
+                        {(activeDesignation === "all" || activeDesignation === "Assignment") && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-sky-600 uppercase tracking-wider bg-sky-50">
+                            <div>Assignment</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Score (0-100)</div>
+                          </th>
+                        )}
+                        {(activeDesignation === "all" || activeDesignation === "Exam") && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-red-600 uppercase tracking-wider bg-red-50">
+                            <div>Exam</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">Score (0-100)</div>
+                          </th>
+                        )}
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Overall</th>
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                       </tr>
@@ -1292,79 +1331,83 @@ function GradesManagement() {
                                   {student.studentName.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-gray-900">{student.studentName}</p>
+                                  <p className="font-medium text-green-900">{student.studentName}</p>
                                   <p className="text-xs text-gray-500">{student.studentId}</p>
                                 </div>
                               </div>
                             </td>
-                            {/* Quarter grade inputs - conditionally shown */}
-                            {(activeQuarter === "all" || activeQuarter === "q1") && (
+                            {/* Term grade inputs - conditionally shown */}
+                            {(activeTerm === "all" || activeTerm === "term1") && (
                               <td className="px-3 py-4 text-center bg-green-50/30">
                                 <input
                                   type="number" min="0" max="100"
-                                  value={student.quarter1Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quarter1Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
+                                  value={student.term1Grade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "term1Grade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
                                 />
                               </td>
                             )}
-                            {(activeQuarter === "all" || activeQuarter === "q2") && (
+                            {(activeTerm === "all" || activeTerm === "term2") && (
                               <td className="px-3 py-4 text-center bg-green-50/30">
                                 <input
                                   type="number" min="0" max="100"
-                                  value={student.quarter2Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quarter2Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
+                                  value={student.term2Grade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "term2Grade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
                                 />
                               </td>
                             )}
-                            {(activeQuarter === "all" || activeQuarter === "q3") && (
+                            {(activeTerm === "all" || activeTerm === "term3") && (
                               <td className="px-3 py-4 text-center bg-green-50/30">
                                 <input
                                   type="number" min="0" max="100"
-                                  value={student.quarter3Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quarter3Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
+                                  value={student.term3Grade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "term3Grade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
                                 />
                               </td>
                             )}
-                            {(activeQuarter === "all" || activeQuarter === "q4") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
+                            {/* Designation Averages - conditionally shown */}
+                            {(activeDesignation === "all" || activeDesignation === "Quiz") && (
+                              <td className="px-3 py-4 text-center bg-violet-50/30">
                                 <input
                                   type="number" min="0" max="100"
-                                  value={student.quarter4Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quarter4Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
+                                  value={student.quizAverage ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "quizAverage", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-violet-200 rounded-lg focus:outline-none focus:ring-2 ring-violet-500 text-sm"
                                 />
                               </td>
                             )}
-                            {/* Quiz Average */}
-                            <td className="px-3 py-4 text-center bg-violet-50/30">
-                              <input
-                                type="number" min="0" max="100"
-                                value={student.quizAverage ?? ""}
-                                onChange={(e) => handleGradeChange(student.id, "quizAverage", e.target.value || "")}
-                                className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-violet-200 rounded-lg focus:outline-none focus:ring-2 ring-violet-500 text-sm"
-                              />
-                            </td>
-                            {/* Activity Score */}
-                            <td className="px-3 py-4 text-center bg-orange-50/30">
-                              <input
-                                type="number" min="0" max="100"
-                                value={student.activityGrade ?? ""}
-                                onChange={(e) => handleGradeChange(student.id, "activityGrade", e.target.value || "")}
-                                className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 ring-orange-500 text-sm"
-                              />
-                            </td>
-                            {/* Assignment Score */}
-                            <td className="px-3 py-4 text-center bg-sky-50/30">
-                              <input
-                                type="number" min="0" max="100"
-                                value={student.assignmentGrade ?? ""}
-                                onChange={(e) => handleGradeChange(student.id, "assignmentGrade", e.target.value || "")}
-                                className="w-16 px-2 py-1.5 text-center bg-white text-gray-900 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 ring-sky-500 text-sm"
-                              />
-                            </td>
+                            {(activeDesignation === "all" || activeDesignation === "Activity") && (
+                              <td className="px-3 py-4 text-center bg-orange-50/30">
+                                <input
+                                  type="number" min="0" max="100"
+                                  value={student.activityGrade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "activityGrade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 ring-orange-500 text-sm"
+                                />
+                              </td>
+                            )}
+                            {(activeDesignation === "all" || activeDesignation === "Assignment") && (
+                              <td className="px-3 py-4 text-center bg-sky-50/30">
+                                <input
+                                  type="number" min="0" max="100"
+                                  value={student.assignmentGrade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "assignmentGrade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 ring-sky-500 text-sm"
+                                />
+                              </td>
+                            )}
+                            {(activeDesignation === "all" || activeDesignation === "Exam") && (
+                              <td className="px-3 py-4 text-center bg-red-50/30">
+                                <input
+                                  type="number" min="0" max="100"
+                                  value={student.examGrade ?? ""}
+                                  onChange={(e) => handleGradeChange(student.id, "examGrade", e.target.value || "")}
+                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-red-200 rounded-lg focus:outline-none focus:ring-2 ring-red-500 text-sm"
+                                />
+                              </td>
+                            )}
                             <td className="px-5 py-4 text-center">
                               <span className={`inline-block px-3 py-1.5 rounded-full text-sm font-bold ${isPassed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                                 {student.overallGrade}%
@@ -1397,7 +1440,7 @@ function GradesManagement() {
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-gray-400" />
-                      <span className="text-gray-600">Total: <span className="text-gray-900 font-semibold">{studentGrades.length}</span></span>
+                      <span className="text-gray-600">Total: <span className="text-green-900 font-semibold">{studentGrades.length}</span></span>
                     </div>
                   </div>
                   <button
@@ -1413,7 +1456,7 @@ function GradesManagement() {
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="p-5 border-b border-gray-100">
-                <h3 className="text-base font-semibold text-gray-900">Assessment-Based Grading</h3>
+                <h3 className="text-base font-semibold text-green-900">Assessment-Based Grading</h3>
                 <p className="text-xs text-gray-600 mt-0.5">
                   Review student submissions and assign grades for each assessment.
                 </p>
@@ -1448,7 +1491,7 @@ function GradesManagement() {
                               }}
                               className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${isActive ? "border-green-300 bg-green-50" : "border-transparent hover:bg-gray-100"}`}
                             >
-                              <p className="text-sm font-semibold text-gray-900 line-clamp-1">{assessment.displayName || assessment.title}</p>
+                              <p className="text-sm font-semibold text-green-900 line-clamp-1">{assessment.displayName || assessment.title}</p>
                               <p className="text-xs text-gray-500 mt-0.5">
                                 {assessment.type.charAt(0).toUpperCase() + assessment.type.slice(1)} • Max {assessment.maxPoints}
                                 {assessment.type === 'quiz' && assessment.quizOrder && ` • ${assessment.displayName}`}
@@ -1470,16 +1513,16 @@ function GradesManagement() {
                           </div>
                           <div className="p-4 space-y-3">
                             <div>
-                              <h4 className="text-base font-semibold text-gray-900 mb-1">{selectedAssessment.title}</h4>
+                              <h4 className="text-base font-semibold text-green-900 mb-1">{selectedAssessment.title}</h4>
                               {selectedAssessment.description && (
                                 <p className="text-sm text-gray-700 leading-relaxed">{selectedAssessment.description}</p>
                               )}
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3 text-sm">
                               <div className="bg-gray-50 rounded-lg p-3">
                                 <p className="text-xs text-gray-500 mb-1">Due Date</p>
-                                <p className="text-gray-900 font-medium">
+                                <p className="text-green-900 font-medium">
                                   {selectedAssessment.dueDate
                                     ? new Date(selectedAssessment.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                                     : "No due date"}
@@ -1487,10 +1530,9 @@ function GradesManagement() {
                               </div>
                               <div className="bg-gray-50 rounded-lg p-3">
                                 <p className="text-xs text-gray-500 mb-1">Max Points</p>
-                                <p className="text-gray-900 font-medium">{selectedAssessment.maxPoints}</p>
+                                <p className="text-green-900 font-medium">{selectedAssessment.maxPoints}</p>
                               </div>
-                            </div>
-
+                              </div>
                             {/* Attachments */}
                             {selectedAssessment.attachments && selectedAssessment.attachments.length > 0 ? (
                               <div className="bg-gray-50 rounded-lg p-3">
@@ -1551,7 +1593,7 @@ function GradesManagement() {
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-gray-900 line-clamp-1">{student.studentName}</p>
+                                        <p className="text-sm font-medium text-green-900 line-clamp-1">{student.studentName}</p>
                                         <p className="text-xs text-gray-500">{student.studentId}</p>
                                       </div>
                                       <div className="flex items-center gap-1 flex-wrap justify-end flex-shrink-0">
@@ -1627,7 +1669,7 @@ function GradesManagement() {
                                   step="0.01"
                                   value={assessmentGradesMap?.[selectedAssessment.id]?.[selectedStudentId] ?? ""}
                                   onChange={(e) => handleAssessmentGradeChange(selectedAssessment.id, selectedStudentId, selectedAssessment.maxPoints, e.target.value)}
-                                  className="w-full px-3 py-2 text-sm bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full px-3 py-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="Enter grade"
                                 />
                                 <span className="text-xs text-gray-400 whitespace-nowrap">/ {selectedAssessment.maxPoints}</span>
@@ -1644,7 +1686,7 @@ function GradesManagement() {
                                     return (
                                       <>
                                         <p className="text-[11px] text-gray-400">
-                                          Percentage: <span className="text-gray-900 font-medium">{percentage}%</span>
+                                          Percentage: <span className="text-green-900 font-medium">{percentage}%</span>
                                         </p>
                                         {passFailStatus && (
                                           <p className="text-[11px] text-gray-400">
@@ -1660,7 +1702,7 @@ function GradesManagement() {
                               )}
                               
                               <p className="text-[11px] text-gray-400 mt-2">
-                                Grade Status: <span className="text-gray-900 font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
+                                Grade Status: <span className="text-green-900 font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
                               </p>
                               {!hasViewedSubmission ? (
                                 <p className="text-[11px] text-amber-600 mt-2">View student submission first before grading.</p>
@@ -1681,7 +1723,7 @@ function GradesManagement() {
                                     value={selectedStudentFeedback}
                                     onChange={(e) => handleAssessmentFeedbackChange(selectedAssessment.id, selectedStudentId, e.target.value)}
                                     placeholder="Enter feedback for the student..."
-                                    className="w-full p-2 text-sm bg-white text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    className="w-full p-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                                   />
                                 </div>
 
@@ -1713,7 +1755,7 @@ function GradesManagement() {
               <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Award className="w-8 h-8 text-green-600" />
               </div>
-              <h3 className="text-gray-900 font-semibold mb-1">Select a class to view grades</h3>
+              <h3 className="text-green-900 font-semibold mb-1">Select a class to view grades</h3>
               <p className="text-gray-600 text-sm">Grades are automatically consolidated from activities, quizzes, and assignments.</p>
             </div>
           )}

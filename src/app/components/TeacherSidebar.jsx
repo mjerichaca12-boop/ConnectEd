@@ -85,7 +85,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
 
         {/* Logo */}
         <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
-          <p className="text-gray-900 font-extrabold text-lg tracking-tight leading-none">
+          <p className="text-green-900 font-extrabold text-lg tracking-tight leading-none">
             Connect<span className="text-green-600">Ed</span>
           </p>
           <p className="text-gray-400 text-[11px] mt-0.5">Teacher Portal</p>
@@ -104,7 +104,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-gray-900 text-sm font-semibold truncate">{displayName}</p>
+              <p className="text-green-900 text-sm font-semibold truncate">{displayName}</p>
               <p className="text-green-600 text-[11px]">Teacher Account</p>
             </div>
             <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0" />

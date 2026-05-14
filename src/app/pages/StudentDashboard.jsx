@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabaseClient";
 import { Sidebar } from "../components/Sidebar";
 import {
   BookOpen,
@@ -19,16 +20,90 @@ import { NotificationDropdown } from "../components/NotificationDropdown";
 export function StudentDashboard() {
   const navigate = useNavigate();
   const [studentName, setStudentName] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [subjects] = useState([]);
-  const [recentGrades] = useState([]);
-  const [recentAttendance] = useState([]);
-  const [announcements] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [recentGrades, setRecentGrades] = useState([]);
+  const [recentAttendance, setRecentAttendance] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [upNext] = useState([
     { id: 1, title: "Math Assignment 1", due: "Tomorrow, 11:59 PM", type: "Assignment" },
     { id: 2, title: "Science Term Paper", due: "Friday, 5:00 PM", type: "Project" }
   ]);
+
+  const fetchDashboardData = async (currentStudentId) => {
+    try {
+      // Fetch subjects with teacher info
+      const { data: assignments, error: subError } = await supabase
+        .from("teacher_student_assignments")
+        .select(`
+          subject_id,
+          subjects (
+            id,
+            code,
+            name,
+            profiles!teacher_id (
+              first_name,
+              last_name
+            )
+          )
+        `)
+        .eq("student_id", currentStudentId);
+      
+      if (!subError && assignments) {
+        const formatted = assignments.map(a => {
+          const s = a.subjects;
+          return {
+            id: s.id,
+            code: s.code,
+            name: s.name,
+            teacher: s.profiles ? `${s.profiles.first_name} ${s.profiles.last_name}` : "Unknown Teacher"
+          };
+        });
+        setSubjects(formatted);
+      }
+
+      // Fetch recent grades
+      const { data: gradeRows } = await supabase
+        .from("teacher_student_grades")
+        .select("*, subjects(name)")
+        .eq("student_id", currentStudentId)
+        .order("updated_at", { ascending: false })
+        .limit(3);
+      
+      if (gradeRows) {
+        setRecentGrades(gradeRows.map(row => ({
+          id: row.id,
+          subjectName: row.subjects?.name || "Subject",
+          value: row.overall_grade,
+          dateRecorded: row.updated_at || row.created_at
+        })));
+      }
+
+      // Fetch 3 most recent announcements for students
+      const { data: announcementRows } = await supabase
+        .from("school_announcements")
+        .select("id, title, content, priority, created_at, audience_type")
+        .in("audience_type", ["school", "student"])
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (announcementRows) {
+        const readIds = new Set(JSON.parse(localStorage.getItem("student_announcement_reads") || "[]"));
+        setAnnouncements(announcementRows.map(row => ({
+          id: String(row.id),
+          title: row.title || "",
+          preview: (row.content || "").slice(0, 120),
+          priority: row.priority || "Medium",
+          timestamp: new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          isRead: readIds.has(String(row.id))
+        })));
+      }
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err);
+    }
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -42,6 +117,8 @@ export function StudentDashboard() {
       return;
     }
     setStudentName(user.name);
+    setStudentId(user.id);
+    fetchDashboardData(user.id);
     setTimeout(() => setLoading(false), 800);
   }, [navigate]);
 
@@ -153,14 +230,18 @@ export function StudentDashboard() {
             {/* Subtle glow */}
             <div className="absolute inset-0 bg-gradient-to-r from-green-500/10 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700">SY 2026-2027</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700">Term 1</span>
+              </div>
               <h1 className="text-3xl font-bold mb-2 text-gray-900">Welcome, {studentName}!</h1>
-              <p className="text-gray-600">Here is your academic overview</p>
+              <p className="text-gray-600">Here is your academic overview for the current term.</p>
             </div>
           </div>
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-green-100 rounded-lg">
                   <BookOpen className="w-5 h-5 text-green-600" />
@@ -170,7 +251,7 @@ export function StudentDashboard() {
               <p className="text-2xl font-bold text-gray-900">{subjects.length}</p>
             </div>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-blue-100 rounded-lg">
                   <TrendingUp className="w-5 h-5 text-blue-600" />
@@ -180,7 +261,7 @@ export function StudentDashboard() {
               <p className="text-2xl font-bold text-gray-900">{averageGrade}%</p>
             </div>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-blue-100 rounded-lg">
                   <Calendar className="w-5 h-5 text-blue-600" />
@@ -190,14 +271,57 @@ export function StudentDashboard() {
               <p className="text-2xl font-bold text-gray-900">{attendanceRate}%</p>
             </div>
 
-            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors">
+            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-blue-600" />
+                <div className="p-3 bg-amber-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-amber-600" />
                 </div>
               </div>
               <p className="text-gray-500 text-sm mb-1">Unread Announcements</p>
               <p className="text-2xl font-bold text-gray-900">{unreadAnnouncements}</p>
+            </div>
+          </div>
+
+          {/* Enrolled Subjects Section */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-lg font-bold text-gray-900">My Classes</h3>
+              </div>
+              <button onClick={() => navigate("/subjects")} className="text-emerald-600 hover:text-emerald-700 text-sm font-semibold flex items-center gap-1 transition-colors">
+                View All <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6">
+              {subjects.length === 0 ? (
+                <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                  <BookOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No subjects enrolled yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Check back later or contact your teacher</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {subjects.map((subject) => (
+                    <div
+                      key={subject.id}
+                      onClick={() => navigate(`/subject/${subject.id}`)}
+                      className="group p-5 bg-white border border-gray-200 rounded-2xl hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
+                    >
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 group-hover:bg-emerald-500/10 transition-colors" />
+                      <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider mb-2">{subject.code || "SUBJ"}</p>
+                      <h4 className="font-bold text-gray-900 group-hover:text-emerald-700 transition-colors mb-4 line-clamp-1">{subject.name}</h4>
+                      
+                      <div className="flex items-center gap-2 mt-auto">
+                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] font-bold text-emerald-700">
+                          {subject.teacher?.charAt(0) || "T"}
+                        </div>
+                        <p className="text-xs text-gray-500 font-medium truncate">{subject.teacher}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -277,17 +401,28 @@ export function StudentDashboard() {
                   {announcements.length === 0 ? (
                     <div className="text-center py-6 text-gray-500">No recent announcements</div>
                   ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {announcements.map((announcement) => (
-                        <div key={announcement.id} className={`p-4 rounded-lg border transition-all ${announcement.isRead ? "bg-gray-50 border-gray-100" : "bg-green-50 border-green-200"}`}>
-                          <div className="flex items-start justify-between mb-2">
-                            <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                        <div
+                          key={announcement.id}
+                          onClick={() => navigate("/announcements")}
+                          className={`p-4 rounded-lg border transition-all cursor-pointer hover:shadow-sm ${announcement.isRead ? "bg-gray-50 border-gray-100 hover:border-gray-200" : "bg-green-50 border-green-200 hover:border-green-300"}`}
+                        >
+                          <div className="flex items-start justify-between mb-1.5">
+                            <h4 className="font-semibold text-gray-900 text-sm flex items-center gap-2 flex-1 pr-2">
                               {announcement.title}
-                              {!announcement.isRead && <span className="w-2 h-2 bg-green-500 rounded-full" />}
+                              {!announcement.isRead && <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />}
                             </h4>
-                            <span className="text-xs text-gray-500">{announcement.timestamp}</span>
+                            <span className="text-xs text-gray-400 flex-shrink-0">{announcement.timestamp}</span>
                           </div>
-                          <p className="text-sm text-gray-600">{announcement.preview}</p>
+                          <p className="text-xs text-gray-500 line-clamp-2 mb-2">{announcement.preview}</p>
+                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            announcement.priority === "High" ? "bg-red-100 text-red-700" :
+                            announcement.priority === "Low" ? "bg-green-100 text-green-700" :
+                            "bg-amber-100 text-amber-700"
+                          }`}>
+                            {announcement.priority}
+                          </span>
                         </div>
                       ))}
                     </div>
