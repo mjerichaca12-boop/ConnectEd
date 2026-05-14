@@ -24,7 +24,7 @@ function SignUp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [selectedRole, setSelectedRole] = useState("student");
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1280);
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -33,6 +33,12 @@ function SignUp() {
     confirmPassword: ""
   });
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 1280);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -48,12 +54,6 @@ function SignUp() {
 
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
-      return;
-    }
-
-    const isMobile = window.innerWidth <= 1280;
-    if (!isMobile) {
-      setError("Student registration is only allowed on Mobile devices.");
       return;
     }
 
@@ -88,11 +88,11 @@ function SignUp() {
         email: normalizedEmail,
         first_name: formData.firstName,
         last_name: formData.lastName,
+        password: formData.password,
         role: "student",
         status: "Pending",
-        // password: formData.password, // Temporarily removed for testing
         created_at: new Date().toISOString(),
-        subjects: [] 
+        subjects: []
       };
 
       const { error: insertError } = await db
@@ -118,27 +118,10 @@ function SignUp() {
       return;
     }
 
-    // Use a more generous threshold for mobile/tablet (1280px to include most tablets)
-    const isMobile = window.innerWidth <= 1280;
-
-    // Block Student sign-up on Desktop
-    if (selectedRole === "student" && !isMobile) {
-      setError("Students can only create an account using a Mobile or Tablet device.");
-      return;
-    }
-
-    // Block Teacher sign-up on Mobile
-    if (selectedRole === "teacher" && isMobile && window.innerWidth < 768) {
-      // Allow teachers on tablets (>= 768) but not small phones
-      setError("Teachers should create an account using a Desktop/Laptop for the best experience.");
-      return;
-    }
-
     setLoading(true);
     setError("");
 
-    // Use localStorage instead of sessionStorage for better reliability on mobile redirects
-    localStorage.setItem("connected_signup_role", selectedRole);
+    localStorage.setItem("connected_signup_role", "teacher");
 
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -212,30 +195,15 @@ function SignUp() {
                   </div>
                 )}
 
-                <div className="mb-8">
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-4 text-center">I am a...</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRole("student")}
-                      className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${selectedRole === "student" ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-md" : "border-gray-100 bg-white text-gray-500 hover:border-gray-200"}`}
-                    >
-                      <span className="text-2xl mb-1">🎓</span>
-                      <span className="text-sm font-bold">Student</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRole("teacher")}
-                      className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${selectedRole === "teacher" ? "border-emerald-600 bg-emerald-50 text-emerald-700 shadow-md" : "border-gray-100 bg-white text-gray-500 hover:border-gray-200"}`}
-                    >
-                      <span className="text-2xl mb-1">👨‍🏫</span>
-                      <span className="text-sm font-bold">Teacher</span>
-                    </button>
-                  </div>
+                <div className="mb-8 flex items-center justify-center gap-2 py-2 px-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <span className="text-xl">{isMobile ? "🎓" : "👨‍🏫"}</span>
+                  <span className="text-sm font-semibold text-gray-600">
+                    Signing up as a <span className="text-emerald-600">{isMobile ? "Student" : "Teacher"}</span>
+                  </span>
                 </div>
 
                 <div className="space-y-6">
-                  {selectedRole === "student" ? (
+                  {isMobile ? (
                     <form onSubmit={handleManualSignUp} className="space-y-4">
                       {success && (
                         <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">

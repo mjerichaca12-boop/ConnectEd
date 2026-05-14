@@ -94,7 +94,7 @@ function StudentManagement() {
 
         const { data, error } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, password, created_at")
+          .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
           .eq("role", "student")
           .order("created_at", { ascending: false });
 
