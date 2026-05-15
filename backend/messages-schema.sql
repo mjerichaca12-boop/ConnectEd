@@ -58,9 +58,20 @@ FOR SELECT USING (
 
 -- RLS for Room Members
 ALTER TABLE public.room_members ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.is_room_member(room_id_param TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.room_members 
+        WHERE room_id::text = room_id_param AND user_id = auth.uid()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE POLICY "Members can view other members." ON public.room_members
 FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.room_members m2 WHERE m2.room_id = room_id AND m2.user_id = auth.uid())
+    user_id = auth.uid() OR public.is_room_member(room_id::text)
 );
 
 -- 2. POLICIES
@@ -70,7 +81,7 @@ ON public.messages FOR SELECT
 USING (
     auth.uid() = sender_id OR 
     auth.uid() = receiver_id OR
-    EXISTS (SELECT 1 FROM public.room_members WHERE room_id = messages.room_id AND user_id = auth.uid())
+    (room_id IS NOT NULL AND public.is_room_member(room_id::text))
 );
 
 DROP POLICY IF EXISTS "Users can send messages." ON public.messages;

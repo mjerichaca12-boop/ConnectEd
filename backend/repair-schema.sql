@@ -28,6 +28,17 @@ CREATE TABLE IF NOT EXISTS public.room_members (
     PRIMARY KEY (room_id, user_id)
 );
 
+-- SECURITY DEFINER function to break RLS recursion
+CREATE OR REPLACE FUNCTION public.is_room_member(room_id_param TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.room_members 
+        WHERE room_id::text = room_id_param AND user_id = auth.uid()
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- 3. RECREATE CHAT LIST VIEW (Handles Direct and Group)
 DROP VIEW IF EXISTS public.chat_list;
 CREATE OR REPLACE VIEW public.chat_list AS
@@ -83,7 +94,7 @@ CREATE POLICY "Users can view their own messages." ON public.messages FOR SELECT
 USING (
     auth.uid() = sender_id OR 
     auth.uid() = receiver_id OR
-    EXISTS (SELECT 1 FROM public.room_members WHERE room_id = messages.room_id AND user_id = auth.uid())
+    (room_id IS NOT NULL AND public.is_room_member(room_id::text))
 );
 
 DROP POLICY IF EXISTS "Users can send messages." ON public.messages;
