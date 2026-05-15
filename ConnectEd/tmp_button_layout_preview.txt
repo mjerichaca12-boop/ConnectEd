@@ -1,0 +1,1 @@
+Preview: buttons will be rendered as a two-column grid for primary actions, then full-width stacked actions, with consistent spacing and rounded-full buttons. Use classes: grid grid-cols-2 gap-3, w-full for buttons, space-y-3 for vertical spacing.
