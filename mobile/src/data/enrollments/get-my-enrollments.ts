@@ -4,7 +4,9 @@ export interface EnrollmentWithSubject {
     id: string;
     student_id: string;
     subject_id: string;
-    status: 'pending' | 'accepted' | 'rejected';
+    status: 'pending' | 'accepted' | 'rejected' | 'approved' | 'active' | 'Active';
+    grade?: any;
+    attendance?: any;
     subjects: {
         id: string;
         code: string;
@@ -23,12 +25,14 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
     const { data, error } = await supabase
-        .from('teacher_student_assignments')
+        .from('enrollments')
         .select(`
             id,
             student_id,
             subject_id,
             status,
+            grade,
+            attendance,
             subjects:subject_id (
                 id,
                 code,

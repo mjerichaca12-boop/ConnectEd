@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native";
 import Colors from "../../src/constants/Colors";
 import AppHeader from "../../src/components/common/AppHeader";
@@ -61,29 +61,49 @@ const DetailedGradeView = ({ grade, onBack }: { grade: GradeItem; onBack: () => 
                         </Text>
                     </View>
                 ) : (
-                    <View style={styles.infoCard}>
-                        <Text style={styles.infoTitle}>Quarterly Breakdown</Text>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Quarter 1</Text>
-                            <Text style={styles.infoValue}>{grade.grade?.q1 ?? "—"}</Text>
+                    <>
+                        <View style={styles.infoCard}>
+                            <Text style={styles.infoTitle}>Term Breakdown</Text>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Term 1 (T1)</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.t1 ?? "—"}</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Term 2 (T2)</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.t2 ?? "—"}</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Term 3 (T3)</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.t3 ?? "—"}</Text>
+                            </View>
                         </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Quarter 2</Text>
-                            <Text style={styles.infoValue}>{grade.grade?.q2 ?? "—"}</Text>
+
+                        <View style={[styles.infoCard, { marginTop: 16 }]}>
+                            <Text style={styles.infoTitle}>Assessment Breakdown</Text>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Quiz Average</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.quiz ?? "—"}</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Activity Score</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.activity ?? "—"}</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Assignment Score</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.assignment ?? "—"}</Text>
+                            </View>
+                            <View style={styles.infoRow}>
+                                <Text style={styles.infoLabel}>Exam Score</Text>
+                                <Text style={styles.infoValue}>{grade.grade?.exam ?? "—"}</Text>
+                            </View>
+                            <View style={[styles.infoRow, { borderBottomWidth: 0, marginTop: 12 }]}>
+                                <Text style={styles.infoLabel}>Remarks</Text>
+                                <Text style={[styles.infoValue, { color: Colors.light.primary }]}>
+                                    {grade.grade?.remarks ?? "No Remarks"}
+                                </Text>
+                            </View>
                         </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Quarter 3</Text>
-                            <Text style={styles.infoValue}>{grade.grade?.q3 ?? "—"}</Text>
-                        </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Quarter 4</Text>
-                            <Text style={styles.infoValue}>{grade.grade?.q4 ?? "—"}</Text>
-                        </View>
-                        <View style={[styles.infoRow, { borderBottomWidth: 0, marginTop: 12 }]}>
-                            <Text style={styles.infoLabel}>Remarks</Text>
-                            <Text style={[styles.infoValue, { color: Colors.light.primary }]}>{grade.grade?.remarks ?? "—"}</Text>
-                        </View>
-                    </View>
+                    </>
                 )}
             </ScrollView>
         </View>
@@ -101,49 +121,76 @@ export default function GradesScreen() {
 
         // Real-time: teacher gives/updates a grade → re-fetch
         const channel = supabase
-            .channel("grades-realtime")
+            .channel('grades-realtime')
             .on(
-                "postgres_changes",
-                { event: "UPDATE", schema: "public", table: "teacher_student_assignments" },
-                () => { fetchGrades(); }
+                'postgres_changes',
+                { event: "UPDATE", schema: "public", table: "teacher_student_grades" },
+                () => {
+                    fetchGrades();
+                }
             )
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
     }, []);
 
-    const fetchGrades = async () => {
+    const getGradeRemarks = (grade: number) => {
+        if (grade >= 90) return "Outstanding";
+        if (grade >= 85) return "Excellent";
+        if (grade >= 80) return "Very Good";
+        if (grade >= 75) return "Good";
+        return "Needs Improvement";
+    };
+
+    const fetchGrades = useCallback(async () => {
         try {
             setError(null);
-            // Re-use the same working getMyEnrollments function to avoid PGRST issues
-            const enrollments = await getMyEnrollments();
-            const acceptedWithGrade = enrollments.filter(e => e.status === "accepted");
-
-            // Fetch the actual grade column from enrollments directly
             const { data: userData } = await supabase.auth.getUser();
             if (!userData?.user) return;
 
-            const { data: gradeData, error: gradeError } = await supabase
-                .from("enrollments")
-                .select("id, grade, subject_id")
-                .eq("student_id", userData.user.id)
-                .eq("status", "accepted");
-
-            if (gradeError) throw gradeError;
-
-            const gradeMap: Record<string, Record<string, any> | null> = {};
-            (gradeData || []).forEach((row: any) => {
-                gradeMap[row.subject_id] = typeof row.grade === 'string' ? JSON.parse(row.grade) : row.grade ?? null;
+            const enrollments = await getMyEnrollments();
+            const activeEnrollments = enrollments.filter(e => {
+                const s = e.status.toLowerCase();
+                return s === "accepted" || s === "approved" || s === "active";
             });
 
-            const mapped: GradeItem[] = acceptedWithGrade.map(enrollment => ({
-                enrollmentId: enrollment.id,
-                subjectId: enrollment.subjects?.id ?? "",
-                code: enrollment.subjects?.code ?? "N/A",
-                title: enrollment.subjects?.name ?? "Unknown Subject",
-                units: 3,
-                grade: gradeMap[enrollment.subjects?.id ?? ""] ?? null,
-            }));
+            if (activeEnrollments.length === 0) {
+                setGrades([]);
+                setIsLoading(false);
+                return;
+            }
+
+            const { data: gradesData, error: gradesError } = await supabase
+                .from('teacher_student_grades')
+                .select('*')
+                .eq('student_id', userData.user.id);
+
+            const gradesMap = new Map();
+            (gradesData || []).forEach(g => gradesMap.set(g.subject_id, g));
+
+            const mapped: GradeItem[] = activeEnrollments.map(enrollment => {
+                const sId = enrollment.subjects?.id;
+                const dbGrade = sId ? gradesMap.get(sId) : null;
+                
+                return {
+                    enrollmentId: enrollment.id,
+                    subjectId: sId ?? "",
+                    code: enrollment.subjects?.code ?? "N/A",
+                    title: enrollment.subjects?.name ?? "Unknown Subject",
+                    units: 3,
+                    grade: dbGrade ? {
+                        t1: dbGrade.term1_grade,
+                        t2: dbGrade.term2_grade,
+                        t3: dbGrade.term3_grade,
+                        quiz: dbGrade.quiz_average,
+                        activity: dbGrade.activity_grade,
+                        assignment: dbGrade.assignment_grade,
+                        exam: dbGrade.exam_grade,
+                        overall: dbGrade.overall_grade,
+                        remarks: getGradeRemarks(dbGrade.overall_grade),
+                    } : null,
+                };
+            });
 
             setGrades(mapped);
         } catch (err: any) {
@@ -152,7 +199,7 @@ export default function GradesScreen() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     if (selectedGrade) {
         return <DetailedGradeView grade={selectedGrade} onBack={() => setSelectedGrade(null)} />;

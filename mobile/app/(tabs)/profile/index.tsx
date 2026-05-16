@@ -9,6 +9,7 @@ import Button from "../../../src/components/common/Button";
 import AppHeader from "../../../src/components/common/AppHeader";
 import { supabase } from "../../../src/lib/supabase";
 import { useRouter, Href } from "expo-router";
+import { useMyEnrollmentsQuery } from "../../../src/hooks/query/enrollments/use-my-enrollments-query";
 
 // Simple setting option row
 const ProfileOption = ({ label, onPress, icon, rightElement }: any) => (
@@ -36,7 +37,9 @@ export default function ProfileScreen() {
     const [displayNameEdit, setDisplayNameEdit] = useState(""); // editable name in academic section
     const [yearLevel, setYearLevel] = useState("3rd Year");
     const [section, setSection] = useState("A");
-    const [status, setStatus] = useState("Enrolled");
+    
+    // Enrollment query for dynamic status
+    const { data: enrollments, isLoading: isLoadingEnrollments } = useMyEnrollmentsQuery();
 
     // Notifications state (persistent via profile)
     const [pushEnabled, setPushEnabled] = useState(false);
@@ -384,9 +387,24 @@ export default function ProfileScreen() {
 
                     <View style={styles.infoRow}>
                         <Text style={styles.label}>Status:</Text>
-                        <Text style={[styles.value, { color: Colors.light.success }]}>
-                            {role === "teacher" ? "Active" : status}
-                        </Text>
+                        {role === "teacher" ? (
+                            <Text style={[styles.value, { color: Colors.light.success }]}>Active</Text>
+                        ) : (
+                            (() => {
+                                if (isLoadingEnrollments) return <ActivityIndicator size="small" color={Colors.light.primary} />;
+                                
+                                const activeEnrollments = enrollments?.filter(e => e.status === 'accepted') || [];
+                                const pendingEnrollments = enrollments?.filter(e => e.status === 'pending') || [];
+                                
+                                if (activeEnrollments.length > 0) {
+                                    return <Text style={[styles.value, { color: Colors.light.success }]}>Enrolled</Text>;
+                                } else if (pendingEnrollments.length > 0) {
+                                    return <Text style={[styles.value, { color: Colors.light.warning }]}>Pending Enrollment</Text>;
+                                } else {
+                                    return <Text style={[styles.value, { color: Colors.light.textSecondary }]}>Not Enrolled</Text>;
+                                }
+                            })()
+                        )}
                     </View>
                 </View>
 

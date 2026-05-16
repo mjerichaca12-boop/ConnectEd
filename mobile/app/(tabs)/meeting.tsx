@@ -5,6 +5,7 @@ import Colors from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
 import MeetingCard from "../../src/components/cards/MeetingCard";
 import AppHeader from "../../src/components/common/AppHeader";
+import { Ionicons } from "@expo/vector-icons";
 
 const ActiveMeetingView = ({ meeting, onLeave }: any) => {
     // Generate a clean room name to avoid invalid URLs
@@ -24,10 +25,15 @@ const ActiveMeetingView = ({ meeting, onLeave }: any) => {
 };
 
 import { useMeetingsQuery } from "../../src/hooks/query/meetings/use-meetings-query";
+import { useMyEnrollmentsQuery } from "../../src/hooks/query/enrollments/use-my-enrollments-query";
+import { ActivityIndicator } from "react-native";
 
 export default function MeetingsScreen() {
     const [activeMeeting, setActiveMeeting] = useState<any>(null);
     const { data: meetings = [], isLoading } = useMeetingsQuery();
+    const { data: enrollments, isLoading: isEnrollmentsLoading } = useMyEnrollmentsQuery();
+
+    const isEnrolled = enrollments?.some(e => e.status === 'accepted') || false;
 
     if (activeMeeting) {
         return <ActiveMeetingView meeting={activeMeeting} onLeave={() => setActiveMeeting(null)} />;
@@ -44,29 +50,43 @@ export default function MeetingsScreen() {
                     <Text style={styles.bannerSub}>Join your scheduled video classes</Text>
                 </View>
                 <View style={styles.statsBadge}>
-                    <Text style={styles.statsNumber}>{meetings.length}</Text>
+                    <Text style={styles.statsNumber}>{isEnrolled ? meetings.length : 0}</Text>
                     <Text style={styles.statsLabel}>Today</Text>
                 </View>
             </View>
 
-            <FlatList
-                data={meetings}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
-                renderItem={({ item }) => (
-                    <MeetingCard
-                        subject={item.subject}
-                        title={item.title}
-                        time={item.time}
-                        duration={item.duration}
-                        onJoin={() => setActiveMeeting(item)}
-                    />
-                )}
-                ListHeaderComponent={() => (
-                    <Text style={styles.header}>Scheduled Meetings</Text>
-                )}
-                showsVerticalScrollIndicator={false}
-            />
+            {isEnrollmentsLoading ? (
+                <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <ActivityIndicator size="large" color={Colors.light.primary} />
+                </View>
+            ) : !isEnrolled ? (
+                <View style={styles.emptyContainer}>
+                    <Ionicons name="videocam-off-outline" size={64} color="#CBD5E1" />
+                    <Text style={styles.emptyTitle}>No Meetings Available</Text>
+                    <Text style={styles.emptyText}>
+                        You are not currently enrolled in any subjects. Please enroll first to see your scheduled classes.
+                    </Text>
+                </View>
+            ) : (
+                <FlatList
+                    data={meetings}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item }) => (
+                        <MeetingCard
+                            subject={item.subject}
+                            title={item.title}
+                            time={item.time}
+                            duration={item.duration}
+                            onJoin={() => setActiveMeeting(item)}
+                        />
+                    )}
+                    ListHeaderComponent={() => (
+                        <Text style={styles.header}>Scheduled Meetings</Text>
+                    )}
+                    showsVerticalScrollIndicator={false}
+                />
+            )}
         </View>
     );
 }
@@ -130,5 +150,24 @@ const styles = StyleSheet.create({
     },
     webview: {
         flex: 1,
-    }
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 40,
+    },
+    emptyTitle: {
+        fontSize: 20,
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    emptyText: {
+        fontSize: 15,
+        color: "#64748B",
+        textAlign: "center",
+        lineHeight: 22,
+    },
 });

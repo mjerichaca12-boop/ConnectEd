@@ -9,7 +9,7 @@ export async function applyForSubject({ subjectId }: ApplyForSubjectArgs) {
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
     const { data, error } = await supabase
-        .from('enrollments')
+        .from('teacher_student_assignments')
         .insert({
             subject_id: subjectId,
             student_id: userData.user.id,

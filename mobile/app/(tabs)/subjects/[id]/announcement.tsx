@@ -11,7 +11,12 @@ export default function SubjectAnnouncements() {
     const { id: subjectId } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     
-    const { data: announcements, isLoading } = useAnnouncementsQuery({ subjectId });
+    const { data: subjectAnnouncements, isLoading } = useAnnouncementsQuery({ subjectId });
+    const { data: allAnnouncements } = useAnnouncementsQuery({});
+
+    const announcements = (subjectAnnouncements && subjectAnnouncements.length > 0) 
+        ? subjectAnnouncements 
+        : allAnnouncements;
 
     if (isLoading) {
         return (

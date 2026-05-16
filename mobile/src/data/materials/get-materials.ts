@@ -19,7 +19,7 @@ export async function getMaterials({ subjectId, teacherId }: GetMaterialsArgs): 
         const result = await supabase
             .from('class_materials')
             .select('*')
-            .eq('subject_id', subjectId);
+            .or(`subject_id.eq.${subjectId},subject_id.is.null`);
         data = result.data || [];
         error = result.error;
         console.log(`[materials] Subject-specific count: ${data.length}`);

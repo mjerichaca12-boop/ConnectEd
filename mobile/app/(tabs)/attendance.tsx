@@ -1,588 +1,386 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     ScrollView,
     TouchableOpacity,
+    RefreshControl,
+    StatusBar,
+    ActivityIndicator,
     SafeAreaView,
     Platform,
-    StatusBar,
     Modal,
-    TouchableWithoutFeedback,
-    ActivityIndicator,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import Colors from "../../src/constants/Colors";
-import Layout from "../../src/constants/Layout";
+    TouchableWithoutFeedback
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../../src/lib/supabase';
+import Colors from '../../src/constants/Colors';
+import Layout from '../../src/constants/Layout';
+import AppHeader from '../../src/components/common/AppHeader';
 
-// Custom Header Component to match the screenshot
-const AttendanceHeader = ({ onBack }: { onBack: () => void }) => (
-    <View style={styles.headerContainer}>
-        <View style={styles.headerTop}>
-            <View>
-                <Text style={styles.headerTitle}>Attendance Record</Text>
-                <Text style={styles.headerSubtitle}>
-                    1st Quarter 2026 • Track your class attendance
-                </Text>
-            </View>
-            <TouchableOpacity style={styles.profileIcon} onPress={onBack}>
-                <Ionicons name="person-outline" size={24} color="#047857" />
-            </TouchableOpacity>
-        </View>
-    </View>
-);
-
-const SummaryCard = ({
-    title,
-    value,
-    subtitle,
-    icon,
-    iconBg,
-    iconColor,
-}: {
-    title: string;
-    value: string;
-    subtitle?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    iconBg: string;
-    iconColor: string;
-}) => (
-    <View style={styles.summaryCard}>
-        <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
-            <Ionicons name={icon} size={20} color={iconColor} />
-        </View>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.cardValue}>{value}</Text>
-        {subtitle && <Text style={styles.cardSubtitle}>{subtitle}</Text>}
-    </View>
-);
-
-import { supabase } from "../../src/lib/supabase";
-import { getMyEnrollments } from "../../src/data/enrollments/get-my-enrollments";
+interface AttendanceRecord {
+    id: string;
+    date: string;
+    status: string;
+    subject_id: string;
+    subject_name: string;
+    subject_code: string;
+    remarks: string;
+}
 
 export default function AttendanceScreen() {
-    const router = useRouter();
-    const [selectedStatus, setSelectedStatus] = useState("All Status");
-    const [isFilterVisible, setIsFilterVisible] = useState(false);
-    const [attendanceData, setAttendanceData] = useState<any[]>([]);
+    const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchAttendance = useCallback(async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('Not authenticated');
+
+            // 1. Fetch attendance records
+            const { data: attendance, error: attendanceError } = await supabase
+                .from('teacher_student_attendance')
+                .select('*')
+                .eq('student_id', user.id)
+                .order('attendance_date', { ascending: false });
+
+            if (attendanceError) throw attendanceError;
+
+            if (!attendance || attendance.length === 0) {
+                setAttendanceData([]);
+                return;
+            }
+
+            // 2. Fetch subject details for each record
+            const subjectIds = [...new Set(attendance.map(a => a.subject_id))];
+            const { data: subjects, error: subjectsError } = await supabase
+                .from('subjects')
+                .select('id, name, code')
+                .in('id', subjectIds);
+
+            if (subjectsError) throw subjectsError;
+
+            const subjectMap = new Map(subjects?.map(s => [s.id, s]));
+
+            // 3. Map records
+            const mappedRecords: AttendanceRecord[] = attendance.map(a => {
+                const subject = subjectMap.get(a.subject_id);
+                return {
+                    id: a.id,
+                    date: new Date(a.attendance_date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                    }),
+                    status: a.attendance_status || 'Unmarked',
+                    subject_id: a.subject_id,
+                    subject_name: subject?.name || 'Unknown Subject',
+                    subject_code: subject?.code || 'N/A',
+                    remarks: a.remarks || ''
+                };
+            });
+
+            setAttendanceData(mappedRecords);
+        } catch (err: any) {
+            console.error('[attendance] Fetch error:', err);
+            setError(err.message || 'Failed to load attendance');
+        } finally {
+            setIsLoading(false);
+            setRefreshing(false);
+        }
+    }, []);
 
     useEffect(() => {
         fetchAttendance();
+    }, [fetchAttendance]);
 
-        const channel = supabase
-            .channel("attendance-realtime")
-            .on(
-                "postgres_changes",
-                { event: "UPDATE", schema: "public", table: "teacher_student_assignments" },
-                () => { fetchAttendance(); }
-            )
-            .subscribe();
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchAttendance();
+    };
 
-        return () => { supabase.removeChannel(channel); };
-    }, []);
+    // Calculate statistics
+    const stats = {
+        present: attendanceData.filter(a => a.status === 'Present').length,
+        absent: attendanceData.filter(a => a.status === 'Absent').length,
+        late: attendanceData.filter(a => a.status === 'Late').length,
+        total: attendanceData.length
+    };
 
-    const fetchAttendance = async () => {
-        try {
-            const enrollments = await getMyEnrollments();
-            
-            let allHistory: any[] = [];
-            let totalStats = { present: 0, absent: 0, late: 0 };
-
-            enrollments.forEach(en => {
-                if (en.status !== "accepted") return;
-                
-                // Need to fetch actual attendance from enrollments view because getMyEnrollments might not have it or might not be updated
-                // Actually, getMyEnrollments doesn't return attendance field right now. 
-                // Let's fetch it explicitly.
-            });
-
-            const { data: userData } = await supabase.auth.getUser();
-            if (!userData?.user) return;
-
-            const { data, error } = await supabase
-                .from('enrollments')
-                .select('subject_id, attendance, subjects(name, code)')
-                .eq('student_id', userData.user.id)
-                .eq('status', 'accepted');
-
-            if (error) throw error;
-
-            (data || []).forEach((row: any) => {
-                const att = typeof row.attendance === 'string' ? JSON.parse(row.attendance) : (row.attendance || {});
-                totalStats.present += (att.present || 0);
-                totalStats.absent += (att.absent || 0);
-                totalStats.late += (att.late || 0);
-
-                const history = att.history || [];
-                history.forEach((h: any) => {
-                    allHistory.push({
-                        date: h.date,
-                        subject: row.subjects?.name || "Unknown",
-                        code: row.subjects?.code || "UNK",
-                        status: h.status,
-                        time_in: h.time_in || "-",
-                        remarks: "-"
-                    });
-                });
-            });
-
-            // Sort history by date descending
-            allHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-            setAttendanceData(allHistory);
-        } catch (error: any) {
-            console.warn('Fetching attendance failed.', error.message);
-            setAttendanceData([]);
-        } finally {
-            setIsLoading(false);
+    const getStatusColor = (status: string) => {
+        switch (status.toLowerCase()) {
+            case 'present': return '#10B981'; // green-600
+            case 'absent': return '#EF4444';  // red-500
+            case 'late': return '#F59E0B';    // amber-500
+            default: return '#64748B';       // slate-500
         }
     };
 
-    const filteredData = selectedStatus === "All Status" 
-        ? attendanceData 
-        : attendanceData.filter(item => item.status.toLowerCase() === selectedStatus.toLowerCase());
-
-    const statusOptions = ["All Status", "Present", "Late", "Absent"];
-
-    // Summary calculations
-    const stats = {
-        total: attendanceData.length,
-        present: attendanceData.filter(d => d.status.toLowerCase() === 'present').length,
-        absent: attendanceData.filter(d => d.status.toLowerCase() === 'absent').length,
-        late: attendanceData.filter(d => d.status.toLowerCase() === 'late').length,
-    };
-    const presentRate = stats.total > 0 ? Math.round((stats.present / stats.total) * 100) : 0;
-
-    const getStatusStyle = (status: string) => {
-        const lowerStatus = status.toLowerCase();
-        switch (lowerStatus) {
-            case "present":
-                return { bg: "#ECFDF5", color: "#10B981", icon: "checkmark-circle-outline" as const };
-            case "late":
-                return { bg: "#FFF7ED", color: "#F97316", icon: "time-outline" as const };
-            case "absent":
-                return { bg: "#FEF2F2", color: "#EF4444", icon: "close-circle-outline" as const };
-            default:
-                return { bg: "#F1F5F9", color: "#64748B", icon: "help-circle-outline" as const };
+    const getStatusBg = (status: string) => {
+        switch (status.toLowerCase()) {
+            case 'present': return '#ECFDF5'; // green-50
+            case 'absent': return '#FEF2F2';  // red-50
+            case 'late': return '#FFFBEB';    // amber-50
+            default: return '#F8FAFC';       // slate-50
         }
     };
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#059669" />
-            <AttendanceHeader onBack={() => router.back()} />
-
-            <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.content}>
-                {/* Summary Cards Grid */}
-                <View style={styles.summaryGrid}>
-                    <View style={styles.row}>
-                        <SummaryCard
-                            title="Total Classes"
-                            value={stats.total.toString()}
-                            icon="calendar-outline"
-                            iconBg="#EFF6FF"
-                            iconColor="#3B82F6"
-                        />
-                        <SummaryCard
-                            title="Present"
-                            value={stats.present.toString()}
-                            subtitle={`${presentRate}% rate`}
-                            icon="checkmark-circle-outline"
-                            iconBg="#ECFDF5"
-                            iconColor="#10B981"
-                        />
-                    </View>
-                    <View style={styles.row}>
-                        <SummaryCard
-                            title="Absent"
-                            value={stats.absent.toString()}
-                            icon="close-circle-outline"
-                            iconBg="#FEF2F2"
-                            iconColor="#EF4444"
-                        />
-                        <SummaryCard
-                            title="Late"
-                            value={stats.late.toString()}
-                            icon="alert-circle-outline"
-                            iconBg="#FFF7ED"
-                            iconColor="#F97316"
-                        />
-                    </View>
-                </View>
-
-                {/* Filters Row */}
-                <View style={styles.filterRow}>
-                    <TouchableOpacity 
-                        style={styles.filterButton} 
-                        onPress={() => setIsFilterVisible(true)}
-                    >
-                        <Ionicons name="filter-outline" size={20} color="#64748B" style={styles.filterIcon} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.filterLabel} numberOfLines={1}>{selectedStatus}</Text>
-                        </View>
-                        <Ionicons name="chevron-down" size={16} color="#64748B" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.filterButton}>
-                        <Ionicons name="calendar-outline" size={20} color="#64748B" style={styles.filterIcon} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.filterLabel} numberOfLines={1}>January 2026</Text>
-                        </View>
-                    </TouchableOpacity>
-
-
-                </View>
-
-                {/* Attendance Table */}
-                <View style={styles.tableCard}>
-                    {/* Table Header */}
-                    <View style={styles.tableHeader}>
-                        <Text style={[styles.tableHeaderText, { flex: 1.2 }]}>DATE</Text>
-                        <Text style={[styles.tableHeaderText, { flex: 2 }]}>SUBJECT</Text>
-                        <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>STATUS</Text>
-                        <Text style={[styles.tableHeaderText, { flex: 1 }]}>TIME IN</Text>
-                        <Text style={[styles.tableHeaderText, { flex: 0.8 }]}>REMARKS</Text>
-                    </View>
-
-                    {/* Table Body */}
-                    {isLoading ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color={Colors.light.primary} />
-                        </View>
-                    ) : filteredData.length > 0 ? (
-                        filteredData.map((item, index) => {
-                            const statusStyle = getStatusStyle(item.status);
-                            return (
-                                <View key={index} style={styles.tableRow}>
-                                    <View style={{ flex: 1.2 }}>
-                                        <Text style={styles.dateText}>{item.date}</Text>
-                                    </View>
-                                    <View style={{ flex: 2 }}>
-                                        <Text style={styles.subjectText}>{item.subject}</Text>
-                                        <Text style={styles.codeText}>{item.code}</Text>
-                                    </View>
-                                    <View style={{ flex: 1.5 }}>
-                                        <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                                            <Ionicons name={statusStyle.icon} size={14} color={statusStyle.color} />
-                                            <Text style={[styles.statusText, { color: statusStyle.color }]}>{item.status}</Text>
-                                        </View>
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.timeText}>{item.time_in}</Text>
-                                    </View>
-                                    <View style={{ flex: 0.8 }}>
-                                        <Text style={styles.remarksText}>{item.remarks}</Text>
-                                    </View>
-                                </View>
-                            );
-                        })
-                    ) : (
-                        <View style={styles.emptyContainer}>
-                            <Text style={styles.emptyText}>No records found for this status.</Text>
-                        </View>
-                    )}
-                </View>
-            </ScrollView>
-
-            {/* Filter Modal */}
-            <Modal
-                transparent
-                visible={isFilterVisible}
-                animationType="fade"
-                onRequestClose={() => setIsFilterVisible(false)}
+        <View style={styles.container}>
+            <StatusBar barStyle="light-content" backgroundColor={Colors.light.forestGreen} />
+            <AppHeader title="My Attendance" showBack={false} />
+            
+            <ScrollView 
+                style={styles.scrollContainer} 
+                contentContainerStyle={styles.content}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.light.primary]} />
+                }
             >
-                <TouchableWithoutFeedback onPress={() => setIsFilterVisible(false)}>
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback>
-                            <View style={styles.modalContent}>
-                                <Text style={styles.modalTitle}>Select Status</Text>
-                                {statusOptions.map((option) => (
-                                    <TouchableOpacity
-                                        key={option}
-                                        style={[
-                                            styles.optionItem,
-                                            selectedStatus === option && styles.activeOption
-                                        ]}
-                                        onPress={() => {
-                                            setSelectedStatus(option);
-                                            setIsFilterVisible(false);
-                                        }}
-                                    >
-                                        <Text style={[
-                                            styles.optionText,
-                                            selectedStatus === option && styles.activeOptionText
-                                        ]}>
-                                            {option}
-                                        </Text>
-                                        {selectedStatus === option && (
-                                            <Ionicons name="checkmark" size={20} color={Colors.light.primary} />
-                                        )}
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </TouchableWithoutFeedback>
+                {/* Summary Section - Inspired by Teacher Portal */}
+                <View style={styles.summaryGrid}>
+                    <View style={[styles.summaryCard, { borderLeftColor: '#10B981', borderLeftWidth: 4 }]}>
+                        <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                        <Text style={styles.summaryCount}>{stats.present}</Text>
+                        <Text style={styles.summaryLabel}>Present</Text>
                     </View>
-                </TouchableWithoutFeedback>
-            </Modal>
-        </SafeAreaView>
+                    <View style={[styles.summaryCard, { borderLeftColor: '#EF4444', borderLeftWidth: 4 }]}>
+                        <Ionicons name="close-circle" size={24} color="#EF4444" />
+                        <Text style={styles.summaryCount}>{stats.absent}</Text>
+                        <Text style={styles.summaryLabel}>Absent</Text>
+                    </View>
+                    <View style={[styles.summaryCard, { borderLeftColor: '#F59E0B', borderLeftWidth: 4 }]}>
+                        <Ionicons name="alert-circle" size={24} color="#F59E0B" />
+                        <Text style={styles.summaryCount}>{stats.late}</Text>
+                        <Text style={styles.summaryLabel}>Late</Text>
+                    </View>
+                </View>
+
+                <View style={styles.headerRow}>
+                    <Text style={styles.sectionTitle}>Attendance Records</Text>
+                    <Text style={styles.totalText}>Total: {stats.total}</Text>
+                </View>
+
+                {error && (
+                    <View style={styles.errorCard}>
+                        <Ionicons name="alert-circle" size={24} color="#EF4444" />
+                        <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                )}
+
+                {isLoading && attendanceData.length === 0 ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color={Colors.light.primary} />
+                        <Text style={styles.loadingText}>Loading records...</Text>
+                    </View>
+                ) : attendanceData.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                        <Ionicons name="calendar-outline" size={48} color="#CBD5E1" />
+                        <Text style={styles.emptyTitle}>No Attendance Records</Text>
+                        <Text style={styles.emptySub}>Your attendance will appear here once recorded by your teachers.</Text>
+                    </View>
+                ) : (
+                    attendanceData.map((item) => (
+                        <View key={item.id} style={styles.attendanceCard}>
+                            <View style={styles.cardMain}>
+                                <View style={styles.subjectInfo}>
+                                    <Text style={styles.subjectName}>{item.subject_name}</Text>
+                                    <Text style={styles.subjectCode}>{item.subject_code}</Text>
+                                </View>
+                                <View style={[styles.statusBadge, { backgroundColor: getStatusBg(item.status) }]}>
+                                    <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
+                                </View>
+                            </View>
+                            
+                            <View style={styles.cardFooter}>
+                                <View style={styles.footerItem}>
+                                    <Ionicons name="calendar-outline" size={16} color="#64748B" />
+                                    <Text style={styles.footerText}>{item.date}</Text>
+                                </View>
+                                {item.remarks ? (
+                                    <View style={styles.footerItem}>
+                                        <Ionicons name="chatbox-ellipses-outline" size={16} color="#64748B" />
+                                        <Text style={styles.footerText}>{item.remarks}</Text>
+                                    </View>
+                                ) : null}
+                            </View>
+                        </View>
+                    ))
+                )}
+            </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F0F9F6", // Light green background
-        paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
-    },
-    headerContainer: {
-        backgroundColor: "#059669", // Dark emerald green
-        paddingHorizontal: Layout.spacing.l,
-        paddingBottom: Layout.spacing.xl,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-    },
-    headerTop: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginTop: Layout.spacing.m,
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: "bold",
-        color: "#FFFFFF",
-    },
-    headerSubtitle: {
-        fontSize: 14,
-        color: "#D1FAE5",
-        marginTop: 4,
-    },
-    profileIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: "#FFFFFF",
-        justifyContent: "center",
-        alignItems: "center",
+        backgroundColor: "#F8FAFC",
     },
     scrollContainer: {
         flex: 1,
-        marginTop: -10,
     },
     content: {
-        paddingHorizontal: Layout.spacing.m,
-        paddingBottom: 40,
+        padding: 16,
+        paddingBottom: 32,
     },
     summaryGrid: {
-        marginTop: Layout.spacing.m,
-    },
-    row: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: Layout.spacing.m,
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 24,
     },
     summaryCard: {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 16,
-        padding: 16,
-        width: "48%",
+        flex: 1,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 12,
+        padding: 12,
+        alignItems: 'center',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 10,
+        shadowRadius: 2,
         elevation: 2,
     },
-    iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 12,
-    },
-    cardTitle: {
-        fontSize: 14,
-        color: "#64748B",
-        marginBottom: 8,
-    },
-    cardValue: {
-        fontSize: 28,
-        fontWeight: "bold",
-        color: "#1E293B",
-    },
-    cardSubtitle: {
-        fontSize: 12,
-        color: "#10B981",
+    summaryCount: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1E293B',
         marginTop: 4,
     },
-    filterRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: Layout.spacing.l,
-    },
-    filterButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#FFFFFF",
-        borderRadius: 12,
-        paddingHorizontal: 8,
-        paddingVertical: 10,
-        borderWidth: 1,
-        borderColor: "#E2E8F0",
-        flex: 0.35,
-        marginRight: 8,
-    },
-    filterIcon: {
-        marginRight: 6,
-    },
-    filterLabel: {
-        fontSize: 13,
-        fontWeight: "600",
-        color: "#1E293B",
-        marginRight: 4,
-    },
-    exportButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#059669",
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        flex: 0.25,
-        justifyContent: "center",
-    },
-    exportText: {
-        color: "#FFFFFF",
-        fontWeight: "bold",
-        fontSize: 14,
-        marginLeft: 6,
-    },
-    tableCard: {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 16,
-        paddingVertical: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 2,
-    },
-    tableHeader: {
-        flexDirection: "row",
-        borderBottomWidth: 1,
-        borderBottomColor: "#F1F5F9",
-        paddingHorizontal: 16,
-        paddingBottom: 12,
-    },
-    tableHeaderText: {
-        fontSize: 12,
-        fontWeight: "bold",
-        color: "#94A3B8",
-    },
-    tableRow: {
-        flexDirection: "row",
-        paddingHorizontal: 16,
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: "#F1F5F9",
-        alignItems: "center",
-    },
-    dateText: {
-        fontSize: 13,
-        color: "#1E293B",
-        fontWeight: "500",
-    },
-    subjectText: {
-        fontSize: 14,
-        color: "#1E293B",
-        fontWeight: "600",
-    },
-    codeText: {
-        fontSize: 12,
-        color: "#059669",
-        fontWeight: "bold",
+    summaryLabel: {
+        fontSize: 11,
+        color: '#64748B',
+        textTransform: 'uppercase',
+        fontWeight: '600',
         marginTop: 2,
     },
-    statusBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#ECFDF5",
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        alignSelf: "flex-start",
+    headerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
     },
-    statusText: {
-        fontSize: 12,
-        color: "#059669",
-        fontWeight: "600",
-        marginLeft: 4,
-    },
-    timeText: {
-        fontSize: 13,
-        color: "#64748B",
-    },
-    remarksText: {
-        fontSize: 13,
-        color: "#64748B",
-        textAlign: "center",
-    },
-    // Modal Styles
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.5)",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 20,
-    },
-    modalContent: {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 20,
-        padding: 20,
-        width: "100%",
-        maxWidth: 320,
-    },
-    modalTitle: {
+    sectionTitle: {
         fontSize: 18,
         fontWeight: "bold",
         color: "#1E293B",
-        marginBottom: 20,
-        textAlign: "center",
     },
-    optionItem: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingVertical: 14,
-        paddingHorizontal: 16,
+    totalText: {
+        fontSize: 14,
+        color: '#64748B',
+        fontWeight: '500',
+    },
+    attendanceCard: {
+        backgroundColor: "#FFFFFF",
         borderRadius: 12,
-        marginBottom: 8,
+        padding: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: "#F1F5F9",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 2,
     },
-    activeOption: {
-        backgroundColor: "#F0F9FF",
+    cardMain: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: 12,
     },
-    optionText: {
+    subjectInfo: {
+        flex: 1,
+        marginRight: 12,
+    },
+    subjectName: {
         fontSize: 16,
-        color: "#64748B",
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginBottom: 2,
     },
-    activeOptionText: {
+    subjectCode: {
+        fontSize: 13,
         color: Colors.light.primary,
+        fontWeight: '600',
+    },
+    statusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    statusText: {
+        fontSize: 12,
         fontWeight: "bold",
     },
-    emptyContainer: {
+    cardFooter: {
+        flexDirection: 'row',
+        gap: 16,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#F1F5F9',
+    },
+    footerItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    footerText: {
+        fontSize: 12,
+        color: "#64748B",
+    },
+    emptyCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
         padding: 40,
         alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: "#F1F5F9",
+        marginTop: 20,
     },
-    emptyText: {
-        color: "#94A3B8",
+    emptyTitle: {
+        fontSize: 18,
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginTop: 16,
+    },
+    emptySub: {
         fontSize: 14,
+        color: "#64748B",
+        textAlign: "center",
+        marginTop: 8,
+        lineHeight: 20,
+    },
+    errorCard: {
+        backgroundColor: "#FEF2F2",
+        borderRadius: 12,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: "#FECACA",
+    },
+    errorText: {
+        fontSize: 14,
+        color: "#EF4444",
+        flex: 1,
     },
     loadingContainer: {
         padding: 40,
-        alignItems: "center",
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 12,
+        fontSize: 14,
+        color: '#64748B',
     }
 });

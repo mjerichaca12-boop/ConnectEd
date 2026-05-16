@@ -17,68 +17,90 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         return [];
     }
 
-    let query = supabase
+    // 1. Fetch assignments separately to avoid PGRST200 join errors
+    // Use explicit columns to avoid any accidental 'subject_id' injection or schema cache issues
+    let assignmentQuery = supabase
         .from('assignments_activity')
-        .select(`
-            *,
-            subjects:subject_id (
-                id,
-                code,
-                name
-            ),
-            submissions (
-                id,
-                status,
-                grade,
-                teacher_comment,
-                file_url
-            )
-        `);
+        .select('*');
 
     if (subjectId) {
-        query = query.eq('subject_id', subjectId);
+        assignmentQuery = assignmentQuery.eq('course_id', subjectId);
     } else {
-        query = query.in('subject_id', approvedSubjectIds);
+        assignmentQuery = assignmentQuery.in('course_id', approvedSubjectIds);
     }
 
-    const { data, error } = await query;
+    const { data: assignments, error: assignmentError } = await assignmentQuery;
 
-    if (error) {
-        if (error.code === 'PGRST205' || error.message?.toLowerCase().includes('not found')) {
-            console.warn('[assignments] tables not found');
-            return [];
-        }
-        throw error;
+    if (assignmentError) {
+        console.error('[assignments] Assignment query error:', assignmentError);
+        return [];
     }
 
-    return (data || []).map(row => {
-        // Filter submissions for this specific student
-        // Note: the supabase join might return all submissions unless we filter, 
-        // wait, we can't easily filter the inner join in supabase JS without RLS doing it.
-        // But RLS on submissions says: "Students can view their own submissions." 
-        // So it will automatically only return this student's submissions!
-        const mySubmission = row.submissions?.[0];
-        let status: Assignment['status'] = mySubmission?.status || "pending";
+    if (!assignments || assignments.length === 0) return [];
 
-        if (!mySubmission && row.due_date && new Date(row.due_date) < new Date()) {
+    // 2. Fetch grades/results for these assignments separately
+    const assignmentIds = assignments.map(a => a.id);
+    const { data: results, error: resultsError } = await supabase
+        .from('teacher_assessment_grades')
+        .select('id, assessment_id, status, grade_value, feedback')
+        .eq('student_id', userData.user.id)
+        .in('assessment_id', assignmentIds);
+
+    if (resultsError) {
+        console.warn('[assignments] Grades fetch error (non-fatal):', resultsError);
+    }
+
+    // Create a lookup map for results
+    const resultsMap = new Map();
+    (results || []).forEach(r => {
+        resultsMap.set(r.assessment_id, r);
+    });
+
+    return assignments.map(row => {
+        const myResult = resultsMap.get(row.id);
+        let status: Assignment['status'] = myResult?.status?.toLowerCase() || "pending";
+
+        // Normalize status names to match UI
+        if (status === 'graded') status = 'submitted';
+        
+        const dueDate = row.deadline || row.due_date || row.dueDate;
+        if (!myResult && dueDate && new Date(dueDate) < new Date()) {
             status = "late";
+        }
+
+        // Parse JSON file strings if they exist
+        let fileUrl = row.file_url;
+        let fileName = row.file_name;
+
+        try {
+            if (typeof fileUrl === 'string' && fileUrl.startsWith('[')) {
+                const urls = JSON.parse(fileUrl);
+                fileUrl = urls[0] || null;
+            }
+            if (typeof fileName === 'string' && fileName.startsWith('[')) {
+                const names = JSON.parse(fileName);
+                fileName = names[0] || null;
+            }
+        } catch (e) {
+            // Keep original values if not JSON
         }
 
         return {
             id: row.id,
-            subjectId: row.subject_id,
-            subject: row.subjects?.code || "Unknown",
-            title: row.title || "Subject Assignment",
-            dueDate: row.due_date ? new Date(row.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "TBA",
-            status: status,
+            subjectId: row.course_id,
+            subject: "Subject", // Will be refined by UI or another fetch if needed
+            title: row.title || "Assignment",
+            dueDate: dueDate ? new Date(dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "TBA",
+            status: status as Assignment['status'],
             instructions: row.description || "Please see subject details for more information.",
-            file_url: row.file_url, // Original assignment file
-            submission: mySubmission ? {
-                id: mySubmission.id,
-                file_url: mySubmission.file_url,
-                grade: mySubmission.grade,
-                teacher_comment: mySubmission.teacher_comment,
-                status: mySubmission.status,
+            file_url: fileUrl,
+            file_name: fileName,
+            submission: myResult ? {
+                id: myResult.id,
+                file_url: null,
+                grade: myResult.grade_value,
+                teacher_comment: myResult.feedback,
+                status: myResult.status,
             } : null,
         };
     });

@@ -9,14 +9,19 @@ import AppHeader from "../../src/components/common/AppHeader";
 import { supabase } from "../../src/lib/supabase";
 import { useAnnouncementsQuery } from "../../src/hooks/query/announcements/use-announcements-query";
 import { useEventsQuery } from "../../src/hooks/query/events/use-events-query";
+import { useMyEnrollmentsQuery } from "../../src/hooks/query/enrollments/use-my-enrollments-query";
 
 export default function HomeScreen() {
     const router = useRouter();
     const [displayName, setDisplayName] = useState("Student");
     const { data: announcementsData, isLoading: isAnnouncementsLoading, refetch: refetchAnnouncements } = useAnnouncementsQuery({ limit: 3 });
     const { data: eventsData, isLoading: isEventsLoading } = useEventsQuery(3);
+    const { data: enrollments, isLoading: isEnrollmentsLoading } = useMyEnrollmentsQuery();
+    
     const announcements = announcementsData || [];
     const events = eventsData || [];
+
+    const isEnrolled = enrollments?.some(e => e.status === 'accepted') || false;
 
     const loadDisplayName = useCallback(async () => {
         try {
@@ -83,8 +88,8 @@ export default function HomeScreen() {
                     <Text style={styles.welcomeSub}>Here&apos;s what&apos;s happening today</Text>
                 </View>
 
-                {/* Latest Announcements Section */}
-                {(!isAnnouncementsLoading && announcements.length === 0) ? null : (
+                {/* Latest Announcements Section - Visible only if Enrolled */}
+                {isEnrolled && !isAnnouncementsLoading && announcements.length > 0 && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Latest Announcements</Text>
@@ -92,27 +97,23 @@ export default function HomeScreen() {
                                 <Text style={styles.link}>See All</Text>
                             </TouchableOpacity>
                         </View>
-                        {isAnnouncementsLoading ? (
-                            <ActivityIndicator size="small" color={Colors.light.primary} style={{ marginVertical: 20 }} />
-                        ) : (
-                            announcements.map((ann) => (
-                                <AnnouncementCard
-                                    key={ann.id}
-                                    title={ann.title}
-                                    content={ann.content}
-                                    date={ann.date}
-                                    author={ann.author || "Faculty"}
-                                    author_role={ann.author_role}
-                                    image_url={ann.image_url}
-                                    onPress={() =>
-                                        router.push({
-                                            pathname: `/(tabs)/announcement/${ann.id}`,
-                                            params: { from: "home" },
-                                        } as any)
-                                    }
-                                />
-                            ))
-                        )}
+                        {announcements.map((ann) => (
+                            <AnnouncementCard
+                                key={ann.id}
+                                title={ann.title}
+                                content={ann.content}
+                                date={ann.date}
+                                author={ann.author || "Faculty"}
+                                author_role={ann.author_role}
+                                image_url={ann.image_url}
+                                onPress={() =>
+                                    router.push({
+                                        pathname: `/(tabs)/announcement/${ann.id}`,
+                                        params: { from: "home" },
+                                    } as any)
+                                }
+                            />
+                        ))}
                     </View>
                 )}
 
@@ -139,8 +140,8 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Upcoming Events Section */}
-                {(isEventsLoading || events.length > 0) && (
+                {/* Upcoming Events Section - Visible only if Enrolled */}
+                {isEnrolled && (isEventsLoading || events.length > 0) && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Upcoming Events</Text>

@@ -53,7 +53,7 @@ import {
 const STORAGE_BUCKET = "class-materials";
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
 const ASSESSMENT_TABLE = "teacher_assessment_grades";
-const ANNOUNCEMENT_TABLE = "announcements";
+const ANNOUNCEMENT_TABLE = "school_announcements";
 
 const normalizeMaterialRecord = (row) => {
   const attachments = buildMaterialAttachments(row);

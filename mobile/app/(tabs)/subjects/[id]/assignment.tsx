@@ -147,6 +147,25 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     </Text>
                 </View>
 
+                {assignment.file_url && (
+                    <View style={styles.instructionsContainer}>
+                        <Text style={styles.sectionTitle}>Reference Materials</Text>
+                        <TouchableOpacity 
+                            style={styles.fileDownloadCard}
+                            onPress={() => Alert.alert("Download", "Opening file: " + (assignment.file_name || "Attachment"))}
+                        >
+                            <Ionicons name="document-text-outline" size={24} color={Colors.light.primary} />
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                                <Text style={styles.fileNameText} numberOfLines={1}>
+                                    {assignment.file_name || "Download Reference Material"}
+                                </Text>
+                                <Text style={styles.fileSizeText}>Tap to open/download</Text>
+                            </View>
+                            <Ionicons name="download-outline" size={20} color="#64748B" />
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {(assignment.status === "pending" || assignment.status === "late") ? (
                     <View style={styles.submissionSection}>
                         <Text style={styles.sectionTitle}>Your Work</Text>
@@ -405,5 +424,24 @@ const styles = StyleSheet.create({
         textAlign: "center",
         marginTop: 12,
         fontWeight: "600",
-    }
+    },
+    fileDownloadCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F8FAFC',
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    fileNameText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    fileSizeText: {
+        fontSize: 12,
+        color: '#64748B',
+        marginTop: 2,
+    },
 });
