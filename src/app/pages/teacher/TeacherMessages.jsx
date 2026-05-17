@@ -144,7 +144,12 @@ function TeacherMessages() {
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [groupMembers, setGroupMembers] = useState([]);
 
-  const saveConversations = (updated) => setConversations(updated);
+  const saveConversations = (updated) => {
+    const sorted = [...updated].sort(
+      (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+    );
+    setConversations(sorted);
+  };
 
   const resolveTeacherId = useCallback(async (email) => {
     try {
@@ -398,21 +403,25 @@ function TeacherMessages() {
     initialize();
   }, [navigate, resolveTeacherId, loadConversations]);
 
-  useEffect(() => {
-    const container = messageContainerRef.current;
-    if (!container) return;
-    container.scrollTop = container.scrollHeight;
-  }, [selectedConvId, conversations]);
-
+  // Real-time subscription for new messages
   useEffect(() => {
     if (!supabase || !teacherId) return;
     const channel = supabase
       .channel(`teacher-messages-${teacherId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: MESSAGE_TABLE }, async () => {
-        const userData = localStorage.getItem("currentUser");
-        if (!userData) return;
-        const user = JSON.parse(userData);
-        await loadConversations(teacherId, user.name || "Teacher");
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: MESSAGE_TABLE }, async (payload) => {
+        const newMsg = payload.new;
+        if (!newMsg) return;
+        
+        const isDirectForTeacher = String(newMsg.sender_id) === String(teacherId) || String(newMsg.receiver_id) === String(teacherId);
+        const isGroupMsg = !!newMsg.conversation_id;
+        
+        if (isDirectForTeacher || isGroupMsg) {
+          console.log("[TeacherMessages] New relevant message received, reloading...");
+          const userData = localStorage.getItem("currentUser");
+          if (!userData) return;
+          const user = JSON.parse(userData);
+          await loadConversations(teacherId, user.name || "Teacher");
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -444,6 +453,11 @@ function TeacherMessages() {
   };
 
   const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
+  const activeMessagesLength = selectedConv?.messages?.length || 0;
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [selectedConvId, activeMessagesLength]);
 
   const applyFilter = (convList) => {
     let filtered = convList;
@@ -825,10 +839,10 @@ function TeacherMessages() {
   if (loading) return <LoadingScreen message="Loading messages..." />;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen overflow-hidden bg-gray-50 flex relative">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-hidden flex flex-col lg:pl-64">
+      <main className="flex-1 h-full overflow-hidden flex flex-col lg:pl-64">
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
             <div>
@@ -843,7 +857,7 @@ function TeacherMessages() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           <div className="bg-green-600 rounded-2xl p-5 text-white shadow-sm flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
@@ -873,8 +887,8 @@ function TeacherMessages() {
             </div>
           )}
 
-          <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden bg-white rounded-2xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
+            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
               <div className="p-3 border-b border-gray-100 flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -976,7 +990,7 @@ function TeacherMessages() {
               </div>
             </div>
 
-            <div className="lg:col-span-2 flex flex-col">
+            <div className="lg:col-span-2 flex flex-col min-h-0 h-full overflow-hidden">
               {selectedConv ? (
                 <>
                   <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3 flex-shrink-0">

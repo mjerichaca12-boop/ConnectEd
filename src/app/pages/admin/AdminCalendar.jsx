@@ -7,6 +7,7 @@ import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
+import { toast } from "sonner";
 
 export function AdminCalendar() {
   const navigate = useNavigate();
@@ -20,6 +21,17 @@ export function AdminCalendar() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, eventId: "", eventTitle: "" });
+
+  useEffect(() => {
+    if (showEventModal || deleteConfirm.isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showEventModal, deleteConfirm.isOpen]);
   const [events, setEvents] = useState([]);
   const [calendarTable, setCalendarTable] = useState("");
   const [calendarColumns, setCalendarColumns] = useState([]);
@@ -72,9 +84,16 @@ export function AdminCalendar() {
   const resolveColumnName = (columns, candidates) => candidates.find((candidate) => columns.includes(candidate)) || "";
 
   const sortEvents = (items) => [...items].sort((left, right) => {
-    const leftValue = new Date(`${left.eventDate}T${left.eventTime || "00:00:00"}`).getTime() || new Date(left.createdAt).getTime();
-    const rightValue = new Date(`${right.eventDate}T${right.eventTime || "00:00:00"}`).getTime() || new Date(right.createdAt).getTime();
-    return leftValue - rightValue;
+    const leftDateStr = left.eventDate ? `${left.eventDate}T${left.eventTime || "00:00:00"}` : left.createdAt;
+    const rightDateStr = right.eventDate ? `${right.eventDate}T${right.eventTime || "00:00:00"}` : right.createdAt;
+
+    let leftTime = new Date(leftDateStr).getTime();
+    let rightTime = new Date(rightDateStr).getTime();
+
+    if (Number.isNaN(leftTime)) leftTime = new Date(left.createdAt).getTime() || 0;
+    if (Number.isNaN(rightTime)) rightTime = new Date(right.createdAt).getTime() || 0;
+
+    return leftTime - rightTime;
   });
 
   const formatEventDate = (value) => {
@@ -225,27 +244,7 @@ export function AdminCalendar() {
 
   const refreshEvents = async (tableName) => {
     const rows = await loadEvents(tableName);
-    setEvents((current) => {
-      const currentByKey = new Map(current.map((event) => [`${event.title}::${event.eventDate}::${event.eventTime}::${event.targetAudience}`, event]));
-
-      return sortEvents(rows.map((event) => {
-        const previous = currentByKey.get(`${event.title}::${event.eventDate}::${event.eventTime}::${event.targetAudience}`);
-
-        if (!previous) {
-          return event;
-        }
-
-        return {
-          ...previous,
-          ...event,
-          title: event.title || previous.title,
-          description: event.description || previous.description,
-          eventDate: event.eventDate || previous.eventDate,
-          eventTime: event.eventTime || previous.eventTime,
-          targetAudience: event.targetAudience || previous.targetAudience
-        };
-      }));
-    });
+    setEvents(rows);
     return rows;
   };
 
@@ -428,10 +427,11 @@ export function AdminCalendar() {
         });
       }
 
-      setSuccessMessage("Event added successfully.");
+      toast.success("Event added successfully.");
       handleCloseEventModal();
     } catch (error) {
-      setEventsError(error instanceof Error ? error.message : "Unable to add event.");
+      const errMsg = error instanceof Error ? error.message : "Unable to add event.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -454,7 +454,7 @@ export function AdminCalendar() {
         throw new Error(error.message);
       }
 
-      setSuccessMessage("Event deleted successfully.");
+      toast.success("Event deleted successfully.");
       void refreshEvents(tableName).catch(() => {
         // Keep the optimistic UI if the refresh fails.
       });
@@ -466,7 +466,8 @@ export function AdminCalendar() {
         });
       }
     } catch (error) {
-      setEventsError(error instanceof Error ? error.message : "Unable to delete event.");
+      const errMsg = error instanceof Error ? error.message : "Unable to delete event.";
+      toast.error(errMsg);
     }
   };
 
@@ -501,7 +502,7 @@ export function AdminCalendar() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
+    <div className="h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/5 rounded-full blur-[120px]" />
@@ -509,9 +510,9 @@ export function AdminCalendar() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-full overflow-hidden flex flex-col relative z-10 lg:pl-64">
         {/* Top Bar */}
-        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
+        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -530,36 +531,36 @@ export function AdminCalendar() {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row gap-6">
+        <div className="p-6 flex-1 min-h-0 overflow-y-auto w-full">
+          <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-6 h-full min-h-0">
             {/* Calendar Preview */}
-            <div className="w-full md:w-1/3">
+            <div className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 flex flex-col min-h-0">
               <DashboardCalendar ref={calendarRef} viewerRole="admin" />
             </div>
 
             {/* Event Management */}
-            <div className="w-full md:w-2/3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col min-h-0">
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center flex-shrink-0">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <CalendarIcon className="w-5 h-5 text-green-600" />
                   School Events & Holidays
                 </h3>
                 <button
                   onClick={handleOpenEventModal}
-                  className="px-4 py-2 bg-green-600 text-gray-900 font-medium rounded-xl hover:bg-green-500 transition-colors flex items-center gap-2 text-sm shadow-lg shadow-green-500/20"
+                  className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2 text-sm shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
                   Add Event
                 </button>
               </div>
 
-              <div className="p-6">
-                <p className="text-sm text-gray-600 mb-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <div className="p-6 flex-1 min-h-0 overflow-y-auto space-y-6">
+                <p className="text-sm text-gray-600 bg-gray-50 p-4 rounded-xl border border-gray-100">
                   Manage the official school calendar. Changes made here will instantly reflect on the Teacher dashboard.
                 </p>
 
                 {(eventsError || successMessage) && (
-                  <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 mb-6 ${eventsError ? "border-red-200 bg-red-50 text-red-200" : "border-green-200 bg-green-50 text-green-200"}`}>
+                  <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${eventsError ? "border-rose-200 bg-rose-50 text-rose-700" : "border-green-200 bg-green-50 text-green-700"}`}>
                     <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                     <span>{eventsError || successMessage}</span>
                   </div>
@@ -567,32 +568,36 @@ export function AdminCalendar() {
 
                 <div className="space-y-4">
                   {eventsLoading ? (
-                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-gray-100">
                       Loading events...
                     </div>
                   ) : visibleEvents.length > 0 ? visibleEvents.map((evt) => (
                     <div
                       key={evt.id}
-                      className="flex items-center justify-between p-4 bg-gray-50 border border-gray-200 rounded-xl hover:border-green-300 transition-colors"
+                      className="flex items-center justify-between p-5 bg-white border border-gray-200 rounded-2xl hover:border-green-500 hover:shadow-md transition-all duration-200 group"
                     >
-                      <div className="flex flex-col">
-                        <div className="flex items-start gap-2 flex-wrap">
-                          <span className="font-semibold text-gray-900">{evt.title || "Untitled event"}</span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border border-gray-200 text-gray-700">
+                      <div className="flex flex-col min-w-0 flex-1 pr-4">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className="font-bold text-gray-900 text-base">{evt.title || "Untitled event"}</span>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border border-green-200 bg-green-50 text-green-700">
                             {evt.targetAudience || "Not set"}
                           </span>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-green-600 mt-1">
-                          <span className="inline-flex items-center gap-1">
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-green-600 font-semibold mt-2">
+                          <span className="inline-flex items-center gap-1.5 bg-green-50/50 px-2.5 py-1 rounded-lg border border-green-100">
                             <Clock className="w-3.5 h-3.5" />
-                            {formatEventDate(evt.eventDate)} {evt.eventTime ? `• ${formatEventTime(evt.eventTime)}` : ""}
+                            {formatEventDate(evt.eventDate)} {evt.eventTime ? `• ${formatEventTime(evt.eventTime)}` : "• All Day"}
                           </span>
                         </div>
-                        {evt.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{evt.description}</p>}
+                        {evt.description && (
+                          <p className="text-sm text-gray-600 mt-3 line-clamp-2 leading-relaxed bg-gray-50/50 p-3 rounded-xl border border-gray-100">
+                            {evt.description}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-shrink-0">
                         <button
-                          className="p-2 text-red-400 hover:bg-gray-100 rounded-lg transition-colors border border-transparent hover:border-gray-200"
+                          className="p-2.5 text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-gray-100 hover:border-red-500 shadow-sm"
                           title="Delete"
                           onClick={() => handleOpenDeleteConfirm(evt)}
                         >
@@ -601,7 +606,7 @@ export function AdminCalendar() {
                       </div>
                     </div>
                   )) : (
-                    <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-gray-100">
                       No events registered.
                     </div>
                   )}
@@ -625,85 +630,85 @@ export function AdminCalendar() {
 
       {showEventModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
-              <h3 className="text-xl font-semibold text-gray-900">Add School Calendar Event</h3>
-              <button onClick={handleCloseEventModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-hidden relative border border-gray-100 flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl flex-shrink-0">
+              <h3 className="text-xl font-bold text-gray-900">Add School Calendar Event</h3>
+              <button onClick={handleCloseEventModal} type="button" className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
 
-            <form onSubmit={handleAddEvent} className="p-6">
-              <div className="space-y-4">
+            <form onSubmit={handleAddEvent} className="p-6 overflow-y-auto">
+              <div className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Title <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Event Title <span className="text-rose-500">*</span></label>
                   <input
                     type="text"
                     value={formData.title}
                     onChange={(event) => setFormData({ ...formData, title: event.target.value })}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${formErrors.title ? "border-red-500" : "border-gray-300"}`}
+                    className={`w-full px-4 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 ${formErrors.title ? "border-rose-500" : "border-gray-200"}`}
                     placeholder="Enter event title"
                   />
-                  {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
+                  {formErrors.title && <p className="mt-1.5 text-xs text-rose-600 font-medium">{formErrors.title}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description</label>
                   <textarea
                     value={formData.description}
                     onChange={(event) => setFormData({ ...formData, description: event.target.value })}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                     placeholder="Optional description"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Date <span className="text-rose-500">*</span></label>
                     <input
                       type="date"
                       value={formData.eventDate}
                       onChange={(event) => setFormData({ ...formData, eventDate: event.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${formErrors.eventDate ? "border-red-500" : "border-gray-300"}`}
+                      className={`w-full px-4 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 ${formErrors.eventDate ? "border-rose-500" : "border-gray-200"}`}
                     />
-                    {formErrors.eventDate && <p className="mt-1 text-sm text-red-600">{formErrors.eventDate}</p>}
+                    {formErrors.eventDate && <p className="mt-1.5 text-xs text-rose-600 font-medium">{formErrors.eventDate}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Time</label>
                     <input
                       type="time"
                       value={formData.eventTime}
                       onChange={(event) => setFormData({ ...formData, eventTime: event.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Target Audience <span className="text-rose-500">*</span></label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {audienceOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
                         onClick={() => setFormData({ ...formData, targetAudience: option.value })}
-                        className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${formData.targetAudience === option.value ? "bg-green-600 text-gray-900 border-green-500" : "bg-white text-gray-700 border-gray-300 hover:border-green-400"}`}
+                        className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all cursor-pointer ${formData.targetAudience === option.value ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/10" : "bg-white text-gray-700 border-gray-200 hover:border-blue-500 hover:text-blue-600"}`}
                       >
                         {option.label}
                       </button>
                     ))}
                   </div>
-                  {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
+                  {formErrors.targetAudience && <p className="mt-1.5 text-xs text-rose-600 font-medium">{formErrors.targetAudience}</p>}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={handleCloseEventModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
+              <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
+                <button onClick={handleCloseEventModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer" disabled={isSubmitting}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                <button type="submit" className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center justify-center min-w-[100px] shadow-sm cursor-pointer" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />

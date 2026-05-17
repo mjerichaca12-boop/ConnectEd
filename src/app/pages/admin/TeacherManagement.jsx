@@ -4,6 +4,7 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomSelect } from "../../components/admin/CustomSelect";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
@@ -82,6 +83,17 @@ function TeacherManagement() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm]);
 
   const isLettersOnly = (value) => /^[A-Za-z]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
@@ -762,7 +774,8 @@ function TeacherManagement() {
         details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
         timestamp: nextTeacher.created_at
       });
-      setSuccessMessage(`${nextTeacherName} added successfully.${savedPassword ? ` Temporary password: ${savedPassword}` : ""}`);
+      const tempMsg = savedPassword ? ` Temporary password: ${savedPassword}` : "";
+      toast.success(`${nextTeacherName} added successfully.${tempMsg}`, { duration: 6000 });
       resetAddModal();
     } catch (error) {
       if (createdTeacherId) {
@@ -773,7 +786,8 @@ function TeacherManagement() {
         }
       }
       console.error("Add teacher error:", error);
-      setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add teacher."));
+      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to add teacher.");
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -867,7 +881,7 @@ function TeacherManagement() {
         timestamp: nextTeacher.updated_at || new Date().toISOString()
       });
 
-      setSuccessMessage(`${nextTeacherName} updated successfully`);
+      toast.success(`${nextTeacherName} updated successfully`);
       resetEditModal();
     } catch (error) {
       if (updateSucceeded) {
@@ -898,7 +912,8 @@ function TeacherManagement() {
         }
       }
 
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update teacher.");
+      const errMsg = error instanceof Error ? error.message : "Unable to update teacher.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -962,10 +977,11 @@ function TeacherManagement() {
         details: { email: teacherToDelete.email },
         timestamp: new Date().toISOString()
       });
-      setSuccessMessage(`${teacherName} deleted successfully`);
+      toast.success(`${teacherName} deleted successfully`);
     } catch (error) {
       setTeachers(previousTeachers);
-      setErrorMessage(error instanceof Error ? error.message : "Unable to delete teacher.");
+      const errMsg = error instanceof Error ? error.message : "Unable to delete teacher.";
+      toast.error(errMsg);
     }
   };
 
@@ -1050,13 +1066,14 @@ function TeacherManagement() {
         details: { assignedClass: assignedClass, allAssignedClasses: nextAssignedClass },
         timestamp: updatedTeacher.updated_at || new Date().toISOString()
       });
-      setSuccessMessage(`Added ${assignedClass} to ${updatedTeacherName}`);
+      toast.success(`Added ${assignedClass} to ${updatedTeacherName}`);
       resetAssignModal();
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "23505") {
         setAssignFormErrors({ assigned_class: "That class is already assigned to another teacher." });
       } else {
-        setAssignFormErrors({ form: error instanceof Error ? error.message : "Unable to assign class." });
+        const errMsg = error instanceof Error ? error.message : "Unable to assign class.";
+        toast.error(errMsg);
       }
     } finally {
       setIsSubmitting(false);
@@ -1142,7 +1159,7 @@ function TeacherManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Registry</h1>
                 <p className="text-gray-600">{teachers.length} teachers loaded from Supabase</p>
               </div>
-              <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
+              <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
                 <UserPlus className="w-5 h-5" />
                 Add Teacher
               </button>
@@ -1404,11 +1421,11 @@ function TeacherManagement() {
                     {formErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={resetAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={resetAddModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Teacher"}
                   </button>
@@ -1526,11 +1543,11 @@ function TeacherManagement() {
                     {editFormErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={resetEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={resetEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Teacher"}
                   </button>
@@ -1591,11 +1608,11 @@ function TeacherManagement() {
                   {assignFormErrors.form}
                 </div>
               )}
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={resetAssignModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                <button onClick={resetAssignModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isSubmitting ? "Saving..." : "Add Class"}
                 </button>
@@ -1616,7 +1633,7 @@ function TeacherManagement() {
             </div>
             <div className="p-6">
               <div className="flex items-center gap-4 mb-6 pb-6 border-b border-gray-200">
-                <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center text-gray-900 text-2xl font-bold">
+                <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-teal-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
                   {getTeacherName(selectedTeacher).charAt(0) || "T"}
                 </div>
                 <div>
@@ -1676,23 +1693,23 @@ function TeacherManagement() {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-150">
+                <button onClick={() => setShowViewModal(false)} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
+                  Close
+                </button>
+                <button onClick={() => handlePromptAssignClass(selectedTeacher)} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm">
+                  <BookOpen className="w-4 h-4" />
+                  Assign Class
+                </button>
                 <button
                   onClick={() => {
                     setShowViewModal(false);
                     handleEditTeacher(selectedTeacher);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm"
                 >
                   <Edit className="w-4 h-4" />
                   Edit Teacher
-                </button>
-                <button onClick={() => handlePromptAssignClass(selectedTeacher)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors">
-                  <BookOpen className="w-4 h-4" />
-                  Assign Class
-                </button>
-                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                  Close
                 </button>
               </div>
             </div>

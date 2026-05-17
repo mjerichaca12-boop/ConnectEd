@@ -12,11 +12,7 @@ import {
   Megaphone,
   AlertTriangle,
   Loader2,
-  Zap,
-  Sparkles,
-  UserPlus,
-  BarChart2,
-  Shield
+  Sparkles
 } from "lucide-react";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -681,33 +677,7 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-                <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-green-500" />
-                  Quick Actions
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { icon: UserPlus, label: "Add Student", path: "/admin/students" },
-                    { icon: Megaphone, label: "Post Announcement", path: "/admin/announcements" },
-                    { icon: BarChart2, label: "View Reports", path: "/admin/reports" },
-                    { icon: Shield, label: "Manage Access", path: "/admin/access-requests" },
-                  ].map((action) => {
-                    const ActionIcon = action.icon;
-                    return (
-                      <button
-                        key={action.label}
-                        onClick={() => navigate(action.path)}
-                        className="bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-green-300 rounded-xl p-4 text-center transition-all duration-200 cursor-pointer"
-                      >
-                        <ActionIcon className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                        <p className="text-gray-700 text-sm font-medium">{action.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+
             </div>
           </div>
         </div>

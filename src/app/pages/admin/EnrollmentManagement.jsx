@@ -6,6 +6,8 @@ import { CustomDropdown } from "../../components/admin/CustomDropdown";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { Search, Filter, UserPlus, CheckCircle, XCircle, Clock, Download, X } from "lucide-react";
+import { toast } from "sonner";
+
 function EnrollmentManagement() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState("");
@@ -20,6 +22,18 @@ function EnrollmentManagement() {
   const [enrollments, setEnrollments] = useState([]);
   const availableStudents = [];
   const availableSubjects = [];
+
+  useEffect(() => {
+    if (showEnrollModal || showStatusModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showEnrollModal, showStatusModal]);
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -40,7 +54,7 @@ function EnrollmentManagement() {
   };
   const handleEnrollStudent = () => {
     if (!formData.studentId || !formData.subjectCode) {
-      alert("Please select both student and subject");
+      toast.error("Please select both student and subject");
       return;
     }
     const student = availableStudents.find((s) => s.id === formData.studentId);
@@ -58,9 +72,11 @@ function EnrollmentManagement() {
     setEnrollments([...enrollments, newEnrollment]);
     setShowEnrollModal(false);
     setFormData({ studentId: "", subjectCode: "" });
+    toast.success(`${student.name} enrolled in ${subject.name} successfully.`);
   };
   const handleStatusChange = (enrollmentId, newStatus) => {
     setEnrollments(enrollments.map((e) => e.id === enrollmentId ? { ...e, status: newStatus } : e));
+    toast.success(`Enrollment status updated to ${newStatus}.`);
   };
   const handleOpenStatusModal = (enrollment) => {
     setSelectedEnrollment(enrollment);
@@ -71,6 +87,7 @@ function EnrollmentManagement() {
       setEnrollments(enrollments.map((e) => e.id === selectedEnrollment.id ? { ...e, status: newStatus } : e));
       setShowStatusModal(false);
       setSelectedEnrollment(null);
+      toast.success(`Enrollment status updated to ${newStatus}.`);
     }
   };
   const filteredEnrollments = enrollments.filter((enrollment) => {
@@ -154,7 +171,7 @@ function EnrollmentManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Enrollment Management</h1>
                 <p className="text-gray-600">{enrollments.length} enrollment requests</p>
               </div>
-              <button onClick={() => setShowEnrollModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
+              <button onClick={() => setShowEnrollModal(true)} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
                 <UserPlus className="w-5 h-5" />
                 Enroll Student
               </button>
@@ -264,12 +281,12 @@ function EnrollmentManagement() {
                 <CustomDropdown label="Select Student" value={formData.studentId} onChange={(value) => setFormData({ ...formData, studentId: value })} options={[{ value: "", label: "Choose a student..." }, ...availableStudents.map((student) => ({ value: student.id, label: student.name, sublabel: student.id }))]} placeholder="Choose a student..." />
                 <CustomDropdown label="Select Subject" value={formData.subjectCode} onChange={(value) => setFormData({ ...formData, subjectCode: value })} options={[{ value: "", label: "Choose a subject..." }, ...availableSubjects.map((subject) => ({ value: subject.code, label: subject.name, sublabel: subject.code }))]} placeholder="Choose a subject..." />
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
                 <button onClick={() => {
-    setShowEnrollModal(false);
-    setFormData({ studentId: "", subjectCode: "" });
-  }} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                <button onClick={handleEnrollStudent} className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors">Enroll Student</button>
+                  setShowEnrollModal(false);
+                  setFormData({ studentId: "", subjectCode: "" });
+                }} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Cancel</button>
+                <button onClick={handleEnrollStudent} className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm">Enroll Student</button>
               </div>
             </div>
           </div>
@@ -283,9 +300,9 @@ function EnrollmentManagement() {
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-xl font-semibold text-gray-900">Change Enrollment Status</h3>
               <button onClick={() => {
-    setShowStatusModal(false);
-    setSelectedEnrollment(null);
-  }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
+                setShowStatusModal(false);
+                setSelectedEnrollment(null);
+              }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors"><X className="w-5 h-5 text-gray-600" /></button>
             </div>
             <div className="p-6">
               <div className="space-y-4 mb-6">
@@ -308,21 +325,21 @@ function EnrollmentManagement() {
               </div>
               <div className="space-y-3">
                 <p className="text-sm font-medium text-gray-700 mb-3">Select New Status:</p>
-                <button onClick={() => handleUpdateStatus("Pending")} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors border-2 border-blue-200">
-                  <Clock className="w-5 h-5" /><span className="font-medium">Pending</span>
+                <button onClick={() => handleUpdateStatus("Pending")} className="w-full flex items-center justify-between px-4 py-3 bg-blue-50/50 hover:bg-blue-50 border border-blue-200 text-blue-700 rounded-xl transition-colors font-medium">
+                  <span className="flex items-center gap-3"><Clock className="w-5 h-5" />Pending</span>
                 </button>
-                <button onClick={() => handleUpdateStatus("Approved")} className="w-full flex items-center gap-3 px-4 py-3 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors border-2 border-green-200">
-                  <CheckCircle className="w-5 h-5" /><span className="font-medium">Approved</span>
+                <button onClick={() => handleUpdateStatus("Approved")} className="w-full flex items-center justify-between px-4 py-3 bg-green-50/50 hover:bg-green-50 border border-green-200 text-green-700 rounded-xl transition-colors font-medium">
+                  <span className="flex items-center gap-3"><CheckCircle className="w-5 h-5" />Approved</span>
                 </button>
-                <button onClick={() => handleUpdateStatus("Rejected")} className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors border-2 border-red-200">
-                  <XCircle className="w-5 h-5" /><span className="font-medium">Rejected</span>
+                <button onClick={() => handleUpdateStatus("Rejected")} className="w-full flex items-center justify-between px-4 py-3 bg-red-50/50 hover:bg-red-50 border border-red-200 text-red-700 rounded-xl transition-colors font-medium">
+                  <span className="flex items-center gap-3"><XCircle className="w-5 h-5" />Rejected</span>
                 </button>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
                 <button onClick={() => {
-    setShowStatusModal(false);
-    setSelectedEnrollment(null);
-  }} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                  setShowStatusModal(false);
+                  setSelectedEnrollment(null);
+                }} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Cancel</button>
               </div>
             </div>
           </div>

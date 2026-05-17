@@ -16,7 +16,6 @@ import {
   buildMaterialAttachments,
   normalizeAudience,
   normalizeAnnouncement,
-  getPriorityStyles,
   formatAnnouncementDate
 } from "@/app/lib/teacherHelpers";
 import { streamMessage } from "@/app/lib/groqClient";
@@ -183,7 +182,7 @@ const normalizeAnnouncementRecordLocal = (row) => {
     id: String(row?.id || ""),
     title: String(row?.title || "").trim(),
     content: String(row?.content || "").trim(),
-    priority: String(row?.priority || row?.announcement_priority || "Medium").trim() || "Medium",
+
     targetAudience: normalizeAudience(row?.target_audience || row?.audience || row?.targetAudience || "Students"),
     author: String(row?.author || row?.created_by_name || "").trim(),
     fileName: attachments[0]?.fileName || fileName,
@@ -315,7 +314,7 @@ export function ClassDetail() {
   const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
 
   // Announcement form
-  const [annForm, setAnnForm] = useState({ title: "", content: "", priority: "" });
+  const [annForm, setAnnForm] = useState({ title: "", content: "" });
   const [annFiles, setAnnFiles] = useState([]);
   const [annFileNames, setAnnFileNames] = useState([]);
   const [annOriginalFiles, setAnnOriginalFiles] = useState({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
@@ -695,7 +694,7 @@ export function ClassDetail() {
       "teacher_id",
       "title",
       "content",
-      "priority",
+
       "attachments",
       "author",
       "created_by_name",
@@ -2260,7 +2259,7 @@ export function ClassDetail() {
   };
 
   const resetAnnouncementForm = (preserveMessages = false) => {
-    setAnnForm({ title: "", content: "", priority: "" });
+    setAnnForm({ title: "", content: "" });
     setAnnFiles([]);
     setAnnFileNames([]);
     setAnnOriginalFiles({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
@@ -2289,8 +2288,7 @@ export function ClassDetail() {
     setEditingAnnouncementId(announcement.id);
     setAnnForm({
       title: announcement.title || "",
-      content: announcement.content || "",
-      priority: announcement.priority || ""
+      content: announcement.content || ""
     });
     setAnnOriginalFiles({
       fileNames: existingAttachments.map((item) => item.fileName || "").filter(Boolean),
@@ -2377,7 +2375,6 @@ export function ClassDetail() {
   const handleSaveAnnouncement = async () => {
     const title = String(annForm.title || "").trim();
     const content = String(annForm.content || "").trim();
-    const priority = String(annForm.priority || "").trim() || "Medium";
 
     if (!title) {
       setAnnError("Title is required.");
@@ -2430,7 +2427,6 @@ export function ClassDetail() {
 
       const titleColumn = resolveColumnName(columns, ["title", "subject", "name"]);
       const contentColumn = resolveColumnName(columns, ["content", "description", "message", "body"]);
-      const priorityColumn = resolveColumnName(columns, ["priority", "announcement_priority", "importance", "priority_level"]);
       const audienceColumn = resolveColumnName(columns, ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"]);
       const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType"]);
 
@@ -2438,7 +2434,6 @@ export function ClassDetail() {
 
       if (titleColumn) payload[titleColumn] = title;
       if (contentColumn) payload[contentColumn] = content;
-      if (priorityColumn) payload[priorityColumn] = priority;
       if (audienceColumn) payload[audienceColumn] = "Students";
       if (audienceTypeColumn) payload[audienceTypeColumn] = "student";
 
@@ -2637,11 +2632,7 @@ export function ClassDetail() {
     return { label: `${diff} days left`, color: "text-emerald-600 bg-emerald-50" };
   };
 
-  const getPriorityColor = (p) => {
-    if (p === "High") return "bg-red-100 text-red-700";
-    if (p === "Medium") return "bg-blue-100 text-blue-700";
-    return "bg-gray-100 text-gray-500";
-  };
+
 
   const getFileIcon = (type = "PDF") => {
     const t = type.toUpperCase();
@@ -3338,9 +3329,6 @@ export function ClassDetail() {
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${getPriorityColor(ann.priority)}`}>
-                                  {ann.priority} Priority
-                                </span>
                                 <span className="text-xs text-gray-400">
                                   {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                 </span>
@@ -4276,25 +4264,7 @@ export function ClassDetail() {
                   </div>
                 )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
-                <div className="flex gap-2">
-                  {["Low", "Medium", "High"].map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setAnnForm({ ...annForm, priority: p })}
-                      className={`flex-1 py-2 rounded-lg border-2 text-sm font-medium transition-all ${annForm.priority === p
-                          ? p === "High" ? "border-red-500 bg-red-50 text-red-700"
-                            : p === "Medium" ? "border-blue-500 bg-blue-50 text-blue-700"
-                              : "border-gray-200 bg-gray-50 text-gray-700"
-                          : "border-gray-200 text-gray-500 hover:border-gray-300"
-                        }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
+
             </div>
             <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
               <button

@@ -13,7 +13,6 @@ import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAtta
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   normalizeAudience,
-  normalizePriority,
   normalizeTimestamp,
   normalizeAnnouncement,
   sortAnnouncements,

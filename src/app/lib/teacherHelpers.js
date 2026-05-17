@@ -311,13 +311,7 @@ const getAnnouncementSortTimestamp = (item) => {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 };
 
-const getPriorityRank = (priority) => {
-  const normalized = String(priority ?? "").trim().toLowerCase();
-  if (normalized === "high") return 0;
-  if (normalized === "medium") return 1;
-  if (normalized === "low") return 2;
-  return 1;
-};
+
 
 /**
  * Check if audience matches teacher audience filter
@@ -343,9 +337,6 @@ export const sortAnnouncements = (items) =>
     const leftTime = getAnnouncementSortTimestamp(left);
     const rightTime = getAnnouncementSortTimestamp(right);
     if (rightTime !== leftTime) return rightTime - leftTime;
-
-    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
-    if (priorityDiff !== 0) return priorityDiff;
 
     return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
   });
@@ -398,13 +389,7 @@ export const normalizeAnnouncement = (row, attachmentRows = []) => {
         row?.audience_type ??
         "School-wide"
     ),
-    priority: normalizePriority(
-      row?.priority ??
-        row?.announcement_priority ??
-        row?.importance ??
-        row?.priority_level ??
-        "Medium"
-    ),
+
     createdAt: normalizeTimestamp(row),
     attachments,
     imageUrl: String(

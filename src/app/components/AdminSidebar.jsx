@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserCog, BookOpen, ClipboardList,
-  Megaphone, FileText, Settings, Menu, X, LogOut, ChevronRight,
+  Megaphone, Menu, X, LogOut, ChevronRight,
   Calendar, MessageSquare, Mail, Sparkles
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
@@ -21,8 +21,6 @@ export function AdminSidebar({ adminName, onLogout }) {
     { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements" },
     { icon: MessageSquare,   label: "Messages",           path: "/admin/messages" },
     { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar" },
-    { icon: FileText,        label: "Reports",            path: "/admin/reports" },
-    { icon: Settings,        label: "System Settings",    path: "/admin/settings" },
     { icon: Sparkles,        label: "AI Assistant",       path: "/admin/ai-assistant", badge: "NEW" },
   ];
 

@@ -67,7 +67,7 @@ function HeroSection() {
         >
           <button
             onClick={() => navigate("/login")}
-            className="group relative flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-gray-900 font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg shadow-green-600/20 text-sm"
+            className="group relative flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg shadow-green-600/20 text-sm cursor-pointer"
           >
             Sign In
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

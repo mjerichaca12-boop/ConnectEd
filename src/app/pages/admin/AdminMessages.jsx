@@ -168,25 +168,31 @@ export function AdminMessages() {
     resolveAdmin();
   }, [navigate]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [selectedConvId, conversations]);
-
   // Real-time subscription for new messages
   useEffect(() => {
     if (!supabase || !adminId) return;
     const channel = supabase
       .channel(`admin-messages-${adminId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async () => {
-        console.log("[AdminMessages] New message received, reloading...");
-        await loadConversationsFromDB();
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
+        const newMsg = payload.new;
+        if (!newMsg) return;
+        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+        const isDirectForAdmin = String(newMsg.sender_id) === String(currentAdminId) || String(newMsg.receiver_id) === String(currentAdminId);
+        const isGroupMsg = !!newMsg.conversation_id;
+        if (isDirectForAdmin || isGroupMsg) {
+          console.log("[AdminMessages] New relevant message received, reloading...");
+          await loadConversationsFromDB();
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [adminId]);
 
   const saveConversations = (updated) => {
-    setConversations(updated);
+    const sorted = [...updated].sort(
+      (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+    );
+    setConversations(sorted);
   };
 
   const loadConversationsFromDB = async () => {
@@ -500,6 +506,11 @@ export function AdminMessages() {
   };
 
   const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
+  const activeMessagesLength = selectedConv?.messages?.length || 0;
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [selectedConvId, activeMessagesLength]);
 
   // ── Filtering logic ──
   const applyFilter = (convList) => {
@@ -711,7 +722,7 @@ export function AdminMessages() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
+    <div className="h-screen overflow-hidden bg-gray-50 flex relative">
       {/* Background glow */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[150px]" />
@@ -720,7 +731,7 @@ export function AdminMessages() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-hidden flex flex-col relative z-10 lg:pl-64">
+      <main className="flex-1 h-full overflow-hidden flex flex-col relative z-10 lg:pl-64">
         {/* Top Bar */}
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -740,7 +751,7 @@ export function AdminMessages() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -767,9 +778,9 @@ export function AdminMessages() {
           </div>
 
           {/* Main chat layout */}
-          <div className="flex-1 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
+          <div className="flex-1 min-h-0 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* ══ Left: Conversations List ══ */}
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col">
+            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
 
               {/* Search + New */}
               <div className="p-3 border-b border-gray-100 flex gap-2">
@@ -924,7 +935,7 @@ export function AdminMessages() {
             </div>
 
             {/* ══ Right: Chat Window ══ */}
-            <div className="lg:col-span-2 flex flex-col">
+            <div className="lg:col-span-2 flex flex-col min-h-0 h-full overflow-hidden">
               {selectedConv ? (
                 <>
                   {/* Chat Header */}

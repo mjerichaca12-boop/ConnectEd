@@ -14,7 +14,6 @@ const features = [
   { icon: MessageSquare, title: "Communication Center", desc: "Post class-specific or school-wide announcements. Students receive real-time updates instantly.", tag: "Comms" },
   { icon: Lock, title: "Secure Messaging", desc: "Teachers message individual students. Secure, in-platform communication with full privacy.", tag: "Security" },
   { icon: Shield, title: "Administrative Dashboard", desc: "Manage users, monitor school-wide data, and control system access from a single command center.", tag: "Admin" },
-  { icon: Clock, title: "Class Scheduling System", desc: "Organize weekly class schedules, manage time slots, and coordinate across subjects seamlessly.", tag: "Planning" },
 ];
 
 function RevealCard({ children, delay = 0 }) {

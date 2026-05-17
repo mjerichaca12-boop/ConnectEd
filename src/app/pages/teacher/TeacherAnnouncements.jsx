@@ -38,20 +38,7 @@ const normalizeAudience = (value) => {
   return "School-wide";
 };
 
-const normalizePriority = (value) => {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "high") return "High";
-  if (normalized === "low") return "Low";
-  return "Medium";
-};
 
-const getPriorityRank = (priority) => {
-  const normalized = String(priority ?? "").trim().toLowerCase();
-  if (normalized === "high") return 0;
-  if (normalized === "medium") return 1;
-  if (normalized === "low") return 2;
-  return 1;
-};
 
 const normalizeAudienceType = (value) => {
   const normalized = String(value ?? "")
@@ -191,14 +178,7 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
             "School-wide"
         ),
     audienceType,
-    priority: normalizePriority(
-      row?.priority ??
-        row?.announcement_priority ??
-        row?.importance ??
-        row?.priority_level ??
-        "Medium"
-    ),
-    category: row?.category || "General",
+
     createdAt: normalizeTimestamp(row),
     subject: String(row?.subject ?? row?.course ?? row?.course_name ?? row?.class_name ?? row?.topic ?? "").trim(),
     ...buildAnnouncementAttachments(row, attachmentRows),
@@ -210,9 +190,6 @@ const sortAnnouncements = (items) =>
     const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime();
     const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime();
     if (leftTime !== rightTime) return leftTime - rightTime;
-
-    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
-    if (priorityDiff !== 0) return priorityDiff;
 
     return String(left?.id ?? "").localeCompare(String(right?.id ?? ""));
   });
@@ -232,8 +209,7 @@ function TeacherAnnouncements() {
     title: "",
     content: "",
     targetAudience: "Subject-specific",
-    subject: "",
-    priority: "Medium"
+    subject: ""
   });
   const [assignmentFormData, setAssignmentFormData] = useState({
     title: "",
@@ -420,7 +396,7 @@ function TeacherAnnouncements() {
     };
     setAnnouncements(sortAnnouncements([newAnnouncement, ...announcements].filter((announcement) => matchesTeacherAudience(announcement))));
     setShowCreateModal(false);
-    setFormData({ title: "", content: "", targetAudience: "Subject-specific", subject: "", priority: "Medium" });
+    setFormData({ title: "", content: "", targetAudience: "Subject-specific", subject: "" });
   };
   const handleAssignmentSubmit = () => {
     if (!assignmentFormData.title.trim()) return;
@@ -452,25 +428,7 @@ function TeacherAnnouncements() {
       setFiles(files.filter((file) => file.id !== id));
     }
   };
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case "High":
-        return "bg-red-100 text-red-700";
-      case "Medium":
-        return "bg-blue-100 text-blue-700";
-      case "Low":
-        return "bg-green-100 text-green-700";
-      default:
-        return "bg-gray-50 text-gray-700";
-    }
-  };
-  const getCategoryStyles = (category) => {
-    const normalized = String(category ?? "").toLowerCase();
-    if (normalized === "lesson plan") return "bg-purple-100 text-purple-700 border-purple-200";
-    if (normalized === "task") return "bg-blue-100 text-blue-700 border-blue-200";
-    if (normalized === "school info") return "bg-orange-100 text-orange-700 border-orange-200";
-    return "bg-gray-100 text-gray-700 border-gray-200";
-  };
+
   const filteredAnnouncements = sortAnnouncements(
     announcements.filter((announcement) => matchesTeacherAudience(announcement))
   );
@@ -555,9 +513,6 @@ function TeacherAnnouncements() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
-                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getCategoryStyles(announcement.category)}`}>
-                            {announcement.category || "General"}
-                          </span>
                         </div>
                       </div>
                       <p className="text-gray-700 mb-4">{announcement.content}</p>

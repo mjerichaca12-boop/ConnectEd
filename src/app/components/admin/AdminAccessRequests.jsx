@@ -34,7 +34,7 @@ const getRequestFullName = (request) => {
   // Try new schema first (split names)
   const newSchemaName = [request.first_name, request.middle_name, request.last_name].filter(Boolean).join(" ").trim();
   if (newSchemaName) return newSchemaName;
-  
+
   // Fallback to old schema (single name field)
   return String(request.name || "").trim();
 };
@@ -46,7 +46,8 @@ function AdminAccessRequests() {
   const [filter, setFilter] = useState("all");
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
-  const [loadingId, setLoadingId] = useState(null);
+  const [loadingApproveId, setLoadingApproveId] = useState(null);
+  const [loadingDeclineId, setLoadingDeclineId] = useState(null);
 
   useEffect(() => {
     loadAccessRequests();
@@ -80,7 +81,7 @@ function AdminAccessRequests() {
   const handleApproveAndSendInvite = async (request) => {
     if (!supabase) return;
 
-    setLoadingId(request.id);
+    setLoadingApproveId(request.id);
     setActionError("");
     setActionMessage("");
 
@@ -118,14 +119,14 @@ function AdminAccessRequests() {
       const errorMsg = err instanceof Error ? err.message : "An error occurred.";
       setActionError(errorMsg);
     } finally {
-      setLoadingId(null);
+      setLoadingApproveId(null);
     }
   };
 
   const handleDeclineRequest = async (request) => {
     if (!supabase) return;
 
-    setLoadingId(request.id);
+    setLoadingDeclineId(request.id);
     setActionError("");
     setActionMessage("");
 
@@ -149,7 +150,7 @@ function AdminAccessRequests() {
       const errorMsg = err instanceof Error ? err.message : "An error occurred.";
       setActionError(errorMsg);
     } finally {
-      setLoadingId(null);
+      setLoadingDeclineId(null);
     }
   };
 
@@ -167,7 +168,7 @@ function AdminAccessRequests() {
         <button
           onClick={loadAccessRequests}
           disabled={loading}
-          className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
@@ -188,23 +189,37 @@ function AdminAccessRequests() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex gap-2 border-b border-gray-200">
-        {["all", "pending", "approved", "rejected", "invited"].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilter(status)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              filter === status
-                ? "text-green-600 border-green-400"
-                : "text-gray-600 border-transparent hover:text-gray-700"
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-            <span className="ml-2 text-xs">
-              ({requests.filter((r) => r.status === (status === "all" ? undefined : status) || status === "all").length})
-            </span>
-          </button>
-        ))}
+      <div className="mb-6 flex flex-wrap gap-2 border-b border-gray-200/80 pb-3">
+        {["all", "pending", "approved", "rejected", "invited"].map((status) => {
+          const isActive = filter === status;
+          const count = requests.filter((r) => r.status === (status === "all" ? undefined : status) || status === "all").length;
+          const tabIcons = {
+            pending: Clock,
+            approved: CheckCircle,
+            rejected: XCircle,
+            invited: Send,
+            all: Mail
+          };
+          const IconComponent = tabIcons[status];
+          return (
+            <button
+              key={status}
+              onClick={() => setFilter(status)}
+              className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer
+                ${isActive
+                  ? "bg-gray-100 text-green-600 font-semibold"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                }`}
+            >
+              <IconComponent className={`w-4 h-4 ${isActive ? "text-green-600" : "text-gray-400"}`} />
+              <span>{status.charAt(0).toUpperCase() + status.slice(1)}</span>
+              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition-colors
+                ${isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Requests Table */}
@@ -251,20 +266,22 @@ function AdminAccessRequests() {
                       {request.status === "pending" && (
                         <>
                           <button
-                            onClick={() => handleApproveAndSendInvite(request)}
-                            disabled={loadingId === request.id}
-                            className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-gray-900 transition-colors disabled:opacity-50 text-sm font-medium"
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleApproveAndSendInvite(request); }}
+                            disabled={loadingApproveId === request.id}
+                            className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 text-sm font-medium"
                             title="Approve request"
                           >
-                            {loadingId === request.id ? "Approving..." : "Approve"}
+                            {loadingApproveId === request.id ? "Approving..." : "Approve"}
                           </button>
                           <button
-                            onClick={() => handleDeclineRequest(request)}
-                            disabled={loadingId === request.id}
-                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-gray-900 transition-colors disabled:opacity-50 text-sm font-medium"
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeclineRequest(request); }}
+                            disabled={loadingDeclineId === request.id}
+                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50 text-sm font-medium"
                             title="Decline request"
                           >
-                            {loadingId === request.id ? "Declining..." : "Decline"}
+                            {loadingDeclineId === request.id ? "Declining..." : "Decline"}
                           </button>
                         </>
                       )}
@@ -280,7 +297,7 @@ function AdminAccessRequests() {
         </div>
       )}
 
-    
+
     </div>
   );
 }

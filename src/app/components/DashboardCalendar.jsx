@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, forwardRef, useImperativeHandle, useRef } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X, AlertTriangle } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const calendarTableCandidates = ["school_calendar_events", "calendar_events"];
@@ -358,8 +358,8 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
   const upcomingEvents = useMemo(() => visibleEvents.slice(0, 4), [visibleEvents]);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full">
-      <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col min-h-0">
+      <div className="p-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-green-50 rounded-lg border border-green-200">
             <CalendarIcon className="w-4 h-4 text-green-600" />
@@ -376,93 +376,102 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
         </div>
       </div>
 
-      <div className="p-4">
-        {errorMessage && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 text-red-200 text-xs px-3 py-2">{errorMessage}</div>}
+      <div className="p-4 flex-1 overflow-y-auto min-h-0 space-y-4">
+        {errorMessage && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs px-4 py-3 font-medium flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
-        <div className="text-center mb-4">
-          <span className="text-sm font-bold text-gray-900">
-            {monthNames[month]} {year}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-7 gap-1 mb-2">
-          {days.map((day) => (
-            <div key={day} className="text-[10px] font-bold text-gray-600 uppercase text-center">
-              {day}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-7 gap-1">
-          {calendarCells.map((day, index) => {
-            if (!day) {
-              return <div key={`empty-${index}`} className="h-10" />;
-            }
-
-            const key = formatDayKey(year, month, day);
-            const dayEvents = eventMap.get(key) || [];
-            const isToday = key === today;
-            const holidayLabel = holidays.get(`${month + 1}-${day}`) || null;
-            const isHoliday = !!holidayLabel;
-            const isSelected = key === currentMonthSelectedDate;
-
-            const firstEventTitle = dayEvents[0]?.title || "";
-
-            return (
-              <div
-                key={key}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedDay(key)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedDay(key);
-                  }
-                }}
-                title={[holidayLabel, ...dayEvents.map((event) => event.title)].filter(Boolean).join(" • ") || void 0}
-                className={`h-14 px-1 flex flex-col items-center justify-center text-sm rounded-lg transition-colors cursor-pointer border outline-none
-                  ${isSelected ? "ring-2 ring-green-500 ring-offset-0" : ""}
-                  ${isToday ? "bg-green-600 text-gray-900 font-bold shadow-lg shadow-green-500/20 border-green-200" : "border-transparent"}
-                  ${!isToday && isHoliday ? "bg-red-50 text-red-200 border-red-200" : ""}
-                  ${!isToday && !isHoliday && dayEvents.length > 0 ? "bg-blue-50 text-blue-200 border-blue-200" : ""}
-                  ${!isToday && !isHoliday && dayEvents.length === 0 ? "text-gray-700 hover:bg-gray-100 hover:text-gray-900" : ""}`}
-              >
-                <span>{day}</span>
-                <div className="flex items-center gap-1 mt-0.5">
-                  {isHoliday && !isToday && <span className="w-1.5 h-1.5 rounded-full bg-red-400" />}
-                  {dayEvents.length > 0 && !isToday && <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />}
-                </div>
-                {firstEventTitle && (
-                  <p className={`mt-0.5 text-[9px] leading-none truncate max-w-full ${isToday ? "text-gray-900" : "text-blue-200"}`}>
-                    {firstEventTitle}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 p-3 rounded-lg border border-gray-100 bg-black/10">
-          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-red-200 bg-red-50 text-red-200">Holiday</span>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-blue-200 bg-blue-50 text-blue-200">Event</span>
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-green-200 bg-green-50 text-green-200">Today</span>
+        <div>
+          <div className="text-center mb-3">
+            <span className="text-sm font-bold text-gray-900">
+              {monthNames[month]} {year}
+            </span>
           </div>
 
-          <div className="text-sm text-gray-700 font-medium">
+          <div className="grid grid-cols-7 gap-1 mb-2">
+            {days.map((day) => (
+              <div key={day} className="text-[10px] font-bold text-gray-600 uppercase text-center">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {calendarCells.map((day, index) => {
+              if (!day) {
+                return <div key={`empty-${index}`} className="h-14" />;
+              }
+
+              const key = formatDayKey(year, month, day);
+              const dayEvents = eventMap.get(key) || [];
+              const isToday = key === today;
+              const holidayLabel = holidays.get(`${month + 1}-${day}`) || null;
+              const isHoliday = !!holidayLabel;
+              const isSelected = key === currentMonthSelectedDate;
+
+              const firstEventTitle = dayEvents[0]?.title || "";
+
+              return (
+                <div
+                  key={key}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedDay(key)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedDay(key);
+                    }
+                  }}
+                  title={[holidayLabel, ...dayEvents.map((e) => e.title)].filter(Boolean).join(" • ") || undefined}
+                  className={`h-14 p-1.5 flex flex-col items-center justify-between rounded-xl transition-all cursor-pointer border text-center
+                    ${isSelected ? "ring-2 ring-green-600 ring-offset-2 border-green-300" : "border-transparent"}
+                    ${isToday ? "bg-green-600 text-white font-bold shadow-md shadow-green-500/20 border-green-600" : ""}
+                    ${!isToday && isHoliday ? "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100/50" : ""}
+                    ${!isToday && !isHoliday && dayEvents.length > 0 ? "bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100/50" : ""}
+                    ${!isToday && !isHoliday && dayEvents.length === 0 ? "text-gray-700 hover:bg-gray-100" : ""}`}
+                >
+                  <span className="text-xs font-semibold">{day}</span>
+                  <div className="flex items-center gap-1">
+                    {isHoliday && !isToday && <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />}
+                    {dayEvents.length > 0 && !isToday && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
+                  </div>
+                  {firstEventTitle && (
+                    <p className={`mt-0.5 text-[9px] leading-none truncate max-w-full font-medium
+                      ${isToday ? "text-white" : isHoliday ? "text-rose-600" : "text-indigo-600"}`}
+                    >
+                      {firstEventTitle}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-3">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700">Holiday</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">Event</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-green-200 bg-green-50 text-green-700">Today</span>
+          </div>
+
+          <div className="text-xs text-gray-700 font-bold uppercase tracking-wider">
             {currentMonthSelectedDate ? formatEventDate(currentMonthSelectedDate) : "Select a date"}
           </div>
 
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
             {selectedHoliday && (
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/5 border border-red-500/10">
+              <div className="flex items-start gap-3 p-3.5 rounded-xl bg-rose-50 border border-rose-100">
                 <div className="mt-1">
-                  <div className="w-2 h-2 rounded-full bg-red-400" />
+                  <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-red-200">Holiday</p>
-                  <p className="text-sm text-gray-700">{selectedHoliday}</p>
+                  <p className="text-xs font-bold text-rose-700 uppercase tracking-wider">Holiday</p>
+                  <p className="text-sm text-gray-800 font-medium mt-0.5">{selectedHoliday}</p>
                 </div>
               </div>
             )}
@@ -472,35 +481,35 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
                 key={event.id}
                 type="button"
                 onClick={() => setSelectedEvent(event)}
-                className="w-full text-left flex items-start gap-3 p-3 rounded-lg bg-blue-500/5 border border-blue-500/10 hover:border-blue-400/30 transition-colors"
+                className="w-full text-left flex items-start gap-3 p-3.5 rounded-xl bg-indigo-50/50 border border-indigo-100 hover:border-indigo-300 hover:bg-indigo-50 transition-all shadow-sm hover:shadow"
               >
                 <div className="mt-1">
-                  <div className="w-2 h-2 rounded-full bg-blue-400" />
+                  <div className="w-2 h-2 rounded-full bg-indigo-500" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold text-gray-900 truncate">{event.title}</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-gray-200 text-gray-700">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-indigo-100 bg-indigo-50 text-indigo-700 font-medium">
                       {getAudienceIcon(event.targetAudience)}
                       {event.targetAudience || "Not set"}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
+                    <Clock className="w-3 h-3 text-indigo-500" />
                     {formatEventTime(event.eventTime)}
                   </p>
-                  {event.description && <p className="text-xs text-gray-600 mt-1 line-clamp-2">{event.description}</p>}
+                  {event.description && <p className="text-xs text-gray-600 mt-1.5 line-clamp-2 leading-relaxed">{event.description}</p>}
                 </div>
               </button>
             )) : !selectedHoliday && (
-              <div className="text-xs text-gray-500">No events scheduled for this date.</div>
+              <div className="text-xs text-gray-500 py-2">No events scheduled for this date.</div>
             )}
           </div>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Upcoming School Events</p>
-          <div className="space-y-2">
+        <div className="pt-4 border-t border-gray-100">
+          <p className="text-[10px] font-bold text-gray-500 uppercase mb-3 tracking-widest">Upcoming School Events</p>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {loading ? (
               <div className="text-xs text-gray-500">Loading events...</div>
             ) : upcomingEvents.length > 0 ? upcomingEvents.map((event) => (
@@ -511,22 +520,22 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
                   setSelectedDay(event.eventDate || selectedDay);
                   setSelectedEvent(event);
                 }}
-                className="w-full text-left flex items-start gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200 hover:border-green-400/30 transition-colors"
+                className="w-full text-left flex items-start gap-3 p-3 bg-gray-50/50 rounded-xl border border-gray-200 hover:border-green-400 hover:bg-green-50/20 transition-all shadow-sm"
               >
-                <div className="w-1.5 h-1.5 bg-green-400 rounded-full mt-1.5" />
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full mt-1.5 animate-pulse" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs font-medium text-gray-700 truncate">{event.title || "Untitled event"}</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-gray-200 text-gray-700">
+                    <p className="text-xs font-semibold text-gray-900 truncate">{event.title || "Untitled event"}</p>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] border border-gray-200 bg-white text-gray-600 font-medium">
                       {getAudienceIcon(event.targetAudience)}
                       {event.targetAudience || "Not set"}
                     </span>
                   </div>
-                  <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5">
-                    <Clock className="w-3 h-3" />
+                  <p className="text-[10px] text-gray-600 flex items-center gap-1 mt-1">
+                    <Clock className="w-3 h-3 text-green-600" />
                     {formatEventDate(event.eventDate)} {event.eventTime ? `• ${formatEventTime(event.eventTime)}` : "• All day"}
                   </p>
-                  {event.description && <p className="text-[10px] text-gray-500 mt-1 line-clamp-2">{event.description}</p>}
+                  {event.description && <p className="text-[10px] text-gray-500 mt-1 line-clamp-2 leading-relaxed">{event.description}</p>}
                 </div>
               </button>
             )) : <p className="text-xs text-gray-500">No upcoming events</p>}
@@ -538,39 +547,39 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h4 className="text-gray-900 font-semibold">Event Details</h4>
+              <h4 className="text-gray-900 font-bold">Event Details</h4>
               <button
                 type="button"
                 onClick={() => setSelectedEvent(null)}
-                className="p-1.5 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                className="p-1.5 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-5 py-5 space-y-4">
               <div>
-                <p className="text-[11px] text-gray-500 uppercase tracking-widest">Title</p>
-                <p className="text-gray-900 text-sm mt-1">{selectedEvent.title || "Untitled event"}</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Title</p>
+                <p className="text-gray-900 text-sm font-semibold mt-1">{selectedEvent.title || "Untitled event"}</p>
               </div>
 
               <div>
-                <p className="text-[11px] text-gray-500 uppercase tracking-widest">Description</p>
-                <p className="text-gray-700 text-sm mt-1">{selectedEvent.description || "No description provided."}</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Description</p>
+                <p className="text-gray-700 text-sm mt-1 leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">{selectedEvent.description || "No description provided."}</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <p className="text-[11px] text-gray-500 uppercase tracking-widest">Date</p>
-                  <p className="text-gray-700 text-sm mt-1">{formatEventDate(selectedEvent.eventDate)}</p>
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Date</p>
+                  <p className="text-gray-700 text-xs font-semibold mt-1">{formatEventDate(selectedEvent.eventDate)}</p>
                 </div>
-                <div>
-                  <p className="text-[11px] text-gray-500 uppercase tracking-widest">Time</p>
-                  <p className="text-gray-700 text-sm mt-1">{selectedEvent.eventTime ? formatEventTime(selectedEvent.eventTime) : "All day"}</p>
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Time</p>
+                  <p className="text-gray-700 text-xs font-semibold mt-1">{selectedEvent.eventTime ? formatEventTime(selectedEvent.eventTime) : "All day"}</p>
                 </div>
-                <div>
-                  <p className="text-[11px] text-gray-500 uppercase tracking-widest">Audience</p>
-                  <p className="text-gray-700 text-sm mt-1">{selectedEvent.targetAudience || "School-wide"}</p>
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Audience</p>
+                  <p className="text-gray-700 text-xs font-semibold mt-1">{selectedEvent.targetAudience || "School-wide"}</p>
                 </div>
               </div>
             </div>

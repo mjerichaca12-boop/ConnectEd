@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, ChevronDown, CheckCircle2, Sparkles } from "lucide-react";
-
+import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
 const db = supabaseAdmin || supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -63,6 +63,17 @@ function StudentManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  useEffect(() => {
+    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm]);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -342,10 +353,12 @@ function StudentManagement() {
       });
       setFormErrors({});
       setShowAddModal(false);
-      setSuccessMessage(`Student account added successfully.${savedPassword ? ` Temporary password: ${savedPassword}` : ""}`);
+      const tempMsg = savedPassword ? ` Temporary password: ${savedPassword}` : "";
+      toast.success(`Student account added successfully.${tempMsg}`, { duration: 6000 });
     } catch (error) {
       console.error("Add student error:", error);
-      setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add student."));
+      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to add student.");
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -408,9 +421,10 @@ function StudentManagement() {
       });
       setEditFormErrors({});
       setShowEditModal(false);
-      setSuccessMessage("Student account updated successfully.");
+      toast.success("Student account updated successfully.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update student.");
+      const errMsg = error instanceof Error ? error.message : "Unable to update student.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -525,10 +539,11 @@ function StudentManagement() {
         timestamp: new Date().toISOString()
       });
       await refreshStudents();
-      setSuccessMessage(`${studentName} deleted successfully`);
+      toast.success(`${studentName} deleted successfully`);
     } catch (err) {
       setStudents(previousStudents);
-      setErrorMessage(err instanceof Error ? err.message : "Unable to delete student.");
+      const errMsg = err instanceof Error ? err.message : "Unable to delete student.";
+      toast.error(errMsg);
     }
   };
 
@@ -616,10 +631,10 @@ function StudentManagement() {
             <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Database</h1>
-                <p className="text-gray-600">{students.length} student profiles loaded from Supabase</p>
+                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Management</h1>
+                <p className="text-gray-600">Student records are up to date.</p>
               </div>
-              <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20">
+              <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
                 <UserPlus className="w-5 h-5" />
                 Add Student
               </button>
@@ -654,7 +669,7 @@ function StudentManagement() {
           <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4 items-center">
               <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
-                {["all", "Active", "Pending", "Disabled"].map((status) => (
+                {["all", "Active", "Disabled"].map((status) => (
                   <button
                     key={status}
                     onClick={() => setStatusFilter(status)}
@@ -720,9 +735,9 @@ function StudentManagement() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
-                          student.status === "Disabled" ? "bg-red-50 text-red-400 border-red-200" : 
-                          student.status === "Pending" ? "bg-amber-50 text-amber-600 border-amber-200" :
-                          "bg-green-50 text-green-600 border-green-200"
+                          student.status === "Disabled"
+                            ? "bg-red-50 text-red-400 border-red-200"
+                            : "bg-green-50 text-green-600 border-green-200"
                         }`}>
                           {student.status || "Active"}
                         </span>
@@ -730,24 +745,6 @@ function StudentManagement() {
                       <td className="px-6 py-4 text-sm text-gray-600">{formatDate(student.created_at)}</td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {student.status === "Pending" && (
-                            <button 
-                              onClick={async () => {
-                                try {
-                                  const { error } = await db.from("profiles").update({ status: "Active" }).eq("id", student.id);
-                                  if (error) throw error;
-                                  setSuccessMessage(`${getFullName(student)} approved successfully!`);
-                                  refreshStudents();
-                                } catch (err) {
-                                  setErrorMessage("Failed to approve student.");
-                                }
-                              }}
-                              className="p-2 hover:bg-emerald-50 rounded-lg transition-colors text-emerald-600" 
-                              title="Approve Student"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                          )}
                           <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
                             <Eye className="w-4 h-4 text-gray-600" />
                           </button>
@@ -846,11 +843,11 @@ function StudentManagement() {
                     {formErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Student"}
                   </button>
@@ -960,11 +957,11 @@ function StudentManagement() {
                     {editFormErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Student"}
                   </button>
@@ -1057,19 +1054,19 @@ function StudentManagement() {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-150">
+                <button onClick={handleCloseViewModal} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
+                  Close
+                </button>
                 <button
                   onClick={() => {
                     handleCloseViewModal();
                     handleEditStudent(selectedStudent);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm"
                 >
                   <Edit className="w-4 h-4" />
                   Edit Student
-                </button>
-                <button onClick={handleCloseViewModal} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                  Close
                 </button>
               </div>
             </div>
