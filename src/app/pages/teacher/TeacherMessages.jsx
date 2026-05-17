@@ -519,13 +519,13 @@ function TeacherMessages() {
     
     // Insert conversation into database
     try {
-      const { error: convError } = await supabase
+      const { error: convError } = await db
         .from("conversations")
         .insert({
           id: conversationId,
           name: memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName,
           is_group: true,
-          created_by: (await supabase.auth.getUser()).data.user?.id,
+          created_by: teacherId,
         });
       
       if (convError) {
@@ -542,7 +542,7 @@ function TeacherMessages() {
         is_admin: false,
       }));
 
-      const { error: partError } = await supabase
+      const { error: partError } = await db
         .from("conversation_participants")
         .insert(participantInserts);
 

@@ -164,6 +164,7 @@ function VideoConferencing() {
   const [formErrors, setFormErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
   const [meetingLaunchError, setMeetingLaunchError] = useState("");
 
   const saveMeetings = (updated) => setMeetings(updated);
@@ -210,14 +211,14 @@ function VideoConferencing() {
     };
   };
 
-  const fetchMeetings = useCallback(async () => {
-    if (!supabase) {
+  const fetchMeetings = useCallback(async (id) => {
+    if (!supabase || !id) {
       setMeetings([]);
       return;
     }
 
     const tableName = MEETING_TABLE;
-    const query = supabase.from(tableName).select("*").order("created_at", { ascending: false });
+    const query = supabase.from(tableName).select("*").eq("teacher_id", id).order("created_at", { ascending: false });
 
     const { data, error } = await query;
     if (error) {
@@ -228,6 +229,12 @@ function VideoConferencing() {
 
     setMeetings((data ?? []).map(mapMeetingRow));
   }, []);
+
+  useEffect(() => {
+    if (teacherId) {
+      fetchMeetings(teacherId);
+    }
+  }, [teacherId, fetchMeetings]);
 
   const generateUniqueRoomName = useCallback(async ({ title, className, subject, date, time }) => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -287,9 +294,8 @@ function VideoConferencing() {
     setTeacherName(user.name);
     setTeacherEmail(user.email || "");
     fetchClasses(user.email);
-    fetchMeetings();
     setTimeout(() => setLoading(false), 400);
-  }, [navigate, fetchClasses, fetchMeetings]);
+  }, [navigate, fetchClasses]);
 
   /* ── destroy Jitsi when leaving the meeting ─────────────────────── */
   useEffect(() => {
@@ -333,8 +339,20 @@ function VideoConferencing() {
         room_name: effectiveRoomName,
         meeting_link: effectiveMeetingLink,
       };
-      // Use supabaseAdmin to bypass RLS for updates
       const client = supabaseAdmin || supabase;
+
+      // Track participant join
+      try {
+        await client.from("meeting_participants").upsert({
+          meeting_id: Number(meeting.id),
+          user_id: teacherId,
+          user_name: teacherName || "",
+          role: "teacher"
+        }, { onConflict: "meeting_id, user_id" });
+      } catch (err) {
+        console.warn("Could not track participant join:", err);
+      }
+
       await client.from(tableName).update(payload).eq("id", Number(meeting.id));
 
       const updated = meetings.map((m) => (
@@ -347,38 +365,50 @@ function VideoConferencing() {
       console.error("Failed to mark meeting as ongoing:", error);
       setMeetingLaunchError("Meeting opened, but we could not update status in the database.");
     }
-  }, [meetings, teacherName]);
+  }, [meetings, teacherName, teacherId]);
 
-  /* ── end meeting ─────────────────────────────────────────────────── */
-  const endMeeting = async () => {
+  /* ── leave / end meeting ─────────────────────────────────────────── */
+  const leaveMeeting = async () => {
     if (jitsiApiRef.current) { jitsiApiRef.current.dispose(); jitsiApiRef.current = null; }
-    if (meetingWindowRef.current && !meetingWindowRef.current.closed) {
-      meetingWindowRef.current.close();
-    }
-    meetingWindowRef.current = null;
+    
     if (activeMeeting) {
       try {
-        const tableName = MEETING_TABLE;
-        const payload = {
-          status: "Ended",
-          is_meeting_active: false,
-          ended_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
         const client = supabaseAdmin || supabase;
-        await client.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
-      } catch (error) {
-        console.error("Failed to end meeting:", error);
-      }
+        
+        // Remove from participants
+        await client.from("meeting_participants").delete().match({
+          meeting_id: Number(activeMeeting.id),
+          user_id: teacherId
+        });
 
-      const updated = meetings.map((m) =>
-        m.id === activeMeeting.id ? { ...m, status: "Ended" } : m
-      );
-      saveMeetings(updated);
+        // Check if anyone is left
+        const { count } = await client.from("meeting_participants")
+          .select("*", { count: 'exact', head: true })
+          .eq("meeting_id", Number(activeMeeting.id));
+
+        if (count === 0) {
+          // End the meeting
+          const tableName = MEETING_TABLE;
+          const payload = {
+            status: "Ended",
+            is_meeting_active: false,
+            ended_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          await client.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
+          
+          const updated = meetings.map((m) =>
+            m.id === activeMeeting.id ? { ...m, status: "Ended" } : m
+          );
+          saveMeetings(updated);
+        }
+      } catch (error) {
+        console.error("Failed to leave meeting:", error);
+      }
     }
+    
     setIsInMeeting(false);
     setActiveMeeting(null);
-    navigate("/teacher/video-conference", { replace: true });
   };
 
   /* ── initialize embedded Jitsi room in existing meeting mockup ─── */
@@ -517,8 +547,10 @@ function VideoConferencing() {
       const mappedMeeting = mapMeetingRow(data || payload);
       saveMeetings([mappedMeeting, ...meetings]);
 
-      handleCloseModal();
-      await launchJitsi(mappedMeeting);
+      setSaveSuccess("Meeting scheduled successfully!");
+      setTimeout(() => {
+        handleCloseModal();
+      }, 1500);
     } finally {
       setIsSaving(false);
     }
@@ -529,6 +561,7 @@ function VideoConferencing() {
     setFormData({ title: "", class: "", subject: "", date: "", time: "", duration: "60" });
     setFormErrors({});
     setSaveError("");
+    setSaveSuccess("");
   };
 
   const handleDeleteMeeting = async (id) => {
@@ -594,11 +627,11 @@ function VideoConferencing() {
               Open in new tab
             </a>
             <button
-              onClick={endMeeting}
+              onClick={leaveMeeting}
               className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-gray-900 rounded-lg transition-colors text-sm font-medium"
             >
               <StopCircle className="w-4 h-4" />
-              End Meeting
+              Leave Meeting
             </button>
           </div>
         </div>
@@ -924,6 +957,12 @@ function VideoConferencing() {
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex gap-2">
                   <AlertCircle className="w-4 h-4 text-red-300 shrink-0 mt-0.5" />
                   <p className="text-xs text-red-200 leading-relaxed">{saveError}</p>
+                </div>
+              )}
+              {saveSuccess && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-green-700 leading-relaxed">{saveSuccess}</p>
                 </div>
               )}
             </div>
