@@ -5,6 +5,10 @@ import { X } from "lucide-react";
 
 const db = () => supabaseAdmin || supabase;
 
+const isValidUuid = (value) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
 const getPathForType = (type, role) => {
   switch (type) {
     case "announcement":
@@ -42,36 +46,78 @@ export function Notifications() {
       try {
         const raw = localStorage.getItem("currentUser");
         const user = raw ? JSON.parse(raw) : null;
-        if (db() && user && user.id) {
-          const { data, error } = await db()
-            .from("notifications")
-            .select("id, user_id, type, title, message, is_read, created_at")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(200);
-          if (!error && isMounted) {
-            setNotifications((data || []).map((n) => ({
-              id: String(n.id),
-              type: String(n.type || ""),
-              title: String(n.title || ""),
-              message: String(n.message || ""),
-              isRead: Boolean(n.is_read),
-              timestamp: new Date(n.created_at).toLocaleString(),
-              path: getPathForType(n.type, user?.role),
-            })));
-            setLoading(false);
-            return;
+        console.log("[TeacherNotifications] current user object:", user);
+        console.log("[TeacherNotifications] current user.id:", user?.id);
+
+        const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+        if (authError) {
+          console.error("[TeacherNotifications] Supabase auth error:", authError);
+        }
+
+        const authUser = authData?.user ?? null;
+        console.log("[TeacherNotifications] auth user object:", authUser);
+        console.log("[TeacherNotifications] auth user.id:", authUser?.id);
+
+        if (db() && isValidUuid(authUser?.id)) {
+          try {
+            const candidateFields = ["message", "content", "body", "description", "text"];
+            let data = null;
+            let error = null;
+            let usedField = null;
+
+            for (const f of candidateFields) {
+              const sel = `id, user_id, type, title, ${f} as message, is_read, created_at`;
+              const res = await db()
+                .from("notifications")
+                .select(sel)
+                .eq("user_id", authUser.id)
+                .order("created_at", { ascending: false })
+                .limit(200);
+              data = res.data;
+              error = res.error;
+              if (!error) {
+                usedField = f;
+                break;
+              }
+
+              const code = String(error?.code || error?.status || "");
+              const msg = String(error?.message || "").toLowerCase();
+              if (code === "42703" || msg.includes("column") || msg.includes("does not exist")) {
+                continue;
+              }
+              break;
+            }
+
+            console.log("[TeacherNotifications] Notification fetch used field:", usedField);
+
+            if (!error && isMounted) {
+              setNotifications((data || []).map((n) => ({
+                id: String(n.id),
+                type: String(n.type || ""),
+                title: String(n.title || ""),
+                message: String(n.message || ""),
+                isRead: Boolean(n.is_read),
+                timestamp: new Date(n.created_at).toLocaleString(),
+                path: getPathForType(n.type, user?.role),
+              })));
+              setLoading(false);
+              return;
+            }
+            if (error) console.error("[TeacherNotifications] Supabase notification fetch error:", error);
+          } catch (err) {
+            console.error("[TeacherNotifications] Notification DB load error:", err);
           }
-          if (error) console.warn("Notifications load error:", error);
+        } else {
+          console.warn("[TeacherNotifications] Skipping notification fetch until a valid authenticated user exists.");
         }
       } catch (err) {
-        console.warn("Failed to load notifications from DB:", err);
+        console.error("[TeacherNotifications] Failed to load notifications from DB:", err);
       }
 
       // fallback to localStorage
       const raw = localStorage.getItem("currentUser");
       const user = raw ? JSON.parse(raw) : null;
-      const key = `notifications_${user?.role || "guest"}_${user?.id || "anon"}`;
+      const key = `notifications_${user?.role || "guest"}_${isValidUuid(user?.id) ? user.id : "guest"}`;
       const stored = localStorage.getItem(key);
       if (stored) {
         setNotifications(dedupeNotifications(JSON.parse(stored)));
@@ -86,39 +132,66 @@ export function Notifications() {
 
   const markRead = async (id) => {
     try {
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      if (db() && user?.id) {
-        await db().from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", user.id);
+      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+      if (authError) {
+        console.error("[TeacherNotifications] Supabase auth error:", authError);
+      }
+
+      const authUser = authData?.user ?? null;
+      console.log("[TeacherNotifications] markRead auth user object:", authUser);
+      console.log("[TeacherNotifications] markRead auth user.id:", authUser?.id);
+
+      if (db() && isValidUuid(authUser?.id)) {
+        await db().from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", authUser.id);
+      } else {
+        console.warn("[TeacherNotifications] Skipping mark-read because the authenticated user is missing or invalid.");
       }
     } catch (err) {
-      console.warn("Failed to mark read:", err);
+      console.error("[TeacherNotifications] Failed to mark read:", err);
     }
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
   };
 
   const markAllRead = async () => {
     try {
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      if (db() && user?.id) {
-        await db().from("notifications").update({ is_read: true }).eq("user_id", user.id).eq("is_read", false);
+      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+      if (authError) {
+        console.error("[TeacherNotifications] Supabase auth error:", authError);
+      }
+
+      const authUser = authData?.user ?? null;
+      console.log("[TeacherNotifications] markAllRead auth user object:", authUser);
+      console.log("[TeacherNotifications] markAllRead auth user.id:", authUser?.id);
+
+      if (db() && isValidUuid(authUser?.id)) {
+        await db().from("notifications").update({ is_read: true }).eq("user_id", authUser.id).eq("is_read", false);
+      } else {
+        console.warn("[TeacherNotifications] Skipping mark-all-read because the authenticated user is missing or invalid.");
       }
     } catch (err) {
-      console.warn("Failed to mark all read:", err);
+      console.error("[TeacherNotifications] Failed to mark all read:", err);
     }
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
   const removeNotification = async (id) => {
     try {
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      if (db() && user?.id) {
-        await db().from("notifications").delete().eq("id", id).eq("user_id", user.id);
+      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+      if (authError) {
+        console.error("[TeacherNotifications] Supabase auth error:", authError);
+      }
+
+      const authUser = authData?.user ?? null;
+      console.log("[TeacherNotifications] removeNotification auth user object:", authUser);
+      console.log("[TeacherNotifications] removeNotification auth user.id:", authUser?.id);
+
+      if (db() && isValidUuid(authUser?.id)) {
+        await db().from("notifications").delete().eq("id", id).eq("user_id", authUser.id);
+      } else {
+        console.warn("[TeacherNotifications] Skipping delete because the authenticated user is missing or invalid.");
       }
     } catch (err) {
-      console.warn("Failed to delete notification:", err);
+      console.error("[TeacherNotifications] Failed to delete notification:", err);
     }
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };

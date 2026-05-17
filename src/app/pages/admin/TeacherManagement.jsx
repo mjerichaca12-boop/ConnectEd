@@ -293,9 +293,15 @@ function TeacherManagement() {
     }
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
-      const assignedSubjectIds = (subjectRows ?? [])
+      const assignedSubjectIds = [...new Set((subjectRows ?? [])
         .filter((subject) => String(subject.teacher_id) === String(teacherId))
-        .map((subject) => subject.id);
+        .map((subject) => String(subject.id || "").trim())
+        .filter(Boolean))];
+
+      console.log("[TeacherManagement] refreshing teacher subjects", {
+        teacherId,
+        assignedSubjectIds
+      });
 
       const { error: updateError } = await db
         .from("profiles")
@@ -313,8 +319,8 @@ function TeacherManagement() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const previousIds = normalizeSubjects(previousSubjectIds);
-    const nextIds = normalizeSubjects(nextSubjectIds);
+    const previousIds = [...new Set(normalizeSubjects(previousSubjectIds))];
+    const nextIds = [...new Set(normalizeSubjects(nextSubjectIds))];
     const affectedSubjectIds = [...new Set([...previousIds, ...nextIds])];
 
     if (affectedSubjectIds.length === 0) {
@@ -338,6 +344,7 @@ function TeacherManagement() {
 
     try {
       if (addSubjectIds.length > 0) {
+        console.log("[TeacherManagement] assigning subjects", { teacherId, addSubjectIds });
         const { error: assignError } = await db
           .from("subjects")
           .update({ teacher_id: teacherId })
@@ -349,6 +356,7 @@ function TeacherManagement() {
       }
 
       if (removeSubjectIds.length > 0) {
+        console.log("[TeacherManagement] removing subjects", { teacherId, removeSubjectIds });
         const removableIds = (currentSubjects ?? [])
           .filter((subject) => removeSubjectIds.includes(subject.id) && String(subject.teacher_id) === String(teacherId))
           .map((subject) => subject.id);

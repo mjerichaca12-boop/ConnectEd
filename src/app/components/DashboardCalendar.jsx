@@ -450,7 +450,7 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-green-200 bg-green-50 text-green-200">Today</span>
           </div>
 
-          <div className="text-sm text-gray-200 font-medium">
+          <div className="text-sm text-gray-700 font-medium">
             {currentMonthSelectedDate ? formatEventDate(currentMonthSelectedDate) : "Select a date"}
           </div>
 
@@ -462,7 +462,7 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-red-200">Holiday</p>
-                  <p className="text-sm text-gray-200">{selectedHoliday}</p>
+                  <p className="text-sm text-gray-700">{selectedHoliday}</p>
                 </div>
               </div>
             )}
@@ -516,7 +516,7 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
                 <div className="w-1.5 h-1.5 bg-green-400 rounded-full mt-1.5" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs font-medium text-gray-200 truncate">{event.title || "Untitled event"}</p>
+                    <p className="text-xs font-medium text-gray-700 truncate">{event.title || "Untitled event"}</p>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border border-gray-200 text-gray-700">
                       {getAudienceIcon(event.targetAudience)}
                       {event.targetAudience || "Not set"}
@@ -556,21 +556,21 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
 
               <div>
                 <p className="text-[11px] text-gray-500 uppercase tracking-widest">Description</p>
-                <p className="text-gray-200 text-sm mt-1">{selectedEvent.description || "No description provided."}</p>
+                <p className="text-gray-700 text-sm mt-1">{selectedEvent.description || "No description provided."}</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <p className="text-[11px] text-gray-500 uppercase tracking-widest">Date</p>
-                  <p className="text-gray-200 text-sm mt-1">{formatEventDate(selectedEvent.eventDate)}</p>
+                  <p className="text-gray-700 text-sm mt-1">{formatEventDate(selectedEvent.eventDate)}</p>
                 </div>
                 <div>
                   <p className="text-[11px] text-gray-500 uppercase tracking-widest">Time</p>
-                  <p className="text-gray-200 text-sm mt-1">{selectedEvent.eventTime ? formatEventTime(selectedEvent.eventTime) : "All day"}</p>
+                  <p className="text-gray-700 text-sm mt-1">{selectedEvent.eventTime ? formatEventTime(selectedEvent.eventTime) : "All day"}</p>
                 </div>
                 <div>
                   <p className="text-[11px] text-gray-500 uppercase tracking-widest">Audience</p>
-                  <p className="text-gray-200 text-sm mt-1">{selectedEvent.targetAudience || "School-wide"}</p>
+                  <p className="text-gray-700 text-sm mt-1">{selectedEvent.targetAudience || "School-wide"}</p>
                 </div>
               </div>
             </div>

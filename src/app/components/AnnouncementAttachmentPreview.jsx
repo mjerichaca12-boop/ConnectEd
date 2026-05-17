@@ -14,7 +14,7 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
     ? "border-gray-200 bg-gray-50 text-gray-700"
     : "border-gray-200 bg-gray-50 text-gray-600";
   const documentClassName = isDark
-    ? "border-gray-200 bg-gray-50 text-gray-200 hover:bg-black/30"
+    ? "border-gray-200 bg-gray-50 text-gray-700 hover:bg-black/30"
     : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100";
 
   if (!attachmentLink || loadFailed) {

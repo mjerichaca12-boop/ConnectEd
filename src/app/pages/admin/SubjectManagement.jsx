@@ -101,6 +101,14 @@ function SubjectManagement() {
     teacher_id: subjectRow.teacher_id ?? null
   });
 
+  const buildSubjectDedupKey = (subjectRow) => {
+    const teacherId = String(subjectRow?.teacher_id || "").trim();
+    const code = String(subjectRow?.code || "").trim().toLowerCase();
+    const name = String(subjectRow?.name || "").trim().toLowerCase();
+    const section = String(subjectRow?.section || "").trim().toLowerCase();
+    return [teacherId, code, name, section].join("|");
+  };
+
   const fetchTeachers = async () => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
@@ -137,7 +145,23 @@ function SubjectManagement() {
       throw new Error(error.message);
     }
 
-    setSubjects((data ?? []).map(formatSubject));
+    const normalizedSubjects = (data ?? []).map(formatSubject);
+    const seen = new Set();
+    const dedupedSubjects = normalizedSubjects.filter((subjectRow) => {
+      const key = buildSubjectDedupKey(subjectRow);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (dedupedSubjects.length !== normalizedSubjects.length) {
+      console.warn("[SubjectManagement] duplicate subject rows detected during fetch", {
+        fetched: normalizedSubjects.length,
+        unique: dedupedSubjects.length
+      });
+    }
+
+    setSubjects(dedupedSubjects);
   };
 
   const fetchAvailableStudents = async (subjectId) => {
@@ -401,6 +425,7 @@ function SubjectManagement() {
 
   const handleAddSubject = async (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setErrorMessage("");
     setSuccessMessage("");
 
@@ -417,6 +442,41 @@ function SubjectManagement() {
     try {
       const payload = buildPayload(subjectFormData);
       const tableName = await getSubjectTableName();
+
+      const { data: existingSubject, error: existingSubjectError } = await supabase
+        .from(tableName)
+        .select("id")
+        .eq("teacher_id", payload.teacher_id)
+        .eq("code", payload.code)
+        .eq("name", payload.name)
+        .eq("section", payload.section)
+        .maybeSingle();
+
+      if (existingSubjectError) {
+        throw existingSubjectError;
+      }
+
+      if (existingSubject?.id) {
+        console.warn("[SubjectManagement] prevented duplicate subject insert", {
+          teacherId: payload.teacher_id,
+          code: payload.code,
+          name: payload.name,
+          section: payload.section,
+          existingSubjectId: existingSubject.id
+        });
+        setFormErrors({
+          form: "This subject is already assigned to this teacher and section."
+        });
+        return;
+      }
+
+      console.log("[SubjectManagement] creating subject assignment", {
+        teacherId: payload.teacher_id,
+        code: payload.code,
+        name: payload.name,
+        section: payload.section
+      });
+
       const { data, error } = await supabase.from(tableName).insert(payload).select(subjectSelectColumns).single();
 
       if (error) throw error;
@@ -448,7 +508,17 @@ function SubjectManagement() {
       setShowAddModal(false);
       setSuccessMessage("Subject added successfully.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to add subject.");
+      const duplicateViolation =
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        String(error.code) === "23505";
+
+      if (duplicateViolation) {
+        setErrorMessage("This subject is already assigned to this teacher and section.");
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : "Unable to add subject.");
+      }
     } finally {
       setIsSubmitting(false);
     }

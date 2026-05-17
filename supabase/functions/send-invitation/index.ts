@@ -42,9 +42,12 @@ const shouldFallbackToLegacyRequestSchema = (error: { message?: string; details?
     message.includes("could not find the 'middle_name' column") ||
     message.includes("could not find the 'last_name' column") ||
     message.includes("does not exist") ||
+    message.includes("schema cache") ||
+    message.includes("could not find the table") ||
     details.includes("first_name") ||
     details.includes("middle_name") ||
-    details.includes("last_name")
+    details.includes("last_name") ||
+    details.includes("schema cache")
   );
 };
 
@@ -213,43 +216,49 @@ serve(async (req) => {
     }
 
     // Verify the access request exists and is approved.
-    // First try the new schema (first_name/middle_name/last_name). If the column
-    // doesn't exist in the database, fall back to the legacy schema (name, phone_number).
+    // Try multiple possible table names and both new/legacy schemas.
+    const REQUEST_TABLES = ["teacher_access_request", "teacher_request_access", "teacher_access_requests"];
     const newSchemaSelect = "id, profile_id, email, first_name, middle_name, last_name, status";
     const legacySchemaSelect = "id, profile_id, email, name, phone_number, status";
 
-    let requestLookup = supabase
-      .from("teacher_access_requests")
-      .select(newSchemaSelect)
-      .limit(1);
+    let accessRequest: Record<string, unknown> | null = null;
+    let requestError: { message?: string; details?: string } | null = null;
+    let tableUsed: string | null = null;
 
-    if (requestId) {
-      requestLookup = requestLookup.eq("id", requestId);
-    } else {
-      requestLookup = requestLookup.ilike("email", email);
-    }
+    for (const table of REQUEST_TABLES) {
+      try {
+        let lookup = supabase.from(table).select(newSchemaSelect).limit(1);
+        if (requestId) lookup = lookup.eq("id", requestId);
+        else lookup = lookup.ilike("email", email);
 
-    let { data: accessRequests, error: requestError } = await requestLookup;
-    let accessRequest = Array.isArray(accessRequests) ? accessRequests[0] : null;
+        const result = await lookup;
+        if (!result.error) {
+          accessRequest = Array.isArray(result.data) ? result.data[0] : result.data ?? null;
+          requestError = null;
+          tableUsed = table;
+          break;
+        }
 
-    if (requestError && shouldFallbackToLegacyRequestSchema(requestError)) {
-      console.log("send-invitation: falling back to legacy teacher_access_requests schema");
+        // If column missing, try legacy schema on same table
+        if (shouldFallbackToLegacyRequestSchema(result.error)) {
+          let legacyLookup = supabase.from(table).select(legacySchemaSelect).limit(1);
+          if (requestId) legacyLookup = legacyLookup.eq("id", requestId);
+          else legacyLookup = legacyLookup.ilike("email", email);
 
-      let legacyLookup = supabase
-        .from("teacher_access_requests")
-        .select(legacySchemaSelect)
-        .limit(1);
-
-      if (requestId) {
-        legacyLookup = legacyLookup.eq("id", requestId);
-      } else {
-        legacyLookup = legacyLookup.ilike("email", email);
+          const legacyResult = await legacyLookup;
+          if (!legacyResult.error) {
+            accessRequest = Array.isArray(legacyResult.data) ? legacyResult.data[0] : legacyResult.data ?? null;
+            requestError = null;
+            tableUsed = table;
+            break;
+          }
+          requestError = legacyResult.error as { message?: string; details?: string } | null;
+        } else {
+          requestError = result.error as { message?: string; details?: string } | null;
+        }
+      } catch (e) {
+        requestError = e as any;
       }
-
-      const legacy = await legacyLookup;
-      accessRequests = legacy.data;
-      requestError = legacy.error;
-      accessRequest = Array.isArray(accessRequests) ? accessRequests[0] : null;
     }
 
     if (requestError || !accessRequest) {
@@ -258,7 +267,7 @@ serve(async (req) => {
       return jsonResponse(404, { error: msg });
     }
 
-    if (accessRequest.status !== "approved") {
+    if ((accessRequest as any)?.status !== "approved") {
       return jsonResponse(400, { error: "Access request has not been approved." });
     }
 
@@ -332,13 +341,15 @@ serve(async (req) => {
     }
 
     // Update access request status to invited
-    const { error: updateError } = await supabase
-      .from("teacher_access_requests")
-      .update({ status: "invited" })
-      .ilike("email", email);
-
-    if (updateError) {
-      console.error("Failed to update access request status:", updateError);
+    // Try to update the status in whichever table we used, or in all tables as a fallback.
+    const updateTables = tableUsed ? [tableUsed] : REQUEST_TABLES;
+    for (const t of updateTables) {
+      const { error: updateError } = await supabase.from(t).update({ status: "invited" }).ilike("email", email);
+      if (updateError) {
+        console.warn("send-invitation: failed to update status on table", t, updateError.message);
+      } else {
+        break;
+      }
     }
 
     // Send invitation email

@@ -125,6 +125,7 @@ function SignUp() {
 
       const normalizedEmail = teacherForm.email.trim().toLowerCase();
 
+      // Check existing profile
       const { data: existing } = await supabase
         .from("profiles")
         .select("id")
@@ -135,6 +136,42 @@ function SignUp() {
         setError("This email is already registered.");
         setLoading(false);
         return;
+      }
+
+      // Prevent duplicate pending access requests — try canonical plural table first
+      const requestTables = ["teacher_access_requests", "teacher_access_request", "teacher_request_access"];
+
+      try {
+        let existingRequest = null;
+        let requestLookupTable = null;
+
+        for (const requestTable of requestTables) {
+          const { data, error } = await db
+            .from(requestTable)
+            .select("id, status")
+            .ilike("email", normalizedEmail)
+            .maybeSingle();
+
+          if (!error || !String(error.message || "").toLowerCase().includes("relation")) {
+            existingRequest = data;
+            requestLookupTable = requestTable;
+            break;
+          }
+        }
+
+        if (existingRequest && String(existingRequest.status || "").toLowerCase() === "pending") {
+          setError("An access request for this email is already pending review.");
+          setLoading(false);
+          return;
+        }
+
+        console.log("SignUp: existing request lookup", {
+          email: normalizedEmail,
+          found: !!existingRequest,
+          table: requestLookupTable
+        });
+      } catch (reqCheckErr) {
+        console.warn("SignUp: failed to check existing teacher request", reqCheckErr);
       }
 
       const { data: authData, error: authError } = await admin.auth.admin.createUser({
@@ -154,9 +191,76 @@ function SignUp() {
         created_at: new Date().toISOString()
       });
 
+      console.log("SignUp: profiles insert result", {
+        email: normalizedEmail,
+        success: !insertError,
+        error: insertError?.message
+      });
+
       if (insertError) {
         await admin.auth.admin.deleteUser(authData.user.id).catch(() => {});
         throw insertError;
+      }
+
+      // Insert corresponding teacher access request so admin panel can review
+      try {
+        const fullName = `${teacherForm.firstName.trim()} ${teacherForm.lastName.trim()}`;
+        const requestInsertPayload = {
+          email: normalizedEmail,
+          name: fullName,
+          school_name: null,
+          position: null,
+          subject_area: null,
+          phone_number: null,
+          additional_info: null,
+          status: "pending",
+          requested_at: new Date().toISOString(),
+          profile_id: authData.user.id
+        };
+
+        let reqData = null;
+        let reqError = null;
+        let requestInsertTable = null;
+
+        for (const requestTable of requestTables) {
+          console.log("SignUp: inserting teacher request row", { requestTable, email: normalizedEmail, payload: requestInsertPayload });
+          const result = await db
+            .from(requestTable)
+            .insert([requestInsertPayload])
+            .select("id")
+            .maybeSingle();
+
+          reqData = result.data;
+          reqError = result.error;
+          requestInsertTable = requestTable;
+
+          // If table doesn't exist, try next. If success or other error, stop.
+          if (!reqError || !String(reqError.message || "").toLowerCase().includes("relation")) {
+            break;
+          }
+        }
+
+        if (reqError) {
+          console.error("SignUp: failed to insert teacher request row", {
+            table: requestInsertTable,
+            error: reqError
+          });
+        } else {
+          console.log("SignUp: created teacher request row", {
+            table: requestInsertTable,
+            id: reqData?.id,
+            email: normalizedEmail
+          });
+
+          try {
+            localStorage.setItem("connected_access_requests_refresh", String(Date.now()));
+            window.dispatchEvent(new Event("connected:access-requests-updated"));
+          } catch (refreshError) {
+            console.warn("SignUp: failed to broadcast access-request refresh", refreshError);
+          }
+        }
+      } catch (e) {
+        console.error("SignUp: unexpected error inserting teacher request row", e);
       }
 
       setSuccess(teacherForm.tempPassword);

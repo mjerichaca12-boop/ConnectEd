@@ -97,6 +97,12 @@ function Login() {
     const handleOAuthSession = async (session) => {
       if (oauthSessionProcessingRef.current) return;
       oauthSessionProcessingRef.current = true;
+
+      const oauthIntent = localStorage.getItem(GOOGLE_OAUTH_INTENT_KEY);
+      if (!oauthIntent) {
+        oauthSessionProcessingRef.current = false;
+        return;
+      }
       
       const email = session?.user?.email;
       if (!email) {
@@ -138,6 +144,10 @@ function Login() {
         const role = String(profile.role || "student").toLowerCase();
         const isMobile = window.innerWidth < 1024; // Use standard 1024 for dashboard redirect logic
 
+        if (role === "student") {
+          throw new Error("Student web access has been removed. Please contact an administrator if you need access.");
+        }
+
         // Check device restrictions
         if (role === "teacher" && isMobile) {
           throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
@@ -157,7 +167,7 @@ function Login() {
         
         if (role === "admin") navigate("/admin/dashboard");
         else if (role === "teacher") navigate("/teacher/dashboard");
-        else navigate("/dashboard");
+        else throw new Error("Unsupported account role. Please contact an administrator.");
 
       } catch (err) {
         console.error("OAuth Error:", err);
@@ -166,11 +176,12 @@ function Login() {
       } finally {
         setGoogleLoading(false);
         oauthSessionProcessingRef.current = false;
+        localStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
       }
     };
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
+      if (session && localStorage.getItem(GOOGLE_OAUTH_INTENT_KEY)) {
         await handleOAuthSession(session);
       }
     });
@@ -191,6 +202,7 @@ function Login() {
       return;
     }
     setGoogleLoading(true);
+    localStorage.setItem(GOOGLE_OAUTH_INTENT_KEY, JSON.stringify({ startedAt: Date.now() }));
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -201,6 +213,7 @@ function Login() {
     if (error) {
       setGoogleError(error.message);
       setGoogleLoading(false);
+      localStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
     }
   };
 
@@ -228,13 +241,35 @@ function Login() {
     }
 
     try {
+      console.log("LOGIN ATTEMPT:", { email: normalizedEmail });
+
+      // Clear any stale session before attempting a fresh password login.
+      try {
+        await supabase.auth.signOut({ scope: "global" });
+      } catch (signOutError) {
+        console.warn("LOGIN signOut cleanup warning:", signOutError);
+      }
+
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: formData.password
       });
 
+      console.log("LOGIN ERROR:", authError);
+      const { data: authSessionData } = await supabase.auth.getSession();
+      console.log("LOGIN SESSION AFTER ATTEMPT:", authSessionData);
+
       if (authError) {
-        setError("Invalid email or password. Please try again.");
+        const authMessage = String(authError.message || "").toLowerCase();
+        if (authMessage.includes("invalid login credentials")) {
+          setError("Login failed. The password may be incorrect, or the invitation may not be fully activated yet.");
+        } else if (authMessage.includes("email not confirmed")) {
+          setError("Please confirm your invitation email before logging in.");
+        } else if (authMessage.includes("token")) {
+          setError("Login session could not be created. Please sign out, refresh, and try again.");
+        } else {
+          setError(authError.message || "Invalid email or password. Please try again.");
+        }
         setLoading(false);
         return;
       }
@@ -262,6 +297,13 @@ function Login() {
       const role = String(profile.role || "student").toLowerCase();
       const isMobile = window.innerWidth <= 1280;
 
+      if (role === "student") {
+        await supabase.auth.signOut();
+        setError("Student web access has been removed. Please contact an administrator if you need access.");
+        setLoading(false);
+        return;
+      }
+
       if (role === "teacher" && isMobile) {
         await supabase.auth.signOut();
         setError("Teachers can only sign in on Desktop.");
@@ -282,12 +324,15 @@ function Login() {
         role: role
       }));
 
+      console.log("LOGIN DATA:", { email: normalizedEmail, profileId: profile.id, role });
+
       if (role === "admin") navigate("/admin/dashboard");
       else if (role === "teacher") navigate("/teacher/dashboard");
-      else navigate("/dashboard");
+      else throw new Error("Unsupported account role. Please contact an administrator.");
 
     } catch (err) {
-      setError("Login failed. Please check your credentials.");
+      console.error("LOGIN CATCH ERROR:", err);
+      setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.");
       setLoading(false);
     }
   };

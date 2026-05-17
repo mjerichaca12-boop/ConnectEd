@@ -806,7 +806,7 @@ export function AdminMessages() {
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
                           ? "bg-blue-600 text-gray-900 shadow-sm"
-                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-200"
+                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                     >
                       <Icon className="w-3 h-3" />

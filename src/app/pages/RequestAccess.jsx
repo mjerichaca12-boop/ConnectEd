@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, User, Phone, Check } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 
+const ACCESS_REQUEST_REFRESH_KEY = "connected_access_requests_refresh";
+
 function RequestAccess() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -64,23 +66,134 @@ function RequestAccess() {
         throw new Error("Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
       }
 
-      const { data, error: invokeError } = await supabase.functions.invoke("request-access", {
-        body: {
-          email: formData.email.toLowerCase().trim(),
-          firstName: formData.firstName.trim(),
-          middleName: formData.middleName.trim(),
-          lastName: formData.lastName.trim(),
-          phone: formData.phone.trim()
-        }
-      });
+      // Log submitted form data for debugging
+      console.log("[RequestAccess] submitting form:", formData);
 
-      if (invokeError || !data?.ok) {
-        setError(data?.message || "Failed to submit access request.");
+      const email = formData.email.toLowerCase().trim();
+      const fullName = [formData.firstName, formData.middleName, formData.lastName].filter(Boolean).join(" ").trim();
+
+      // Candidate request tables to try (try canonical singular first)
+      const REQUEST_TABLES = ["teacher_access_request", "teacher_request_access", "teacher_access_requests"];
+
+      // Prevent duplicate pending requests by checking existing request in any candidate table
+      for (const t of REQUEST_TABLES) {
+        try {
+          const { data: existing, error: lookupErr } = await supabase
+            .from(t)
+            .select("id, status, email")
+            .ilike("email", email)
+            .maybeSingle();
+
+          if (lookupErr && !String(lookupErr.message || "").toLowerCase().includes("does not exist")) {
+            console.warn(`[RequestAccess] lookup error on table ${t}:`, lookupErr.message);
+          }
+
+          if (existing) {
+            const s = String(existing.status || "").toLowerCase();
+            if (s === "pending") {
+              setError("You already have a pending access request. Please wait for an administrator to review it.");
+              setLoading(false);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn(`[RequestAccess] error checking duplicates on ${t}:`, e);
+        }
+      }
+
+      // Build payloads for both new and legacy schemas
+      const newPayload = {
+        email,
+        first_name: formData.firstName.trim(),
+        middle_name: formData.middleName.trim() || null,
+        last_name: formData.lastName.trim(),
+        phone: formData.phone.trim() || null,
+        school_name: formData.schoolName.trim() || null,
+        position: formData.position.trim() || null,
+        subjects: formData.subjects ? formData.subjects.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        additional_info: formData.additionalInfo.trim() || null,
+        status: "pending"
+      };
+
+      const legacyPayload = {
+        email,
+        name: fullName || email,
+        school_name: formData.schoolName.trim() || null,
+        position: formData.position.trim() || null,
+        subject_area: formData.subjects || null,
+        phone_number: formData.phone.trim() || null,
+        additional_info: formData.additionalInfo.trim() || null,
+        status: "pending"
+      };
+
+      // Try inserting into candidate tables, preferring new schema insert
+      let inserted = null;
+      let insertError = null;
+      let usedTable = null;
+
+      for (const table of REQUEST_TABLES) {
+        try {
+          console.log(`[RequestAccess] attempting insert into ${table} with payload:`, newPayload);
+          const { data: insertData, error: insertErr } = await supabase
+            .from(table)
+            .insert([newPayload])
+            .select()
+            .single();
+
+          if (!insertErr) {
+            inserted = insertData;
+            usedTable = table;
+            console.log(`[RequestAccess] inserted into ${table}:`, insertData);
+            break;
+          }
+
+          // If column missing, try legacy payload
+          const msg = String(insertErr.message || "").toLowerCase();
+          if (msg.includes("could not find") || msg.includes("column") || msg.includes("first_name") || msg.includes("last_name")) {
+            console.warn(`[RequestAccess] new-schema insert failed on ${table}, trying legacy payload:`, insertErr.message);
+            console.log(`[RequestAccess] attempting legacy insert into ${table} with payload:`, legacyPayload);
+            const { data: legacyData, error: legacyErr } = await supabase
+              .from(table)
+              .insert([legacyPayload])
+              .select()
+              .single();
+
+            if (!legacyErr) {
+              inserted = legacyData;
+              usedTable = table;
+              console.log(`[RequestAccess] legacy insert succeeded into ${table}:`, legacyData);
+              break;
+            }
+
+            insertError = legacyErr;
+            console.warn(`[RequestAccess] legacy insert failed on ${table}:`, legacyErr.message);
+          } else {
+            insertError = insertErr;
+            console.warn(`[RequestAccess] insert failed on ${table}:`, insertErr.message);
+          }
+        } catch (e) {
+          insertError = e;
+          console.error(`[RequestAccess] unexpected error inserting into ${table}:`, e);
+        }
+      }
+
+      if (!inserted) {
+        console.error("[RequestAccess] failed to insert access request:", insertError);
+        setError(insertError?.message || "Failed to submit access request. Please try again later.");
         setLoading(false);
         return;
       }
 
+      // Broadcast refresh so admin page picks up the new request immediately
+      try {
+        window.localStorage.setItem(ACCESS_REQUEST_REFRESH_KEY, JSON.stringify({ at: Date.now(), email, source: "RequestAccess" }));
+        window.dispatchEvent(new Event("connected:access-requests-updated"));
+      } catch (refreshError) {
+        console.warn("[RequestAccess] failed to broadcast refresh signal:", refreshError);
+      }
+
       setSuccess(true);
+      setLoading(false);
 
       setTimeout(() => {
         navigate("/login", { replace: true });

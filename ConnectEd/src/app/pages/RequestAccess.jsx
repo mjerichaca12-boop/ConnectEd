@@ -5,6 +5,7 @@ import { supabase } from "@/app/lib/supabaseClient";
 
 function RequestAccess() {
   const navigate = useNavigate();
+  const buildSource = "nested";
   const [formData, setFormData] = useState({
     email: "",
     firstName: "",
@@ -64,17 +65,29 @@ function RequestAccess() {
         throw new Error("Supabase client is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
       }
 
+      const payload = {
+        email: formData.email.toLowerCase().trim(),
+        firstName: formData.firstName.trim(),
+        middleName: formData.middleName.trim(),
+        lastName: formData.lastName.trim(),
+        phone: formData.phone.trim()
+      };
+
+      console.log("[RequestAccess] build source:", buildSource);
+      console.log("[RequestAccess] invoking function: request-access");
+      console.log("[RequestAccess] request payload:", payload);
+
       const { data, error: invokeError } = await supabase.functions.invoke("request-access", {
-        body: {
-          email: formData.email.toLowerCase().trim(),
-          firstName: formData.firstName.trim(),
-          middleName: formData.middleName.trim(),
-          lastName: formData.lastName.trim(),
-          phone: formData.phone.trim()
-        }
+        body: payload
       });
 
+      console.log("[RequestAccess] function response:", data);
+      if (invokeError) {
+        console.error("[RequestAccess] Edge Function error:", invokeError);
+      }
+
       if (invokeError || !data?.ok) {
+        console.error("[RequestAccess] request-access failed:", { invokeError, data });
         setError(data?.message || "Failed to submit access request.");
         setLoading(false);
         return;

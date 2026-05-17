@@ -29,7 +29,7 @@ export const isStaticAdminUser = (user) => {
 };
 
 export const getStaticAdminSessionUser = () => ({
-  id: "11111111-1111-1111-1111-111111111111",
+  id: null,
   name: "System Administrator",
   email: STATIC_ADMIN_EMAIL,
   role: "admin",

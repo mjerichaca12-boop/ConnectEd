@@ -5,6 +5,10 @@ import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 
 const db = () => supabaseAdmin || supabase;
 
+const isValidUuid = (value) =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
 const getCurrentUser = () => {
   try {
     const raw = localStorage.getItem("currentUser");
@@ -16,7 +20,7 @@ const getCurrentUser = () => {
 
 const getStorageKey = (user) => {
   const role = user?.role || "guest";
-  const id = user?.id || "anon";
+  const id = isValidUuid(user?.id) ? user.id : "guest";
   return `notifications_${role}_${id}`;
 };
 
@@ -82,51 +86,114 @@ function NotificationDropdown({
     }
   }, []);
 
-  // Load notifications from DB (no auth session required — uses service role)
   useEffect(() => {
     let isMounted = true;
+    let authSubscription = null;
+
     const load = async () => {
-      const user = getCurrentUser();
-      const key = getStorageKey(user);
+      const currentUser = getCurrentUser();
+      console.log("[NotificationDropdown] current user object:", currentUser);
+      console.log("[NotificationDropdown] current user.id:", currentUser?.id);
 
-      if (db() && user?.id) {
-        try {
-          const { data, error } = await db()
-            .from("notifications")
-            .select("id, user_id, type, title, message, is_read, created_at")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(50);
+      const key = getStorageKey(currentUser);
 
-          if (!error && data && isMounted) {
-            const mapped = data.map((n) => mapRow(n, user.role));
-            const deduped = dedupeNotifications(mapped);
-            setNotifications(deduped);
-            localStorage.setItem(key, JSON.stringify(deduped));
-            return;
+      if (!supabase?.auth?.getUser) {
+        console.warn("[NotificationDropdown] Supabase auth client is unavailable; falling back to local notifications.");
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError) {
+          console.error("[NotificationDropdown] Supabase auth error:", authError);
+        }
+
+        const authUser = authData?.user ?? null;
+        console.log("[NotificationDropdown] auth user object:", authUser);
+        console.log("[NotificationDropdown] auth user.id:", authUser?.id);
+
+        if (db() && isValidUuid(authUser?.id)) {
+          try {
+            const candidateFields = ["message", "content", "body", "description", "text"];
+            let data = null;
+            let error = null;
+            let usedField = null;
+
+            for (const f of candidateFields) {
+              const sel = `id, user_id, type, title, ${f} as message, is_read, created_at`;
+              const res = await db()
+                .from("notifications")
+                .select(sel)
+                .eq("user_id", authUser.id)
+                .order("created_at", { ascending: false })
+                .limit(50);
+              data = res.data;
+              error = res.error;
+              if (!error) {
+                usedField = f;
+                break;
+              }
+
+              const code = String(error?.code || error?.status || "");
+              const msg = String(error?.message || "").toLowerCase();
+              if (code === "42703" || msg.includes("column") || msg.includes("does not exist")) {
+                continue;
+              }
+              break;
+            }
+
+            console.log("[NotificationDropdown] Notification fetch used field:", usedField);
+            console.log("[NotificationDropdown] Notification fetch data length:", Array.isArray(data) ? data.length : 0);
+
+            if (!error && data && isMounted) {
+              const mapped = data.map((n) => mapRow(n, currentUser?.role || authUser?.role));
+              const deduped = dedupeNotifications(mapped);
+              setNotifications(deduped);
+              localStorage.setItem(key, JSON.stringify(deduped));
+              return;
+            }
+
+            if (error) {
+              console.error("[NotificationDropdown] Supabase notification fetch error:", error);
+            }
+          } catch (err) {
+            console.error("[NotificationDropdown] Notification DB load error:", err);
           }
-          if (error) console.warn("Notification DB load failed:", error);
-        } catch (err) {
-          console.warn("Notification DB load error:", err);
+        } else {
+          console.warn("[NotificationDropdown] Skipping notification fetch until a valid authenticated user exists.");
         }
       }
 
-      // Fallback to localStorage
+      if (!isMounted) return;
+
       const stored = localStorage.getItem(key);
-      if (stored && isMounted) {
+      if (stored) {
         try {
           setNotifications(dedupeNotifications(JSON.parse(stored)));
         } catch {
           setNotifications([]);
         }
-      } else if (isMounted) {
+      } else {
         const initial = dedupeNotifications(defaultNotifications || []);
         localStorage.setItem(key, JSON.stringify(initial));
         setNotifications(initial);
       }
     };
+
     load();
-    return () => { isMounted = false; };
+
+    if (supabase?.auth?.onAuthStateChange) {
+      const { data } = supabase.auth.onAuthStateChange(() => {
+        if (isMounted) {
+          load();
+        }
+      });
+      authSubscription = data?.subscription || null;
+    }
+
+    return () => {
+      isMounted = false;
+      try {
+        authSubscription?.unsubscribe?.();
+      } catch {}
+    };
   }, []);
 
   // Close on outside click
@@ -190,15 +257,26 @@ function NotificationDropdown({
 
   const handleNotificationClick = async (item) => {
     try {
-      if (db() && user?.id) {
+      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+      if (authError) {
+        console.error("[NotificationDropdown] Supabase auth error:", authError);
+      }
+
+      const authUser = authData?.user ?? null;
+      console.log("[NotificationDropdown] handleNotificationClick auth user:", authUser);
+      console.log("[NotificationDropdown] handleNotificationClick auth user.id:", authUser?.id);
+
+      if (db() && isValidUuid(authUser?.id)) {
         await db()
           .from("notifications")
           .update({ is_read: true })
           .eq("id", item.id)
-          .eq("user_id", user.id);
+          .eq("user_id", authUser.id);
+      } else {
+        console.warn("[NotificationDropdown] Skipping mark-read because the authenticated user is missing or invalid.");
       }
     } catch (err) {
-      console.warn("Failed to mark notification read in DB:", err);
+      console.error("[NotificationDropdown] Failed to mark notification read in DB:", err);
     }
 
     const updated = dedupeNotifications(notifications).map((n) =>
@@ -214,15 +292,26 @@ function NotificationDropdown({
 
   const handleMarkAllRead = async () => {
     try {
-      if (db() && user?.id) {
+      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
+      if (authError) {
+        console.error("[NotificationDropdown] Supabase auth error:", authError);
+      }
+
+      const authUser = authData?.user ?? null;
+      console.log("[NotificationDropdown] handleMarkAllRead auth user:", authUser);
+      console.log("[NotificationDropdown] handleMarkAllRead auth user.id:", authUser?.id);
+
+      if (db() && isValidUuid(authUser?.id)) {
         await db()
           .from("notifications")
           .update({ is_read: true })
-          .eq("user_id", user.id)
+          .eq("user_id", authUser.id)
           .eq("is_read", false);
+      } else {
+        console.warn("[NotificationDropdown] Skipping mark-all-read because the authenticated user is missing or invalid.");
       }
     } catch (err) {
-      console.warn("Failed to mark all read in DB:", err);
+      console.error("[NotificationDropdown] Failed to mark all read in DB:", err);
     }
 
     const updated = dedupeNotifications(notifications).map((n) => ({ ...n, isRead: true }));

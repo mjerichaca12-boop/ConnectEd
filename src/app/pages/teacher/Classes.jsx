@@ -51,6 +51,29 @@ function Classes() {
     }));
   };
 
+  const getSubjectIdentityKey = (subject) => {
+    const code = String(subject?.code || "").trim().toLowerCase();
+    const name = String(subject?.name || "").trim().toLowerCase();
+    const section = String(subject?.section || "").trim().toLowerCase();
+    const semanticKey = [code, name, section].filter(Boolean).join("|");
+
+    if (semanticKey) {
+      return semanticKey;
+    }
+
+    return `id:${String(subject?.id || "").trim()}`;
+  };
+
+  const dedupeSubjects = (rows) => {
+    const seen = new Set();
+    return (rows ?? []).filter((subject) => {
+      const key = getSubjectIdentityKey(subject);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const setClassesAndPersist = (nextClasses) => {
     setClasses(nextClasses);
     localStorage.setItem("teacher_classes", JSON.stringify(nextClasses));
@@ -95,7 +118,23 @@ function Classes() {
       }
     }
 
-    setClassesAndPersist(mapSubjectsToCards(data, enrollmentBySubject));
+    const uniqueSubjects = dedupeSubjects(data);
+    console.log("[Classes] fetched teacher subjects", {
+      teacherId: id,
+      fetched: (data ?? []).length,
+      unique: uniqueSubjects.length,
+      fetchedSubjectIds: (data ?? []).map((subject) => String(subject.id || "")).filter(Boolean)
+    });
+
+    if (uniqueSubjects.length !== (data ?? []).length) {
+      console.warn("[Classes] duplicate subjects detected and removed", {
+        teacherId: id,
+        fetched: (data ?? []).length,
+        kept: uniqueSubjects.length
+      });
+    }
+
+    setClassesAndPersist(mapSubjectsToCards(uniqueSubjects, enrollmentBySubject));
   };
 
   useEffect(() => {

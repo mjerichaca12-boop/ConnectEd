@@ -12,19 +12,6 @@ import { ForgotPassword } from "./pages/ForgotPassword";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { RequestAccess } from "./pages/RequestAccess";
 import { SetPassword } from "./pages/SetPassword";
-import { StudentDashboard } from "./pages/StudentDashboard";
-import { Subjects } from "./pages/Subjects";
-import { SubjectDetail } from "./pages/SubjectDetail";
-import { Grades } from "./pages/Grades";
-import { Attendance } from "./pages/Attendance";
-import { Announcements } from "./pages/Announcements";
-import { StudentContent } from "./pages/StudentContent";
-import { StudentMaterials } from "./pages/StudentMaterials";
-import { StudentEnrollment } from "./pages/StudentEnrollment";
-import { Messages } from "./pages/Messages";
-import { Profile } from "./pages/Profile";
-import { VideoConferencing } from "./pages/VideoConferencing";
-import { StudentAIAssistant } from "./pages/StudentAIAssistant";
 import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { Classes } from "./pages/teacher/Classes";
 import { ClassDetail } from "./pages/teacher/ClassDetail";
@@ -82,40 +69,6 @@ function DeviceRestricted({ role, allowed }) {
       </button>
     </div>
   );
-}
-
-function StudentRouteGuard({ children }) {
-  const [status, setStatus] = useState("checking");
-
-  useEffect(() => {
-    if (!isMobileDevice()) {
-      setStatus("device-restricted");
-      return;
-    }
-
-    const rawUser = localStorage.getItem("currentUser");
-    if (!rawUser) {
-      setStatus("denied");
-      return;
-    }
-
-    try {
-      const parsedUser = JSON.parse(rawUser);
-      if (parsedUser?.role === "student") {
-        setStatus("allowed");
-      } else {
-        setStatus("denied");
-      }
-    } catch {
-      setStatus("denied");
-    }
-  }, []);
-
-  if (status === "checking") return null;
-  if (status === "device-restricted") return <DeviceRestricted role="Student" allowed="Mobile" />;
-  if (status === "denied") return <Navigate to="/login" replace />;
-
-  return children;
 }
 
 function TeacherRouteGuard({ children }) {
@@ -259,21 +212,20 @@ export default function App() {
 
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
-        {/* Student Routes */}
-        <Route path="/dashboard" element={<StudentRouteGuard><StudentDashboard /></StudentRouteGuard>} />
-        <Route path="/subjects" element={<StudentRouteGuard><Subjects /></StudentRouteGuard>} />
-        <Route path="/subject/:id" element={<StudentRouteGuard><SubjectDetail /></StudentRouteGuard>} />
-        <Route path="/grades" element={<StudentRouteGuard><Grades /></StudentRouteGuard>} />
-        <Route path="/attendance" element={<StudentRouteGuard><Attendance /></StudentRouteGuard>} />
-        <Route path="/announcements" element={<StudentRouteGuard><Announcements /></StudentRouteGuard>} />
-        <Route path="/content" element={<StudentRouteGuard><StudentContent /></StudentRouteGuard>} />
-        <Route path="/materials" element={<StudentRouteGuard><StudentMaterials /></StudentRouteGuard>} />
-        <Route path="/enrollment" element={<StudentRouteGuard><StudentEnrollment /></StudentRouteGuard>} />
-        <Route path="/messages" element={<StudentRouteGuard><Messages /></StudentRouteGuard>} />
-        <Route path="/profile" element={<StudentRouteGuard><Profile /></StudentRouteGuard>} />
-        <Route path="/video-conference" element={<StudentRouteGuard><VideoConferencing /></StudentRouteGuard>} />
-        <Route path="/ai-assistant" element={<StudentRouteGuard><StudentAIAssistant /></StudentRouteGuard>} />
-        <Route path="/notifications" element={<StudentRouteGuard><NotificationsPage /></StudentRouteGuard>} />
+        <Route path="/dashboard" element={<Navigate to="/login" replace />} />
+        <Route path="/subjects" element={<Navigate to="/login" replace />} />
+        <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
+        <Route path="/grades" element={<Navigate to="/login" replace />} />
+        <Route path="/attendance" element={<Navigate to="/login" replace />} />
+        <Route path="/announcements" element={<Navigate to="/login" replace />} />
+        <Route path="/content" element={<Navigate to="/login" replace />} />
+        <Route path="/materials" element={<Navigate to="/login" replace />} />
+        <Route path="/enrollment" element={<Navigate to="/login" replace />} />
+        <Route path="/messages" element={<Navigate to="/login" replace />} />
+        <Route path="/profile" element={<Navigate to="/login" replace />} />
+        <Route path="/video-conference" element={<Navigate to="/login" replace />} />
+        <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
+        <Route path="/notifications" element={<Navigate to="/login" replace />} />
 
         {/* Teacher Routes */}
         <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />

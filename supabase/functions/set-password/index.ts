@@ -115,11 +115,14 @@ const shouldFallbackToLegacyRequestSchema = (error: { message?: string; details?
   return (
     message.includes("could not find") ||
     message.includes("does not exist") ||
+    message.includes("schema cache") ||
+    message.includes("could not find the table") ||
     details.includes("first_name") ||
     details.includes("middle_name") ||
     details.includes("last_name") ||
     details.includes("phone") ||
-    details.includes("subjects")
+    details.includes("subjects") ||
+    details.includes("schema cache")
   );
 };
 
@@ -187,29 +190,46 @@ serve(async (req) => {
     const email = String(tokenRow.email || "").trim().toLowerCase();
 
     // Get the access request to extract teacher profile metadata.
-    // Support both new and legacy schema, and continue if record is missing.
+    // Support multiple possible table names and both new and legacy schemas.
     let accessRequest: Record<string, unknown> | null = null;
     let requestError: { message?: string; details?: string } | null = null;
+    const REQUEST_TABLES = ["teacher_access_request", "teacher_request_access", "teacher_access_requests"];
 
-    const newSchemaLookup = await supabase
-      .from("teacher_access_requests")
-      .select("id, profile_id, first_name, middle_name, last_name, phone, subjects")
-      .ilike("email", email)
-      .maybeSingle();
+    for (const table of REQUEST_TABLES) {
+      try {
+        const newLookup = await supabase
+          .from(table)
+          .select("id, profile_id, first_name, middle_name, last_name, phone, subjects")
+          .ilike("email", email)
+          .maybeSingle();
 
-    accessRequest = (newSchemaLookup.data as Record<string, unknown> | null) ?? null;
-    requestError = newSchemaLookup.error as { message?: string; details?: string } | null;
+        if (!newLookup.error) {
+          accessRequest = (newLookup.data as Record<string, unknown> | null) ?? null;
+          requestError = null;
+          break;
+        }
 
-    if (requestError && shouldFallbackToLegacyRequestSchema(requestError)) {
-      console.log("set-password: falling back to legacy teacher_access_requests schema");
-      const legacyLookup = await supabase
-        .from("teacher_access_requests")
-        .select("id, profile_id, name, phone_number, subject_area")
-        .ilike("email", email)
-        .maybeSingle();
+        if (shouldFallbackToLegacyRequestSchema(newLookup.error)) {
+          console.log(`set-password: falling back to legacy schema on table ${table}`);
+          const legacyLookup = await supabase
+            .from(table)
+            .select("id, profile_id, name, phone_number, subject_area")
+            .ilike("email", email)
+            .maybeSingle();
 
-      accessRequest = (legacyLookup.data as Record<string, unknown> | null) ?? null;
-      requestError = legacyLookup.error as { message?: string; details?: string } | null;
+          if (!legacyLookup.error) {
+            accessRequest = (legacyLookup.data as Record<string, unknown> | null) ?? null;
+            requestError = null;
+            break;
+          }
+
+          requestError = legacyLookup.error as { message?: string; details?: string } | null;
+        } else {
+          requestError = newLookup.error as { message?: string; details?: string } | null;
+        }
+      } catch (e) {
+        requestError = e as any;
+      }
     }
 
     if (requestError) {
@@ -250,6 +270,19 @@ serve(async (req) => {
         email: resolvedAuthUserEmail,
         userId: resolvedAuthUserId
       });
+
+      const { error: updatePasswordError } = await supabase.auth.admin.updateUserById(resolvedAuthUserId, {
+        password,
+        email_confirm: true
+      });
+
+      if (updatePasswordError) {
+        console.error("set-password: failed to update password for existing auth user", updatePasswordError);
+        return jsonResponse(500, {
+          ok: false,
+          message: updatePasswordError.message || "Failed to update password for existing account."
+        });
+      }
     }
 
     // Create or update teacher profile

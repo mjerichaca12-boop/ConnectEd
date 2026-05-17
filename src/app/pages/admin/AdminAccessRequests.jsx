@@ -4,6 +4,22 @@ import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { Mail, CheckCircle, XCircle, Clock, Send } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 
+const ACCESS_REQUEST_REFRESH_KEY = "connected_access_requests_refresh";
+
+const normalizeStatus = (status) => {
+  const value = String(status || "").trim().toLowerCase();
+  if (["pending", "for_approval", "waiting", "awaiting_approval", "awaiting approval"].includes(value)) return "pending";
+  if (["approved", "approve", "accepted", "active", "verified"].includes(value)) return "approved";
+  if (["rejected", "reject", "declined", "denied"].includes(value)) return "rejected";
+  if (["invited", "invite_sent", "sent"].includes(value)) return "invited";
+  return value || "pending";
+};
+
+const getCurrentAdminSession = async () => {
+  const { data } = await supabase.auth.getSession();
+  return data?.session ?? null;
+};
+
 const getStatusColor = (status) => {
   switch (status) {
     case "pending":
@@ -33,12 +49,19 @@ const getStatusIcon = (status) => {
 };
 
 const getRequestFullName = (request) => {
+  const fullName = String(request.full_name || "").trim();
+  if (fullName) return fullName;
+
   // Try new schema first (split names)
   const newSchemaName = [request.first_name, request.middle_name, request.last_name].filter(Boolean).join(" ").trim();
   if (newSchemaName) return newSchemaName;
   
   // Fallback to old schema (single name field)
   return String(request.name || "").trim();
+};
+
+const getRequestTimestamp = (request) => {
+  return request.requested_at || request.created_at || request.updated_at || "";
 };
 
 function AdminAccessRequests() {
@@ -58,30 +81,70 @@ function AdminAccessRequests() {
 
   useEffect(() => {
     loadAccessRequests();
-    const subscription = supabase
-      .channel("teacher_access_requests_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_access_requests" }, () => {
+    const refreshChannel = supabase.channel("teacher_access_requests_changes");
+    const requestTables = ["teacher_access_request", "teacher_request_access", "teacher_access_requests"];
+
+    requestTables.forEach((table) => {
+      refreshChannel.on("postgres_changes", { event: "*", schema: "public", table }, () => {
         loadAccessRequests();
-      })
-      .subscribe();
+      });
+    });
+
+    refreshChannel.subscribe();
+
+    const handleRefreshSignal = () => {
+      loadAccessRequests();
+    };
+
+    const handleStorage = (event) => {
+      if (event.key === ACCESS_REQUEST_REFRESH_KEY) {
+        loadAccessRequests();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("connected:access-requests-updated", handleRefreshSignal);
 
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(refreshChannel);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("connected:access-requests-updated", handleRefreshSignal);
     };
   }, []);
 
   const loadAccessRequests = async () => {
     try {
+      const currentAdmin = await getCurrentAdminSession();
+      console.log("[AdminAccessRequests] current admin session:", currentAdmin);
+      console.log("[AdminAccessRequests] invoking function: admin-access-requests");
+      console.log("[AdminAccessRequests] request payload:", { action: "list" });
+
       setLoading(true);
       setLoadError("");
       const { data, error } = await supabase.functions.invoke("admin-access-requests", {
         body: { action: "list" }
       });
 
-      if (error) throw error;
+      console.log("[AdminAccessRequests] function response:", data);
+
+      if (error) {
+        console.error("[AdminAccessRequests] Supabase function error:", error);
+        throw error;
+      }
       if (!data?.ok) throw new Error(data?.message || "Failed to load access requests.");
 
-      setRequests(data.requests || []);
+      const fetchedRequests = Array.isArray(data.requests) ? data.requests : [];
+      console.log("[AdminAccessRequests] fetched requests:", fetchedRequests);
+      console.log("[AdminAccessRequests] request count:", fetchedRequests.length);
+      console.log("[AdminAccessRequests] fetched status values:", fetchedRequests.map((request) => request.status));
+
+      setRequests(
+        fetchedRequests.map((request) => ({
+          ...request,
+          status: normalizeStatus(request.status),
+          requested_at: request.requested_at || request.created_at || request.updated_at || null
+        }))
+      );
     } catch (err) {
       console.error("Failed to load access requests:", err);
       setLoadError(err instanceof Error ? err.message : "Failed to load access requests.");
@@ -92,7 +155,7 @@ function AdminAccessRequests() {
 
   const filteredRequests = requests.filter((req) => {
     if (filter === "all") return true;
-    return req.status === filter;
+    return normalizeStatus(req.status) === filter;
   });
 
   const handleApproveAndSendInvite = async (request) => {
@@ -229,7 +292,7 @@ function AdminAccessRequests() {
               >
                 {status.charAt(0).toUpperCase() + status.slice(1)}
                 <span className="ml-2 text-xs">
-                  ({requests.filter((r) => status === "all" || r.status === status).length})
+                  ({requests.filter((r) => status === "all" || normalizeStatus(r.status) === status).length})
                 </span>
               </button>
             ))}
@@ -263,16 +326,16 @@ function AdminAccessRequests() {
                 <tbody className="divide-y divide-white/5">
                   {filteredRequests.map((request) => (
                     <tr key={request.id} className="hover:bg-white/2 transition-colors">
-                      <td className="px-6 py-4 text-gray-200">{request.email}</td>
-                      <td className="px-6 py-4 text-gray-200">{getRequestFullName(request)}</td>
+                      <td className="px-6 py-4 text-gray-700">{request.email}</td>
+                      <td className="px-6 py-4 text-gray-700">{getRequestFullName(request)}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium ${getStatusColor(request.status)}`}>
                           {getStatusIcon(request.status)}
-                          {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                          {normalizeStatus(request.status).charAt(0).toUpperCase() + normalizeStatus(request.status).slice(1)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-gray-600 text-xs">
-                        {new Date(request.requested_at).toLocaleDateString()}
+                        {getRequestTimestamp(request) ? new Date(getRequestTimestamp(request)).toLocaleDateString() : "-"}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">

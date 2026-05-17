@@ -124,7 +124,7 @@ function Reports() {
                   <div className="space-y-3">
                     {category.reports.map((report, reportIdx) => <div key={reportIdx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-200 bg-gray-50 rounded-xl hover:border-green-300 hover:bg-green-500/5 transition-all group gap-4">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-gray-200 group-hover:text-green-600 transition-colors">{report.name}</h4>
+                          <h4 className="font-semibold text-gray-700 group-hover:text-green-600 transition-colors">{report.name}</h4>
                           <p className="text-sm text-gray-500 mt-1">{report.description}</p>
                         </div>
                         <button

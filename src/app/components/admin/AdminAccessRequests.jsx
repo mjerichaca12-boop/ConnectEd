@@ -235,8 +235,8 @@ function AdminAccessRequests() {
             <tbody className="divide-y divide-white/5">
               {filteredRequests.map((request) => (
                 <tr key={request.id} className="hover:bg-white/2 transition-colors">
-                  <td className="px-6 py-3 text-gray-200">{request.email}</td>
-                  <td className="px-6 py-3 text-gray-200">{getRequestFullName(request)}</td>
+                  <td className="px-6 py-3 text-gray-700">{request.email}</td>
+                  <td className="px-6 py-3 text-gray-700">{getRequestFullName(request)}</td>
                   <td className="px-6 py-3">
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium ${getStatusColor(request.status)}`}>
                       {getStatusIcon(request.status)}

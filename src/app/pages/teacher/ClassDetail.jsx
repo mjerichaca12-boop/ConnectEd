@@ -51,9 +51,27 @@ import {
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
-const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
+const ANNOUNCEMENT_STORAGE_BUCKET = "class-announcements";
+const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity"];
 const ASSESSMENT_TABLE = "teacher_assessment_grades";
-const ANNOUNCEMENT_TABLE = "announcements";
+const ANNOUNCEMENT_TABLE_CANDIDATES = ["class_announcements", "announcements"];
+const MAX_ANNOUNCEMENT_FILE_SIZE = 15 * 1024 * 1024;
+const ALLOWED_ANNOUNCEMENT_FILE_EXTENSIONS = new Set([
+  "pdf", "doc", "docx", "ppt", "pptx", "jpg", "jpeg", "png", "gif", "webp", "zip"
+]);
+
+const parseAnnouncementAttachmentsValue = (value) => {
+  if (Array.isArray(value)) return value;
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const normalizeMaterialRecord = (row) => {
   const attachments = buildMaterialAttachments(row);
@@ -128,6 +146,39 @@ const normalizeAnnouncementRecordLocal = (row) => {
   const fileUrl = String(row?.file_url || "").trim();
   const fileType = String(row?.file_type || "").trim();
 
+  const structuredAttachments = parseAnnouncementAttachmentsValue(row?.attachments)
+    .map((attachment, index) => {
+      const attachmentName = String(attachment?.name || attachment?.fileName || `File ${index + 1}`).trim();
+      const attachmentPath = String(attachment?.path || attachment?.filePath || "").trim();
+      const attachmentUrl = String(attachment?.signedUrl || attachment?.url || attachment?.fileUrl || "").trim();
+      const attachmentType = String(attachment?.mimeType || "").trim();
+
+      return {
+        fileName: attachmentName,
+        filePath: attachmentPath,
+        fileUrl: attachmentUrl,
+        fileType: attachmentType,
+        kind: getAnnouncementAttachmentKind({
+          fileType: attachmentType,
+          fileName: attachmentName,
+          fileUrl: attachmentUrl
+        })
+      };
+    })
+    .filter((attachment) => attachment.fileName || attachment.filePath || attachment.fileUrl);
+
+  const legacyAttachment = (fileName || filePath || fileUrl)
+    ? [{
+      fileName: fileName || "Attached file",
+      filePath,
+      fileUrl,
+      fileType,
+      kind: getAnnouncementAttachmentKind({ fileType, fileName, fileUrl })
+    }]
+    : [];
+
+  const attachments = structuredAttachments.length > 0 ? structuredAttachments : legacyAttachment;
+
   return {
     id: String(row?.id || ""),
     title: String(row?.title || "").trim(),
@@ -135,10 +186,11 @@ const normalizeAnnouncementRecordLocal = (row) => {
     priority: String(row?.priority || row?.announcement_priority || "Medium").trim() || "Medium",
     targetAudience: normalizeAudience(row?.target_audience || row?.audience || row?.targetAudience || "Students"),
     author: String(row?.author || row?.created_by_name || "").trim(),
-    fileName,
-    filePath,
-    fileUrl,
+    fileName: attachments[0]?.fileName || fileName,
+    filePath: attachments[0]?.filePath || filePath,
+    fileUrl: attachments[0]?.fileUrl || fileUrl,
     fileType,
+    attachments,
     datePosted: row?.created_at || row?.date_posted || row?.updated_at || new Date().toISOString(),
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
@@ -244,6 +296,7 @@ export function ClassDetail() {
   const [isPostingAssignment, setIsPostingAssignment] = useState(false);
   const [assignmentTable, setAssignmentTable] = useState("");
   const [assignmentColumns, setAssignmentColumns] = useState([]);
+  const [assignmentColumnsTrusted, setAssignmentColumnsTrusted] = useState(false);
   const [asgSupportsFiles, setAsgSupportsFiles] = useState(false);
   const asgFileRef = useRef(null);
 
@@ -263,10 +316,10 @@ export function ClassDetail() {
 
   // Announcement form
   const [annForm, setAnnForm] = useState({ title: "", content: "", priority: "" });
-  const [annFile, setAnnFile] = useState(null);
-  const [annFileName, setAnnFileName] = useState("");
-  const [annOriginalFile, setAnnOriginalFile] = useState({ fileName: "", filePath: "", fileUrl: "" });
-  const [announcementTable, setAnnouncementTable] = useState(ANNOUNCEMENT_TABLE);
+  const [annFiles, setAnnFiles] = useState([]);
+  const [annFileNames, setAnnFileNames] = useState([]);
+  const [annOriginalFiles, setAnnOriginalFiles] = useState({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
+  const [announcementTable, setAnnouncementTable] = useState(ANNOUNCEMENT_TABLE_CANDIDATES[0]);
   const [announcementColumns, setAnnouncementColumns] = useState([]);
   const [annError, setAnnError] = useState("");
   const [annSuccess, setAnnSuccess] = useState("");
@@ -525,41 +578,64 @@ export function ClassDetail() {
 
     const defaultColumns = [
       "id",
-      "type",
-      "assessment_type",
-      "task_type",
       "title",
       "name",
       "description",
       "instructions",
       "content",
+      "due_date",
       "deadline",
-      "max_points",
-      "total_points",
-      "maxPoints",
       "file_url",
       "file_name",
       "file_path",
+      "subject",
+      "class_code",
+      "class_name",
+      "section",
+      "class_id",
       "course_id",
+      "subject_id",
+      "created_by",
+      "teacher_id",
+      "author",
+      "teacher_name",
       "created_at",
       "updated_at",
-      "updated_by"
+      "updated_by",
+      "assessment_type",
+      "task_type",
+      "max_points",
+      "total_points",
+      "maxPoints"
     ];
 
-    const { data, error } = await supabase.from(tableName).select("*").limit(1);
-    if (error) {
-      console.error("[ClassDetail] Failed to resolve assignment columns:", error);
+    // Probe the table with a single select(*) to retrieve a sample row and infer columns.
+    try {
+      const { data, error } = await supabase.from(tableName).select("*").limit(1);
+      if (error) {
+        console.error("[ClassDetail] Failed to resolve assignment columns via sample query:", error);
+        // Do not trust default columns when the sample query failed — return defaults but mark as untrusted
+        setAssignmentColumns(defaultColumns);
+        setAssignmentColumnsTrusted(false);
+        setAsgSupportsFiles(defaultColumns.includes("file_url") || defaultColumns.includes("file_name") || defaultColumns.includes("file_path"));
+        return defaultColumns;
+      }
+
+      const detected = data && data.length > 0 ? Object.keys(data[0]) : defaultColumns;
+      setAssignmentColumns(detected);
+      // If we actually got a sample row, we can trust the detected columns. If not, mark untrusted.
+      const isTrusted = Array.isArray(data) && data.length > 0;
+      setAssignmentColumnsTrusted(isTrusted);
+      const supportsFiles = detected.includes("file_url") || detected.includes("file_name") || detected.includes("file_path");
+      setAsgSupportsFiles(supportsFiles);
+      return detected;
+    } catch (err) {
+      console.error("[ClassDetail] Unexpected error resolving assignment columns:", err);
       setAssignmentColumns(defaultColumns);
+      setAssignmentColumnsTrusted(false);
       setAsgSupportsFiles(defaultColumns.includes("file_url") || defaultColumns.includes("file_name") || defaultColumns.includes("file_path"));
       return defaultColumns;
     }
-
-    const detected = data && data.length > 0 ? Object.keys(data[0]) : defaultColumns;
-
-    setAssignmentColumns(detected);
-    const supportsFiles = detected.includes("file_url") || detected.includes("file_name") || detected.includes("file_path");
-    setAsgSupportsFiles(supportsFiles);
-    return detected;
   };
 
   const getAssignmentColumns = async (tableNameOverride) => {
@@ -575,14 +651,16 @@ export function ClassDetail() {
       return "";
     }
 
-    const { error } = await supabase.from(ANNOUNCEMENT_TABLE).select("id", { count: "exact", head: true });
-    if (error) {
-      console.error("[ClassDetail] Announcements table check failed:", error);
-      return "";
+    for (const tableName of ANNOUNCEMENT_TABLE_CANDIDATES) {
+      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      if (!error) {
+        setAnnouncementTable(tableName);
+        return tableName;
+      }
     }
 
-    setAnnouncementTable(ANNOUNCEMENT_TABLE);
-    return ANNOUNCEMENT_TABLE;
+    console.error("[ClassDetail] Announcements table check failed for candidates:", ANNOUNCEMENT_TABLE_CANDIDATES);
+    return "";
   };
 
   const getAnnouncementTableName = async () => {
@@ -591,9 +669,9 @@ export function ClassDetail() {
     }
 
     if (announcementTable) {
-      const { error } = await supabase.from(ANNOUNCEMENT_TABLE).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(announcementTable).select("id", { count: "exact", head: true });
       if (!error) {
-        return ANNOUNCEMENT_TABLE;
+        return announcementTable;
       }
     }
 
@@ -613,25 +691,16 @@ export function ClassDetail() {
 
     const defaultColumns = [
       "id",
+      "class_id",
+      "teacher_id",
       "title",
       "content",
       "priority",
-      "target_audience",
+      "attachments",
       "author",
-      "created_by",
       "created_by_name",
       "created_at",
-      "updated_at",
-      "subject",
-      "class_code",
-      "class_name",
-      "class_id",
-      "course_id",
-      "subject_id",
-      "section",
-      "file_url",
-      "file_name",
-      "file_path"
+      "updated_at"
     ];
 
     const { data, error } = await supabase.from(tableName).select("*").limit(1);
@@ -654,6 +723,42 @@ export function ClassDetail() {
     return resolveAnnouncementColumns(tableNameOverride);
   };
 
+  const hydrateAnnouncementAttachmentUrls = async (rows) => {
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+
+    return Promise.all(
+      normalizedRows.map(async (row) => {
+        const attachments = parseAnnouncementAttachmentsValue(row?.attachments);
+        if (!Array.isArray(attachments) || attachments.length === 0 || !supabase) {
+          return row;
+        }
+
+        const hydrated = await Promise.all(
+          attachments.map(async (attachment) => {
+            const path = String(attachment?.path || attachment?.filePath || "").trim();
+            if (!path) return attachment;
+
+            const signed = await supabase.storage
+              .from(ANNOUNCEMENT_STORAGE_BUCKET)
+              .createSignedUrl(path, 60 * 60);
+
+            if (signed.error) {
+              console.error("[ClassDetail] Announcement signed URL generation failed:", signed.error, path);
+              return attachment;
+            }
+
+            return {
+              ...attachment,
+              signedUrl: String(signed.data?.signedUrl || "").trim() || attachment?.signedUrl || attachment?.url || ""
+            };
+          })
+        );
+
+        return { ...row, attachments: hydrated };
+      })
+    );
+  };
+
   const fetchClassAnnouncements = async (resolvedTeacherId, currentClassData) => {
     if (!supabase || !resolvedTeacherId) {
       setAnnouncements([]);
@@ -668,6 +773,7 @@ export function ClassDetail() {
 
     const columns = await getAnnouncementColumns(tableName);
     const ownerColumn = resolveColumnName(columns, ["created_by", "teacher_id"]);
+    const classColumn = resolveColumnName(columns, ["class_id", "course_id", "subject_id"]);
     const orderColumn = columns.includes("created_at")
       ? "created_at"
       : columns.includes("date_posted")
@@ -681,7 +787,9 @@ export function ClassDetail() {
       query = query.order(orderColumn, { ascending: false });
     }
 
-    if (ownerColumn) {
+    if (classColumn && id) {
+      query = query.eq(classColumn, id);
+    } else if (ownerColumn) {
       query = query.eq(ownerColumn, resolvedTeacherId);
     }
 
@@ -689,12 +797,21 @@ export function ClassDetail() {
 
     if (error && isColumnMissingError(error)) {
       query = supabase.from(tableName).select("*");
-      if (ownerColumn) {
+      if (classColumn && id) {
+        query = query.eq(classColumn, id);
+      } else if (ownerColumn) {
         query = query.eq(ownerColumn, resolvedTeacherId);
       }
       const fallback = await query;
       data = fallback.data;
       error = fallback.error;
+    }
+
+    if (!error && Array.isArray(data) && data.length === 0) {
+      const fallbackAll = await supabase.from(tableName).select("*");
+      if (!fallbackAll.error && Array.isArray(fallbackAll.data)) {
+        data = fallbackAll.data;
+      }
     }
 
     if (error) {
@@ -722,11 +839,12 @@ export function ClassDetail() {
       return subjectMatches && sectionMatches;
     });
 
-    setAnnouncements(filtered.map(normalizeAnnouncementRecordLocal));
+    const hydratedRows = await hydrateAnnouncementAttachmentUrls(filtered);
+    setAnnouncements(hydratedRows.map(normalizeAnnouncementRecordLocal));
   };
 
   const fetchClassAssignments = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+    if (!supabase) {
       setAssignments([]);
       return;
     }
@@ -754,15 +872,19 @@ export function ClassDetail() {
       query = query.order(orderColumn, { ascending: false });
     }
 
-    if (ownerColumn) {
+    if (ownerColumn && resolvedTeacherId) {
       query = query.eq(ownerColumn, resolvedTeacherId);
     }
 
+    const previousAssignments = Array.isArray(assignments) ? assignments : [];
+
     let { data, error } = await query;
 
+    // If a column-missing error occurs, try a simpler query without ordering/filter
     if (error && isColumnMissingError(error)) {
+      console.warn("[ClassDetail] Column missing when fetching assignments, retrying without ordering/filter:", error.message || error);
       query = supabase.from(tableName).select("*");
-      if (ownerColumn) {
+      if (ownerColumn && resolvedTeacherId) {
         query = query.eq(ownerColumn, resolvedTeacherId);
       }
       const fallback = await query;
@@ -772,30 +894,72 @@ export function ClassDetail() {
 
     if (error) {
       console.error("[ClassDetail] Failed to fetch assignments:", error);
-      setAsgError("Unable to load assignments from database.");
-      setAssignments([]);
-      return;
+
+      // Try a full-table fallback to see if any rows are visible without filters
+      try {
+        const all = await supabase.from(tableName).select("*");
+        if (!all.error && Array.isArray(all.data) && all.data.length > 0) {
+          console.warn("[ClassDetail] Using full-table fallback data after fetch error.");
+          data = all.data;
+          error = null;
+        }
+      } catch (allErr) {
+        console.warn("[ClassDetail] Full-table fallback failed:", allErr);
+      }
+
+      if (error) {
+        setAsgError("Unable to load assignments from database.");
+        // Restore previous assignments (including optimistic ones) instead of clearing the UI
+        setAssignments(previousAssignments);
+        return;
+      }
     }
 
     const classCode = String(currentClassData?.code || "").trim();
     const classSection = String(currentClassData?.section || "").trim();
     const classId = String(id || "").trim();
 
-    const filtered = (data ?? []).filter((row) => {
+    const rows = data ?? [];
+
+    console.log("[ClassDetail] fetchClassAssignments - total rows from DB:", Array.isArray(rows) ? rows.length : 0);
+
+    const filtered = rows.filter((row) => {
       const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
       const rowSubject = String(row?.subject || row?.class_code || "").trim();
       const rowSection = String(row?.section || "").trim();
 
-      if (rowCourseId) {
-        return !classId || rowCourseId === classId;
-      }
-
       const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
       const sectionMatches = !classSection || !rowSection || rowSection === classSection;
+
+      if (rowCourseId) {
+        if (!classId || rowCourseId === classId) return true;
+
+        // Legacy rows can carry a different class identifier; allow semantic fallback.
+        if (rowSubject || rowSection) {
+          return subjectMatches && sectionMatches;
+        }
+
+        return false;
+      }
+
       return subjectMatches && sectionMatches;
     });
 
-    setAssignments(filtered.map(normalizeAssignmentRecord));
+    // If strict class matching yields nothing but the query returned rows,
+    // prefer showing rows for this teacher over a false empty state.
+    const rowsToRender = filtered.length > 0 || rows.length === 0 ? filtered : rows;
+
+    console.log("[ClassDetail] fetchClassAssignments - filtered:", filtered.length, "rowsToRender:", rowsToRender.length);
+    if (rowsToRender.length > 0) console.log("[ClassDetail] fetchClassAssignments - sample row keys:", Object.keys(rowsToRender[0] || {}));
+
+    const serverAssignments = rowsToRender.map((row) => ({ ...normalizeAssignmentRecord(row), _optimistic: false }));
+    setAssignments((previous) => {
+      const prev = Array.isArray(previous) ? previous : [];
+      const optimistic = prev.filter((item) => item?._optimistic);
+      const serverIds = new Set(serverAssignments.map((item) => String(item.id || "")));
+      const carryOverOptimistic = optimistic.filter((item) => !serverIds.has(String(item.id || "")));
+      return [...serverAssignments, ...carryOverOptimistic];
+    });
   };
 
   const fetchClassMaterials = async (resolvedTeacherId, currentClassData) => {
@@ -1018,6 +1182,13 @@ export function ClassDetail() {
       : announcementColumns.includes("teacher_id")
         ? "teacher_id"
         : "";
+    const classColumn = announcementColumns.includes("class_id")
+      ? "class_id"
+      : announcementColumns.includes("course_id")
+        ? "course_id"
+        : announcementColumns.includes("subject_id")
+          ? "subject_id"
+          : "";
 
     const config = {
       event: "*",
@@ -1025,7 +1196,9 @@ export function ClassDetail() {
       table: announcementTable
     };
 
-    if (ownerColumn) {
+    if (classColumn && id) {
+      config.filter = `${classColumn}=eq.${id}`;
+    } else if (ownerColumn) {
       config.filter = `${ownerColumn}=eq.${teacherProfileId}`;
     }
 
@@ -1828,89 +2001,46 @@ export function ClassDetail() {
     setAsgSuccess("");
 
     try {
-      const columns = await getAssignmentColumns(tableName);
-      console.log("[DEBUG] Table name:", tableName);
-      console.log("[DEBUG] Available columns:", columns);
-      
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: userData } = await supabase.auth.getUser();
+      const authSessionUser = sessionData?.session?.user || null;
+      const authUser = userData?.user || authSessionUser;
+
+      console.log("[ClassDetail] Assignment auth session:", sessionData?.session || null);
+      console.log("[ClassDetail] Assignment auth user:", authUser || null);
+      console.log("[ClassDetail] Assignment auth user id:", authUser?.id || null);
+
       const uploadedFiles = asgFiles.length > 0 ? await uploadAssignmentFiles(asgFiles, effectiveTeacherId) : [];
       const nextFileNames = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileName) : asgMaterialAttachments.fileNames;
       const nextFilePaths = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.filePath) : asgMaterialAttachments.filePaths;
       const nextFileUrls = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileUrl) : asgMaterialAttachments.fileUrls;
-      const fileNamesValue = JSON.stringify(nextFileNames);
-      const filePathsValue = JSON.stringify(nextFilePaths);
-      const fileUrlsValue = JSON.stringify(nextFileUrls);
 
-      const payload = {};
+      // Build strict payload with only columns that exist in assignments_activity table
+      // Schema verified: id (auto), course_id (REQUIRED), title (REQUIRED), assessment_type, description, deadline, file_url, file_name, file_path, created_at (auto), updated_at, updated_by
+      const assignmentId = uuidv4();
+      const payload = {
+        id: assignmentId,
+        course_id: id, // REQUIRED: maps class_id/subject_id to course_id
+        title: title,
+        assessment_type: assignmentType,
+        description: String(asgForm.description || "").trim() || null,
+        deadline: dueDate || null,
+        file_url: nextFileUrls.length > 0 ? JSON.stringify(nextFileUrls) : null,
+        file_name: nextFileNames.length > 0 ? JSON.stringify(nextFileNames) : null,
+        file_path: nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null
+      };
 
-      const titleColumn = resolveColumnName(columns, ["title", "name"]);
-      const descriptionColumn = resolveColumnName(columns, ["description", "instructions", "content"]);
-      const dueDateColumn = resolveColumnName(columns, ["deadline"]);
-      const maxPointsColumn = resolveColumnName(columns, ["max_points", "total_points", "maxPoints"]);
-      const typeColumns = ["assessment_type"];
-      
-      console.log("[DEBUG] Column detection results:");
-      console.log("  - titleColumn:", titleColumn);
-      console.log("  - descriptionColumn:", descriptionColumn);
-      console.log("  - dueDateColumn:", dueDateColumn);
-      console.log("  - maxPointsColumn:", maxPointsColumn);
-      console.log("  - asgForm.maxPoints:", asgForm.maxPoints);
+      console.log("[ClassDetail] FINAL VALIDATED PAYLOAD:", payload);
+      console.log("[ClassDetail] Payload keys:", Object.keys(payload));
+      console.log("[ClassDetail] Required fields present:", { id: !!payload.id, course_id: !!payload.course_id, title: !!payload.title, assessment_type: !!payload.assessment_type });
 
-      typeColumns.forEach((columnName) => {
-        if (columns.includes(columnName)) {
-          payload[columnName] = assignmentType;
-        }
-      });
-
-      if (titleColumn) payload[titleColumn] = title;
-      
-      // Include max_points in description if it exists in the form and the table doesn't have max_points column
-      let descriptionValue = String(asgForm.description || "").trim() || null;
-      if (asgForm.maxPoints && !maxPointsColumn) {
-        descriptionValue = descriptionValue ? `${descriptionValue}\n\nMax Points: ${asgForm.maxPoints}` : `Max Points: ${asgForm.maxPoints}`;
-      }
-      if (descriptionColumn) payload[descriptionColumn] = descriptionValue;
-      
-      if (dueDateColumn) payload[dueDateColumn] = dueDate;
-      
-      console.log("[DEBUG] Before maxPoints check - payload:", payload);
-      console.log("[DEBUG] maxPointsColumn exists:", !!maxPointsColumn);
-      console.log("[DEBUG] asgForm.maxPoints:", asgForm.maxPoints);
-      console.log("[DEBUG] tableName:", tableName);
-      
-      // Only add max_points if the column actually exists in the table AND it's not assignments_activity
-      // assignments_activity table doesn't have max_points column according to schema
-      if (maxPointsColumn && tableName !== 'assignments_activity') {
-        payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
-        console.log("[DEBUG] Added max_points to payload with key:", maxPointsColumn);
-      } else {
-        if (tableName === 'assignments_activity') {
-          console.log("[DEBUG] Skipped adding max_points - assignments_activity table doesn't have this column");
-        } else {
-          console.log("[DEBUG] Skipped adding max_points - column not found in table");
-        }
+      if (!authUser?.id) {
+        throw new Error("Your Supabase session is missing. Please sign out and sign in again.");
       }
 
-      if (columns.includes("file_url")) payload.file_url = fileUrlsValue;
-      if (columns.includes("file_name")) payload.file_name = fileNamesValue;
-      if (columns.includes("file_path")) payload.file_path = filePathsValue;
-
-      if (columns.includes("subject")) payload.subject = String(classData?.code || "").trim() || null;
-      if (columns.includes("class_code")) payload.class_code = String(classData?.code || "").trim() || null;
-      if (columns.includes("class_name")) payload.class_name = String(classData?.name || "").trim() || null;
-      if (columns.includes("section")) payload.section = String(classData?.section || "").trim() || null;
-      if (columns.includes("course_id")) payload.course_id = id;
-      if (columns.includes("subject_id")) payload.subject_id = id;
-
-      if (columns.includes("created_by")) payload.created_by = effectiveTeacherId;
-      if (columns.includes("teacher_id")) payload.teacher_id = effectiveTeacherId;
-      if (columns.includes("author")) payload.author = teacherName;
-      if (columns.includes("teacher_name")) payload.teacher_name = teacherName;
-      if (columns.includes("created_at")) payload.created_at = new Date().toISOString();
-
-      console.log("[DEBUG] Final payload before insertion:", payload);
-      console.log("[DEBUG] Payload keys:", Object.keys(payload));
-
-      const insertResult = await supabase.from(tableName).insert(payload).select("*").single();
+      // Direct insert with returned row — no retry logic
+      const insertResult = await supabase.from(tableName).insert(payload).select("*").maybeSingle();
+      console.log("[ClassDetail] Assignment insert response:", insertResult);
 
       if (insertResult.error) {
         console.error("[ClassDetail] Assignment insert failed:", insertResult.error);
@@ -1918,6 +2048,7 @@ export function ClassDetail() {
         if (uploadedFiles.length > 0) {
           await removeAssignmentFilesFromStorage(uploadedFiles.map((item) => item.filePath));
         }
+
         const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
         if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
           setAsgError(`Database blocked by Row Level Security. In Supabase: Table Editor → ${tableName} → RLS Policies → Allow INSERT.`);
@@ -1927,7 +2058,36 @@ export function ClassDetail() {
         return;
       }
 
+      // Get the returned row
+      let insertedRow = insertResult?.data || null;
+
+      // Build optimistic UI row from the inserted/returned row or fallback payload
+      const optimisticSource = insertedRow || payload;
+      const optimisticRow = {
+        id: assignmentId,
+        course_id: payload.course_id,
+        title: payload.title,
+        assessment_type: payload.assessment_type,
+        description: payload.description,
+        deadline: payload.deadline,
+        file_url: payload.file_url,
+        file_name: payload.file_name,
+        file_path: payload.file_path,
+        created_at: insertedRow?.created_at || new Date().toISOString()
+      };
+
+      const optimisticAssignment = { ...normalizeAssignmentRecord(optimisticRow), _optimistic: !Boolean(insertedRow) };
+      setAssignments((prev) => {
+        const existing = Array.isArray(prev) ? prev : [];
+        const deduped = existing.filter((item) => String(item?.id || "") !== String(optimisticAssignment.id));
+        return [optimisticAssignment, ...deduped];
+      });
+
+      // Refresh the assignments list to ensure consistency
       await fetchClassAssignments(effectiveTeacherId, classData);
+
+      await fetchClassAssignments(effectiveTeacherId, classData);
+      console.log("[ClassDetail] Refreshed assignments count:", assignments.length);
       setAsgSuccess("Assignment/Activity saved successfully.");
       resetAssignmentForm(true);
       setShowAssignmentModal(false);
@@ -2066,7 +2226,7 @@ export function ClassDetail() {
       if (columns.includes("teacher_name")) payload.teacher_name = teacherName;
       if (columns.includes("updated_at")) payload.updated_at = new Date().toISOString();
 
-      const updateResult = await supabase.from(tableName).update(payload).eq("id", editingAssignmentId).select("*").single();
+      const updateResult = await supabase.from(tableName).update(payload).eq("id", editingAssignmentId);
 
       if (updateResult.error) {
         console.error("[ClassDetail] Assignment update failed:", updateResult.error);
@@ -2101,9 +2261,9 @@ export function ClassDetail() {
 
   const resetAnnouncementForm = (preserveMessages = false) => {
     setAnnForm({ title: "", content: "", priority: "" });
-    setAnnFile(null);
-    setAnnFileName("");
-    setAnnOriginalFile({ fileName: "", filePath: "", fileUrl: "" });
+    setAnnFiles([]);
+    setAnnFileNames([]);
+    setAnnOriginalFiles({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
     setIsEditingAnnouncement(false);
     setEditingAnnouncementId(null);
     if (!preserveMessages) {
@@ -2123,6 +2283,8 @@ export function ClassDetail() {
   const openEditAnnouncementModal = (announcement) => {
     if (!announcement?.id) return;
 
+    const existingAttachments = Array.isArray(announcement.attachments) ? announcement.attachments : [];
+
     setIsEditingAnnouncement(true);
     setEditingAnnouncementId(announcement.id);
     setAnnForm({
@@ -2130,13 +2292,14 @@ export function ClassDetail() {
       content: announcement.content || "",
       priority: announcement.priority || ""
     });
-    setAnnOriginalFile({
-      fileName: announcement.fileName || "",
-      filePath: announcement.filePath || "",
-      fileUrl: announcement.fileUrl || ""
+    setAnnOriginalFiles({
+      fileNames: existingAttachments.map((item) => item.fileName || "").filter(Boolean),
+      filePaths: existingAttachments.map((item) => item.filePath || "").filter(Boolean),
+      fileUrls: existingAttachments.map((item) => item.fileUrl || "").filter(Boolean),
+      attachments: existingAttachments
     });
-    setAnnFile(null);
-    setAnnFileName(announcement.fileName || "");
+    setAnnFiles([]);
+    setAnnFileNames(existingAttachments.map((item) => item.fileName || "").filter(Boolean));
     setAnnError("");
     setAnnSuccess("");
     if (annFileRef.current) {
@@ -2145,46 +2308,76 @@ export function ClassDetail() {
     setShowAnnouncementModal(true);
   };
 
+  const validateAnnouncementFiles = (files) => {
+    const selected = Array.from(files || []);
+    for (const file of selected) {
+      const extension = String(file?.name || "").split(".").pop()?.toLowerCase() || "";
+      if (!ALLOWED_ANNOUNCEMENT_FILE_EXTENSIONS.has(extension)) {
+        return `Unsupported file type: ${file.name}`;
+      }
+      if (Number(file?.size || 0) > MAX_ANNOUNCEMENT_FILE_SIZE) {
+        return `File too large: ${file.name}. Max size is 15MB.`;
+      }
+    }
+    return "";
+  };
+
   const removeAnnouncementFilesFromStorage = async (filePaths) => {
     const uniquePaths = [...new Set(parseStoredFileList(filePaths))];
     if (uniquePaths.length === 0 || !supabase) return;
 
-    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove(uniquePaths);
+    const { error } = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).remove(uniquePaths);
     if (error && !isStorageNotFoundError(error)) {
       throw new Error(error.message || "Unable to remove file from storage.");
     }
   };
 
-  const uploadAnnouncementFile = async (file) => {
-    if (!supabase || !teacherProfileId || !file) return null;
+  const uploadAnnouncementFiles = async (files) => {
+    if (!supabase || !teacherProfileId) return [];
 
-    const timestamp = Date.now();
-    const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
-    const uploadedPath = `announcements/${teacherProfileId}/${storedFileName}`;
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) return [];
 
-    const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(uploadedPath, file, { upsert: false });
-    if (uploadResult.error) {
-      throw new Error(uploadResult.error.message || "Unable to upload file.");
+    const uploaded = [];
+
+    try {
+      for (const file of selectedFiles) {
+        const timestamp = Date.now();
+        const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
+        const uploadedPath = `${String(id || "unknown-class").trim()}/${teacherProfileId}/${storedFileName}`;
+
+        const uploadResult = await supabase.storage
+          .from(ANNOUNCEMENT_STORAGE_BUCKET)
+          .upload(uploadedPath, file, { upsert: false });
+
+        console.log("[ClassDetail] Announcement upload result:", uploadResult);
+
+        if (uploadResult.error) {
+          throw new Error(uploadResult.error.message || "Unable to upload file.");
+        }
+
+        uploaded.push({
+          name: file.name,
+          path: uploadedPath,
+          url: `storage://${ANNOUNCEMENT_STORAGE_BUCKET}/${uploadedPath}`,
+          mimeType: file.type || null,
+          size: Number(file.size || 0)
+        });
+      }
+
+      return uploaded;
+    } catch (error) {
+      if (uploaded.length > 0) {
+        await removeAnnouncementFilesFromStorage(uploaded.map((item) => item.path));
+      }
+      throw error;
     }
-
-    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(uploadedPath);
-    const fileUrl = String(data?.publicUrl || "").trim();
-    if (!fileUrl) {
-      await removeAnnouncementFilesFromStorage(uploadedPath);
-      throw new Error("Unable to generate file URL.");
-    }
-
-    return {
-      fileName: storedFileName,
-      filePath: uploadedPath,
-      fileUrl
-    };
   };
 
   const handleSaveAnnouncement = async () => {
     const title = String(annForm.title || "").trim();
     const content = String(annForm.content || "").trim();
-    const priority = String(annForm.priority || "").trim() || "";
+    const priority = String(annForm.priority || "").trim() || "Medium";
 
     if (!title) {
       setAnnError("Title is required.");
@@ -2207,23 +2400,33 @@ export function ClassDetail() {
       return;
     }
 
+    const selectedFiles = Array.from(annFiles || []);
+    const validationError = validateAnnouncementFiles(selectedFiles);
+    if (validationError) {
+      setAnnError(validationError);
+      return;
+    }
+
     setIsPostingAnnouncement(true);
     setAnnError("");
     setAnnSuccess("");
 
-    const existingFile = annOriginalFile || { fileName: "", filePath: "", fileUrl: "" };
+    const existingAttachments = Array.isArray(annOriginalFiles?.attachments)
+      ? annOriginalFiles.attachments.map((attachment) => ({
+        name: String(attachment?.fileName || attachment?.name || "").trim(),
+        path: String(attachment?.filePath || attachment?.path || "").trim(),
+        url: String(attachment?.fileUrl || attachment?.url || "").trim(),
+        mimeType: String(attachment?.fileType || attachment?.mimeType || "").trim() || null,
+        size: Number(attachment?.size || 0) || null
+      })).filter((attachment) => attachment.name || attachment.path || attachment.url)
+      : [];
 
     try {
       const columns = await getAnnouncementColumns(tableName);
-      const fileColumnsSupported = columns.includes("file_url") || columns.includes("file_name") || columns.includes("file_path");
 
-      if (annFile && !fileColumnsSupported) {
-        setAnnError("Current announcements table does not support attachments.");
-        return;
-      }
-
-      const replacingFile = Boolean(annFile);
-      const uploadedFile = replacingFile ? await uploadAnnouncementFile(annFile) : null;
+      const replacingAttachments = selectedFiles.length > 0;
+      const uploadedAttachments = replacingAttachments ? await uploadAnnouncementFiles(selectedFiles) : [];
+      const nextAttachments = replacingAttachments ? uploadedAttachments : existingAttachments;
 
       const titleColumn = resolveColumnName(columns, ["title", "subject", "name"]);
       const contentColumn = resolveColumnName(columns, ["content", "description", "message", "body"]);
@@ -2239,7 +2442,6 @@ export function ClassDetail() {
       if (audienceColumn) payload[audienceColumn] = "Students";
       if (audienceTypeColumn) payload[audienceTypeColumn] = "student";
 
-      if (columns.includes("author")) payload.author = teacherName;
       if (columns.includes("created_by_name")) payload.created_by_name = teacherName;
       if (columns.includes("created_by") && isUuid(teacherProfileId)) payload.created_by = teacherProfileId;
       if (columns.includes("teacher_id") && isUuid(teacherProfileId)) payload.teacher_id = teacherProfileId;
@@ -2251,13 +2453,17 @@ export function ClassDetail() {
       if (columns.includes("course_id")) payload.course_id = String(id || "").trim() || null;
       if (columns.includes("subject_id")) payload.subject_id = String(id || "").trim() || null;
 
-      const nextFileName = replacingFile ? uploadedFile?.fileName || "" : existingFile.fileName;
-      const nextFilePath = replacingFile ? uploadedFile?.filePath || "" : existingFile.filePath;
-      const nextFileUrl = replacingFile ? uploadedFile?.fileUrl || "" : existingFile.fileUrl;
+      if (columns.includes("attachments")) {
+        payload.attachments = nextAttachments;
+      }
 
-      if (columns.includes("file_name")) payload.file_name = nextFileName || null;
-      if (columns.includes("file_path")) payload.file_path = nextFilePath || null;
-      if (columns.includes("file_url")) payload.file_url = nextFileUrl || null;
+      const nextFileNames = nextAttachments.map((attachment) => attachment.name).filter(Boolean);
+      const nextFilePaths = nextAttachments.map((attachment) => attachment.path).filter(Boolean);
+      const nextFileUrls = nextAttachments.map((attachment) => attachment.url).filter(Boolean);
+
+      if (columns.includes("file_name")) payload.file_name = nextFileNames.length > 0 ? JSON.stringify(nextFileNames) : null;
+      if (columns.includes("file_path")) payload.file_path = nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null;
+      if (columns.includes("file_url")) payload.file_url = nextFileUrls.length > 0 ? JSON.stringify(nextFileUrls) : null;
 
       if (!isEditingAnnouncement && columns.includes("created_at")) {
         payload.created_at = new Date().toISOString();
@@ -2266,24 +2472,31 @@ export function ClassDetail() {
         payload.updated_at = new Date().toISOString();
       }
 
+      console.log("[ClassDetail] Announcement payload:", payload);
+
       const writeResult = isEditingAnnouncement
         ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
         : await supabase.from(tableName).insert(payload).select("*").single();
 
+      console.log("[ClassDetail] Announcement insert/update result:", writeResult);
+
       if (writeResult.error) {
-        if (uploadedFile?.filePath) {
-          await removeAnnouncementFilesFromStorage(uploadedFile.filePath);
+        if (uploadedAttachments.length > 0) {
+          await removeAnnouncementFilesFromStorage(uploadedAttachments.map((item) => item.path));
         }
         throw new Error(writeResult.error.message || "Failed to save announcement.");
       }
 
       let oldFileCleanupFailed = false;
-      if (isEditingAnnouncement && replacingFile && existingFile.filePath) {
-        try {
-          await removeAnnouncementFilesFromStorage(existingFile.filePath);
-        } catch (error) {
-          oldFileCleanupFailed = true;
-          console.error("[ClassDetail] Old announcement file cleanup failed:", error);
+      if (isEditingAnnouncement && replacingAttachments) {
+        const oldPaths = existingAttachments.map((item) => item.path).filter(Boolean);
+        if (oldPaths.length > 0) {
+          try {
+            await removeAnnouncementFilesFromStorage(oldPaths);
+          } catch (error) {
+            oldFileCleanupFailed = true;
+            console.error("[ClassDetail] Old announcement file cleanup failed:", error);
+          }
         }
       }
 
@@ -2332,32 +2545,42 @@ export function ClassDetail() {
     setAnnSuccess("");
     setAnnouncements((current) => current.filter((item) => String(item.id) !== announcementId));
 
-    const targetFilePath = String(targetAnnouncement.filePath || "").trim();
-    let backup = null;
+    const targetFilePaths = [
+      ...parseStoredFileList(targetAnnouncement.filePath),
+      ...(Array.isArray(targetAnnouncement.attachments)
+        ? targetAnnouncement.attachments.map((attachment) => String(attachment?.filePath || attachment?.path || "").trim()).filter(Boolean)
+        : [])
+    ];
+    const uniqueTargetPaths = [...new Set(targetFilePaths)];
+    const backups = [];
 
     try {
-      if (targetFilePath) {
-        const downloadResult = await supabase.storage.from(STORAGE_BUCKET).download(targetFilePath);
-        if (downloadResult.error) {
-          if (!isStorageNotFoundError(downloadResult.error)) {
-            throw new Error(downloadResult.error.message || "Failed to prepare file deletion.");
+      if (uniqueTargetPaths.length > 0) {
+        for (const path of uniqueTargetPaths) {
+          const downloadResult = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).download(path);
+          if (downloadResult.error) {
+            if (!isStorageNotFoundError(downloadResult.error)) {
+              throw new Error(downloadResult.error.message || "Failed to prepare file deletion.");
+            }
+          } else {
+            backups.push({ filePath: path, blob: downloadResult.data });
           }
-        } else {
-          backup = { filePath: targetFilePath, blob: downloadResult.data };
         }
 
-        await removeAnnouncementFilesFromStorage(targetFilePath);
+        await removeAnnouncementFilesFromStorage(uniqueTargetPaths);
       }
 
       const { error } = await supabase.from(tableName).delete().eq("id", announcementId);
       if (error) {
-        if (backup?.blob) {
-          const restoreResult = await supabase.storage.from(STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
-            upsert: true,
-            contentType: backup.blob.type || "application/octet-stream"
-          });
-          if (restoreResult.error) {
-            console.error("[ClassDetail] Failed to restore announcement file after DB delete failure:", restoreResult.error);
+        if (backups.length > 0) {
+          for (const backup of backups) {
+            const restoreResult = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
+              upsert: true,
+              contentType: backup.blob.type || "application/octet-stream"
+            });
+            if (restoreResult.error) {
+              console.error("[ClassDetail] Failed to restore announcement file after DB delete failure:", restoreResult.error);
+            }
           }
         }
         throw new Error(error.message || "Failed to delete announcement.");
@@ -3125,45 +3348,61 @@ export function ClassDetail() {
                               </div>
                               <h4 className="font-semibold text-gray-900 text-sm">{ann.title}</h4>
                               <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
-                              {ann.fileUrl && (() => {
-                                const attachmentKind = getAnnouncementAttachmentKind(ann);
+                              {Array.isArray(ann.attachments) && ann.attachments.length > 0 && (
+                                <div className="mt-3 space-y-2">
+                                  {ann.attachments.map((attachment, index) => {
+                                    const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
+                                    const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${index + 1}`).trim();
+                                    const attachmentKind = String(attachment?.kind || "document");
 
-                                if (attachmentKind === "image") {
-                                  return (
-                                    <a href={ann.fileUrl} target="_blank" rel="noreferrer" className="block mt-3">
-                                      <img
-                                        src={ann.fileUrl}
-                                        alt={ann.fileName || "Announcement attachment"}
-                                        className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
-                                      />
-                                    </a>
-                                  );
-                                }
+                                    if (!attachmentUrl) {
+                                      return (
+                                        <div key={`${ann.id}-att-${index}`} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+                                          <File className="w-3 h-3" />
+                                          {attachmentName}
+                                        </div>
+                                      );
+                                    }
 
-                                if (attachmentKind === "video") {
-                                  return (
-                                    <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                                      <video
-                                        controls
-                                        src={ann.fileUrl}
-                                        className="w-full max-h-80 bg-black"
-                                      />
-                                    </div>
-                                  );
-                                }
+                                    if (attachmentKind === "image") {
+                                      return (
+                                        <a key={`${ann.id}-att-${index}`} href={attachmentUrl} target="_blank" rel="noreferrer" className="block">
+                                          <img
+                                            src={attachmentUrl}
+                                            alt={attachmentName || "Announcement attachment"}
+                                            className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
+                                          />
+                                        </a>
+                                      );
+                                    }
 
-                                return (
-                                  <a
-                                    href={ann.fileUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100"
-                                  >
-                                    <File className="w-3 h-3" />
-                                    {ann.fileName || "Attached file"}
-                                  </a>
-                                );
-                              })()}
+                                    if (attachmentKind === "video") {
+                                      return (
+                                        <div key={`${ann.id}-att-${index}`} className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                                          <video
+                                            controls
+                                            src={attachmentUrl}
+                                            className="w-full max-h-80 bg-black"
+                                          />
+                                        </div>
+                                      );
+                                    }
+
+                                    return (
+                                      <a
+                                        key={`${ann.id}-att-${index}`}
+                                        href={attachmentUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100 mr-2"
+                                      >
+                                        <File className="w-3 h-3" />
+                                        {attachmentName}
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
                               <button
@@ -3992,31 +4231,54 @@ export function ClassDetail() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachment (Optional)</label>
-                {isEditingAnnouncement && annOriginalFile.fileName && (
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachments (Optional)</label>
+                {isEditingAnnouncement && annOriginalFiles.fileNames.length > 0 && (
                   <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <p className="text-xs text-gray-700 mb-1">Current file:</p>
-                    <p className="text-xs text-purple-700">{annOriginalFile.fileName}</p>
+                    <p className="text-xs text-gray-700 mb-1">Current files:</p>
+                    <div className="space-y-1">
+                      {annOriginalFiles.fileNames.map((name, index) => (
+                        <p key={`existing-ann-file-${index}`} className="text-xs text-purple-700 truncate">{name}</p>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <label className="block border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-purple-500">
                   <input
                     ref={annFileRef}
                     type="file"
-                    accept="*/*"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.zip"
+                    multiple
                     className="sr-only"
                     onChange={(e) => {
-                      const selected = e.target.files?.[0] || null;
-                      setAnnFile(selected);
-                      setAnnFileName(selected ? selected.name : "");
+                      const selected = Array.from(e.target.files || []);
+                      const deduped = selected.filter((file, index, all) => {
+                        const key = `${file.name}::${file.size}::${file.lastModified}`;
+                        return all.findIndex((candidate) => `${candidate.name}::${candidate.size}::${candidate.lastModified}` === key) === index;
+                      });
+                      const validationError = validateAnnouncementFiles(deduped);
+                      if (validationError) {
+                        setAnnError(validationError);
+                        setAnnFiles([]);
+                        setAnnFileNames([]);
+                        return;
+                      }
+                      setAnnFiles(deduped);
+                      setAnnFileNames(deduped.map((file) => file.name));
                       setAnnError("");
                     }}
                   />
                   <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-purple-500 transition-colors" />
                   <p className="text-sm text-gray-500 group-hover:text-purple-600 transition-colors">
-                    {annFileName || "Click to attach a file"}
+                    {annFileNames.length > 0 ? `${annFileNames.length} file(s) selected` : "Click to attach files"}
                   </p>
                 </label>
+                {annFileNames.length > 0 && (
+                  <div className="mt-2 space-y-1 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
+                    {annFileNames.map((name, index) => (
+                      <p key={`selected-ann-file-${index}`} className="text-xs text-gray-600 truncate">{name}</p>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>

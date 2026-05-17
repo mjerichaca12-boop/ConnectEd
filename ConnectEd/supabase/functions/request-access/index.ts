@@ -45,6 +45,14 @@ const shouldFallbackToLegacyRequestSchema = (error: { message?: string; details?
   );
 };
 
+const normalizeRequestStatus = (statusValue: unknown) => {
+  const value = String(statusValue || "").trim().toLowerCase();
+  if (["pending", "for_approval", "waiting", "awaiting_approval", "awaiting approval"].includes(value)) return "pending";
+  if (["approved", "invited", "accepted", "active", "verified"].includes(value)) return "approved";
+  if (["rejected", "declined", "denied"].includes(value)) return "rejected";
+  return value;
+};
+
 if (!supabaseUrl || !serviceRoleKey) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.");
 }
@@ -191,17 +199,19 @@ serve(async (req) => {
     }
 
     if (existingRequest) {
-      if (existingRequest.status === "pending") {
+      const existingStatus = normalizeRequestStatus(existingRequest.status);
+
+      if (existingStatus === "pending") {
         return jsonResponse(400, {
           ok: false,
           message: "You have already submitted an access request. Please wait for admin review."
         });
-      } else if (existingRequest.status === "approved" || existingRequest.status === "invited") {
+      } else if (existingStatus === "approved") {
         return jsonResponse(400, {
           ok: false,
           message: "Your access request has been approved. Check your email for the invitation link."
         });
-      } else if (existingRequest.status === "rejected") {
+      } else if (existingStatus === "rejected") {
         return jsonResponse(400, {
           ok: false,
           message: "Your access request was rejected. Please contact an administrator."

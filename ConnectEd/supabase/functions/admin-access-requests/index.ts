@@ -28,6 +28,19 @@ const jsonResponse = (status: number, body: Record<string, unknown>) => {
   });
 };
 
+const normalizeStatus = (statusValue: unknown) => {
+  const value = String(statusValue || "").trim().toLowerCase();
+  if (["pending", "for_approval", "waiting", "awaiting_approval", "awaiting approval"].includes(value)) return "pending";
+  if (["approved", "approve", "accepted", "active", "verified"].includes(value)) return "approved";
+  if (["rejected", "reject", "declined", "denied"].includes(value)) return "rejected";
+  if (["invited", "invite_sent", "sent"].includes(value)) return "invited";
+  return value || "pending";
+};
+
+const getRequestTimestamp = (request: Record<string, unknown>) => {
+  return String(request.requested_at || request.created_at || request.updated_at || new Date().toISOString());
+};
+
 if (!supabaseUrl || !serviceRoleKey) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables.");
 }
@@ -66,22 +79,56 @@ serve(async (req) => {
 
     const action = String(body.action || "list").trim().toLowerCase();
     const requestId = String(body.id || "").trim();
-    const status = String(body.status || "").trim().toLowerCase();
     const reviewedBy = String(body.reviewedBy || "admin").trim() || "admin";
     const notes = String(body.notes || "").trim();
 
     if (action === "list") {
-      const { data, error } = await supabase
+      let data: Record<string, unknown>[] = [];
+      const requestedAtResult = await supabase
         .from("teacher_access_requests")
         .select("*")
         .order("requested_at", { ascending: false });
 
-      if (error) {
-        console.error("admin-access-requests: list failed", error);
-        return jsonResponse(500, { ok: false, message: error.message });
+      if (requestedAtResult.error) {
+        const message = String(requestedAtResult.error.message || "").toLowerCase();
+        const missingRequestedAt = message.includes("requested_at") && message.includes("column");
+
+        if (!missingRequestedAt) {
+          console.error("admin-access-requests: list failed", requestedAtResult.error);
+          return jsonResponse(500, { ok: false, message: requestedAtResult.error.message });
+        }
+
+        console.warn("admin-access-requests: falling back to created_at ordering", requestedAtResult.error);
+
+        const createdAtResult = await supabase
+          .from("teacher_access_requests")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (createdAtResult.error) {
+          console.error("admin-access-requests: fallback list failed", createdAtResult.error);
+          return jsonResponse(500, { ok: false, message: createdAtResult.error.message });
+        }
+
+        data = Array.isArray(createdAtResult.data) ? createdAtResult.data : [];
+      } else {
+        data = Array.isArray(requestedAtResult.data) ? requestedAtResult.data : [];
       }
 
-      return jsonResponse(200, { ok: true, requests: data || [] });
+      const normalizedRequests = data
+        .map((request) => {
+          const normalizedStatus = normalizeStatus(request.status);
+          return {
+            ...request,
+            status: normalizedStatus,
+            requested_at: getRequestTimestamp(request),
+            can_approve: normalizedStatus === "pending"
+          };
+        })
+        .sort((left, right) => new Date(String(right.requested_at)).getTime() - new Date(String(left.requested_at)).getTime());
+
+      console.log("admin-access-requests: fetched requests", normalizedRequests.length);
+      return jsonResponse(200, { ok: true, requests: normalizedRequests });
     }
 
     if (!requestId) {

@@ -139,7 +139,7 @@ export function TeacherDashboard() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("id")
+      .select("id, code, name, section")
       .eq("teacher_id", id);
 
     if (error) {
@@ -147,7 +147,34 @@ export function TeacherDashboard() {
       return;
     }
 
-    setAssignedSubjects(data ?? []);
+    const seen = new Set();
+    const uniqueSubjects = (data ?? []).filter((subject) => {
+      const code = String(subject.code || "").trim().toLowerCase();
+      const name = String(subject.name || "").trim().toLowerCase();
+      const section = String(subject.section || "").trim().toLowerCase();
+      const semanticKey = [code, name, section].filter(Boolean).join("|");
+      const key = semanticKey || `id:${String(subject.id || "").trim()}`;
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    console.log("[TeacherDashboard] fetched teacher subjects", {
+      teacherId: id,
+      fetched: (data ?? []).length,
+      unique: uniqueSubjects.length,
+      fetchedSubjectIds: (data ?? []).map((subject) => String(subject.id || "")).filter(Boolean)
+    });
+
+    if (uniqueSubjects.length !== (data ?? []).length) {
+      console.warn("[TeacherDashboard] duplicate teacher subjects detected and removed", {
+        teacherId: id,
+        fetched: (data ?? []).length,
+        kept: uniqueSubjects.length
+      });
+    }
+
+    setAssignedSubjects(uniqueSubjects);
   };
 
   const fetchTeacherStudentTotal = async (id) => {
