@@ -1132,12 +1132,12 @@ function GradesManagement() {
 
         <div className="p-6 space-y-6">
           {/* Hero */}
-          <div className="bg-green-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
+          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Grade Management</h1>
-                <p className="text-green-50 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
+                <p className="text-white/90 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
               </div>
             </div>
           </div>

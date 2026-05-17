@@ -35,8 +35,6 @@ const FILTERS = [
   { key: "all",       label: "All",        icon: MessageSquare },
   { key: "unread",    label: "Unread",     icon: Circle },
   { key: "read",      label: "Read",       icon: CheckCheck },
-  { key: "mentions",  label: "Mentions",   icon: AtSign },
-  { key: "videomeet", label: "Video Meet", icon: Video },
 ];
 
 const buildStudentName = (row) => {

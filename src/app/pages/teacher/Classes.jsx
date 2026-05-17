@@ -276,7 +276,7 @@ function Classes() {
 
         <div className="p-6 space-y-6">
           {/* Header */}
-          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
+          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
             <div
               className="absolute inset-0 opacity-10"
               style={{
@@ -287,7 +287,7 @@ function Classes() {
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">My Classes</h1>
-                <p className="text-green-50 text-sm">
+                <p className="text-white/90 text-sm">
                   {classes[0]?.semester || "First Semester 2026"} &bull; {classes.length} {classes.length === 1 ? "Class" : "Classes"}
                 </p>
               </div>

@@ -3,7 +3,7 @@ import { cn } from "./utils";
 function Table({ className, ...props }) {
   return <div
     data-slot="table-container"
-    className="relative w-full overflow-x-auto"
+    className="relative w-full overflow-x-auto rounded-2xl border border-border bg-card shadow-sm"
   >
       <table
     data-slot="table"
@@ -50,7 +50,7 @@ function TableHead({ className, ...props }) {
   return <th
     data-slot="table-head"
     className={cn(
-      "text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "text-foreground h-11 px-3 text-left align-middle font-semibold whitespace-nowrap bg-muted/50 [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props}
@@ -60,7 +60,7 @@ function TableCell({ className, ...props }) {
   return <td
     data-slot="table-cell"
     className={cn(
-      "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "px-3 py-3 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props}
