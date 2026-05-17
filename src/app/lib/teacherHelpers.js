@@ -353,38 +353,77 @@ export const sortAnnouncements = (items) =>
 /**
  * Normalize announcement record structure
  */
-export const normalizeAnnouncement = (row) => ({
-  id: String(row?.id ?? ""),
-  title: String(row?.title ?? "").trim(),
-  content: String(row?.content ?? "").trim(),
-  audienceType: normalizeAudienceType(
-    row?.audience_type ??
-      row?.target_audience ??
-      row?.targetAudience ??
-      row?.audience ??
-      row?.target_audience_type ??
-      row?.recipient_audience ??
-      "school"
-  ),
-  targetAudience: normalizeAudience(
-    row?.target_audience ??
-      row?.targetAudience ??
-      row?.audience ??
-      row?.target_audience_type ??
-      row?.recipient_audience ??
+export const normalizeAnnouncement = (row, attachmentRows = []) => {
+  const attachments = Array.isArray(attachmentRows) && attachmentRows.length > 0
+    ? attachmentRows
+        .map((attachment, index) => {
+          const fileName = String(attachment?.file_name || `File ${index + 1}`).trim();
+          const fileUrl = String(attachment?.file_url || attachment?.image_url || attachment?.url || attachment?.signedUrl || "").trim();
+          const filePath = String(attachment?.file_path || attachment?.path || "").trim();
+          const fileType = String(attachment?.file_type || attachment?.mimeType || "").trim();
+
+          return {
+            fileName,
+            fileUrl,
+            filePath,
+            fileType,
+            kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl),
+          };
+        })
+        .filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath)
+    : parseAnnouncementAttachments(row);
+
+  const firstImageAttachment = attachments.find((attachment) => attachment.kind === "image") || null;
+  const firstAttachment = attachments[0] || null;
+
+  return {
+    id: String(row?.id ?? ""),
+    title: String(row?.title ?? "").trim(),
+    content: String(row?.content ?? "").trim(),
+    audienceType: normalizeAudienceType(
       row?.audience_type ??
-      "School-wide"
-  ),
-  priority: normalizePriority(
-    row?.priority ??
-      row?.announcement_priority ??
-      row?.importance ??
-      row?.priority_level ??
-      "Medium"
-  ),
-  createdAt: normalizeTimestamp(row),
-  attachments: parseAnnouncementAttachments(row),
-});
+        row?.target_audience ??
+        row?.targetAudience ??
+        row?.audience ??
+        row?.target_audience_type ??
+        row?.recipient_audience ??
+        "school"
+    ),
+    targetAudience: normalizeAudience(
+      row?.target_audience ??
+        row?.targetAudience ??
+        row?.audience ??
+        row?.target_audience_type ??
+        row?.recipient_audience ??
+        row?.audience_type ??
+        "School-wide"
+    ),
+    priority: normalizePriority(
+      row?.priority ??
+        row?.announcement_priority ??
+        row?.importance ??
+        row?.priority_level ??
+        "Medium"
+    ),
+    createdAt: normalizeTimestamp(row),
+    attachments,
+    imageUrl: String(
+      row?.image_url ??
+        row?.imageUrl ??
+        firstImageAttachment?.fileUrl ??
+        firstAttachment?.fileUrl ??
+        row?.file_url ??
+        row?.fileUrl ??
+        ""
+    ).trim(),
+    fileUrl: String(
+      row?.file_url ??
+        row?.fileUrl ??
+        firstAttachment?.fileUrl ??
+        ""
+    ).trim(),
+  };
+};
 
 /**
  * Normalize material record structure

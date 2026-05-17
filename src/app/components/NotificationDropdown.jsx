@@ -60,7 +60,7 @@ const mapRow = (n, role) => ({
   userId: String(n.user_id || ""),
   type: String(n.type || ""),
   title: String(n.title || ""),
-  message: String(n.message || ""),
+  message: String(n.body || ""),
   isRead: Boolean(n.is_read),
   timestamp: new Date(n.created_at).toLocaleString(),
   path: getPathForType(n.type, role),
@@ -111,47 +111,25 @@ function NotificationDropdown({
 
         if (db() && isValidUuid(authUser?.id)) {
           try {
-            const candidateFields = ["message", "content", "body", "description", "text"];
-            let data = null;
-            let error = null;
-            let usedField = null;
+            const res = await db()
+              .from("notifications")
+              .select("id, user_id, type, title, body, is_read, created_at")
+              .eq("user_id", authUser.id)
+              .order("created_at", { ascending: false })
+              .limit(50);
 
-            for (const f of candidateFields) {
-              const sel = `id, user_id, type, title, ${f} as message, is_read, created_at`;
-              const res = await db()
-                .from("notifications")
-                .select(sel)
-                .eq("user_id", authUser.id)
-                .order("created_at", { ascending: false })
-                .limit(50);
-              data = res.data;
-              error = res.error;
-              if (!error) {
-                usedField = f;
-                break;
-              }
+            console.log("[NotificationDropdown] Notification fetch data length:", Array.isArray(res.data) ? res.data.length : 0);
 
-              const code = String(error?.code || error?.status || "");
-              const msg = String(error?.message || "").toLowerCase();
-              if (code === "42703" || msg.includes("column") || msg.includes("does not exist")) {
-                continue;
-              }
-              break;
-            }
-
-            console.log("[NotificationDropdown] Notification fetch used field:", usedField);
-            console.log("[NotificationDropdown] Notification fetch data length:", Array.isArray(data) ? data.length : 0);
-
-            if (!error && data && isMounted) {
-              const mapped = data.map((n) => mapRow(n, currentUser?.role || authUser?.role));
+            if (!res.error && res.data && isMounted) {
+              const mapped = res.data.map((n) => mapRow(n, currentUser?.role || authUser?.role));
               const deduped = dedupeNotifications(mapped);
               setNotifications(deduped);
               localStorage.setItem(key, JSON.stringify(deduped));
               return;
             }
 
-            if (error) {
-              console.error("[NotificationDropdown] Supabase notification fetch error:", error);
+            if (res.error) {
+              console.error("[NotificationDropdown] Supabase notification fetch error:", res.error);
             }
           } catch (err) {
             console.error("[NotificationDropdown] Notification DB load error:", err);

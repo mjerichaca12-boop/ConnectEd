@@ -16,14 +16,11 @@ import {
   resolveTeacherIdByEmail
 } from "@/app/lib/teacherHelpers";
 import {
-  TrendingUp,
-  TrendingDown,
   Save,
   Filter,
   Search,
   CheckCircle,
   Award,
-  Target,
   Users,
   Download,
   ChevronDown,
@@ -264,6 +261,8 @@ function GradesManagement() {
   const [submittedStudentProfiles, setSubmittedStudentProfiles] = useState({});
   const [assessmentStatusMap, setAssessmentStatusMap] = useState({});
   const [assessmentFeedbackMap, setAssessmentFeedbackMap] = useState({});
+  const assessmentGradesMapRef = useRef({});
+  const assessmentItemsRef = useRef([]);
   const [autoSaveStateMap, setAutoSaveStateMap] = useState({});
   const [autoSaveMessage, setAutoSaveMessage] = useState("");
   const autoSaveTimersRef = useRef({});
@@ -271,6 +270,25 @@ function GradesManagement() {
   useEffect(() => {
     gradesCacheRef.current = gradesCache;
   }, [gradesCache]);
+
+  useEffect(() => {
+    assessmentGradesMapRef.current = assessmentGradesMap;
+  }, [assessmentGradesMap]);
+
+  useEffect(() => {
+    assessmentItemsRef.current = assessmentItems;
+  }, [assessmentItems]);
+
+  const mergeNestedMaps = (currentMap, incomingMap) => {
+    const next = { ...(currentMap || {}) };
+    Object.entries(incomingMap || {}).forEach(([outerKey, value]) => {
+      next[outerKey] = {
+        ...(next[outerKey] || {}),
+        ...(value || {}),
+      };
+    });
+    return next;
+  };
 
   const requestedContext = useMemo(() => {
     const query = new URLSearchParams(location.search || "");
@@ -421,9 +439,9 @@ function GradesManagement() {
       feedbackMapped[assessmentId][studentId] = String(row.feedback || "").trim();
     });
 
-    setAssessmentGradesMap(mapped);
+    setAssessmentGradesMap((prev) => mergeNestedMaps(prev, mapped));
     setAssessmentStatusMap(statusMapped);
-    setAssessmentFeedbackMap(feedbackMapped);
+    setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMapped));
   }, []);
 
   const fetchAssessmentSubmissions = useCallback(async (currentTeacherId, classId, assessments, enrolledStudentIds) => {
@@ -494,7 +512,7 @@ function GradesManagement() {
           if (!feedbackMap[assessmentId]) feedbackMap[assessmentId] = {};
           feedbackMap[assessmentId][studentId] = String(row.feedback_text || row.comments || "").trim();
         });
-        setAssessmentFeedbackMap(feedbackMap);
+        setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMap));
       }
     } else {
       setAssessmentFeedbackMap({});
@@ -594,8 +612,12 @@ function GradesManagement() {
         .join(" ")
         .trim() || "Student";
 
-      // Calculate assessment-based averages for this student
-      const assessmentAverages = calculateStudentAssessmentAverages(studentId, assessmentGradesMap, assessmentItems);
+      // Calculate assessment-based averages for this student using refs to avoid refetch loops while typing.
+      const assessmentAverages = calculateStudentAssessmentAverages(
+        studentId,
+        assessmentGradesMapRef.current,
+        assessmentItemsRef.current
+      );
 
       const current = {
         id: studentId,
@@ -623,7 +645,7 @@ function GradesManagement() {
     }));
     setStudentGrades(mapped);
     return studentIds;
-  }, [assessmentGradesMap, assessmentItems]);
+  }, []);
 
   /* ΓöÇΓöÇΓöÇ init ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   useEffect(() => {
@@ -852,6 +874,7 @@ function GradesManagement() {
 
   const handleAssessmentGradeChange = (assessmentId, studentId, maxPoints, value) => {
     const nextValue = value === "" ? "" : clampAssessmentScore(value, maxPoints);
+    console.log("Grade input:", value);
 
     setAssessmentGradesMap((prev) => ({
       ...prev,
@@ -865,6 +888,7 @@ function GradesManagement() {
   };
 
   const handleAssessmentFeedbackChange = (assessmentId, studentId, value) => {
+    console.log("Feedback input:", value);
     setAssessmentFeedbackMap((prev) => ({
       ...prev,
       [assessmentId]: {
@@ -1118,22 +1142,6 @@ function GradesManagement() {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: "Class Average", value: `${classAverage}%`, icon: <TrendingUp className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
-              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
-              { label: "Lowest Grade", value: `${lowestGrade}%`, icon: <TrendingDown className="w-5 h-5" />, color: "text-red-600", bg: "bg-white border-gray-200" },
-              { label: "Passing Rate", value: `${passingRate}%`, icon: <Target className="w-5 h-5" />, color: "text-purple-600", bg: "bg-white border-gray-200" },
-            ].map(({ label, value, icon, color, bg }) => (
-              <div key={label} className={`rounded-2xl p-5 border ${bg} shadow-sm`}>
-                <div className={`${color} mb-2`}>{icon}</div>
-                <p className="text-gray-600 text-xs mb-1">{label}</p>
-                <p className={`text-2xl font-bold ${color}`}>{value}</p>
-              </div>
-            ))}
-          </div>
-
           {/* Success banner */}
           {saveSuccess && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
@@ -1158,13 +1166,13 @@ function GradesManagement() {
                   Select Subject / Section
                 </label>
                 {classes.length === 0 ? (
-                  <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">No classes available</div>
+                  <div className="w-full h-12 px-4 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm flex items-center">No classes available</div>
                 ) : (
                   <CustomSelect
                     value={selectedClass}
                     onChange={(value) => { setSelectedClass(value); setHasUnsavedChanges(false); setActiveView("all"); }}
                     placeholder="Select a class"
-                    className="w-full"
+                    className="w-full [&>button]:h-12 [&>button]:py-0"
                     options={classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))}
                   />
                 )}
@@ -1179,7 +1187,7 @@ function GradesManagement() {
                   placeholder="Search by name or LRN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 text-green-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  className="w-full h-12 px-4 bg-gray-50 text-green-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 />
               </div>
             </div>

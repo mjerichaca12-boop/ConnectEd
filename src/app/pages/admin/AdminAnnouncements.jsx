@@ -262,8 +262,9 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
     createdAt: normalizeTimestamp(row),
     author: row?.author || row?.created_by_name || row?.created_by || "Admin Office",
     ...attachments,
+    imageUrl: String(row?.image_url || row?.imageUrl || attachments.attachments.find((attachment) => attachment.kind === "image")?.fileUrl || attachments.fileUrls[0] || row?.file_url || row?.fileUrl || "").trim(),
+    fileUrl: String(row?.file_url || row?.fileUrl || attachments.fileUrls[0] || "").trim(),
     fileName: attachments.fileNames[0] || "",
-    fileUrl: attachments.fileUrls[0] || "",
     filePath: attachments.filePaths[0] || "",
     fileType: attachments.fileTypes[0] || ""
   };
@@ -1780,13 +1781,20 @@ function AdminAnnouncements() {
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                       <div className="flex-1">
+                        {console.log("Announcement data:", announcement)}
+                        {announcement.imageUrl || announcement.fileUrl ? (
+                          <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                            <img
+                              src={announcement.imageUrl || announcement.fileUrl}
+                              alt={announcement.title || "announcement"}
+                              className="h-56 w-full object-cover"
+                            />
+                          </div>
+                        ) : null}
                         <div className="flex flex-wrap items-start gap-3 mb-3">
                           <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getCategoryStyles(announcement.category)}`}>
                             {announcement.category || "General"}
-                          </span>
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getPriorityStyles(announcement.priority)}`}>
-                            {formatPriorityLabel(announcement.priority)}
                           </span>
                         </div>
                         <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
@@ -1927,19 +1935,6 @@ function AdminAnnouncements() {
                   {formErrors.category && <p className="mt-1 text-sm text-red-600">{formErrors.category}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <CustomSelect
-                    value={formData.priority}
-                    onChange={(value) => handleCreateFieldChange("priority", value)}
-                    onBlur={() => handleCreateFieldBlur("priority")}
-                    options={priorityOptions}
-                    placeholder="Select priority"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${formErrors.priority ? "border-red-500" : ""}`}
-                  />
-                  {formErrors.priority && <p className="mt-1 text-sm text-red-600">{formErrors.priority}</p>}
-                </div>
-                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
                   <input
                     ref={announcementFileInputRef}
@@ -2052,19 +2047,6 @@ function AdminAnnouncements() {
                     className={`w-full ${editFormErrors.category ? "border-red-500" : ""}`}
                   />
                   {editFormErrors.category && <p className="mt-1 text-sm text-red-600">{editFormErrors.category}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <CustomSelect
-                    value={editFormData.priority}
-                    onChange={(value) => handleEditFieldChange("priority", value)}
-                    onBlur={() => handleEditFieldBlur("priority")}
-                    options={priorityOptions}
-                    placeholder="Select priority"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${editFormErrors.priority ? "border-red-500" : ""}`}
-                  />
-                  {editFormErrors.priority && <p className="mt-1 text-sm text-red-600">{editFormErrors.priority}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>

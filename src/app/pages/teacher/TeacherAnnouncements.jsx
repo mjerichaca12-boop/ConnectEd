@@ -548,6 +548,10 @@ function TeacherAnnouncements() {
                       <p className="text-gray-500">No announcements yet</p>
                       <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first announcement</button>
                     </div> : filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                      {console.log("Announcement data:", announcement)}
+                      {announcement.imageUrl || announcement.fileUrl ? <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                          <img src={announcement.imageUrl || announcement.fileUrl} alt={announcement.title || "announcement"} className="h-56 w-full object-cover" />
+                        </div> : null}
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
@@ -555,7 +559,6 @@ function TeacherAnnouncements() {
                             {announcement.category || "General"}
                           </span>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${getPriorityColor(announcement.priority)}`}>{announcement.priority}</span>
                       </div>
                       <p className="text-gray-700 mb-4">{announcement.content}</p>
                       <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
@@ -681,14 +684,6 @@ function TeacherAnnouncements() {
                       <select value={formData.targetAudience} onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })} className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
                         <option value="Subject-specific">Subject-specific</option>
                         <option value="School-wide">School-wide</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-                      <select value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: e.target.value })} className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High">High</option>
                       </select>
                     </div>
                   </div>

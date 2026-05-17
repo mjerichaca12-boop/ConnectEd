@@ -20,7 +20,6 @@ import {
   resolveColumnName,
   matchesTeacherAudience,
   formatAnnouncementDate,
-  getPriorityStyles
 } from "@/app/lib/teacherHelpers";
 
 const colorMap = {
@@ -644,11 +643,18 @@ export function TeacherDashboard() {
                           onClick={() => setSelectedAnnouncement(announcement)}
                           className="w-full text-left px-4 py-3 bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 hover:bg-gray-100 transition-colors"
                         >
+                          {console.log("Announcement data:", announcement)}
+                          {announcement.imageUrl || announcement.fileUrl ? (
+                            <div className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                              <img
+                                src={announcement.imageUrl || announcement.fileUrl}
+                                alt={announcement.title || "announcement"}
+                                className="h-44 w-full object-cover"
+                              />
+                            </div>
+                          ) : null}
                           <div className="flex items-start justify-between gap-3 mb-1.5">
                             <p className="text-sm font-bold text-gray-900 line-clamp-1">{announcement.title || "Untitled announcement"}</p>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getPriorityStyles(announcement.priority)}`}>
-                              {announcement.priority}
-                            </span>
                           </div>
                           <p className="text-xs text-gray-600 line-clamp-2">{announcement.content || "No content."}</p>
                           <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
@@ -697,9 +703,6 @@ export function TeacherDashboard() {
 
             <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getPriorityStyles(selectedAnnouncement.priority)}`}>
-                  {selectedAnnouncement.priority}
-                </span>
                 <span className="text-xs text-gray-500">{formatAnnouncementDate(selectedAnnouncement.createdAt)}</span>
                 <span className="text-xs text-gray-500">•</span>
                 <span className="text-xs text-gray-500">{selectedAnnouncement.targetAudience}</span>

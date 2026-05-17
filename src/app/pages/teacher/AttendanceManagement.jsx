@@ -344,23 +344,23 @@ function AttendanceManagement() {
           {saveSuccess && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="text-green-300 font-medium">Attendance saved successfully!</p>
+              <p className="text-green-700 font-medium">Attendance saved successfully!</p>
             </div>
           )}
 
           {!selectedClass ? (
             <>
               {/* Hero */}
-              <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
                 <div className="relative">
                   <h1 className="text-3xl font-bold mb-1">Record Attendance</h1>
-                  <p className="text-green-50 text-sm">Select a class below to track student attendance by date</p>
+                  <p className="text-white/85 text-sm">Select a class below to track student attendance by date</p>
                 </div>
               </div>
 
               {/* Filters */}
-              <div className="bg-white rounded-xl p-5 border border-gray-200">
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wider">
@@ -370,7 +370,7 @@ function AttendanceManagement() {
                       type="date"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 text-gray-900 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      className="w-full px-4 py-3 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
                     />
                   </div>
                   <div>
@@ -382,7 +382,7 @@ function AttendanceManagement() {
                       placeholder="Search by subject code, name, or section..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
                     />
                   </div>
                 </div>
@@ -405,7 +405,7 @@ function AttendanceManagement() {
                       </div>
                       <h3 className="text-base font-semibold text-gray-900 mb-1">{classItem.gradeLevel}</h3>
                       <p className="text-sm text-gray-600 mb-4">{classItem.sectionName}</p>
-                      <button className="w-full px-4 py-2.5 bg-green-600/20 hover:bg-green-600/30 text-green-600 border border-green-300 rounded-lg transition-all font-medium text-sm">
+                      <button className="w-full px-4 py-2.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-lg transition-all font-medium text-sm">
                         Record Attendance
                       </button>
                     </div>
@@ -414,7 +414,7 @@ function AttendanceManagement() {
               </div>
 
               {filteredClasses.length === 0 && (
-                <div className="bg-gray-500 rounded-xl border border-gray-100 p-16 text-center">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
                   <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <Users className="w-7 h-7 text-green-600" />
                   </div>
@@ -426,20 +426,20 @@ function AttendanceManagement() {
           ) : (
             <>
               {/* Selected class hero */}
-              <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
+              <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
                 <div className="relative flex items-center justify-between flex-wrap gap-4">
                   <div>
-                    <button onClick={handleBackToClasses} className="mb-3 flex items-center gap-2 text-green-100 hover:text-gray-900 transition-colors text-sm">
+                    <button onClick={handleBackToClasses} className="mb-3 flex items-center gap-2 text-white/85 hover:text-white transition-colors text-sm">
                       ← Back to Classes
                     </button>
                     <h1 className="text-3xl font-bold mb-1">{selectedClass.gradeLevel}</h1>
-                    <p className="text-green-100">{selectedClass.sectionName} · {new Date(selectedDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+                    <p className="text-white/85">{selectedClass.sectionName} · {new Date(selectedDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
                   </div>
                   <button
                     onClick={() => exportAttendanceToExcel(students, selectedDate, selectedClass.gradeLevel)}
                     disabled={students.length === 0}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-gray-100 hover:bg-white/20 text-gray-900 rounded-xl border border-white/20 backdrop-blur-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed font-medium text-sm"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl border border-white/20 backdrop-blur-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed font-medium text-sm"
                   >
                     <FileSpreadsheet className="w-4 h-4" />
                     Export Excel
@@ -451,8 +451,8 @@ function AttendanceManagement() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
                   { label: "Present", count: presentCount, icon: <CheckCircle className="w-5 h-5" />, color: "text-green-600", bg: "bg-green-50 border-green-200" },
-                  { label: "Absent", count: absentCount, icon: <XCircle className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-50 border-red-200" },
-                  { label: "Late", count: lateCount, icon: <AlertCircle className="w-5 h-5" />, color: "text-amber-400", bg: "bg-amber-50 border-amber-200" },
+                  { label: "Absent", count: absentCount, icon: <XCircle className="w-5 h-5" />, color: "text-red-600", bg: "bg-red-50 border-red-200" },
+                  { label: "Late", count: lateCount, icon: <AlertCircle className="w-5 h-5" />, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
                   { label: "Unmarked", count: unmarkedCount, icon: <Calendar className="w-5 h-5" />, color: "text-gray-600", bg: "bg-gray-50 border-gray-200" },
                 ].map(({ label, count, icon, color, bg }) => (
                   <div key={label} className={`rounded-xl p-5 border ${bg}`}>
@@ -464,7 +464,7 @@ function AttendanceManagement() {
               </div>
 
               {/* Controls */}
-              <div className="bg-white rounded-xl p-5 border border-gray-200">
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex-1 max-w-sm">
                     <div className="relative">
@@ -474,21 +474,21 @@ function AttendanceManagement() {
                         placeholder="Search student by name or LRN..."
                         value={studentSearchQuery}
                         onChange={(e) => setStudentSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                        className="w-full pl-10 pr-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={handleMarkAllPresent}
-                      className="px-4 py-2.5 bg-green-50 hover:bg-green-500/20 text-green-600 border border-green-300 rounded-lg text-sm font-medium transition-all"
+                      className="px-4 py-2.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-lg text-sm font-medium transition-all"
                     >
                       Mark All Present
                     </button>
                     <button
                       onClick={handleSave}
                       disabled={!hasUnsavedChanges}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-gray-900 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium"
                     >
                       <Save className="w-4 h-4" />
                       Save Attendance
@@ -498,7 +498,7 @@ function AttendanceManagement() {
               </div>
 
               {/* Students table */}
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
@@ -508,15 +508,15 @@ function AttendanceManagement() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/5">
+                    <tbody className="divide-y divide-gray-100">
                       {filteredStudents.map((student) => (
                         <tr key={student.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-gray-900 ${
-                                student.status === "Present" ? "bg-green-600" :
-                                student.status === "Absent" ? "bg-red-600" :
-                                student.status === "Late" ? "bg-amber-600" : "bg-gray-600"
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${
+                                student.status === "Present" ? "bg-green-500" :
+                                student.status === "Absent" ? "bg-red-500" :
+                                student.status === "Late" ? "bg-amber-500" : "bg-gray-400"
                               }`}>
                                 {student.name.charAt(0)}
                               </div>
@@ -530,19 +530,19 @@ function AttendanceManagement() {
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleStatusChange(student.id, "Present")}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${student.status === "Present" ? "bg-green-600 text-gray-900 shadow-md" : "bg-gray-50 text-gray-600 hover:bg-green-50 hover:text-green-600"}`}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${student.status === "Present" ? "bg-green-600 border-green-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-600 hover:bg-green-50 hover:text-green-700 hover:border-green-200"}`}
                               >
                                 <CheckCircle className="w-4 h-4" />Present
                               </button>
                               <button
                                 onClick={() => handleStatusChange(student.id, "Absent")}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${student.status === "Absent" ? "bg-red-600 text-gray-900 shadow-md" : "bg-gray-50 text-gray-600 hover:bg-red-50 hover:text-red-400"}`}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${student.status === "Absent" ? "bg-red-600 border-red-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200"}`}
                               >
                                 <XCircle className="w-4 h-4" />Absent
                               </button>
                               <button
                                 onClick={() => handleStatusChange(student.id, "Late")}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${student.status === "Late" ? "bg-amber-600 text-gray-900 shadow-md" : "bg-gray-50 text-gray-600 hover:bg-amber-50 hover:text-amber-400"}`}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border transition-all text-xs font-medium ${student.status === "Late" ? "bg-amber-600 border-amber-600 text-white shadow-sm" : "bg-white border-gray-200 text-gray-600 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200"}`}
                               >
                                 <AlertCircle className="w-4 h-4" />Late
                               </button>
@@ -554,7 +554,7 @@ function AttendanceManagement() {
                               placeholder="Add remarks..."
                               value={student.remarks}
                               onChange={(e) => handleRemarksChange(student.id, e.target.value)}
-                              className="w-full px-3 py-2 text-sm bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                              className="w-full px-3 py-2 text-sm bg-gray-50 text-gray-900 placeholder-gray-500 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             />
                           </td>
                         </tr>
@@ -574,10 +574,10 @@ function AttendanceManagement() {
 
                 {/* Download footer */}
                 {students.length > 0 && (
-                  <div className="p-4 border-t border-gray-200 flex justify-end bg-black/10">
+                  <div className="p-4 border-t border-gray-100 flex justify-end bg-gray-50">
                     <button
                       onClick={() => exportAttendanceToExcel(students, selectedDate, selectedClass.gradeLevel)}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 border border-green-300 text-green-300 rounded-lg text-sm transition-all"
+                      className="flex items-center gap-2 px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 rounded-lg text-sm transition-all"
                     >
                       <Download className="w-4 h-4" />
                       Download Attendance Report (.xls)
