@@ -113,8 +113,8 @@ function VideoConferencing() {
       : storedRoomName;
     const roomName = String(computedRoomName || storedRoomName || "").trim();
     const status = String(row?.status || "").trim().toLowerCase();
-    const isActive = status === "ongoing" || Boolean(row?.is_meeting_active);
-    const isEnded = status === "ended";
+    const isActive = status === "ongoing" || status === "live" || Boolean(row?.is_meeting_active);
+    const isDone = status === "done" || status === "ended" || status === "completed";
 
     return {
       id: String(row?.id || `meeting_${Date.now()}`),
@@ -123,9 +123,8 @@ function VideoConferencing() {
       teacher: String(row?.teacher_name || "Teacher"),
       date: String(row?.scheduled_date || ""),
       time: String(row?.scheduled_time || "").slice(0, 5),
-      duration: `${Number(row?.duration_minutes ?? 60) || 60} min`,
       meetingLink: String(row?.meeting_link || (roomName ? `https://${JITSI_DOMAIN}/${roomName}` : "")).trim(),
-      status: isEnded ? "Ended" : (isActive ? "Ongoing" : "Upcoming"),
+      status: isDone ? "Ended" : (isActive ? "Ongoing" : "Pending"),
     };
   };
 
@@ -515,9 +514,9 @@ function VideoConferencing() {
                 <div className="p-2 bg-blue-100 rounded-lg">
                   <Calendar className="w-5 h-5 text-blue-600" />
                 </div>
-                <p className="text-gray-600 text-sm">Upcoming</p>
+                <p className="text-gray-600 text-sm">Pending</p>
               </div>
-              <p className="text-3xl font-bold text-blue-600">{meetings.filter((m) => m.status === "Upcoming").length}</p>
+              <p className="text-3xl font-bold text-blue-600">{meetings.filter((m) => m.status === "Pending").length}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <div className="flex items-center gap-3 mb-2">
@@ -530,25 +529,21 @@ function VideoConferencing() {
             </div>
           </div>
 
-          {
-    /* Search */
-  }
+          {/* Search */}
           <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
-    type="text"
-    placeholder="Search meetings by title, teacher, or subject..."
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-  />
+                type="text"
+                placeholder="Search meetings by title, teacher, or subject..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
             </div>
           </div>
 
-          {
-    /* Live Meetings First */
-  }
+          {/* Live Meetings First */}
           {filteredMeetings.filter((m) => m.status === "Ongoing").length > 0 && <div>
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
@@ -578,31 +573,31 @@ function VideoConferencing() {
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                               <Clock className="w-4 h-4" />
-                              <span>{meeting.time} ({meeting.duration})</span>
+                              <span>{meeting.time}</span>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-2">
                             <input
-    type="text"
-    value={meeting.meetingLink}
-    readOnly
-    className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600"
-  />
+                              type="text"
+                              value={meeting.meetingLink}
+                              readOnly
+                              className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600"
+                            />
                             <button
-    onClick={() => handleCopyLink(meeting.meetingLink)}
-    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-    title="Copy Link"
-  >
+                              onClick={() => handleCopyLink(meeting.meetingLink)}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Copy Link"
+                            >
                               <Copy className="w-4 h-4 text-gray-600" />
                             </button>
                           </div>
                         </div>
 
                         <button
-    onClick={() => handleJoinMeeting(meeting)}
-    className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-md hover:shadow-lg"
-  >
+                          onClick={() => handleJoinMeeting(meeting)}
+                          className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-md hover:shadow-lg"
+                        >
                           <Video className="w-5 h-5" />
                           Join Now
                         </button>
@@ -612,13 +607,11 @@ function VideoConferencing() {
               </div>
             </div>}
 
-          {
-    /* Upcoming Meetings */
-  }
-          {filteredMeetings.filter((m) => m.status === "Upcoming").length > 0 && <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Upcoming Meetings</h2>
+          {/* Pending Meetings */}
+          {filteredMeetings.filter((m) => m.status === "Pending").length > 0 && <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Pending Meetings</h2>
               <div className="space-y-4">
-                {filteredMeetings.filter((m) => m.status === "Upcoming").map((meeting) => <div key={meeting.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                {filteredMeetings.filter((m) => m.status === "Pending").map((meeting) => <div key={meeting.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="p-6">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -650,16 +643,16 @@ function VideoConferencing() {
 
                           <div className="flex items-center gap-2">
                             <input
-    type="text"
-    value={meeting.meetingLink}
-    readOnly
-    className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600"
-  />
+                              type="text"
+                              value={meeting.meetingLink}
+                              readOnly
+                              className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600"
+                            />
                             <button
-    onClick={() => handleCopyLink(meeting.meetingLink)}
-    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-    title="Copy Link"
-  >
+                              onClick={() => handleCopyLink(meeting.meetingLink)}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Copy Link"
+                            >
                               <Copy className="w-4 h-4 text-gray-600" />
                             </button>
                           </div>
@@ -674,9 +667,7 @@ function VideoConferencing() {
               </div>
             </div>}
 
-          {
-    /* Ended Meetings */
-  }
+          {/* Done Meetings */}
           {filteredMeetings.filter((m) => m.status === "Ended").length > 0 && <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Past Meetings</h2>
               <div className="space-y-4">

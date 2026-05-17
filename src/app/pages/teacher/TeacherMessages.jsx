@@ -428,7 +428,12 @@ function TeacherMessages() {
         return;
       }
       if (isMounted) setRecipientLoading(true);
-      const term = String(recipientSearch || "").trim();
+      
+      // Use whichever search term is active based on which modal is open
+      const term = showGroupModal 
+        ? String(groupSearch || "").trim()
+        : String(recipientSearch || "").trim();
+        
       const results = term
         ? await fetchRecipientsByQuery(teacherId, term)
         : await fetchAllRecipients(teacherId);
@@ -438,7 +443,39 @@ function TeacherMessages() {
     };
     runSearch();
     return () => { isMounted = false; };
-  }, [showNewModal, showGroupModal, recipientSearch, teacherId, fetchRecipientsByQuery, fetchAllRecipients]);
+  }, [showNewModal, showGroupModal, recipientSearch, groupSearch, teacherId, fetchRecipientsByQuery, fetchAllRecipients]);
+
+  const [showAddMemberModal, setShowAddAddMemberModal] = useState(false);
+  const [addMemberSearch, setAddMemberSearch] = useState("");
+
+  const handleAddParticipant = async (profileId) => {
+    if (!selectedConv || !selectedConv.isGroup) return;
+    try {
+      const { error } = await db
+        .from("conversation_participants")
+        .insert({
+          conversation_id: selectedConv.id,
+          profile_id: profileId,
+          is_admin: false,
+        });
+      
+      if (error) {
+        if (error.code === "23505") {
+          setPageError("User is already in this group.");
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      // Reload members
+      await handleOpenGroupMembers();
+      setPageError("");
+    } catch (err) {
+      console.error("[TeacherMessages] Failed to add participant:", err);
+      setPageError("Failed to add participant.");
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -519,13 +556,13 @@ function TeacherMessages() {
     
     // Insert conversation into database
     try {
-      const { error: convError } = await supabase
+      const { error: convError } = await db
         .from("conversations")
         .insert({
           id: conversationId,
           name: memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName,
           is_group: true,
-          created_by: (await supabase.auth.getUser()).data.user?.id,
+          created_by: teacherId,
         });
       
       if (convError) {
@@ -539,10 +576,10 @@ function TeacherMessages() {
       const participantInserts = allParticipantIds.map((profileId) => ({
         conversation_id: conversationId,
         profile_id: profileId,
-        is_admin: false,
+        is_admin: String(profileId) === String(teacherId),
       }));
 
-      const { error: partError } = await supabase
+      const { error: partError } = await db
         .from("conversation_participants")
         .insert(participantInserts);
 
@@ -1342,6 +1379,61 @@ function TeacherMessages() {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
+            <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0 bg-gray-50">
+              <button 
+                onClick={() => setShowAddAddMemberModal(!showAddMemberModal)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold transition-all"
+              >
+                <Plus className="w-4 h-4" /> Add Member
+              </button>
+            </div>
+
+            {showAddMemberModal && (
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex-shrink-0 animate-in slide-in-from-top duration-200">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={addMemberSearch}
+                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                    placeholder="Search users to add..."
+                    className="w-full pl-9 pr-4 py-2 bg-white text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+                
+                {addMemberSearch.trim() && (
+                  <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg bg-white shadow-sm">
+                    {recipientResults.filter(r => {
+                      const isAlreadyMember = groupMembers.some(m => String(m.id) === String(r.id));
+                      const q = addMemberSearch.toLowerCase();
+                      return !isAlreadyMember && (r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q));
+                    }).length === 0 ? (
+                      <p className="p-4 text-xs text-gray-500 text-center">No new users found.</p>
+                    ) : (
+                      recipientResults.filter(r => {
+                        const isAlreadyMember = groupMembers.some(m => String(m.id) === String(r.id));
+                        const q = addMemberSearch.toLowerCase();
+                        return !isAlreadyMember && (r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q));
+                      }).map(r => (
+                        <button
+                          key={`add-${r.id}`}
+                          onClick={() => { handleAddParticipant(r.id); setAddMemberSearch(""); }}
+                          className="w-full flex items-center justify-between px-4 py-2 hover:bg-green-50 text-left transition-colors"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{r.name}</p>
+                            <p className="text-[10px] text-gray-500">{r.role}</p>
+                          </div>
+                          <Plus className="w-4 h-4 text-green-600" />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto scrollbar-hide">
               {groupMembers.map((member, index) => (
                 <div key={`member-${member.id}-${index}`} className="flex items-center gap-3 px-6 py-3 border-b border-gray-100">

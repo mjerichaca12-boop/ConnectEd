@@ -136,11 +136,10 @@ function Login() {
         }
 
         const role = String(profile.role || "student").toLowerCase();
-        const isMobile = window.innerWidth < 1024; // Use standard 1024 for dashboard redirect logic
+        const isMobile = window.innerWidth < 1024;
 
-        // Check device restrictions
-        if (role === "teacher" && isMobile) {
-          throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
+        if ((role === "teacher" || role === "admin") && isMobile) {
+          throw new Error("The Teacher/Admin Portal is only accessible via Desktop.");
         }
         if (role === "student" && !isMobile) {
           throw new Error("The Student Portal is only accessible via Mobile devices.");
@@ -260,17 +259,17 @@ function Login() {
       }
 
       const role = String(profile.role || "student").toLowerCase();
-      const isMobile = window.innerWidth <= 1280;
+      const isMobile = window.innerWidth < 1024;
 
-      if (role === "teacher" && isMobile) {
+      if ((role === "teacher" || role === "admin") && isMobile) {
         await supabase.auth.signOut();
-        setError("Teachers can only sign in on Desktop.");
+        setError("The Teacher/Admin Portal is only accessible via Desktop.");
         setLoading(false);
         return;
       }
       if (role === "student" && !isMobile) {
         await supabase.auth.signOut();
-        setError("Students can only sign in on Mobile.");
+        setError("The Student Portal is only accessible via Mobile devices.");
         setLoading(false);
         return;
       }

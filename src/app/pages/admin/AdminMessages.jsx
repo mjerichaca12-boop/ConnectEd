@@ -56,12 +56,84 @@ export function AdminMessages() {
 
   // New message modal
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
   const [allTeachers, setAllTeachers] = useState([]);
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  const toggleGroupMember = (recipientId) => {
+    setSelectedGroupMemberIds((prev) => {
+      const id = String(recipientId);
+      return prev.includes(id)
+        ? prev.filter((i) => i !== id)
+        : [...prev, id];
+    });
+  };
+
+  const handleCreateGroupChat = async () => {
+    const selectedMembers = allTeachers.filter((r) => selectedGroupMemberIds.includes(r.id));
+    const memberIds = [...new Set(selectedMembers.map((m) => m.id))];
+    if (memberIds.length < 2) { setPageError("Select at least 2 users."); return; }
+    
+    const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = `group_${uid}`;
+    const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
+    const groupName = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
+
+    try {
+      const { error: convError } = await db
+        .from("conversations")
+        .insert({
+          id: conversationId,
+          name: groupName,
+          is_group: true,
+          created_by: adminId || HARDCODED_ADMIN_ID,
+        });
+      
+      if (convError) throw convError;
+
+      const allParticipantIds = [...new Set([adminId || HARDCODED_ADMIN_ID, ...memberIds])];
+      const participantInserts = allParticipantIds.map((profileId) => ({
+        conversation_id: conversationId,
+        profile_id: profileId,
+        is_admin: profileId === (adminId || HARDCODED_ADMIN_ID),
+      }));
+
+      const { error: partError } = await db
+        .from("conversation_participants")
+        .insert(participantInserts);
+
+      if (partError) throw partError;
+
+      const groupConversation = {
+        id: conversationId,
+        participantId: "",
+        participantIds: allParticipantIds,
+        participantName: groupName,
+        participantRole: "group",
+        messages: [],
+        unreadCount: 0,
+        lastMessageTime: new Date().toISOString(),
+        isVideoMeet: false,
+        isGroup: true,
+      };
+
+      setConversations([groupConversation, ...conversations]);
+      setSelectedConvId(conversationId);
+      setShowGroupModal(false);
+      setGroupSearch("");
+      setSelectedGroupMemberIds([]);
+      setPageError("");
+    } catch (error) {
+      console.error("[AdminMessages] Group creation error:", error);
+      setPageError("Failed to create group chat.");
+    }
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -496,6 +568,34 @@ export function AdminMessages() {
     }
   };
 
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [groupMembers, setGroupMembers] = useState([]);
+
+  const handleOpenGroupMembers = async () => {
+    if (!selectedConv || !selectedConv.isGroup) return;
+    try {
+      const { data, error } = await db
+        .from("conversation_participants")
+        .select("profile_id, profiles(first_name, middle_name, last_name, email, role)")
+        .eq("conversation_id", selectedConv.id);
+      
+      if (error) throw error;
+      if (data) {
+        const members = data.map((d) => ({
+          id: d.profile_id,
+          name: [d.profiles.first_name, d.profiles.middle_name, d.profiles.last_name].filter(Boolean).join(" ") || "User",
+          role: d.profiles.role,
+          email: d.profiles.email,
+        }));
+        setGroupMembers(members);
+        setShowMembersModal(true);
+      }
+    } catch (err) {
+      console.error("[AdminMessages] Failed to load group members:", err);
+      setPageError("Failed to load group members.");
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
@@ -786,9 +886,9 @@ export function AdminMessages() {
                   />
                 </div>
                 <button
-                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                  className="p-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0"
-                  title="New Message"
+                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700"
+                  title="Create group chat"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -958,14 +1058,24 @@ export function AdminMessages() {
                     </div>
                     <div className="flex items-center gap-2">
                       {selectedConv.isGroup && (
-                        <button
-                          type="button"
-                          onClick={() => setShowGroupMenu((c) => !c)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
-                          title="Group options"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleOpenGroupMembers}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                            title="View members"
+                          >
+                            <Users className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowGroupMenu((c) => !c)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                            title="Group options"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1275,6 +1385,116 @@ export function AdminMessages() {
               >
                 {deleteMode === "delete" ? "Delete" : "Leave"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ GROUP CHAT MODAL ══ */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between flex-shrink-0 bg-blue-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">New Group Chat</h3>
+                  <p className="text-xs text-blue-100">Select at least 2 members</p>
+                </div>
+              </div>
+              <button onClick={() => setShowGroupModal(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  placeholder="Search users..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {allTeachers.filter(r => {
+                if (!groupSearch.trim()) return true;
+                const q = groupSearch.toLowerCase();
+                return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q);
+              }).length === 0 ? (
+                <div className="py-12 text-center">
+                  <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No users found.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {allTeachers.filter(r => {
+                    if (!groupSearch.trim()) return true;
+                    const q = groupSearch.toLowerCase();
+                    return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q);
+                  }).map((recipient) => {
+                    const isSelected = selectedGroupMemberIds.includes(recipient.id);
+                    return (
+                      <button
+                        key={`group-${recipient.id}`}
+                        onClick={() => toggleGroupMember(recipient.id)}
+                        className={`w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left ${isSelected ? "bg-blue-50" : ""}`}
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${isSelected ? "bg-blue-600" : "bg-gray-300 text-gray-700"}`}>
+                          {isSelected ? <CheckCheck className="w-5 h-5 text-gray-900" /> : recipient.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
+                          <p className="text-xs text-gray-500">{recipient.role} · {recipient.email}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
+              <button
+                onClick={handleCreateGroupChat}
+                disabled={selectedGroupMemberIds.length < 2}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-gray-900 rounded-xl py-3 font-bold text-sm transition-all shadow-md"
+              >
+                Create Group ({selectedGroupMemberIds.length} selected)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MEMBERS MODAL ══ */}
+      {showMembersModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl max-h-[60vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-blue-600 text-white">
+              <h3 className="text-lg font-bold">Group Members</h3>
+              <button onClick={() => setShowMembersModal(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              <div className="divide-y divide-gray-100">
+                {groupMembers.map((member, index) => (
+                  <div key={`member-${member.id}-${index}`} className="flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors">
+                    <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm flex-shrink-0">
+                      {member.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{member.name}</p>
+                      <p className="text-xs text-gray-500 capitalize">{member.role} · {member.email}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -13,19 +13,33 @@ import { useEventsQuery } from "../../src/hooks/query/events/use-events-query";
 export default function HomeScreen() {
     const router = useRouter();
     const [displayName, setDisplayName] = useState("Student");
+    const [attendanceStats, setAttendanceStats] = useState({ total: 0, rate: 0 });
     const { data: announcementsData, isLoading: isAnnouncementsLoading, refetch: refetchAnnouncements } = useAnnouncementsQuery({ limit: 3 });
     const { data: eventsData, isLoading: isEventsLoading } = useEventsQuery(3);
-    const announcements = announcementsData || [];
-    const events = eventsData || [];
 
-    const loadDisplayName = useCallback(async () => {
+    const loadDashboardStats = useCallback(async () => {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) return;
 
             const userId = session.user.id;
 
-            // Try profiles table first (reflects edits made in profile page)
+            // Fetch attendance stats
+            const { data: attData } = await supabase
+                .from('teacher_student_attendance')
+                .select('attendance_status')
+                .eq('student_id', userId);
+
+            if (attData && attData.length > 0) {
+                const total = attData.length;
+                const present = attData.filter((a: any) => a.attendance_status === 'Present').length;
+                setAttendanceStats({
+                    total,
+                    rate: Math.round((present / total) * 100)
+                });
+            }
+
+            // Load name logic... (keep existing)
             const { data: profile } = await supabase
                 .from("profiles")
                 .select("first_name, last_name, is_verified")
@@ -35,32 +49,17 @@ export default function HomeScreen() {
             if (profile?.first_name) {
                 const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
                 setDisplayName(fullName);
-                return;
             }
-
-            // Fallback: user_metadata.firstName set at registration
-            const meta = session.user.user_metadata || {};
-            if (meta.firstName) {
-                setDisplayName(meta.firstName);
-                return;
-            }
-
-            // Last resort: derive from email
-            const email = session.user.email || "";
-            const name = email.split("@")[0];
-            setDisplayName(name.charAt(0).toUpperCase() + name.slice(1));
         } catch (err) {
-            console.warn("Failed to load display name:", err);
+            console.warn("Failed to load stats:", err);
         }
     }, []);
 
-    // Re-load name every time this screen comes into focus
-    // (so profile name changes are reflected immediately)
     useFocusEffect(
         useCallback(() => {
-            loadDisplayName();
+            loadDashboardStats();
             refetchAnnouncements();
-        }, [loadDisplayName, refetchAnnouncements])
+        }, [loadDashboardStats, refetchAnnouncements])
     );
 
 
@@ -81,6 +80,31 @@ export default function HomeScreen() {
                 <View style={styles.welcomeBanner}>
                     <Text style={styles.welcomeTitle}>Welcome, {displayName}!</Text>
                     <Text style={styles.welcomeSub}>Here&apos;s what&apos;s happening today</Text>
+                </View>
+
+                {/* Attendance Summary Card */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Attendance Overview</Text>
+                        <TouchableOpacity onPress={() => router.push("/(tabs)/attendance" as any)}>
+                            <Text style={styles.link}>Details</Text>
+                        </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.statsCard}
+                        onPress={() => router.push("/(tabs)/attendance" as any)}
+                    >
+                        <View style={styles.statsIconBox}>
+                            <Ionicons name="checkbox" size={24} color="#10B981" />
+                        </View>
+                        <View style={styles.statsInfo}>
+                            <Text style={styles.statsTitle}>{attendanceStats.rate}% Attendance Rate</Text>
+                            <Text style={styles.statsSub}>{attendanceStats.total} total classes recorded</Text>
+                        </View>
+                        <View style={styles.statsAction}>
+                             <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+                        </View>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Latest Announcements Section */}
@@ -214,6 +238,40 @@ const styles = StyleSheet.create({
         color: Colors.light.primary,
         fontWeight: "600",
         fontSize: 14,
+    },
+    statsCard: {
+        flexDirection: "row",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 12,
+        padding: 16,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#F1F5F9",
+    },
+    statsIconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+        backgroundColor: "#ECFDF5",
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 16,
+    },
+    statsInfo: {
+        flex: 1,
+    },
+    statsTitle: {
+        fontSize: 15,
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginBottom: 2,
+    },
+    statsSub: {
+        fontSize: 12,
+        color: "#64748B",
+    },
+    statsAction: {
+        marginLeft: 8,
     },
     calendarMiniCard: {
         flexDirection: "row",

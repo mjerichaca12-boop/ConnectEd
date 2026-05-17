@@ -118,7 +118,12 @@ export default function LoginScreen() {
                         )}
                     </TouchableOpacity>
 
-                    {/* Footer removed to disable registration */}
+                    <View style={styles.footer}>
+                        <Text style={styles.footerText}>Don't have an account? </Text>
+                        <TouchableOpacity onPress={() => router.push("/(auth)/register" as Href)}>
+                            <Text style={styles.signUpText}>Sign Up</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </KeyboardAvoidingView>
         </SafeAreaView>

@@ -1419,6 +1419,29 @@ function AdminAnnouncements() {
 
       await refreshAnnouncements(tableName);
 
+      // NEW: Create notifications for all students if target audience includes students
+      const targetAudience = toDatabaseAudience(formData.targetAudience);
+      if (targetAudience === "School-wide" || targetAudience === "Students") {
+        const { data: students } = await supabase.from("profiles").select("id").eq("role", "student");
+        if (students && students.length > 0) {
+          const notificationsPayload = students.map(student => ({
+            user_id: student.id,
+            title: `School Announcement: ${formData.title.trim()}`,
+            body: `A new school-wide announcement has been posted: ${formData.title.trim()}`,
+            type: 'announcement',
+            is_read: false
+          }));
+          
+          // Insert in chunks of 100 to avoid request size limits if many students
+          for (let i = 0; i < notificationsPayload.length; i += 100) {
+            const chunk = notificationsPayload.slice(i, i + 100);
+            supabase.from("notifications").insert(chunk).then(({ error }) => {
+              if (error) console.error("[AdminAnnouncements] Failed to create notifications chunk:", error);
+            });
+          }
+        }
+      }
+
       logActivity({
         actionType: "added_announcement",
         entityType: "announcement",

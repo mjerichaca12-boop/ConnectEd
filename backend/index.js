@@ -209,15 +209,26 @@ app.post("/auth/direct-login", async (req, res) => {
 });
 
 app.post("/auth/register", async (req, res) => {
-    const { email, password, role, firstName, lastName, middleName, year, section, course } = req.body;
+    const { email, password, role, firstName, lastName, middleName, year, section, course, status, phone } = req.body;
+
+    console.log("\n--- [Register] New Request ---");
+    console.log(`Email: ${email}`);
+    console.log(`Role: ${role}`);
+    console.log(`Name: ${firstName} ${lastName}`);
 
     if (!email || !password || !firstName || !lastName || !role) {
+        console.error("❌ [Register] Missing required fields");
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
+        const normalizedEmail = email.toLowerCase().trim();
+        let userId;
+
+        // 1. Create User in Supabase Auth
+        console.log(`[Register] 1/3: Creating user in Supabase Auth...`);
         const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-            email,
+            email: normalizedEmail,
             password,
             email_confirm: true,
             user_metadata: { 
@@ -228,46 +239,70 @@ app.post("/auth/register", async (req, res) => {
                 year,
                 section,
                 course,
-                is_verified: false 
+                phone,
+                is_verified: true 
             }
         });
 
-        if (createError) throw createError;
-        const userId = newUser.user.id;
-
-        // Optionally, insert into public.profiles if the table exists (fallback if it errors)
-        try {
-            await supabase.from("profiles").insert({
-                id: userId,
-                first_name: firstName,
-                last_name: lastName,
-                middle_name: middleName,
-                role: role,
-                year_level: year,
-                section,
-                course,
-                is_verified: false
-            });
-        } catch (profileError) {
-            console.error("Warning: profiles table might not exist yet", profileError.message);
+        if (createError) {
+            console.log(`[Register] Auth creation note: ${createError.message} (Code: ${createError.code})`);
+            if (createError.message.includes("already registered") || createError.code === 'email_exists') {
+                console.log(`[Register] User already exists in Auth. Fetching ID...`);
+                const { data: usersData, error: usersError } = await supabase.auth.admin.listUsers();
+                if (usersError) {
+                    console.error("❌ [Register] listUsers failed:", usersError.message);
+                    throw usersError;
+                }
+                const existingUser = usersData?.users.find((u) => u.email?.toLowerCase() === normalizedEmail);
+                if (!existingUser) {
+                    console.error("❌ [Register] User reported exists but not found in list.");
+                    throw new Error("User exists in Auth but lookup failed.");
+                }
+                userId = existingUser.id;
+            } else {
+                console.error("❌ [Register] Auth creation FAILED:", createError.message);
+                throw createError;
+            }
+        } else {
+            userId = newUser?.user?.id;
+            console.log(`✅ [Register] Auth User Created: ${userId}`);
         }
 
-        const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
+        // 2. Insert/Update public.profiles
+        console.log(`[Register] 2/3: Upserting profile into database...`);
+        const profileData = {
+            id: userId,
+            email: normalizedEmail,
+            first_name: firstName,
+            last_name: lastName,
+            middle_name: middleName,
+            role: role,
+            year_level: String(year || ""),
+            section: section || "",
+            course: course || "",
+            phone: phone || "",
+            status: status || "Active",
+            is_verified: true,
+            updated_at: new Date().toISOString()
+        };
 
-        if (signInError) throw signInError;
+        const { error: profileError } = await supabase.from("profiles").upsert(profileData);
 
-        return res.status(200).json({
-            success: true,
-            session: sessionData.session,
-            user: sessionData.user,
-        });
+        if (profileError) {
+            console.error("❌ [Register] Profile upsert FAILED:", profileError.message);
+            throw profileError;
+        }
+        console.log("✅ [Register] Profile record upserted.");
+
+        // 3. Email sending disabled temporarily as requested
+        console.log(`[Register] 3/3: Email sending skipped (alternative mode).`);
+
+        console.log("🏁 [Register] SUCCESS!\n");
+        return res.status(200).json({ success: true, message: "Registration successful.", userId });
 
     } catch (error) {
-        console.error("Error registering user:", error);
-        return res.status(500).json({ error: "Failed to register user", details: error.message });
+        console.error("❌ [Register] FATAL ERROR:", error.message);
+        return res.status(500).json({ error: "Registration failed", details: error.message });
     }
 });
 
@@ -326,7 +361,22 @@ STYLE: Professional, efficient, helpful, educational expert.
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, "0.0.0.0", () => {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    let localIp = 'localhost';
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                localIp = iface.address;
+                break;
+            }
+        }
+    }
+    console.log(`\n=================================================`);
+    console.log(`Backend Server is RUNNING`);
+    console.log(`Local:   http://localhost:${PORT}`);
+    console.log(`Network: http://${localIp}:${PORT}`);
+    console.log(`=================================================\n`);
 });

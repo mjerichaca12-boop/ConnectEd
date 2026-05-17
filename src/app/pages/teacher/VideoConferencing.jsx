@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
@@ -159,7 +160,7 @@ function VideoConferencing() {
   const [classes, setClasses] = useState([]);
 
   const [formData, setFormData] = useState({
-    title: "", class: "", subject: "", date: "", time: "", duration: "60",
+    title: "", class: "", subject: "", date: "", time: "",
   });
   const [formErrors, setFormErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -170,9 +171,9 @@ function VideoConferencing() {
 
   const normalizeMeetingStatus = (row) => {
     const status = String(row?.status || "").trim().toLowerCase();
-    if (status === "ongoing") return "Ongoing";
-    if (status === "ended") return "Ended";
-    if (status === "scheduled") return "Scheduled";
+    if (status === "ongoing" || status === "live") return "Ongoing";
+    if (status === "done" || status === "ended" || status === "completed") return "Ended";
+    if (status === "pending" || status === "scheduled") return "Scheduled";
     return row?.is_meeting_active ? "Ongoing" : "Scheduled";
   };
 
@@ -190,7 +191,6 @@ function VideoConferencing() {
       : storedRoomName;
     const roomName = String(computedRoomName || storedRoomName || "").trim();
     const meetingLink = String(row?.meeting_link || row?.meetingLink || (roomName ? `https://${JITSI_DOMAIN}/${roomName}` : "")).trim();
-    const durationValue = Number(row?.duration_minutes ?? 60) || 60;
     const meetingTime = String(row?.scheduled_time || "").slice(0, 5);
 
     return {
@@ -201,13 +201,36 @@ function VideoConferencing() {
       subject: String(row?.subject || ""),
       date: String(row?.scheduled_date || ""),
       time: meetingTime,
-      duration: `${durationValue} min`,
       status: normalizeMeetingStatus(row),
       participants: Number(row?.participants_count || 0),
       roomName,
       meetingLink,
       createdAt: row?.created_at || new Date().toISOString(),
     };
+  };
+
+  const handleUpdateStatus = async (meetingId, newStatus) => {
+    try {
+      const tableName = MEETING_TABLE;
+      // Use capitalized strings to match DB constraint
+      const dbStatus = newStatus === "Done" ? "Ended" : (newStatus === "Pending" ? "Scheduled" : newStatus);
+      const payload = {
+        status: dbStatus,
+        is_meeting_active: dbStatus === "Ongoing",
+        updated_at: new Date().toISOString(),
+      };
+      const client = supabaseAdmin || supabase;
+      await client.from(tableName).update(payload).eq("id", meetingId);
+
+      const updated = meetings.map((m) =>
+        String(m.id) === String(meetingId) ? { ...m, status: newStatus } : m
+      );
+      saveMeetings(updated);
+      toast.success(`Meeting status updated to ${newStatus}`);
+    } catch (error) {
+      console.error("Failed to update status:", error);
+      toast.error("Failed to update status.");
+    }
   };
 
   const fetchMeetings = useCallback(async () => {
@@ -335,7 +358,7 @@ function VideoConferencing() {
       };
       // Use supabaseAdmin to bypass RLS for updates
       const client = supabaseAdmin || supabase;
-      await client.from(tableName).update(payload).eq("id", Number(meeting.id));
+      await client.from(tableName).update(payload).eq("id", meeting.id);
 
       const updated = meetings.map((m) => (
         String(m.id) === String(meeting.id)
@@ -366,13 +389,13 @@ function VideoConferencing() {
           updated_at: new Date().toISOString(),
         };
         const client = supabaseAdmin || supabase;
-        await client.from(tableName).update(payload).eq("id", Number(activeMeeting.id));
+        await client.from(tableName).update(payload).eq("id", activeMeeting.id);
       } catch (error) {
         console.error("Failed to end meeting:", error);
       }
 
       const updated = meetings.map((m) =>
-        m.id === activeMeeting.id ? { ...m, status: "Ended" } : m
+        m.id === activeMeeting.id ? { ...m, status: "Done" } : m
       );
       saveMeetings(updated);
     }
@@ -489,7 +512,6 @@ function VideoConferencing() {
         subject: formData.subject.trim(),
         scheduled_date: formData.date,
         scheduled_time: formData.time,
-        duration_minutes: Number(formData.duration || 60) || 60,
         room_name: roomName,
         meeting_link: meetingLink,
         status: "Scheduled",
@@ -518,7 +540,7 @@ function VideoConferencing() {
       saveMeetings([mappedMeeting, ...meetings]);
 
       handleCloseModal();
-      await launchJitsi(mappedMeeting);
+      toast.success("Meeting scheduled successfully!");
     } finally {
       setIsSaving(false);
     }
@@ -526,7 +548,7 @@ function VideoConferencing() {
 
   const handleCloseModal = () => {
     setShowCreateModal(false);
-    setFormData({ title: "", class: "", subject: "", date: "", time: "", duration: "60" });
+    setFormData({ title: "", class: "", subject: "", date: "", time: "" });
     setFormErrors({});
     setSaveError("");
   };
@@ -537,7 +559,7 @@ function VideoConferencing() {
       const tableName = MEETING_TABLE;
       // Use supabaseAdmin to bypass RLS for deletes
       const client = supabaseAdmin || supabase;
-      await client.from(tableName).delete().eq("id", Number(id));
+      await client.from(tableName).delete().eq("id", id);
     } catch (error) {
       console.error("Failed to delete meeting:", error);
     }
@@ -679,9 +701,9 @@ function VideoConferencing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: "Total Meetings", value: meetings.length, icon: <Video className="w-5 h-5" />, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
-              { label: "Live Now", value: meetings.filter((m) => m.status === "Ongoing").length, icon: <Play className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-50 border-red-200" },
-              { label: "Scheduled", value: meetings.filter((m) => m.status === "Scheduled").length, icon: <Calendar className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-50 border-blue-200" },
-              { label: "Completed", value: meetings.filter((m) => m.status === "Ended").length, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-green-600", bg: "bg-green-50 border-green-200" },
+              { label: "Ongoing", value: meetings.filter((m) => m.status === "Ongoing").length, icon: <Play className="w-5 h-5" />, color: "text-red-400", bg: "bg-red-50 border-red-200" },
+              { label: "Pending", value: meetings.filter((m) => m.status === "Pending").length, icon: <Calendar className="w-5 h-5" />, color: "text-blue-400", bg: "bg-blue-50 border-blue-200" },
+              { label: "Completed", value: meetings.filter((m) => m.status === "Done").length, icon: <CheckCircle2 className="w-5 h-5" />, color: "text-green-600", bg: "bg-green-50 border-green-200" },
             ].map(({ label, value, icon, color, bg }) => (
               <div key={label} className={`rounded-xl p-5 border ${bg}`}>
                 <div className={`${color} mb-2`}>{icon}</div>
@@ -707,7 +729,7 @@ function VideoConferencing() {
               {[
                 { key: "all", label: "All" },
                 { key: "Scheduled", label: "Scheduled" },
-                { key: "Ongoing", label: "Live" },
+                { key: "Ongoing", label: "Ongoing" },
                 { key: "Ended", label: "Ended" },
               ].map(({ key, label }) => (
                 <button
@@ -765,7 +787,7 @@ function VideoConferencing() {
                           </div>
                           <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-purple-400" />
-                            <span>{meeting.time} · {meeting.duration}</span>
+                            <span>{meeting.time}</span>
                           </div>
                         </div>
 
@@ -792,11 +814,24 @@ function VideoConferencing() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="flex flex-col items-end gap-3 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status:</label>
+                          <select
+                            value={meeting.status}
+                            onChange={(e) => handleUpdateStatus(meeting.id, e.target.value)}
+                            className="text-xs font-semibold bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option value="Scheduled">Scheduled</option>
+                            <option value="Ongoing">Ongoing</option>
+                            <option value="Ended">Ended</option>
+                          </select>
+                        </div>
+
                         {(meeting.status === "Scheduled" || meeting.status === "Ongoing") && (
                           <button
                             onClick={() => launchJitsi(meeting)}
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-gray-900" : "bg-indigo-600 hover:bg-indigo-700 text-gray-900"}`}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${meeting.status === "Ongoing" ? "bg-red-600 hover:bg-red-700 text-gray-900" : "bg-indigo-600 hover:bg-indigo-700 text-gray-900"}`}
                           >
                             <Video className="w-4 h-4" />
                             {meeting.status === "Ongoing" ? "Rejoin" : "Start"}
@@ -876,8 +911,8 @@ function VideoConferencing() {
                 </div>
               </div>
 
-              {/* Date, Time, Duration */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Date & Time */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Date <span className="text-red-400">*</span></label>
                   <input
@@ -897,18 +932,6 @@ function VideoConferencing() {
                     className={`w-full px-4 py-3 bg-gray-50 text-gray-900 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${formErrors.time ? "border-red-500" : "border-white/20"}`}
                   />
                   {formErrors.time && <p className="mt-1 text-xs text-red-400">{formErrors.time}</p>}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5 uppercase tracking-wider">Duration</label>
-                  <select
-                    value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full px-4 py-3 bg-gray-50 text-gray-900 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-                  >
-                    {["30", "45", "60", "90", "120"].map((d) => (
-                      <option key={d} value={d}>{d} min</option>
-                    ))}
-                  </select>
                 </div>
               </div>
 

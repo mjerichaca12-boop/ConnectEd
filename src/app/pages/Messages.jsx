@@ -52,8 +52,80 @@ export function Messages() {
   const [recipientSearch, setRecipientSearch] = useState("");
   const [allRecipients, setAllRecipients] = useState([]);
   const [showNewMessage, setShowNewMessage] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
   const [showThread, setShowThread] = useState(false);
   const [pageError, setPageError] = useState("");
+
+  const toggleGroupMember = (recipientId) => {
+    setSelectedGroupMemberIds((prev) => {
+      const id = String(recipientId);
+      return prev.includes(id)
+        ? prev.filter((i) => i !== id)
+        : [...prev, id];
+    });
+  };
+
+  const handleCreateGroupChat = async () => {
+    const selectedMembers = allRecipients.filter((r) => selectedGroupMemberIds.includes(r.id));
+    const memberIds = [...new Set(selectedMembers.map((m) => m.id))];
+    if (memberIds.length < 2) { setPageError("Select at least 2 users."); return; }
+    
+    const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = `group_${uid}`;
+    const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
+    const groupName = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
+
+    try {
+      const { error: convError } = await db
+        .from("conversations")
+        .insert({
+          id: conversationId,
+          name: groupName,
+          is_group: true,
+          created_by: studentId,
+        });
+      
+      if (convError) throw convError;
+
+      const allParticipantIds = [...new Set([studentId, ...memberIds])];
+      const participantInserts = allParticipantIds.map((profileId) => ({
+        conversation_id: conversationId,
+        profile_id: profileId,
+        is_admin: profileId === studentId,
+      }));
+
+      const { error: partError } = await db
+        .from("conversation_participants")
+        .insert(participantInserts);
+
+      if (partError) throw partError;
+
+      const groupConversation = {
+        id: conversationId,
+        participantId: "",
+        participantIds: allParticipantIds,
+        participantName: groupName,
+        participantRole: "group",
+        messages: [],
+        unreadCount: 0,
+        lastMessageTime: new Date().toISOString(),
+        isVideoMeet: false,
+        isGroup: true,
+      };
+
+      setConversations([groupConversation, ...conversations]);
+      setSelectedConvId(conversationId);
+      setShowGroupModal(false);
+      setGroupSearch("");
+      setSelectedGroupMemberIds([]);
+      setPageError("");
+    } catch (error) {
+      console.error("[Messages] Group creation error:", error);
+      setPageError("Failed to create group chat.");
+    }
+  };
 
   // Group management states
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -501,15 +573,28 @@ export function Messages() {
                     <h3 className="text-lg font-semibold text-gray-900">Conversations</h3>
                     <p className="text-sm text-gray-500">{conversations.length} chats</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setShowNewMessage(true);
-                      setRecipientSearch("");
-                    }}
-                    className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors"
-                  >
-                    New
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setShowGroupModal(true);
+                        setGroupSearch("");
+                        setSelectedGroupMemberIds([]);
+                      }}
+                      className="px-3 py-2 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
+                      title="New Group Chat"
+                    >
+                      <Users className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowNewMessage(true);
+                        setRecipientSearch("");
+                      }}
+                      className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors"
+                    >
+                      New
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -810,6 +895,87 @@ export function Messages() {
         mode={deleteMode}
         onSubmit={deleteMode === "delete" ? handleDeleteConversation : handleLeaveConversation}
       />
+
+      {/* ══ GROUP CHAT MODAL ══ */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between flex-shrink-0 bg-emerald-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">New Group Chat</h3>
+                  <p className="text-xs text-emerald-100">Select at least 2 members</p>
+                </div>
+              </div>
+              <button onClick={() => setShowGroupModal(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  placeholder="Search teachers or admins..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {allRecipients.filter(r => {
+                if (!groupSearch.trim()) return true;
+                const q = groupSearch.toLowerCase();
+                return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q);
+              }).length === 0 ? (
+                <div className="py-12 text-center">
+                  <Users className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No users found.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {allRecipients.filter(r => {
+                    if (!groupSearch.trim()) return true;
+                    const q = groupSearch.toLowerCase();
+                    return r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q);
+                  }).map((recipient) => {
+                    const isSelected = selectedGroupMemberIds.includes(recipient.id);
+                    return (
+                      <button
+                        key={`group-${recipient.id}`}
+                        onClick={() => toggleGroupMember(recipient.id)}
+                        className={`w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left ${isSelected ? "bg-emerald-50" : ""}`}
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${isSelected ? "bg-emerald-600" : "bg-gray-300 text-gray-700"}`}>
+                          {isSelected ? <Users className="w-5 h-5 text-white" /> : recipient.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
+                          <p className="text-xs text-gray-500">{recipient.role} · {recipient.email}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
+              <button
+                onClick={handleCreateGroupChat}
+                disabled={selectedGroupMemberIds.length < 2}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-3 font-bold text-sm transition-all shadow-md"
+              >
+                Create Group ({selectedGroupMemberIds.length} selected)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

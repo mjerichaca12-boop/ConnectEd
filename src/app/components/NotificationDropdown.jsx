@@ -56,7 +56,7 @@ const mapRow = (n, role) => ({
   userId: String(n.user_id || ""),
   type: String(n.type || ""),
   title: String(n.title || ""),
-  message: String(n.message || ""),
+  message: String(n.body || n.message || ""),
   isRead: Boolean(n.is_read),
   timestamp: new Date(n.created_at).toLocaleString(),
   path: getPathForType(n.type, role),
@@ -91,9 +91,10 @@ function NotificationDropdown({
 
       if (db() && user?.id) {
         try {
+          // Try to select both 'body' and 'message' to be safe across different schema versions
           const { data, error } = await db()
             .from("notifications")
-            .select("id, user_id, type, title, message, is_read, created_at")
+            .select("id, user_id, type, title, body, is_read, created_at")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false })
             .limit(50);
@@ -105,6 +106,25 @@ function NotificationDropdown({
             localStorage.setItem(key, JSON.stringify(deduped));
             return;
           }
+          
+          if (error && error.message.includes('column "body" does not exist')) {
+             // Fallback to 'message' if 'body' doesn't exist
+             const fallback = await db()
+                .from("notifications")
+                .select("id, user_id, type, title, message, is_read, created_at")
+                .eq("user_id", user.id)
+                .order("created_at", { ascending: false })
+                .limit(50);
+             
+             if (!fallback.error && fallback.data && isMounted) {
+                const mapped = fallback.data.map((n) => mapRow(n, user.role));
+                const deduped = dedupeNotifications(mapped);
+                setNotifications(deduped);
+                localStorage.setItem(key, JSON.stringify(deduped));
+                return;
+             }
+          }
+          
           if (error) console.warn("Notification DB load failed:", error);
         } catch (err) {
           console.warn("Notification DB load error:", err);

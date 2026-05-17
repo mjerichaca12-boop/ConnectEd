@@ -30,13 +30,36 @@ export async function getMeetings({ subjectId, limit }: GetMeetingsArgs = {}): P
         throw error;
     }
 
-    return (data || []).map(m => ({
-        id: m.id,
-        subject: m.subject_code || m.subject || "Unknown",
-        title: m.title,
-        time: m.time,
-        duration: m.duration || "1h",
-        subject_id: m.subject_id,
-        meeting_link: m.meeting_link,
-    }));
+    return (data || []).map(m => {
+        const statusStr = String(m.status || "").trim().toLowerCase();
+        let normalizedStatus: "Pending" | "Ongoing" | "Done" = "Pending";
+        
+        if (statusStr === "ongoing" || statusStr === "live" || m.is_meeting_active) {
+            normalizedStatus = "Ongoing";
+        } else if (statusStr === "done" || statusStr === "ended" || statusStr === "completed") {
+            normalizedStatus = "Done";
+        } else if (statusStr === "pending" || statusStr === "scheduled") {
+            normalizedStatus = "Pending";
+        }
+
+        let timeStr = m.scheduled_time || m.time || "";
+        if (timeStr.includes('T')) {
+            try {
+                timeStr = new Date(timeStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch (e) {}
+        } else if (timeStr.length > 5) {
+            timeStr = timeStr.slice(0, 5);
+        }
+
+        return {
+            id: m.id,
+            subject: m.subject_code || m.subject || "Unknown",
+            title: m.title,
+            time: timeStr,
+            status: normalizedStatus,
+            rawDate: m.scheduled_date || m.time,
+            subject_id: m.subject_id,
+            meeting_link: m.meeting_link,
+        };
+    });
 }

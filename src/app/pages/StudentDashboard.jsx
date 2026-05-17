@@ -100,6 +100,30 @@ export function StudentDashboard() {
           isRead: readIds.has(String(row.id))
         })));
       }
+
+      // Fetch recent attendance
+      const { data: attendanceRows } = await supabase
+        .from("teacher_student_attendance")
+        .select(`
+          id,
+          attendance_date,
+          attendance_status,
+          subjects (
+            name
+          )
+        `)
+        .eq("student_id", currentStudentId)
+        .order("attendance_date", { ascending: false })
+        .limit(5);
+
+      if (attendanceRows) {
+        setRecentAttendance(attendanceRows.map(row => ({
+          id: row.id,
+          date: row.attendance_date,
+          status: row.attendance_status,
+          subjectName: row.subjects?.name || "Subject"
+        })));
+      }
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
     }

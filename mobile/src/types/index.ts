@@ -52,7 +52,8 @@ export interface Meeting {
     subject: string;
     title: string;
     time: string;
-    duration: string;
+    status: "Pending" | "Ongoing" | "Done";
+    rawDate?: string;
     subject_id?: string;
     meeting_link?: string;
 }

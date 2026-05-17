@@ -142,6 +142,22 @@ ALTER TABLE public.otps ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Service role can manage otps." ON public.otps;
 CREATE POLICY "Service role can manage otps." ON public.otps FOR ALL USING (true);
 
+-- 8. ATTENDANCE METADATA TABLE
+CREATE TABLE IF NOT EXISTS public.attendance_metadata (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    teacher_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES public.subjects(id) ON DELETE CASCADE,
+    attendance_date DATE NOT NULL,
+    task TEXT,
+    summary TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT attendance_metadata_unique UNIQUE (teacher_id, subject_id, attendance_date)
+);
+
+ALTER TABLE public.attendance_metadata ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Attendance metadata is viewable by everyone." ON public.attendance_metadata FOR SELECT USING (true);
+CREATE POLICY "Service role can manage attendance metadata." ON public.attendance_metadata FOR ALL USING (true);
+
 -- ============================================================
 -- Refresh PostgREST schema cache
 -- (Run this after creating the tables to fix PGRST205 errors)

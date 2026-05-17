@@ -7,7 +7,7 @@ interface MeetingCardProps {
     subject: string;
     title: string;
     time: string;
-    duration: string;
+    status?: "Pending" | "Ongoing" | "Done";
     onJoin: () => void;
     style?: ViewStyle;
 }
@@ -16,27 +16,50 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
     subject,
     title,
     time,
-    duration,
+    status = "Pending",
     onJoin,
     style,
 }) => {
+    const getStatusColor = () => {
+        switch (status) {
+            case "Ongoing": return "#EF4444"; // Red
+            case "Pending": return "#3B82F6"; // Blue
+            case "Done": return "#64748B"; // Slate
+            default: return "#64748B";
+        }
+    };
+
+    const getStatusBg = () => {
+        switch (status) {
+            case "Ongoing": return "#FEF2F2";
+            case "Pending": return "#EFF6FF";
+            case "Done": return "#F8FAFC";
+            default: return "#F8FAFC";
+        }
+    };
+
     return (
         <View style={[styles.card, style]}>
-            <View style={styles.leftBorder} />
+            <View style={[styles.leftBorder, { backgroundColor: getStatusColor() }]} />
             <View style={styles.content}>
                 <View style={styles.header}>
                     <Text style={styles.time}>{time}</Text>
-                    <Text style={styles.duration}>• {duration}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusBg() }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor() }]}>{status}</Text>
+                    </View>
                 </View>
                 <Text style={styles.subject}>{subject}</Text>
                 <Text style={styles.title} numberOfLines={1}>{title}</Text>
                 <View style={styles.actionContainer}>
-                    <Button
-                        title="Join Meeting"
-                        onPress={onJoin}
-                        size="small"
-                        style={styles.button}
-                    />
+                    {status !== "Done" && (
+                        <Button
+                            title={status === "Ongoing" ? "Join Meeting" : "Waiting..."}
+                            onPress={onJoin}
+                            size="small"
+                            disabled={status === "Pending"}
+                            style={[styles.button, status === "Ongoing" ? { backgroundColor: "#EF4444" } : {}]}
+                        />
+                    )}
                 </View>
             </View>
         </View>
@@ -58,7 +81,6 @@ const styles = StyleSheet.create({
     },
     leftBorder: {
         width: 6,
-        backgroundColor: Colors.light.primary,
     },
     content: {
         flex: 1,
@@ -67,6 +89,7 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
         marginBottom: 4,
     },
     time: {
@@ -74,10 +97,15 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: Colors.light.text,
     },
-    duration: {
-        fontSize: 12,
-        color: Colors.light.textSecondary,
-        marginLeft: 4,
+    statusBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    statusText: {
+        fontSize: 10,
+        fontWeight: "bold",
+        textTransform: "uppercase",
     },
     subject: {
         fontSize: 12,

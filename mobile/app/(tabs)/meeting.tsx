@@ -58,7 +58,7 @@ export default function MeetingsScreen() {
                         subject={item.subject}
                         title={item.title}
                         time={item.time}
-                        duration={item.duration}
+                        status={item.status}
                         onJoin={() => setActiveMeeting(item)}
                     />
                 )}

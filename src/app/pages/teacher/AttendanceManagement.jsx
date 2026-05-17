@@ -16,6 +16,10 @@ import {
   ChevronRight,
   Download,
   FileSpreadsheet,
+  Plus,
+  Edit2,
+  History,
+  Trash2,
 } from "lucide-react";
 
 /* ─── Excel export helper ──────────────────────────────────────────── */
@@ -61,6 +65,11 @@ function AttendanceManagement() {
   const [students, setStudents] = useState([]);
   const [attendanceCache, setAttendanceCache] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [attendanceTask, setAttendanceTask] = useState("");
+  const [attendanceSummary, setAttendanceSummary] = useState("");
+  const [attendanceHistory, setAttendanceHistory] = useState([]);
+  const [isModifyingDate, setIsModifyingDate] = useState(false);
+  const [newSessionDate, setNewSessionDate] = useState("");
 
   const resolveTeacherId = async (email) => {
     if (!supabase || !email) return "";
@@ -74,6 +83,62 @@ function AttendanceManagement() {
       .maybeSingle();
     if (error) { console.error("Failed to resolve teacher profile:", error); return ""; }
     return String(data?.id || "");
+  };
+
+  const fetchAttendanceHistory = async (currentTeacherId, classId) => {
+    if (!supabase || !currentTeacherId || !classId) return;
+    try {
+      const { data, error } = await supabase
+        .from("teacher_student_attendance")
+        .select("attendance_date")
+        .eq("teacher_id", currentTeacherId)
+        .eq("subject_id", classId)
+        .order("attendance_date", { ascending: false });
+
+      if (error) {
+        console.error("Failed to fetch history:", error);
+        return;
+      }
+
+      const uniqueDates = [...new Set((data || []).map(d => d.attendance_date))];
+      setAttendanceHistory(uniqueDates);
+    } catch (err) {
+      console.warn("History fetch failed");
+    }
+  };
+
+  const fetchAttendanceMetadata = async (currentTeacherId, classId, dateValue) => {
+    if (!supabase || !currentTeacherId || !classId) return;
+    try {
+      const { data, error } = await supabase
+        .from("attendance_metadata")
+        .select("task, summary")
+        .eq("teacher_id", currentTeacherId)
+        .eq("subject_id", classId)
+        .eq("attendance_date", dateValue)
+        .maybeSingle();
+
+      if (error) {
+        if (!error.message.includes('relation "public.attendance_metadata" does not exist')) {
+          console.error("Failed to load attendance metadata:", error);
+        }
+        setAttendanceTask("");
+        setAttendanceSummary("");
+        return;
+      }
+
+      if (data) {
+        setAttendanceTask(data.task || "");
+        setAttendanceSummary(data.summary || "");
+      } else {
+        setAttendanceTask("");
+        setAttendanceSummary("");
+      }
+    } catch (err) {
+      console.warn("Attendance metadata table may not exist yet.");
+      setAttendanceTask("");
+      setAttendanceSummary("");
+    }
   };
 
   const fetchClasses = async (id) => {
@@ -178,6 +243,7 @@ function AttendanceManagement() {
   useEffect(() => {
     if (!teacherId || !selectedClassId) { setStudents([]); return; }
     fetchStudentsForClass(teacherId, selectedClassId, selectedDate);
+    fetchAttendanceMetadata(teacherId, selectedClassId, selectedDate);
   }, [teacherId, selectedClassId, selectedDate]);
 
   useEffect(() => {
@@ -198,6 +264,7 @@ function AttendanceManagement() {
         const oldSubjectId = String(payload?.old?.subject_id || "");
         if (selectedClassId && (newSubjectId === selectedClassId || oldSubjectId === selectedClassId)) {
           fetchStudentsForClass(teacherId, selectedClassId, selectedDate);
+          fetchAttendanceMetadata(teacherId, selectedClassId, selectedDate);
         }
       })
       .subscribe();
@@ -266,33 +333,149 @@ function AttendanceManagement() {
         updated_at: new Date().toISOString(),
       }));
 
-    if (attendancePayload.length === 0) {
-      toast.error("Select attendance status before saving.");
+    if (attendancePayload.length === 0 && !attendanceTask && !attendanceSummary) {
+      toast.error("Select attendance status or add task/summary before saving.");
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from("teacher_student_attendance")
-        .upsert(attendancePayload, { onConflict: "teacher_id,subject_id,student_id,attendance_date" });
+      // 1. Save student attendance
+      if (attendancePayload.length > 0) {
+        const { error: attendanceError } = await supabase
+          .from("teacher_student_attendance")
+          .upsert(attendancePayload, { onConflict: "teacher_id,subject_id,student_id,attendance_date" });
 
-      if (error) {
-        console.error("Failed to save attendance:", error);
-        toast.error(error.message || "Failed to save attendance.");
-        return;
+        if (attendanceError) {
+          console.error("Failed to save student attendance:", attendanceError);
+          toast.error(attendanceError.message || "Failed to save student attendance.");
+          return;
+        }
+      }
+
+      // 2. Save attendance metadata (task and summary)
+      try {
+        const metadataPayload = {
+          teacher_id: teacherId,
+          subject_id: selectedClassId,
+          attendance_date: selectedDate,
+          task: String(attendanceTask || "").trim(),
+          summary: String(attendanceSummary || "").trim(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error: metadataError } = await supabase
+          .from("attendance_metadata")
+          .upsert(metadataPayload, { onConflict: "teacher_id,subject_id,attendance_date" });
+
+        if (metadataError) {
+          if (!metadataError.message.includes('relation "public.attendance_metadata" does not exist')) {
+            console.error("Failed to save attendance metadata:", metadataError);
+            toast.warn("Could not save task and summary. Database table might be missing.");
+          }
+        }
+      } catch (err) {
+        console.warn("Could not save attendance metadata.");
       }
 
       await fetchStudentsForClass(teacherId, selectedClassId, selectedDate);
+      await fetchAttendanceMetadata(teacherId, selectedClassId, selectedDate);
+      await fetchAttendanceHistory(teacherId, selectedClassId);
       setSaveSuccess(true);
       setHasUnsavedChanges(false);
-      toast.success("Attendance saved successfully!");
+      toast.success("Attendance and metadata saved successfully!");
     } catch (error) {
       console.error("Unexpected attendance save error:", error);
       toast.error(error?.message || "Failed to save attendance.");
     }
   };
 
-  const handleSelectClass = (classId) => { setSelectedClassId(classId); setStudentSearchQuery(""); setHasUnsavedChanges(false); };
+  const handleDeleteSession = async (dateToDelete) => {
+    if (!selectedClassId || !teacherId || !window.confirm(`Are you sure you want to delete all attendance records for ${dateToDelete}?`)) return;
+
+    try {
+      // 1. Delete attendance records
+      const { error: attError } = await supabase
+        .from("teacher_student_attendance")
+        .delete()
+        .eq("subject_id", selectedClassId)
+        .eq("teacher_id", teacherId)
+        .eq("attendance_date", dateToDelete);
+
+      if (attError) throw attError;
+
+      // 2. Delete metadata
+      await supabase
+        .from("attendance_metadata")
+        .delete()
+        .eq("subject_id", selectedClassId)
+        .eq("teacher_id", teacherId)
+        .eq("attendance_date", dateToDelete);
+
+      toast.success(`Session for ${dateToDelete} deleted.`);
+      fetchAttendanceHistory(teacherId, selectedClassId);
+      if (selectedDate === dateToDelete) {
+        setSelectedDate(new Date().toISOString().split("T")[0]);
+      }
+    } catch (err) {
+      console.error("Delete session error:", err);
+      toast.error("Failed to delete session.");
+    }
+  };
+
+  const handleModifyDate = async (newDate) => {
+    if (!selectedClassId || !teacherId || !selectedDate || newDate === selectedDate) {
+      setIsModifyingDate(false);
+      return;
+    }
+
+    try {
+      const { data: existing } = await supabase
+        .from("teacher_student_attendance")
+        .select("id")
+        .eq("subject_id", selectedClassId)
+        .eq("teacher_id", teacherId)
+        .eq("attendance_date", newDate)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        toast.error(`Attendance already exists for ${newDate}.`);
+        setIsModifyingDate(false);
+        return;
+      }
+
+      const { error: attError } = await supabase
+        .from("teacher_student_attendance")
+        .update({ attendance_date: newDate })
+        .eq("subject_id", selectedClassId)
+        .eq("teacher_id", teacherId)
+        .eq("attendance_date", selectedDate);
+
+      if (attError) throw attError;
+
+      await supabase
+        .from("attendance_metadata")
+        .update({ attendance_date: newDate })
+        .eq("subject_id", selectedClassId)
+        .eq("teacher_id", teacherId)
+        .eq("attendance_date", selectedDate);
+
+      setSelectedDate(newDate);
+      fetchAttendanceHistory(teacherId, selectedClassId);
+      toast.success("Attendance session date updated!");
+    } catch (err) {
+      console.error("Modify date error:", err);
+      toast.error("Failed to update session date.");
+    } finally {
+      setIsModifyingDate(false);
+    }
+  };
+
+  const handleSelectClass = (classId) => { 
+    setSelectedClassId(classId); 
+    setStudentSearchQuery(""); 
+    setHasUnsavedChanges(false); 
+    fetchAttendanceHistory(teacherId, classId);
+  };
   const handleBackToClasses = () => {
     if (hasUnsavedChanges) {
       const shouldProceed = window.confirm("You have unsaved changes. Are you sure you want to go back?");
@@ -433,7 +616,16 @@ function AttendanceManagement() {
                     <button onClick={handleBackToClasses} className="mb-3 flex items-center gap-2 text-green-100 hover:text-gray-900 transition-colors text-sm">
                       ← Back to Classes
                     </button>
-                    <h1 className="text-3xl font-bold mb-1">{selectedClass.gradeLevel}</h1>
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-3xl font-bold mb-1">{selectedClass.gradeLevel}</h1>
+                      <button 
+                        onClick={() => { setIsModifyingDate(true); setNewSessionDate(selectedDate); }}
+                        className="p-2 bg-white/20 hover:bg-white/40 rounded-lg transition-all text-white"
+                        title="Change session date"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                    </div>
                     <p className="text-green-100">{selectedClass.sectionName} · {new Date(selectedDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
                   </div>
                   <button
@@ -444,6 +636,83 @@ function AttendanceManagement() {
                     <FileSpreadsheet className="w-4 h-4" />
                     Export Excel
                   </button>
+                </div>
+              </div>
+
+              {/* Modify Date UI */}
+              {isModifyingDate && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-amber-100 rounded-lg">
+                      <Calendar className="w-5 h-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-amber-900">Change Session Date</h4>
+                      <p className="text-xs text-amber-700">Moving this entire session's records to a new date.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                    <input 
+                      type="date" 
+                      value={newSessionDate}
+                      onChange={(e) => setNewSessionDate(e.target.value)}
+                      className="px-4 py-2 rounded-lg border border-amber-200 focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                    />
+                    <button 
+                      onClick={() => handleModifyDate(newSessionDate)}
+                      className="px-4 py-2 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 transition-colors text-sm"
+                    >
+                      Move Records
+                    </button>
+                    <button 
+                      onClick={() => setIsModifyingDate(false)}
+                      className="px-4 py-2 bg-white text-gray-600 font-medium rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Session History & Add New */}
+              <div className="bg-white rounded-xl p-5 border border-gray-200">
+                <h4 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2 uppercase tracking-wider">
+                  <History className="w-4 h-4 text-green-600" /> Session History
+                </h4>
+                <div className="flex flex-wrap gap-3">
+                  {attendanceHistory.map(date => (
+                    <div key={date} className="relative group">
+                      <button
+                        onClick={() => setSelectedDate(date)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                          selectedDate === date 
+                            ? "bg-green-600 text-white border-green-600 shadow-lg shadow-green-500/20 scale-105" 
+                            : "bg-gray-50 text-gray-600 border-gray-100 hover:border-green-300 hover:bg-green-50"
+                        }`}
+                      >
+                        {new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteSession(date); }}
+                        className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-red-600"
+                        title="Delete session"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button 
+                    onClick={() => {
+                      const today = new Date().toISOString().split("T")[0];
+                      setSelectedDate(today);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 flex items-center gap-2 transition-all active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" /> Add Today's Session
+                  </button>
+                  {attendanceHistory.length === 0 && (
+                    <p className="text-gray-400 text-xs italic py-2">No previous sessions found for this class.</p>
+                  )}
                 </div>
               </div>
 
@@ -461,6 +730,32 @@ function AttendanceManagement() {
                     <p className={`text-2xl font-bold ${color}`}>{count}</p>
                   </div>
                 ))}
+              </div>
+
+              {/* Task and Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+                  <label className="block text-sm font-bold text-green-700 mb-2 uppercase tracking-widest flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" /> Lesson Task
+                  </label>
+                  <textarea
+                    placeholder="Enter the lesson task or activity for today..."
+                    value={attendanceTask}
+                    onChange={(e) => { setAttendanceTask(e.target.value); setHasUnsavedChanges(true); }}
+                    className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm min-h-[100px] resize-none"
+                  />
+                </div>
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+                  <label className="block text-sm font-bold text-green-700 mb-2 uppercase tracking-widest flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4" /> Class Summary
+                  </label>
+                  <textarea
+                    placeholder="Provide a brief summary of what happened in class today..."
+                    value={attendanceSummary}
+                    onChange={(e) => { setAttendanceSummary(e.target.value); setHasUnsavedChanges(true); }}
+                    className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm min-h-[100px] resize-none"
+                  />
+                </div>
               </div>
 
               {/* Controls */}

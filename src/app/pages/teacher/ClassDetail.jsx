@@ -2293,6 +2293,21 @@ export function ClassDetail() {
           setAnnouncements((current) => current.map((item) => (String(item.id) === String(editingAnnouncementId) ? normalized : item)));
         } else {
           setAnnouncements((current) => [normalized, ...current]);
+          
+          // NEW: Create notifications for all students in this class
+          if (assignedStudents.length > 0) {
+            const notificationsPayload = assignedStudents.map(student => ({
+              user_id: student.id,
+              title: `New Announcement: ${title}`,
+              body: `A new announcement has been posted in ${classData?.name || classData?.code || 'your class'}.`,
+              type: 'announcement',
+              is_read: false
+            }));
+            
+            supabase.from("notifications").insert(notificationsPayload).then(({ error }) => {
+              if (error) console.error("[ClassDetail] Failed to create notifications:", error);
+            });
+          }
         }
       }
 

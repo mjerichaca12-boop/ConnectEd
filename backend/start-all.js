@@ -19,7 +19,7 @@ function startTunnel() {
     tunnel = spawn('ssh', [
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'ServerAliveInterval=60', // Keep connection active
-        '-R', '80:127.0.0.1:3000',
+        '-R', '80:127.0.0.1:3001',
         'nokey@localhost.run'
     ]);
 

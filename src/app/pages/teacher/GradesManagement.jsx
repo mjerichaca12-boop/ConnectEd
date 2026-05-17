@@ -994,6 +994,21 @@ function GradesManagement() {
         throw new Error("No grades were saved.");
       }
 
+      // NEW: Create notifications for students whose grades were updated
+      if (gradesPayload.length > 0) {
+        const notificationsPayload = gradesPayload.map(grade => ({
+          user_id: grade.student_id,
+          title: "Grades Updated",
+          body: `Your grades for ${studentGrades.find(s => s.id === grade.student_id)?.subjectName || 'your class'} have been updated.`,
+          type: 'grades',
+          is_read: false
+        }));
+
+        supabase.from("notifications").insert(notificationsPayload).then(({ error }) => {
+          if (error) console.error("[GradesManagement] Failed to create notifications:", error);
+        });
+      }
+
       toast.success("Grades successfully saved");
       setSaveSuccess(true);
       setHasUnsavedChanges(false);

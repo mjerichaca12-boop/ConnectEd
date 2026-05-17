@@ -19,7 +19,71 @@ function Attendance() {
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState("2026-01");
-  const [attendanceRecords] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [studentId, setStudentId] = useState("");
+
+  const fetchAttendance = async (id) => {
+    if (!supabase || !id) return;
+    try {
+      // 1. Fetch attendance records
+      const { data: attData, error: attError } = await supabase
+        .from("teacher_student_attendance")
+        .select(`
+          id,
+          attendance_date,
+          attendance_status,
+          remarks,
+          subject_id,
+          subjects (
+            name,
+            code
+          )
+        `)
+        .eq("student_id", id)
+        .order("attendance_date", { ascending: false });
+
+      if (attError) throw attError;
+
+      // 2. Fetch metadata for these dates/subjects
+      const subjectIds = [...new Set((attData || []).map(r => r.subject_id))];
+      const dates = [...new Set((attData || []).map(r => r.attendance_date))];
+
+      let metadataMap = {};
+      if (subjectIds.length > 0 && dates.length > 0) {
+        const { data: metaData } = await supabase
+          .from("attendance_metadata")
+          .select("subject_id, attendance_date, task, summary")
+          .in("subject_id", subjectIds)
+          .in("attendance_date", dates);
+
+        (metaData || []).forEach(m => {
+          metadataMap[`${m.subject_id}_${m.attendance_date}`] = {
+            task: m.task,
+            summary: m.summary
+          };
+        });
+      }
+
+      if (attData) {
+        setAttendanceRecords(attData.map(r => {
+          const meta = metadataMap[`${r.subject_id}_${r.attendance_date}`] || {};
+          return {
+            id: r.id,
+            date: r.attendance_date,
+            status: r.attendance_status,
+            remarks: r.remarks,
+            subjectName: r.subjects?.name || "Unknown",
+            subjectCode: r.subjects?.code || "SUBJ",
+            task: meta.task || "",
+            summary: meta.summary || ""
+          };
+        }));
+      }
+    } catch (err) {
+      console.error("Error in fetchAttendance:", err);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -32,6 +96,8 @@ function Attendance() {
       return;
     }
     setStudentName(user.name);
+    setStudentId(user.id);
+    fetchAttendance(user.id);
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
   const handleLogout = () => {
@@ -209,7 +275,8 @@ function Attendance() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time In</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lesson Task</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Class Summary</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                   </tr>
                 </thead>
@@ -239,8 +306,11 @@ function Attendance() {
                           <span className="text-sm font-medium">{record.status}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {record.timeIn || "-"}
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        <p className="max-w-xs truncate" title={record.task}>{record.task || "-"}</p>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        <p className="max-w-xs truncate" title={record.summary}>{record.summary || "-"}</p>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {record.remarks || "-"}
