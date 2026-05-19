@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
@@ -41,6 +41,9 @@ export function AdminMessages() {
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const adminIdRef = useRef("");
+  const seenMessageIdsRef = useRef(new Set());
+  const conversationsRef = useRef([]);
+  const selectedConvIdRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
@@ -168,32 +171,127 @@ export function AdminMessages() {
     resolveAdmin();
   }, [navigate]);
 
-  // Real-time subscription for new messages
-  useEffect(() => {
-    if (!supabase || !adminId) return;
-    const channel = supabase
-      .channel(`admin-messages-${adminId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-        const newMsg = payload.new;
-        if (!newMsg) return;
-        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
-        const isDirectForAdmin = String(newMsg.sender_id) === String(currentAdminId) || String(newMsg.receiver_id) === String(currentAdminId);
-        const isGroupMsg = !!newMsg.conversation_id;
-        if (isDirectForAdmin || isGroupMsg) {
-          console.log("[AdminMessages] New relevant message received, reloading...");
-          await loadConversationsFromDB();
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [adminId]);
-
   const saveConversations = (updated) => {
     const sorted = [...updated].sort(
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
     setConversations(sorted);
   };
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConvId;
+  }, [selectedConvId]);
+
+  const markMessageSeen = useCallback((messageId) => {
+    const id = String(messageId || "").trim();
+    if (id) {
+      seenMessageIdsRef.current.add(id);
+    }
+  }, []);
+
+  const appendIncomingMessage = useCallback((row, currentAdminId) => {
+    if (!row?.id || !currentAdminId) return false;
+
+    const messageId = String(row.id);
+    if (seenMessageIdsRef.current.has(messageId)) return false;
+
+    const senderId = String(row.sender_id || "");
+    const receiverId = String(row.receiver_id || "");
+    const conversationId = String(row.conversation_id || "").trim();
+    const targetConversationId = conversationId || `conv_${senderId === String(currentAdminId) ? receiverId : senderId}`;
+    const isRelevant = conversationId
+      ? conversationsRef.current.some((conversation) => String(conversation.id) === conversationId)
+      : senderId === String(currentAdminId) || receiverId === String(currentAdminId);
+
+    if (!isRelevant) return false;
+
+    let fileUrl = String(row.file_url || "").trim();
+    let fileName = String(row.file_name || "").trim();
+    let fileType = String(row.file_type || "").trim();
+    let fileSize = Number(row.file_size || 0);
+    let text = String(row.message_text || "").trim();
+
+    if (!fileUrl && row.content) {
+      try {
+        const contentObj = JSON.parse(row.content);
+        if (contentObj.file_url) {
+          fileUrl = String(contentObj.file_url || "").trim();
+          fileName = String(contentObj.file_name || "").trim();
+          fileType = String(contentObj.file_type || "").trim();
+          fileSize = Number(contentObj.file_size || 0);
+          text = String(contentObj.message_text || "").trim();
+        }
+      } catch (error) {
+        text = String(row.content || "").trim();
+      }
+    }
+
+    const senderProfile = allTeachers.find((person) => String(person.id) === senderId);
+    const fileTypeValue = fileType;
+    const isAdminSender = senderId === String(currentAdminId);
+    const message = {
+      id: messageId,
+      from: isAdminSender ? "admin" : "other",
+      senderName: isAdminSender ? adminName || "Admin" : senderProfile?.name || "User",
+      text,
+      time: String(row.timestamp || row.created_at || new Date().toISOString()),
+      fileUrl,
+      fileName,
+      fileType: fileTypeValue,
+      fileSize,
+      attachmentKind: fileTypeValue ? (fileTypeValue.startsWith("image/") ? "image" : fileTypeValue.startsWith("video/") ? "video" : "document") : "",
+      isRead: Boolean(row.is_read),
+      isSeen: isAdminSender || Boolean(row.is_read),
+    };
+
+    seenMessageIdsRef.current.add(messageId);
+
+    setConversations((current) => {
+      let updated = false;
+
+      const next = current.map((conversation) => {
+        if (String(conversation.id) !== String(targetConversationId)) return conversation;
+
+        const alreadyExists = (conversation.messages || []).some((item) => String(item.id) === messageId);
+        if (alreadyExists) return conversation;
+
+        updated = true;
+        const isActiveConversation = String(selectedConvIdRef.current || "") === String(conversation.id);
+
+        return {
+          ...conversation,
+          messages: [...(conversation.messages || []), message],
+          lastMessageTime: message.time,
+          unreadCount: isActiveConversation ? 0 : (conversation.unreadCount || 0) + (isAdminSender ? 0 : 1),
+        };
+      });
+
+      if (!updated) return current;
+
+      return next.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+    });
+
+    return true;
+  }, [adminName, allTeachers]);
+
+  // Real-time subscription for new messages
+  useEffect(() => {
+    if (!supabase || !adminId) return;
+    const channel = supabase
+      .channel("global-chat")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const newMsg = payload.new;
+        if (!newMsg) return;
+        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+        appendIncomingMessage(newMsg, currentAdminId);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [adminId, appendIncomingMessage]);
 
   const loadConversationsFromDB = async () => {
     try {
@@ -306,6 +404,7 @@ export function AdminMessages() {
         
         // Update last message time
         conversation.lastMessageTime = row.timestamp || row.created_at || conversation.lastMessageTime;
+        markMessageSeen(row.id);
       });
       
       // Load group conversations
@@ -401,6 +500,8 @@ export function AdminMessages() {
                   isSeen: String(row.sender_id || "") === currentAdminId,
                 };
               });
+
+              (groupMessages || []).forEach((row) => markMessageSeen(row.id));
 
               groupConversations.push({
                 id: conv.id,
@@ -668,7 +769,12 @@ export function AdminMessages() {
         setPageError(`Failed to send: ${error.message}`);
       } else {
         console.log("[AdminMessages] Message saved to database:", data);
-        await loadConversationsFromDB();
+        if (data?.[0]) {
+          markMessageSeen(data[0].id);
+          appendIncomingMessage(data[0], adminSenderId);
+        } else {
+          await loadConversationsFromDB();
+        }
       }
     } catch (err) {
       console.error("[AdminMessages] Supabase send error:", err);

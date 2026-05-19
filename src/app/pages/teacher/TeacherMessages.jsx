@@ -114,6 +114,9 @@ function TeacherMessages() {
   const messageContainerRef = useRef(null);
   const fileInputRef = useRef(null);
   const conversationLoadInFlightRef = useRef(false);
+  const seenMessageIdsRef = useRef(new Set());
+  const conversationsRef = useRef([]);
+  const selectedConvIdRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
   const [teacherId, setTeacherId] = useState("");
@@ -150,6 +153,92 @@ function TeacherMessages() {
     );
     setConversations(sorted);
   };
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConvId;
+  }, [selectedConvId]);
+
+  const markMessageSeen = useCallback((messageId) => {
+    const id = String(messageId || "").trim();
+    if (id) {
+      seenMessageIdsRef.current.add(id);
+    }
+  }, []);
+
+  const appendIncomingMessage = useCallback((row, currentTeacherId, teacherDisplayName) => {
+    if (!row?.id || !currentTeacherId) return false;
+
+    const messageId = String(row.id);
+    if (seenMessageIdsRef.current.has(messageId)) return false;
+
+    const senderId = String(row.sender_id || "");
+    const receiverId = String(row.receiver_id || "");
+    const conversationId = String(row.conversation_id || "").trim();
+    const isRelevant = conversationId
+      ? conversationsRef.current.some((conversation) => String(conversation.id) === conversationId)
+      : senderId === String(currentTeacherId) || receiverId === String(currentTeacherId);
+
+    if (!isRelevant) return false;
+
+    const targetConversationId = conversationId || `conv_${senderId === String(currentTeacherId) ? receiverId : senderId}`;
+    const message = toConversationMessage(row, currentTeacherId, teacherDisplayName);
+
+    seenMessageIdsRef.current.add(messageId);
+
+    setConversations((current) => {
+      let updated = false;
+
+      const next = current.map((conversation) => {
+        if (String(conversation.id) !== String(targetConversationId)) return conversation;
+
+        const alreadyExists = (conversation.messages || []).some((item) => String(item.id) === messageId);
+        if (alreadyExists) return conversation;
+
+        updated = true;
+        const isActiveConversation = String(selectedConvIdRef.current || "") === String(conversation.id);
+        return {
+          ...conversation,
+          messages: [...(conversation.messages || []), message],
+          lastMessageTime: message.time,
+          unreadCount: isActiveConversation ? 0 : (conversation.unreadCount || 0) + 1,
+        };
+      });
+
+      if (!updated) {
+        if (conversationId) return current;
+
+        const participantId = senderId === String(currentTeacherId) ? receiverId : senderId;
+        if (!participantId) return current;
+
+        const fallbackConversation = {
+          id: targetConversationId,
+          participantId,
+          participantName: senderId === String(currentTeacherId) ? "User" : "Admin",
+          participantRole: senderId === String(currentTeacherId) ? "student" : "admin",
+          email: "",
+          classCode: "",
+          section: "",
+          messages: [message],
+          lastMessageTime: message.time,
+          unreadCount: 1,
+          isVideoMeet: false,
+          isGroup: false,
+        };
+
+        return [fallbackConversation, ...current].sort(
+          (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+        );
+      }
+
+      return next.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+    });
+
+    return true;
+  }, []);
 
   const resolveTeacherId = useCallback(async (email) => {
     try {
@@ -280,6 +369,7 @@ function TeacherMessages() {
         if (!counterpartId) return;
 
         const msgObj = toConversationMessage(row, currentTeacherId, teacherDisplayName);
+        markMessageSeen(row.id);
 
         if (!conversationsByParticipant.has(counterpartId)) {
           const profile = profileMap.get(counterpartId) || {};
@@ -341,6 +431,8 @@ function TeacherMessages() {
               const groupMsgObjs = (groupMessages || []).map((row) => 
                 toConversationMessage(row, currentTeacherId, teacherDisplayName)
               );
+
+              (groupMessages || []).forEach((row) => markMessageSeen(row.id));
 
               conversationsByParticipant.set(conv.id, {
                 id: conv.id,
@@ -407,25 +499,16 @@ function TeacherMessages() {
   useEffect(() => {
     if (!supabase || !teacherId) return;
     const channel = supabase
-      .channel(`teacher-messages-${teacherId}`)
+      .channel("global-chat")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: MESSAGE_TABLE }, async (payload) => {
         const newMsg = payload.new;
         if (!newMsg) return;
-        
-        const isDirectForTeacher = String(newMsg.sender_id) === String(teacherId) || String(newMsg.receiver_id) === String(teacherId);
-        const isGroupMsg = !!newMsg.conversation_id;
-        
-        if (isDirectForTeacher || isGroupMsg) {
-          console.log("[TeacherMessages] New relevant message received, reloading...");
-          const userData = localStorage.getItem("currentUser");
-          if (!userData) return;
-          const user = JSON.parse(userData);
-          await loadConversations(teacherId, user.name || "Teacher");
-        }
+
+        appendIncomingMessage(newMsg, teacherId, teacherName || "Teacher");
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [teacherId, loadConversations]);
+  }, [teacherId, teacherName, appendIncomingMessage]);
 
   useEffect(() => {
     let isMounted = true;
@@ -692,6 +775,8 @@ function TeacherMessages() {
       fileSize: Number(data?.[0]?.file_size || uploadedFileSize || 0),
       attachmentKind: attachmentFile ? getAttachmentKindFromFile(attachmentFile) : "",
     };
+
+    markMessageSeen(msg.id);
 
     const updated = conversations.map((c) =>
       c.id === activeConversation.id
