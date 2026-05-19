@@ -1255,7 +1255,6 @@ function TeacherManagement() {
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
                 <h2 className="text-lg font-bold text-gray-900">Teacher Management</h2>
               </div>
               <NotificationDropdown
@@ -1278,7 +1277,7 @@ function TeacherManagement() {
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Registry</h1>
-                <p className="text-gray-600">{teachers.length} teachers loaded from Supabase</p>
+                <p className="text-gray-600">Teacher records are up to date</p>
               </div>
               <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
                 <UserPlus className="w-5 h-5" />
