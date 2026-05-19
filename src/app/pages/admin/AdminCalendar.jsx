@@ -6,8 +6,10 @@ import { DashboardCalendar } from "../../components/DashboardCalendar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { toast } from "sonner";
+
+const db = supabaseAdmin || supabase;
 
 export function AdminCalendar() {
   const navigate = useNavigate();
@@ -17,7 +19,6 @@ export function AdminCalendar() {
   const [loading, setLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, eventId: "", eventTitle: "" });
@@ -44,7 +45,7 @@ export function AdminCalendar() {
   });
   const [formErrors, setFormErrors] = useState({});
 
-  const calendarTableCandidates = ["school_calendar_events", "calendar_events"];
+  const calendarTableCandidates = ["school_calendar_events", "school_events", "calendar_events"];
 
   const audienceOptions = [
     { value: "School-wide", label: "School-wide" },
@@ -122,12 +123,12 @@ export function AdminCalendar() {
   };
 
   const resolveCalendarTable = async () => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
     for (const tableName of calendarTableCandidates) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      const { error } = await db.from(tableName).select("id", { count: "exact", head: true });
       if (!error) {
         setCalendarTable(tableName);
         return tableName;
@@ -138,12 +139,12 @@ export function AdminCalendar() {
   };
 
   const getCalendarTableName = async () => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
     if (calendarTable) {
-      const { error } = await supabase.from(calendarTable).select("id", { count: "exact", head: true });
+      const { error } = await db.from(calendarTable).select("id", { count: "exact", head: true });
       if (!error) return calendarTable;
     }
 
@@ -151,12 +152,12 @@ export function AdminCalendar() {
   };
 
   const loadEvents = async (tableNameOverride) => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
     const tableName = tableNameOverride || (await getCalendarTableName());
-    const { data, error } = await supabase.from(tableName).select("*");
+    const { data, error } = await db.from(tableName).select("*");
 
     if (error) {
       throw new Error(error.message);
@@ -166,7 +167,7 @@ export function AdminCalendar() {
   };
 
   const resolveCalendarColumns = async (tableNameOverride) => {
-    if (!supabase) {
+    if (!db) {
       throw new Error("Supabase client is not configured.");
     }
 
@@ -191,13 +192,28 @@ export function AdminCalendar() {
     const detected = [];
 
     for (const columnName of candidates) {
-      const { error } = await supabase.from(tableName).select(columnName, { count: "exact", head: true });
-      if (!error) {
-        detected.push(columnName);
+      try {
+        const { error } = await db.from(tableName).select(columnName, { count: "exact", head: true });
+        if (!error) {
+          detected.push(columnName);
+        }
+      } catch (err) {
+        console.debug(`Column detection failed for ${columnName}:`, err);
       }
     }
 
+    // Fallback: ensure we have the minimum required columns
+    const expectedColumns = ["id", "title", "description", "event_date", "event_time", "target_audience", "created_at", "updated_at"];
+    const missingRequired = expectedColumns.filter(col => !detected.includes(col));
+    
+    if (missingRequired.length > 0) {
+      console.warn("Column detection incomplete. Missing:", missingRequired);
+      // Add the expected columns as a fallback
+      detected.push(...missingRequired);
+    }
+
     setCalendarColumns(detected);
+    console.debug("Detected calendar columns:", detected);
     return detected;
   };
 
@@ -209,37 +225,42 @@ export function AdminCalendar() {
     return resolveCalendarColumns(tableNameOverride);
   };
 
-  const buildCreatePayload = (columns, timestamp) => {
+  const buildCreatePayload = (columns, timestamp, userId) => {
+    const titleColumn = resolveColumnName(columns, ["title", "event_title", "name"]) || "title";
     const dateColumn = resolveColumnName(columns, ["event_date", "date"]) || "event_date";
-    const timeColumn = resolveColumnName(columns, ["event_time", "time"]) || "event_time";
+    const timeColumn = resolveColumnName(columns, ["event_time", "time"]);
     const audienceColumn = resolveColumnName(columns, ["target_audience", "audience"]) || "target_audience";
-    const createdByColumn = resolveColumnName(columns, ["created_by", "createdBy", "author"]);
-    const createdAtColumn = resolveColumnName(columns, ["created_at"]);
-    const updatedAtColumn = resolveColumnName(columns, ["updated_at"]);
+    const descriptionColumn = resolveColumnName(columns, ["description", "details", "content"]);
 
     const normalizedAudience = normalizeAudienceValue(formData.targetAudience) || "School-wide";
 
-    const payload = {
-      title: formData.title.trim(),
-      description: formData.description.trim(),
-      [dateColumn]: formData.eventDate,
-      [timeColumn]: formData.eventTime || null,
-      [audienceColumn]: normalizedAudience
-    };
+    const payload = {};
 
-    if (createdByColumn) {
-      payload[createdByColumn] = "admin";
+    payload[titleColumn] = formData.title.trim();
+    payload[dateColumn] = formData.eventDate;
+    payload[audienceColumn] = normalizedAudience;
+
+    if (formData.description.trim()) {
+      if (descriptionColumn) {
+        payload[descriptionColumn] = formData.description.trim();
+      } else if (columns.includes("description")) {
+        payload.description = formData.description.trim();
+      }
     }
 
-    if (createdAtColumn) {
-      payload[createdAtColumn] = timestamp;
+    if (formData.eventTime && timeColumn) {
+      payload[timeColumn] = formData.eventTime;
     }
 
-    if (updatedAtColumn) {
-      payload[updatedAtColumn] = timestamp;
-    }
+    // Only include columns that actually exist in the table
+    const filteredPayload = Object.fromEntries(
+      Object.entries(payload).filter(([k]) => columns.includes(k))
+    );
 
-    return payload;
+    console.debug("Calendar insert payload:", JSON.stringify(filteredPayload));
+    console.debug("Available columns:", columns);
+
+    return filteredPayload;
   };
 
   const refreshEvents = async (tableName) => {
@@ -326,11 +347,37 @@ export function AdminCalendar() {
 
     const channel = supabase
       .channel("school-calendar-events")
-      .on("postgres_changes", { event: "*", schema: "public", table: calendarTable }, async () => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: calendarTable }, (payload) => {
         try {
-          await refreshEvents(calendarTable);
-        } catch {
-          // Keep the current list if realtime refresh fails.
+          const incoming = normalizeEvent(payload?.new ?? {});
+          if (incoming?.id) {
+            // Add the new event to the list
+            setEvents((current) => sortEvents([incoming, ...current]));
+          }
+        } catch (err) {
+          console.error("Failed to handle INSERT event:", err);
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: calendarTable }, (payload) => {
+        try {
+          const updated = normalizeEvent(payload?.new ?? {});
+          if (updated?.id) {
+            // Update the event in the list
+            setEvents((current) => sortEvents(current.map((e) => e.id === updated.id ? updated : e)));
+          }
+        } catch (err) {
+          console.error("Failed to handle UPDATE event:", err);
+        }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: calendarTable }, (payload) => {
+        try {
+          const deletedId = String(payload?.old?.id ?? "");
+          if (deletedId) {
+            // Remove the event from the list
+            setEvents((current) => current.filter((e) => e.id !== deletedId));
+          }
+        } catch (err) {
+          console.error("Failed to handle DELETE event:", err);
         }
       })
       .subscribe();
@@ -339,13 +386,6 @@ export function AdminCalendar() {
       supabase.removeChannel(channel);
     };
   }, [calendarTable]);
-
-  useEffect(() => {
-    if (!successMessage) return undefined;
-
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -369,7 +409,6 @@ export function AdminCalendar() {
     event.preventDefault();
 
     setEventsError("");
-    setSuccessMessage("");
 
     if (!validateForm()) {
       return;
@@ -384,7 +423,7 @@ export function AdminCalendar() {
       return;
     }
 
-    if (!supabase) {
+    if (!db) {
       setEventsError("Supabase client is not configured.");
       return;
     }
@@ -392,39 +431,34 @@ export function AdminCalendar() {
     setIsSubmitting(true);
 
     try {
+      const userData = localStorage.getItem("currentUser");
+      const user = userData ? JSON.parse(userData) : null;
+
       const tableName = await getCalendarTableName();
-      const timestamp = new Date().toISOString();
       const columns = await getCalendarColumns(tableName);
-      const payload = buildCreatePayload(columns, timestamp);
+      const payload = buildCreatePayload(columns, new Date().toISOString(), user?.id || null);
 
-      const dateColumn = resolveColumnName(columns, ["event_date", "date"]) || "event_date";
-      const timeColumn = resolveColumnName(columns, ["event_time", "time"]) || "event_time";
-      const audienceColumn = resolveColumnName(columns, ["target_audience", "audience"]) || "target_audience";
-
-      const optimisticEvent = {
-        id: `temp-${timestamp}`,
-        title: payload.title,
-        description: payload.description,
-        eventDate: payload[dateColumn],
-        eventTime: payload[timeColumn] || "",
-        targetAudience: payload[audienceColumn],
-        createdAt: timestamp
-      };
-
-      setEvents((current) => sortEvents([optimisticEvent, ...current.filter((item) => item.id !== optimisticEvent.id)]));
-
-      const { error } = await supabase.from(tableName).insert(payload);
+      console.debug("Inserting calendar payload:", JSON.stringify(payload));
+      const { data, error } = await db.from(tableName).insert(payload).select();
+      
       if (error) {
-        throw new Error(error.message);
+        console.error("Supabase Database Insert Error Details:", JSON.stringify(error, null, 2));
+        throw new Error(`Database Error: ${error.message} \nHint: ${error.hint || 'None'} \nDetails: ${error.details || 'None'}`);
       }
 
-      await refreshEvents(tableName);
+      // Add the newly created event to the list immediately
+      if (data && Array.isArray(data) && data.length > 0) {
+        const newEvent = normalizeEvent(data[0]);
+        setEvents((current) => sortEvents([newEvent, ...current]));
 
-      // Refresh the calendar preview
-      if (calendarRef.current?.refreshCalendar) {
-        await calendarRef.current.refreshCalendar().catch(() => {
-          // Calendar refresh failed but event was added
-        });
+        // Update the calendar preview
+        if (calendarRef.current?.upsertEvent) {
+          try {
+            calendarRef.current.upsertEvent(newEvent);
+          } catch (err) {
+            console.warn("Calendar upsert failed:", err);
+          }
+        }
       }
 
       toast.success("Event added successfully.");
@@ -438,7 +472,7 @@ export function AdminCalendar() {
   };
 
   const handleDeleteEvent = async (eventId) => {
-    if (!supabase) {
+    if (!db) {
       setEventsError("Supabase client is not configured.");
       return;
     }
@@ -448,7 +482,7 @@ export function AdminCalendar() {
       const previous = events;
       setEvents((current) => current.filter((item) => item.id !== eventId));
 
-      const { error } = await supabase.from(tableName).delete().eq("id", eventId);
+      const { error } = await db.from(tableName).delete().eq("id", eventId);
       if (error) {
         setEvents(previous);
         throw new Error(error.message);
@@ -559,10 +593,10 @@ export function AdminCalendar() {
                   Manage the official school calendar. Changes made here will instantly reflect on the Teacher dashboard.
                 </p>
 
-                {(eventsError || successMessage) && (
-                  <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${eventsError ? "border-rose-200 bg-rose-50 text-rose-700" : "border-green-200 bg-green-50 text-green-700"}`}>
+                {eventsError && (
+                  <div className="rounded-xl border px-4 py-3 text-sm flex items-start gap-3 border-rose-200 bg-rose-50 text-rose-700">
                     <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <span>{eventsError || successMessage}</span>
+                    <span>{eventsError}</span>
                   </div>
                 )}
 

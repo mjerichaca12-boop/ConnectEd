@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { supabase } from "@/app/lib/supabaseClient";
@@ -94,7 +95,6 @@ function TeacherProfile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [profile, setProfile] = useState(emptyProfile);
   const [editedPhone, setEditedPhone] = useState("");
@@ -197,10 +197,10 @@ function TeacherProfile() {
   }, [profilePicturePreview]);
 
   useEffect(() => {
-    if (!successMessage && !errorMessage) return;
-    const timer = window.setTimeout(() => { setSuccessMessage(""); setErrorMessage(""); }, 4000);
+    if (!errorMessage) return;
+    const timer = window.setTimeout(() => { setErrorMessage(""); }, 4000);
     return () => window.clearTimeout(timer);
-  }, [successMessage, errorMessage]);
+  }, [errorMessage]);
 
   const handleLogout = () => {
     if (supabase) void supabase.auth.signOut();
@@ -215,7 +215,6 @@ function TeacherProfile() {
     setProfilePictureFile(null);
     setProfilePicturePreview(profile.avatarUrl || "");
     setErrorMessage("");
-    setSuccessMessage("");
   };
 
   const handleCancel = () => {
@@ -236,7 +235,7 @@ function TeacherProfile() {
     if (!hasPhoneChange && !hasPasswordChange && !hasPictureChange) { setIsEditing(false); return; }
     if (hasPhoneChange && !isValidPhoneNumber(trimmedPhone)) { setErrorMessage("Phone number must be 11 digits and start with 09."); return; }
 
-    setIsSaving(true); setErrorMessage(""); setSuccessMessage("");
+    setIsSaving(true); setErrorMessage("");
     const authResult = await supabase.auth.getUser();
     const authUser = authResult.data?.user || null;
     let nextAvatarUrl = profile.avatarUrl;
@@ -304,7 +303,7 @@ function TeacherProfile() {
       if (hasPictureChange && previousAvatarPath) {
         await supabase.storage.from(STORAGE_BUCKET).remove([previousAvatarPath]).catch(console.error);
       }
-      setSuccessMessage(
+      toast.success(
         avatarColumnUnavailable
           ? "Profile updated. Profile picture could not be saved because avatar_url is not available in your profiles table."
           : "Profile updated successfully."
@@ -363,12 +362,6 @@ function TeacherProfile() {
 
         <div className="p-8 space-y-7">
           {/* Alert messages */}
-          {successMessage && (
-            <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
-              <p className="text-green-300 text-sm font-medium">{successMessage}</p>
-            </div>
-          )}
           {errorMessage && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
@@ -532,7 +525,7 @@ function TeacherProfile() {
                 ) : (
                   <div className="flex items-center gap-4 px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200">
                     <Lock className="w-5 h-5 text-gray-600" />
-                    <span className="text-gray-600 text-base">Password is managed securely through Supabase Auth</span>
+                    <span className="text-gray-600 text-base">Password is managed securely through ConnectEd Forget Password</span>
                   </div>
                 )}
               </div>

@@ -6,6 +6,30 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_AUTH_STORAGE_KEY = "connected-supabase-auth-token";
+const APP_URL = String(import.meta.env.VITE_APP_URL || "").trim();
+
+const getAppOrigin = () => {
+  if (APP_URL) {
+    try {
+      return new URL(APP_URL).origin;
+    } catch {
+      // Fall back to runtime origin when VITE_APP_URL is malformed.
+    }
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+
+  return "";
+};
+
+export const getAuthRedirectUrl = (path = "") => {
+  const base = getAppOrigin();
+  const normalizedPath = String(path || "").replace(/^\/+/, "");
+  if (!base) return normalizedPath ? `/${normalizedPath}` : "/";
+  return normalizedPath ? `${base}/${normalizedPath}` : base;
+};
 
 console.log(`[ConnectEd] build source: ${BUILD_SOURCE}`);
 console.log("🔍 Supabase Config Debug:");

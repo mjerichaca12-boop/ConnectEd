@@ -40,19 +40,39 @@ const generateTempPassword = () => {
 };
 
 const teacherSelectColumns = "*";
-const subjectSelectColumns = "id, code, name, section";
+const subjectSelectColumns = "id, code, name, section, grade_level";
 const emptyTeacherForm = {
   first_name: "",
   middle_name: "",
   last_name: "",
   email: "",
   phone: "",
+  grade_level: "",
   subjects: [],
   status: "Active",
   password: ""
 };
 const emptyAssignForm = {
   assigned_class: ""
+};
+
+const getApiErrorMessage = (error, fallback = "Request failed.") => {
+  if (!error) return fallback;
+  if (error instanceof Error && error.message) return error.message;
+
+  if (typeof error === "object") {
+    const message = "message" in error ? String(error.message || "").trim() : "";
+    const details = "details" in error ? String(error.details || "").trim() : "";
+    const hint = "hint" in error ? String(error.hint || "").trim() : "";
+
+    if (message && details) return `${message} (${details})`;
+    if (message) return message;
+    if (details) return details;
+    if (hint) return hint;
+  }
+
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return fallback;
 };
 
 function TeacherManagement() {
@@ -81,7 +101,6 @@ function TeacherManagement() {
   const [assignFormErrors, setAssignFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -134,7 +153,7 @@ function TeacherManagement() {
   const getSubjectLabel = (subjectId) => {
     const subject = availableSubjects.find((item) => item.id === subjectId);
     if (!subject) return subjectId || "Unknown subject";
-    return `${subject.code} - ${subject.name} (${subject.section || "No section assigned"})`;
+    return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"})`;
   };
   const splitTeacherName = (fullName) => {
     const parts = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
@@ -154,16 +173,48 @@ function TeacherManagement() {
     };
   };
   const normalizePhone = (value) => value.replace(/\D/g, "").slice(0, 11);
+  const normalizeGradeForCompare = (value) => {
+    if (!value) return "";
+    const v = String(value || "").trim().toLowerCase();
+    const digits = v.match(/([0-9]{1,2})/);
+    if (digits) return `grade ${digits[1]}`;
+    return v.replace(/grade|year|level|\s+/g, " ").trim();
+  };
+  const normalizeGradeLevel = (value) => {
+    const v = String(value || "").trim();
+    if (!v) return "";
+    const digits = v.match(/\d+/);
+    if (digits) return String(digits[0]);
+    return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+  };
+
+  const extractGradeFromText = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    const labeled = text.match(/(?:grade|year)\s*([0-9]{1,2})/i);
+    if (labeled) return labeled[1];
+    const numericOnly = text.match(/^([1-9]|1[0-2])$/);
+    if (numericOnly) return numericOnly[1];
+    const digits = text.match(/\d{1,2}/);
+    if (digits) return digits[0];
+    return "";
+  };
   const normalizeSubjects = (value) => {
+    let rawArray = [];
     if (Array.isArray(value)) {
-      return value.map((subject) => String(subject).trim()).filter(Boolean);
+      rawArray = value;
+    } else if (typeof value === "string") {
+      const cleaned = value.replace(/[{}]/g, "");
+      rawArray = cleaned.split(",");
     }
 
-    if (typeof value === "string") {
-      return value.split(",").map((subject) => subject.trim()).filter(Boolean);
-    }
-
-    return [];
+    return rawArray
+      .map((item) => String(item || "").trim())
+      .filter((item) => {
+        if (!item) return false;
+        const low = item.toLowerCase();
+        return low !== "null" && low !== "undefined" && low !== "select teacher" && low !== "select subject";
+      });
   };
   const normalizeAssignedClasses = (value) => {
     if (Array.isArray(value)) {
@@ -186,13 +237,13 @@ function TeacherManagement() {
       if (!subject) {
         return {
           subjectLabel: subjectId || "Unknown subject",
-          classLabel: "No section assigned"
+          classLabel: "No grade assigned"
         };
       }
 
       return {
         subjectLabel: `${subject.code} - ${subject.name}`,
-        classLabel: subject.section || "No section assigned"
+        classLabel: subject.grade_level || "No grade assigned"
       };
     });
   };
@@ -231,6 +282,10 @@ function TeacherManagement() {
         const assignedClass = nextValue.trim();
         if (!assignedClass) return "";
         if (!isValidAssignedClass(assignedClass)) return "Assigned class or section is invalid";
+        return "";
+      }
+      case "grade_level": {
+        if (!nextValue || !String(nextValue).trim()) return "Grade level is required";
         return "";
       }
       default:
@@ -275,7 +330,7 @@ function TeacherManagement() {
 
     const { data, error } = await db
       .from("subjects")
-      .select(subjectSelectColumns)
+      .select("*")
       .order("code", { ascending: true });
 
     if (error) {
@@ -283,6 +338,8 @@ function TeacherManagement() {
     }
 
     setAvailableSubjects(data ?? []);
+    // Debug: expose subject rows for troubleshooting grade fields (use console.log so it's visible)
+    console.log("[TeacherManagement] fetched subjects:", (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name, grade_level: s.grade_level, year_level: s.year_level, grade: s.grade, year: s.year, section: s.section })));
   };
 
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
@@ -333,6 +390,7 @@ function TeacherManagement() {
 
     const previousIds = [...new Set(normalizeSubjects(previousSubjectIds))];
     const nextIds = [...new Set(normalizeSubjects(nextSubjectIds))];
+    const addSubjectIds = nextIds.filter((id) => !previousIds.includes(id));
     const affectedSubjectIds = [...new Set([...previousIds, ...nextIds])];
 
     if (affectedSubjectIds.length === 0) {
@@ -349,10 +407,34 @@ function TeacherManagement() {
       throw new Error(subjectFetchError.message);
     }
 
-    const snapshot = new Map((currentSubjects ?? []).map((subject) => [subject.id, subject.teacher_id ?? null]));
+    const snapshot = new Map((currentSubjects ?? []).map((subject) => {
+      const t = String(subject.teacher_id || "").trim();
+      const cleanTeacherId = (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
+      return [subject.id, cleanTeacherId];
+    }));
     const displacedTeacherIds = new Set();
-    const addSubjectIds = nextIds;
     const removeSubjectIds = previousIds.filter((subjectId) => !nextIds.includes(subjectId));
+
+    // Prevent assigning subjects that don't match the teacher's grade_level (only for newly added subjects)
+    if (addSubjectIds.length > 0) {
+      try {
+        const { data: teacherRow } = await db.from("profiles").select("grade_level, year_level, grade, year").eq("id", teacherId).maybeSingle();
+        const teacherGradeNorm = normalizeGradeLevel(String(teacherRow?.grade_level || teacherRow?.year_level || teacherRow?.grade || teacherRow?.year || ""));
+
+        if (teacherGradeNorm) {
+          const { data: subjectsToAdd } = await db.from("subjects").select("id, grade_level").in("id", addSubjectIds);
+          const mismatch = (subjectsToAdd ?? []).some((s) => {
+            const subjGradeRaw = String(s?.grade_level || "").trim();
+            return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) !== teacherGradeNorm;
+          });
+          if (mismatch) {
+            throw new Error("One or more subjects being assigned do not match the teacher's grade level.");
+          }
+        }
+      } catch (err) {
+        throw err instanceof Error ? err : new Error("Failed to validate subject grade parity.");
+      }
+    }
 
     try {
       if (addSubjectIds.length > 0) {
@@ -428,7 +510,8 @@ function TeacherManagement() {
       ...teacher,
       display_name: formatTeacherFullName(teacher),
       status: normalizeTeacherStatus(teacher.status),
-      subjects: normalizeSubjects(teacher.subjects)
+      subjects: normalizeSubjects(teacher.subjects),
+      grade_level: teacher.grade_level || teacher.year_level || ""
     })));
   };
 
@@ -484,6 +567,36 @@ function TeacherManagement() {
 
     if (assignedClass && !isValidAssignedClass(assignedClass)) {
       errors.assigned_class = "Assigned class or section is invalid";
+    }
+
+    // Ensure grade parity between teacher and selected subjects when grade_level is provided
+    if (formData.grade_level && normalizedSubjects.length > 0) {
+      try {
+        const { data: subjectRows, error: subjErr } = await db
+          .from("subjects")
+          .select("*")
+          .in("id", normalizedSubjects);
+
+        if (subjErr) {
+          errors.form = subjErr.message;
+          return errors;
+        }
+
+        const teacherGradeNorm = normalizeGradeLevel(formData.grade_level);
+        const mismatch = (subjectRows ?? []).some((s) => {
+          // If this subject is already assigned to the same teacher (excludeId), allow it to remain even if grade differs
+          if (String(s?.teacher_id || "") === String(excludeId)) return false;
+          const subjGradeRaw = String(s?.grade_level || "").trim();
+          return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) !== teacherGradeNorm;
+        });
+
+        if (mismatch) {
+          errors.subjects = "One or more selected subjects do not match the teacher's grade level.";
+        }
+      } catch (err) {
+        errors.form = err instanceof Error ? err.message : "Failed to validate subject grade levels.";
+        return errors;
+      }
     }
 
     if (Object.keys(errors).length > 0) {
@@ -622,13 +735,6 @@ function TeacherManagement() {
     };
   }, [navigate]);
 
-  useEffect(() => {
-    if (!successMessage) return;
-
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
-
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
@@ -668,6 +774,7 @@ function TeacherManagement() {
       last_name,
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
+      grade_level: teacher.grade_level ?? "",
       subjects: normalizeSubjects(teacher.subjects),
       status: teacher.status ?? "Active"
     });
@@ -717,7 +824,6 @@ function TeacherManagement() {
 
     setIsSubmitting(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     let createdTeacherId = "";
 
@@ -744,7 +850,8 @@ function TeacherManagement() {
         last_name: teacherFormData.last_name.trim() || null,
         email: teacherEmail,
         phone: normalizePhone(teacherFormData.phone),
-        status: normalizeTeacherStatus(teacherFormData.status)
+        status: normalizeTeacherStatus(teacherFormData.status),
+        year_level: teacherFormData.grade_level?.trim() || null
       };
 
       const { data, error } = await db.from("profiles").insert(payload).select(teacherSelectColumns).single();
@@ -756,7 +863,11 @@ function TeacherManagement() {
 
       createdTeacherId = data.id;
 
-      const nextTeacher = { ...data, subjects: normalizeSubjects(data.subjects) };
+      const nextTeacher = { 
+        ...data, 
+        grade_level: data.grade_level || data.year_level || "",
+        subjects: normalizeSubjects(data.subjects) 
+      };
       await syncTeacherSubjectAssignments({
         teacherId: nextTeacher.id,
         previousSubjectIds: [],
@@ -811,7 +922,6 @@ function TeacherManagement() {
 
     setIsSubmitting(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     let updateSucceeded = false;
 
@@ -825,8 +935,14 @@ function TeacherManagement() {
         last_name: editFormData.last_name.trim() || null,
         email: editFormData.email.trim().toLowerCase(),
         phone: normalizePhone(editFormData.phone),
-        status: normalizeTeacherStatus(editFormData.status)
+        status: normalizeTeacherStatus(editFormData.status),
+        year_level: editFormData.grade_level?.trim() || null
       };
+
+      const supportsYearLevel = Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "year_level") || Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "grade_level");
+      if (!supportsYearLevel) {
+        delete payload.year_level;
+      }
 
       if (selectedTeacher.role !== "teacher") {
         throw new Error("Only teacher profiles can be updated.");
@@ -844,7 +960,11 @@ function TeacherManagement() {
 
       updateSucceeded = true;
 
-      const nextTeacher = { ...data, subjects: normalizeSubjects(data.subjects) };
+      const nextTeacher = { 
+        ...data, 
+        grade_level: data.grade_level || data.year_level || "",
+        subjects: normalizeSubjects(data.subjects) 
+      };
       const nextTeacherName = getTeacherName(nextTeacher);
       await syncTeacherSubjectAssignments({
         teacherId: nextTeacher.id,
@@ -912,7 +1032,9 @@ function TeacherManagement() {
         }
       }
 
-      const errMsg = error instanceof Error ? error.message : "Unable to update teacher.";
+      const errMsg = getApiErrorMessage(error, "Unable to update teacher.");
+      console.error("Update teacher error:", error);
+      setErrorMessage(errMsg);
       toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
@@ -1013,7 +1135,6 @@ function TeacherManagement() {
 
     setIsSubmitting(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     try {
       const currentClasses = normalizeAssignedClasses(teacherToAssign.assigned_class);
@@ -1192,12 +1313,6 @@ function TeacherManagement() {
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
-              {successMessage}
-            </div>
-          )}
-
           <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
@@ -1239,7 +1354,7 @@ function TeacherManagement() {
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Subjects</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Class/Section</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Grade Level</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
@@ -1394,6 +1509,20 @@ function TeacherManagement() {
                     {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <select
+                      value={teacherFormData.grade_level || ""}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "grade_level", e.target.value)}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    >
+                      <option value="">Select grade</option>
+                      {[7, 8, 9, 10].map((g) => (
+                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
+                      ))}
+                    </select>
+                    {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
                       value={teacherFormData.status}
@@ -1506,6 +1635,20 @@ function TeacherManagement() {
                     {editFormErrors.phone && <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <select
+                      value={editFormData.grade_level || ""}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "grade_level", e.target.value)}
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    >
+                      <option value="">Select grade</option>
+                      {[7, 8, 9, 10].map((g) => (
+                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
+                      ))}
+                    </select>
+                    {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
                       value={editFormData.status}
@@ -1525,15 +1668,19 @@ function TeacherManagement() {
                       multiple
                       value={editFormData.subjects}
                       onChange={(value) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", value)}
-                      options={availableSubjects.map((subject) => ({
-                        value: subject.id,
-                        label: `${subject.code} - ${subject.name}`
-                      }))}
+                      options={availableSubjects
+                        .filter((subject) => {
+                          if (!editFormData.grade_level) return true;
+                          const subjGradeRaw = String(subject.grade_level || "").trim();
+                          return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
+                        })
+                        .map((subject) => ({ value: subject.id, label: `${subject.code} - ${subject.name}` }))}
                       placeholder={availableSubjects.length > 0 ? "Select subjects" : "No subjects available"}
                       icon={<BookOpen className="w-5 h-5" />}
                       className="min-w-[180px]"
                       disabled={availableSubjects.length === 0}
                     />
+                    
                     <p className="text-xs text-gray-500 mt-1">Choose one or more subjects from the dropdown.</p>
                     {editFormErrors.subjects && <p className="text-red-500 text-sm mt-1">{editFormErrors.subjects}</p>}
                   </div>
@@ -1735,3 +1882,4 @@ function TeacherManagement() {
 }
 
 export { TeacherManagement };
+export default TeacherManagement;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, forwardRef, useImperativeHandle, useRef }
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X, AlertTriangle } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
-const calendarTableCandidates = ["school_calendar_events", "calendar_events"];
+const calendarTableCandidates = ["school_calendar_events", "school_events", "calendar_events"];
 
 const getPhilippinesHolidays = (year) => {
   const holidays = new Map([
@@ -227,6 +227,14 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
         console.error("Failed to refresh calendar:", error);
         setErrorMessage(error instanceof Error ? error.message : "Failed to refresh calendar");
       }
+    },
+    upsertEvent: (incoming) => {
+      if (!incoming || !incoming.id) return;
+      upsertEvent(incoming);
+    },
+    removeEvent: (eventId) => {
+      if (!eventId) return;
+      removeEvent(eventId);
     }
   }), [calendarTable]);
 
@@ -269,7 +277,10 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: calendarTable }, (payload) => {
         const incoming = normalizeEvent(payload?.new ?? {});
         if (incoming?.id) {
-          upsertEvent(incoming);
+          // Only add if it matches the viewer's role/audience
+          if (audienceMatchesRole(incoming.targetAudience, role)) {
+            upsertEvent(incoming);
+          }
           return;
         }
 
@@ -280,7 +291,12 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: calendarTable }, (payload) => {
         const incoming = normalizeEvent(payload?.new ?? {});
         if (incoming?.id) {
-          upsertEvent(incoming);
+          // Update if it matches the viewer's role/audience, otherwise remove it
+          if (audienceMatchesRole(incoming.targetAudience, role)) {
+            upsertEvent(incoming);
+          } else {
+            removeEvent(incoming.id);
+          }
           return;
         }
 

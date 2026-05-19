@@ -24,6 +24,48 @@ const getPathForType = (type, role) => {
   }
 };
 
+const getNotificationNavigationPath = (notification, role, currentPath = "") => {
+  const type = String(notification.type || "").toLowerCase();
+  const classId = notification.classId || notification.relatedId || notification.related_id;
+  const targetPage = notification.targetPage || notification.path;
+
+  const isTeacher = role === "teacher";
+  const isAdmin = role === "admin";
+
+  switch (type) {
+    case "assignment":
+    case "assignments":
+      if (classId) {
+        return isTeacher ? `/teacher/class/${classId}` : `/classes/${classId}`;
+      }
+      return isTeacher ? "/teacher/classes" : "/subjects";
+
+    case "announcement":
+    case "announcements":
+      return isTeacher ? "/teacher/announcements" : isAdmin ? "/admin/announcements" : "/announcements";
+
+    case "messages":
+    case "message":
+      return isTeacher ? "/teacher/messages" : isAdmin ? "/admin/messages" : "/messages";
+
+    case "grades":
+    case "grade":
+      return isTeacher ? "/teacher/grades" : "/grades";
+
+    case "attendance":
+      return isTeacher ? "/teacher/attendance" : "/attendance";
+
+    default:
+      if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
+        return targetPage;
+      }
+      if (currentPath && currentPath !== "/teacher/notifications" && currentPath !== "/admin/notifications" && currentPath !== "/notifications") {
+        return currentPath;
+      }
+      return isTeacher ? "/teacher/dashboard" : isAdmin ? "/admin/dashboard" : "/";
+  }
+};
+
 const dedupeNotifications = (items) => {
   const seen = new Set();
   return (Array.isArray(items) ? items : []).filter((item) => {
@@ -99,6 +141,9 @@ export function Notifications() {
                 isRead: Boolean(n.is_read),
                 timestamp: new Date(n.created_at).toLocaleString(),
                 path: getPathForType(n.type, user?.role),
+                relatedId: n.related_id,
+                classId: n.class_id || n.related_id,
+                targetPage: n.target_page || getPathForType(n.type, user?.role),
               })));
               setLoading(false);
               return;
@@ -196,7 +241,16 @@ export function Notifications() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const filtered = notifications.filter((n) => filter === 'all' ? true : (String(n.type || '').toLowerCase() === filter));
+  const filtered = notifications.filter((n) => {
+    if (filter === 'all') return true;
+    const t = String(n.type || '').toLowerCase().trim();
+    if (filter === 'messages' && (t === 'messages' || t === 'message')) return true;
+    if (filter === 'assignments' && (t === 'assignments' || t === 'assignment')) return true;
+    if (filter === 'grades' && (t === 'grades' || t === 'grade')) return true;
+    if (filter === 'attendance' && (t === 'attendance')) return true;
+    if (filter === 'system' && (t === 'system' || t === 'announcement' || t === 'announcements')) return true;
+    return t === filter;
+  });
 
   return (
     <div className="p-6">
@@ -233,7 +287,15 @@ export function Notifications() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">{n.message}</p>
                   <div className="mt-2">
-                    <button onClick={async () => { await markRead(n.id); navigate(n.path || '/teacher/notifications'); }} className="text-xs text-green-600 hover:text-green-700">Open</button>
+                    <button onClick={async () => {
+                      await markRead(n.id);
+                      const rawUser = localStorage.getItem("currentUser");
+                      const currentUser = rawUser ? JSON.parse(rawUser) : null;
+                      const targetPath = getNotificationNavigationPath(n, currentUser?.role, window.location.pathname);
+                      if (targetPath && targetPath !== window.location.pathname) {
+                        navigate(targetPath);
+                      }
+                    }} className="text-xs text-green-600 hover:text-green-700">Open</button>
                   </div>
                 </div>
               </div>

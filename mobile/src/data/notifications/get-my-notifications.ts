@@ -36,8 +36,8 @@ export async function getMyNotifications() {
     // 3. Fetch upcoming calendar events
     const { data: events } = await supabase
         .from('school_calendar_events')
-        .select('id, title, date, created_at')
-        .order('created_at', { ascending: false })
+        .select('id, title, event_date, created_at')
+        .order('event_date', { ascending: true })
         .limit(5);
 
     if (notifError) throw notifError;
@@ -58,7 +58,7 @@ export async function getMyNotifications() {
         id: `ev-${ev.id}`,
         user_id: user.id,
         title: `Upcoming Event: ${ev.title}`,
-        body: `Date: ${ev.date}`,
+        body: `Date: ${ev.event_date}`,
         type: 'event',
         is_read: true,
         created_at: ev.created_at,

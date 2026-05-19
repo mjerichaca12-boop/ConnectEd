@@ -62,7 +62,6 @@ function StudentManagement() {
   const [editFormErrors, setEditFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     if (showAddModal || showEditModal || showViewModal || showDeleteConfirm) {
@@ -129,12 +128,6 @@ function StudentManagement() {
 
     loadStudents({ showLoading: true });
   }, []);
-
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -300,7 +293,6 @@ function StudentManagement() {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     setErrorMessage("");
-    setSuccessMessage("");
 
     const validationErrors = await validateStudentForm(studentFormData);
     setFormErrors(validationErrors);
@@ -367,7 +359,6 @@ function StudentManagement() {
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     setErrorMessage("");
-    setSuccessMessage("");
 
     if (!selectedStudent) return;
 
@@ -508,7 +499,6 @@ function StudentManagement() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
     setStudents((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
 
     if (selectedStudent?.id === studentId) {
@@ -657,12 +647,6 @@ function StudentManagement() {
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-200 flex items-start gap-3">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{errorMessage}</span>
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
-              {successMessage}
             </div>
           )}
 

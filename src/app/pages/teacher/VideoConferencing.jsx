@@ -279,7 +279,7 @@ function VideoConferencing() {
     setTeacherId(profileData.id);
     const { data } = await supabase
       .from("subjects")
-      .select("id, code, name, section")
+      .select("id, code, name, section:grade_level")
       .eq("teacher_id", profileData.id)
       .order("code", { ascending: true });
     setClasses(data ?? []);
@@ -585,8 +585,8 @@ function VideoConferencing() {
   };
 
   const getStatusColor = (status) => {
-    if (status === "Ongoing") return "bg-red-500/20 text-red-300 border-red-500/30";
-    if (status === "Scheduled") return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+    if (status === "Ongoing") return "bg-red-500/20 text-red-600 border-red-500/30";
+    if (status === "Scheduled") return "bg-blue-500/20 text-blue-600 border-blue-500/30";
     return "bg-gray-50 text-gray-600 border-gray-200";
   };
 
@@ -692,13 +692,11 @@ function VideoConferencing() {
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Virtual Classroom</h1>
-                <p className="text-green-50 text-sm">Schedule and host online classes powered by Jitsi Meet — no account or download needed</p>
+                <p className="text-green-50 text-sm">Schedule and host online classes powered by Jitsi Meet</p>
                 <div className="mt-3 flex items-center gap-2 text-xs text-white/80">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  Jitsi Meet API Connected
                 </div>
               </div>
-              <button
+              <button 
                 onClick={() => setShowCreateModal(true)}
                 className="flex items-center gap-2 px-6 py-3 bg-white text-green-700 hover:bg-green-50 rounded-xl border border-white/30 backdrop-blur-sm transition-all font-semibold"
               >
@@ -859,7 +857,7 @@ function VideoConferencing() {
             <div className="p-6 border-b border-green-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
               <div>
                 <h3 className="text-lg font-semibold text-green-950">Schedule Online Class</h3>
-                <p className="text-xs text-green-700 mt-0.5">Powered by Jitsi Meet — no software download needed</p>
+                <p className="text-xs text-green-700 mt-0.5">Powered by Jitsi Meet</p>
               </div>
               <button onClick={handleCloseModal} className="p-2 hover:bg-green-50 rounded-lg transition-colors">
                 <X className="w-5 h-5 text-green-700" />

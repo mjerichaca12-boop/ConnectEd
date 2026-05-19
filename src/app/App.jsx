@@ -9,6 +9,7 @@ import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
 import { Login } from "./pages/Login";
 import { SignUp } from "./pages/SignUp";
 import { ForgotPassword } from "./pages/ForgotPassword";
+import { ResetPassword } from "./pages/ResetPassword";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { RequestAccess } from "./pages/RequestAccess";
 import { SetPassword } from "./pages/SetPassword";
@@ -206,6 +207,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/request-access" element={<RequestAccess />} />
         <Route path="/set-password" element={<SetPassword />} />

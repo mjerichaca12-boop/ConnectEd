@@ -289,7 +289,6 @@ function AdminAnnouncements() {
   const [hasTriedCreateSubmit, setHasTriedCreateSubmit] = useState(false);
   const [hasTriedEditSubmit, setHasTriedEditSubmit] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -1104,13 +1103,6 @@ function AdminAnnouncements() {
     };
   }, [announcementTable]);
 
-  useEffect(() => {
-    if (!successMessage) return undefined;
-
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
-
   const filteredAnnouncements = sortAnnouncements(announcements.filter((announcement) => {
     const query = searchQuery.toLowerCase();
     return [announcement.title, announcement.content, announcement.targetAudience]
@@ -1178,7 +1170,6 @@ function AdminAnnouncements() {
     event.preventDefault();
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     setHasTriedCreateSubmit(true);
     const submissionErrors = applyCreateValidationState(formData, formTouched, true);
@@ -1282,7 +1273,6 @@ function AdminAnnouncements() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     setHasTriedEditSubmit(true);
     const submissionErrors = applyEditValidationState(editFormData, editFormTouched, true);
@@ -1381,7 +1371,6 @@ function AdminAnnouncements() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
     setIsSubmitting(true);
 
     const previousAnnouncements = announcements;
@@ -1580,10 +1569,10 @@ function AdminAnnouncements() {
             </div>
           </div>
 
-          {(errorMessage || successMessage) && (
-            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700"}`}>
+          {errorMessage && (
+            <div className="rounded-xl border px-4 py-3 text-sm flex items-start gap-3 border-red-200 bg-red-50 text-red-700">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{errorMessage || successMessage}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 

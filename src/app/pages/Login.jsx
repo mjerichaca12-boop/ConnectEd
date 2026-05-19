@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Lock, User, ShieldAlert, Monitor, Smartphone } from "lucide-react";
-import { supabase, supabaseAdmin } from "../lib/supabaseClient";
+import { getAuthRedirectUrl, supabase, supabaseAdmin } from "../lib/supabaseClient";
 import {
   STATIC_ADMIN_EMAIL,
   getStaticAdminSessionUser,
@@ -206,7 +206,7 @@ function Login() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin + "/login",
+        redirectTo: getAuthRedirectUrl("login"),
         queryParams: { prompt: "select_account" }
       }
     });
@@ -393,6 +393,11 @@ function Login() {
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+            <div className="mt-2 text-right">
+              <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:underline">
+                Forgot Password?
+              </Link>
             </div>
           </div>
 

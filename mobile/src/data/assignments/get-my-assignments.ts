@@ -28,6 +28,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ),
             submissions (
                 id,
+                student_id,
                 status,
                 grade,
                 teacher_comment,
@@ -53,11 +54,10 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     return (data || []).map(row => {
         // Filter submissions for this specific student
-        // Note: the supabase join might return all submissions unless we filter, 
-        // wait, we can't easily filter the inner join in supabase JS without RLS doing it.
-        // But RLS on submissions says: "Students can view their own submissions." 
-        // So it will automatically only return this student's submissions!
-        const mySubmission = row.submissions?.[0];
+        // Note: although RLS should handle this, explicitly finding by student_id is extremely robust
+        const mySubmission = row.submissions?.find(
+            (sub: any) => String(sub.student_id) === String(userData.user.id)
+        );
         let status: Assignment['status'] = mySubmission?.status || "pending";
 
         if (!mySubmission && row.due_date && new Date(row.due_date) < new Date()) {

@@ -80,7 +80,7 @@ function AttendanceManagement() {
     if (!supabase || !id) { setClasses([]); return; }
     const { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section")
+      .select("id, code, name, section:grade_level")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
     if (error) { console.error("Failed to load classes:", error); setClasses([]); return; }

@@ -108,11 +108,15 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
             if (error) throw error;
 
+            // Invalidate and refetch immediately to ensure local cache updates
+            queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+            queryClient.invalidateQueries({ queryKey: ['my-assignments', assignment.subjectId] });
+            queryClient.refetchQueries({ queryKey: ['my-assignments'] });
+
             Alert.alert(
                 "Submission Complete", 
                 "Your assignment has been successfully submitted.",
                 [{ text: "OK", onPress: () => {
-                    queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
                     onBack();
                 }}]
             );

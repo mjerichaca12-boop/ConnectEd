@@ -15,12 +15,12 @@ const emptyForm = {
   description: "",
   credits: "",
   teacher: "",
-  section: "",
   schedule: "",
-  capacity: ""
+  capacity: "",
+  grade_level: ""
 };
 
-const subjectSelectColumns = "id, code, name, description, credits, teacher_id, section, schedule, capacity, enrolled, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, credits, teacher_id, schedule, capacity, enrolled, grade_level, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -52,7 +52,6 @@ function SubjectManagement() {
   const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState("");
   const [subjectTable, setSubjectTable] = useState("subjects");
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     if (showAddModal || showViewModal || showEditModal || showDeleteConfirm || showEnrollModal) {
@@ -111,12 +110,17 @@ function SubjectManagement() {
     credits: Number(subjectRow.credits ?? 0),
     capacity: Number(subjectRow.capacity ?? 0),
     enrolled: Number(subjectRow.enrolled ?? 0),
-    section: String(subjectRow.section || "").trim(),
-    teacher_id: subjectRow.teacher_id ?? null
+    section: String(subjectRow.grade_level || "").trim(),
+    teacher_id: (() => {
+      const t = String(subjectRow.teacher_id || "").trim();
+      return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
+    })(),
+    grade_level: String(subjectRow.grade_level || "").trim()
   });
 
   const buildSubjectDedupKey = (subjectRow) => {
-    const teacherId = String(subjectRow?.teacher_id || "").trim();
+    const t = String(subjectRow?.teacher_id || "").trim();
+    const teacherId = (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? "" : t;
     const code = String(subjectRow?.code || "").trim().toLowerCase();
     const name = String(subjectRow?.name || "").trim().toLowerCase();
     const section = String(subjectRow?.section || "").trim().toLowerCase();
@@ -181,10 +185,23 @@ function SubjectManagement() {
   const fetchAvailableStudents = async (subjectId) => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
-    // Get all students
+    const normalizeGradeLevel = (value) => {
+      const v = String(value || "").trim();
+      if (!v) return "";
+      const digits = v.match(/\d+/);
+      if (digits) return String(digits[0]);
+      return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+    };
+
+    // Get subject to find its assigned teacher (if any)
+    const { data: subjectRow } = await supabase.from("subjects").select("id, teacher_id").eq("id", subjectId).maybeSingle();
+    const tIdRaw = String(subjectRow?.teacher_id || "").trim();
+    const teacherId = (!tIdRaw || tIdRaw.toLowerCase() === "null" || tIdRaw.toLowerCase() === "undefined") ? null : tIdRaw;
+
+    // Get all students (include possible grade columns)
     const { data: allStudents, error: studentsError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, role")
+      .select("id, first_name, middle_name, last_name, email, role, year_level")
       .eq("role", "student")
       .order("first_name", { ascending: true });
 
@@ -215,8 +232,26 @@ function SubjectManagement() {
           .filter(Boolean)
           .join(" ")
           .trim() || student.email || "Unknown",
-        email: student.email || ""
+        email: student.email || "",
+        grade_level: String(student?.year_level || "").trim()
       }));
+
+    // If a teacher is assigned, filter available students to match the teacher's grade level
+    if (teacherId) {
+      try {
+        const { data: teacherRow } = await supabase.from("profiles").select("id, year_level").eq("id", teacherId).maybeSingle();
+        const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
+        const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
+
+        if (teacherGrade) {
+          const filteredByGrade = available.filter((s) => normalizeGradeLevel(s.grade_level) === teacherGrade);
+          setAvailableStudents(filteredByGrade);
+          return;
+        }
+      } catch (err) {
+        console.warn("[SubjectManagement] Unable to resolve teacher grade", err);
+      }
+    }
 
     setAvailableStudents(available);
   };
@@ -230,7 +265,13 @@ function SubjectManagement() {
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
-    const uniqueTeacherIds = [...new Set((teacherIds || []).map((value) => String(value).trim()).filter(Boolean))];
+    const uniqueTeacherIds = [...new Set((teacherIds || [])
+      .map((val) => {
+        const s = String(val || "").trim();
+        return (!s || s.toLowerCase() === "null" || s.toLowerCase() === "undefined") ? "" : s;
+      })
+      .filter(Boolean)
+    )];
     if (uniqueTeacherIds.length === 0) {
       return;
     }
@@ -331,12 +372,6 @@ function SubjectManagement() {
     };
   }, [navigate]);
 
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
-
   const validateSubjectForm = async (formData, excludeId = null, setErrors = setFormErrors) => {
     const errors = {};
 
@@ -345,7 +380,6 @@ function SubjectManagement() {
     const description = (formData.description || "").trim();
     const credits = normalizePositiveInteger(String(formData.credits || ""));
     const teacherId = (formData.teacher || "").trim();
-    const section = (formData.section || "").trim();
     const schedule = (formData.schedule || "").trim();
     const capacity = normalizePositiveInteger(String(formData.capacity || ""));
 
@@ -363,17 +397,11 @@ function SubjectManagement() {
       errors.credits = "Credits are required";
     }
 
-    if (!teacherId) {
-      errors.teacher = "Teacher is required";
-    } else if (!teachers.some((item) => item.id === teacherId)) {
+    if (teacherId && !teachers.some((item) => item.id === teacherId)) {
       errors.teacher = "Selected teacher is invalid";
     }
 
-    if (!section) {
-      errors.section = "Section/Class is required";
-    } else if (!isValidSection(section)) {
-      errors.section = "Section/Class is invalid";
-    }
+
 
     if (!schedule) {
       errors.schedule = "Schedule is required";
@@ -381,6 +409,11 @@ function SubjectManagement() {
 
     if (!capacity) {
       errors.capacity = "Capacity is required";
+    }
+
+    const gradeLevel = (formData.grade_level || '').trim();
+    if (!gradeLevel) {
+      errors.grade_level = "Grade level is required";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -431,17 +464,19 @@ function SubjectManagement() {
     name: (formData.name || "").trim(),
     description: (formData.description || "").trim() || null,
     credits: Number(normalizePositiveInteger(String(formData.credits || ""))),
-    teacher_id: (formData.teacher || "").trim(),
-    section: (formData.section || "").trim(),
+    teacher_id: (() => {
+      const t = (formData.teacher || "").trim();
+      return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
+    })(),
     schedule: (formData.schedule || "").trim(),
-    capacity: Number(normalizePositiveInteger(String(formData.capacity || "")))
+    capacity: Number(normalizePositiveInteger(String(formData.capacity || ""))),
+    grade_level: (formData.grade_level || "").trim()
   });
 
   const handleAddSubject = async (event) => {
     event.preventDefault();
     if (isSubmitting) return;
     setErrorMessage("");
-    setSuccessMessage("");
 
     const isValid = await validateSubjectForm(subjectFormData, null, setFormErrors);
     if (!isValid) return;
@@ -457,14 +492,20 @@ function SubjectManagement() {
       const payload = buildPayload(subjectFormData);
       const tableName = await getSubjectTableName();
 
-      const { data: existingSubject, error: existingSubjectError } = await supabase
+      const query = supabase
         .from(tableName)
         .select("id")
-        .eq("teacher_id", payload.teacher_id)
         .eq("code", payload.code)
         .eq("name", payload.name)
-        .eq("section", payload.section)
-        .maybeSingle();
+        .eq("grade_level", payload.grade_level);
+
+      if (payload.teacher_id) {
+        query.eq("teacher_id", payload.teacher_id);
+      } else {
+        query.is("teacher_id", null);
+      }
+
+      const { data: existingSubject, error: existingSubjectError } = await query.maybeSingle();
 
       if (existingSubjectError) {
         throw existingSubjectError;
@@ -475,11 +516,13 @@ function SubjectManagement() {
           teacherId: payload.teacher_id,
           code: payload.code,
           name: payload.name,
-          section: payload.section,
+          gradeLevel: payload.grade_level,
           existingSubjectId: existingSubject.id
         });
         setFormErrors({
-          form: "This subject is already assigned to this teacher and section."
+          form: payload.teacher_id 
+            ? "This subject is already assigned to this teacher and grade level."
+            : "This subject already exists for this grade level."
         });
         return;
       }
@@ -488,7 +531,7 @@ function SubjectManagement() {
         teacherId: payload.teacher_id,
         code: payload.code,
         name: payload.name,
-        section: payload.section
+        gradeLevel: payload.grade_level
       });
 
       const { data, error } = await supabase.from(tableName).insert(payload).select(subjectSelectColumns).single();
@@ -496,7 +539,9 @@ function SubjectManagement() {
       if (error) throw error;
 
       const next = formatSubject(data);
-      await refreshTeacherSubjectsFromDatabase([next.teacher_id]);
+      if (next.teacher_id) {
+        await refreshTeacherSubjectsFromDatabase([next.teacher_id]);
+      }
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
 
       logActivity({
@@ -552,9 +597,9 @@ function SubjectManagement() {
       description: String(subject.description || ""),
       credits: String(subject.credits || ""),
       teacher: String(subject.teacher_id || ""),
-      section: String(subject.section || ""),
       schedule: String(subject.schedule || ""),
-      capacity: String(subject.capacity || "")
+      capacity: String(subject.capacity || ""),
+      grade_level: String(subject.grade_level || "")
     });
     setShowEditModal(true);
   };
@@ -564,7 +609,6 @@ function SubjectManagement() {
     if (!selectedSubject) return;
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     const isValid = await validateSubjectForm(editFormData, selectedSubject.id, setEditFormErrors);
     if (!isValid) return;
@@ -666,11 +710,38 @@ function SubjectManagement() {
 
     setEnrollmentLoading(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     try {
       const subject = selectedSubjectForEnroll;
-      const currentTeacherId = subject.teacher_id;
+      const tIdVal = String(subject.teacher_id || "").trim();
+      const currentTeacherId = (!tIdVal || tIdVal.toLowerCase() === "null" || tIdVal.toLowerCase() === "undefined") ? null : tIdVal;
+
+      const normalizeGradeLevel = (value) => {
+        const v = String(value || "").trim();
+        if (!v) return "";
+        const digits = v.match(/\d+/);
+        if (digits) return String(digits[0]);
+        return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+      };
+
+      // If teacher is set, validate selected students match teacher's grade level
+      if (currentTeacherId) {
+        const { data: teacherRow } = await supabase.from("profiles").select("id, year_level").eq("id", currentTeacherId).maybeSingle();
+        const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
+        const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
+
+        if (teacherGrade) {
+          const selectedIds = Array.from(selectedStudents);
+          const { data: selectedRows, error: selErr } = await supabase.from("profiles").select("id, year_level").in("id", selectedIds);
+          if (selErr) throw selErr;
+          const mismatches = (selectedRows ?? []).filter((r) => normalizeGradeLevel(String(r?.year_level || "")) !== teacherGrade);
+          if (mismatches.length > 0) {
+            setErrorMessage("One or more selected students do not match the teacher's grade level. Please select students that match the teacher's grade.");
+            setEnrollmentLoading(false);
+            return;
+          }
+        }
+      }
 
       // Get current enrollment count
       const { count: currentEnrollment, error: countError } = await supabase
@@ -763,7 +834,6 @@ function SubjectManagement() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     const deletingSubject = subjectToDelete;
     setIsSubmitting(true);
@@ -841,14 +911,14 @@ function SubjectManagement() {
   };
 
   const handleExportToCSV = () => {
-    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Section", "Schedule", "Capacity", "Enrolled"];
+    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Schedule", "Capacity", "Enrolled"];
     const rows = filteredSubjects.map((subject) => [
       subject.code,
       subject.name,
       subject.description || "",
       String(subject.credits),
       getTeacherNameById(subject.teacher_id),
-      subject.section || "No section assigned",
+      subject.grade_level || "No grade assigned",
       subject.schedule,
       String(subject.capacity),
       String(subject.enrolled)
@@ -933,12 +1003,6 @@ function SubjectManagement() {
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
-              {successMessage}
-            </div>
-          )}
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
@@ -997,7 +1061,7 @@ function SubjectManagement() {
                     <p className="text-gray-600 text-sm">{subject.description || "No description provided"}</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{getTeacherNameById(subject.teacher_id)}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.section || "No section assigned"}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.grade_level || "No grade assigned"}</span></div>
                       <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.schedule}</span></div>
                     </div>
                       <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-100">
@@ -1056,19 +1120,14 @@ function SubjectManagement() {
                     <textarea rows={3} placeholder="Brief description of the subject" value={subjectFormData.description} onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={subjectFormData.teacher} onChange={(e) => setSubjectFormData({ ...subjectFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select teacher</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <select value={subjectFormData.grade_level} onChange={(e) => setSubjectFormData({ ...subjectFormData, grade_level: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
+                      <option value="">Select grade</option>
+                      {[7, 8, 9, 10].map((g) => (
+                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
                       ))}
                     </select>
-                    {formErrors.teacher && <p className="text-red-500 text-sm mt-1">{formErrors.teacher}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" placeholder="e.g., Grade 10 - Section A" value={subjectFormData.section} onChange={(e) => setSubjectFormData({ ...subjectFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
+                    {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
@@ -1125,19 +1184,14 @@ function SubjectManagement() {
                     <textarea rows={3} value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={editFormData.teacher} onChange={(e) => setEditFormData({ ...editFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select teacher</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <select value={editFormData.grade_level} onChange={(e) => setEditFormData({ ...editFormData, grade_level: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
+                      <option value="">Select grade</option>
+                      {[7, 8, 9, 10].map((g) => (
+                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
                       ))}
                     </select>
-                    {editFormErrors.teacher && <p className="text-red-500 text-sm mt-1">{editFormErrors.teacher}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
+                    {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
@@ -1192,8 +1246,8 @@ function SubjectManagement() {
                     <div className="flex items-center gap-2"><User className="w-4 h-4 text-green-600" /><p className="text-gray-900">{getTeacherNameById(selectedSubject.teacher_id)}</p></div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Section/Class</label>
-                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.section || "No section assigned"}</p></div>
+                    <label className="block text-sm font-medium text-gray-505 mb-1">Grade Level</label>
+                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.grade_level || "No grade assigned"}</p></div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Schedule</label>

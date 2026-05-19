@@ -259,6 +259,8 @@ export function ClassDetail() {
   const [teacherProfileId, setTeacherProfileId] = useState("");
   const [assignedStudents, setAssignedStudents] = useState([]);
   const [availableStudents, setAvailableStudents] = useState([]);
+  const [isStudentsLoading, setIsStudentsLoading] = useState(false);
+  const [hasLoadedStudents, setHasLoadedStudents] = useState(false);
   const [studentPickerQuery, setStudentPickerQuery] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [isStudentSubmitting, setIsStudentSubmitting] = useState(false);
@@ -340,6 +342,111 @@ export function ClassDetail() {
     return String(student?.email || "").split("@")[0] || "Student";
   };
 
+  const normalizeGradeLevel = (value) => {
+    const v = String(value || "").trim();
+    if (!v) return "";
+    const digits = v.match(/\d+/);
+    if (digits) return String(digits[0]);
+    return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+  };
+
+  const dedupeStudentsById = (rows) => {
+    const seen = new Set();
+    return (rows ?? []).filter((student) => {
+      const key = String(student?.id || "").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const normalizeSearchText = (value) => String(value || "").toLowerCase().trim();
+
+  const extractGradeFromText = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+
+    const labeled = text.match(/(?:grade|year)\s*([0-9]{1,2})/i);
+    if (labeled) return `Grade ${labeled[1]}`;
+
+    const numericOnly = text.match(/^([1-9]|1[0-2])$/);
+    if (numericOnly) return `Grade ${numericOnly[1]}`;
+
+    return "";
+  };
+
+  const getClassGradeValue = (classObj) => {
+    const direct = String(classObj?.gradeLevel || classObj?.grade_level || classObj?.year_level || "").trim();
+    if (direct) return direct;
+
+    const fromSection = extractGradeFromText(classObj?.section);
+    if (fromSection) return fromSection;
+
+    const fromName = extractGradeFromText(classObj?.name);
+    if (fromName) return fromName;
+
+    return "";
+  };
+
+  const normalizeStudentRecord = (student) => {
+    const yearLevel = student?.year_level ?? student?.grade_level ?? student?.grade ?? student?.year ?? "";
+    return {
+      id: String(student?.id || student?.student_id || "").trim(),
+      first_name: String(student?.first_name || student?.firstname || "").trim(),
+      middle_name: String(student?.middle_name || student?.middlename || "").trim(),
+      last_name: String(student?.last_name || student?.lastname || "").trim(),
+      email: String(student?.email || "").trim(),
+      lrn: String(student?.lrn || student?.student_number || "").trim(),
+      year_level: String(yearLevel || "").trim(),
+      grade_level: String(student?.grade_level || yearLevel || "").trim(),
+      phone: String(student?.phone || student?.contact_number || "").trim(),
+      status: String(student?.status || "Active").trim()
+    };
+  };
+
+  const resolveSubjectGradeLevel = async (classObj) => {
+    const localGrade = getClassGradeValue(classObj);
+    if (localGrade) return localGrade;
+
+    if (!supabase || !id) return "";
+
+    let { data, error } = await supabase
+      .from("subjects")
+      .select("grade_level, year_level")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error && isColumnMissingError(error)) {
+      const fallback = await supabase
+        .from("subjects")
+        .select("year_level")
+        .eq("id", id)
+        .maybeSingle();
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) {
+      console.warn("[ClassDetail] Unable to resolve subject grade level:", error);
+      return "";
+    }
+
+    const fetchedGrade = String(data?.grade_level || data?.year_level || "").trim();
+    if (fetchedGrade) {
+      setClassData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          gradeLevel: fetchedGrade,
+          grade_level: data?.grade_level ?? current?.grade_level,
+          year_level: data?.year_level ?? current?.year_level
+        };
+      });
+    }
+
+    return fetchedGrade;
+  };
+
   const syncStudentsIntoClassData = (students) => {
     setAssignedStudents(students);
     setClassData((current) => {
@@ -371,7 +478,15 @@ export function ClassDetail() {
       return;
     }
 
-    const studentIds = [...new Set((assignmentRows ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
+    const uniqueAssignmentsByStudent = new Map();
+    (assignmentRows ?? []).forEach((row) => {
+      const studentKey = String(row?.student_id || "").trim();
+      if (!studentKey || uniqueAssignmentsByStudent.has(studentKey)) return;
+      uniqueAssignmentsByStudent.set(studentKey, row);
+    });
+
+    const uniqueAssignmentRows = Array.from(uniqueAssignmentsByStudent.values());
+    const studentIds = uniqueAssignmentRows.map((row) => String(row.student_id || "")).filter(Boolean);
 
     if (studentIds.length === 0) {
       syncStudentsIntoClassData([]);
@@ -380,7 +495,7 @@ export function ClassDetail() {
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
+      .select("*")
       .eq("role", "student")
       .in("id", studentIds);
 
@@ -390,8 +505,11 @@ export function ClassDetail() {
       return;
     }
 
-    const studentById = new Map((studentRows ?? []).map((student) => [String(student.id), student]));
-    const mapped = (assignmentRows ?? []).map((row) => {
+    const studentById = new Map((studentRows ?? []).map((student) => {
+      const normalized = normalizeStudentRecord(student);
+      return [String(normalized.id), normalized];
+    }));
+    const mapped = uniqueAssignmentRows.map((row) => {
       const student = studentById.get(String(row.student_id || ""));
       return {
         assignmentId: row.id,
@@ -408,25 +526,87 @@ export function ClassDetail() {
     syncStudentsIntoClassData(mapped);
   };
 
-  const loadAvailableStudents = async () => {
+  const loadAvailableStudents = async (classObj) => {
     if (!supabase) {
-      setAvailableStudents([]);
+      setStuError("Supabase client is not configured.");
       return;
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
-      .eq("role", "student")
-      .order("first_name", { ascending: true });
+    setIsStudentsLoading(true);
+    setHasLoadedStudents(false);
 
-    if (error) {
-      console.error("Failed to load students:", error);
-      setAvailableStudents([]);
-      return;
+    const tableCandidates = ["students", "profiles"];
+    const classCandidate = classObj || classData || {};
+    const resolvedClassGradeRaw = await resolveSubjectGradeLevel(classCandidate);
+    let classGrade = normalizeGradeLevel(resolvedClassGradeRaw);
+
+    // If a teacher is selected, prefer the teacher's grade level to filter students
+    try {
+      const teacherId = String(teacherProfileId || "").trim();
+      if (teacherId) {
+        const { data: teacherRow, error: teacherErr } = await supabase.from("profiles").select("id, year_level").eq("id", teacherId).maybeSingle();
+        if (!teacherErr && teacherRow) {
+          const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
+          const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
+          if (teacherGrade) classGrade = teacherGrade;
+        }
+      }
+    } catch (err) {
+      // ignore teacher fetch errors and continue with class grade
+      console.warn("[ClassDetail] Failed to fetch teacher grade info:", err);
     }
 
-    setAvailableStudents(data ?? []);
+    try {
+      let loadedRows = null;
+      let lastError = null;
+
+      for (const tableName of tableCandidates) {
+        let query = tableName === "students"
+          ? supabase.from(tableName).select("*")
+          : supabase
+            .from(tableName)
+            .select("*")
+            .eq("role", "student")
+            .order("first_name", { ascending: true });
+
+
+
+        const { data, error } = await query;
+
+        if (error) {
+          lastError = error;
+          console.warn(`[ClassDetail] Student fetch failed on table ${tableName}:`, error);
+          continue;
+        }
+
+        const normalizedRows = (data ?? [])
+          .map(normalizeStudentRecord)
+          .filter((student) => String(student.id || "").trim());
+
+        console.log(`[ClassDetail] Raw fetched student data from ${tableName}:`, normalizedRows);
+        loadedRows = normalizedRows;
+        break;
+      }
+
+      if (!loadedRows) {
+        const message = String(lastError?.message || "").toLowerCase();
+        if (lastError?.code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
+          setStuError("Unable to load students due to permissions (RLS). Ensure teacher/admin has SELECT access to students/profiles.");
+        } else {
+          setStuError(lastError?.message || "Unable to load students right now.");
+        }
+        return;
+      }
+
+      setAvailableStudents(dedupeStudentsById(loadedRows));
+      setStuError("");
+      setHasLoadedStudents(true);
+    } catch (err) {
+      console.error("[ClassDetail] Failed to load students:", err);
+      setStuError(err instanceof Error ? err.message : "Unable to load students.");
+    } finally {
+      setIsStudentsLoading(false);
+    }
   };
 
   const resolveTeacherProfileId = async (email) => {
@@ -482,6 +662,9 @@ export function ClassDetail() {
       "file_url",
       "file_name",
       "file_path",
+      "subject_id",
+      "class_id",
+      "course_id",
       "subject",
       "section",
       "teacher_id",
@@ -575,38 +758,53 @@ export function ClassDetail() {
       return [];
     }
 
-    const defaultColumns = [
-      "id",
-      "title",
-      "name",
-      "description",
-      "instructions",
-      "content",
-      "due_date",
-      "deadline",
-      "file_url",
-      "file_name",
-      "file_path",
-      "subject",
-      "class_code",
-      "class_name",
-      "section",
-      "class_id",
-      "course_id",
-      "subject_id",
-      "created_by",
-      "teacher_id",
-      "author",
-      "teacher_name",
-      "created_at",
-      "updated_at",
-      "updated_by",
-      "assessment_type",
-      "task_type",
-      "max_points",
-      "total_points",
-      "maxPoints"
-    ];
+    const defaultColumns = tableName === 'assignments_activity'
+      ? [
+          "id",
+          "course_id",
+          "title",
+          "assessment_type",
+          "description",
+          "deadline",
+          "file_url",
+          "file_name",
+          "file_path",
+          "created_at",
+          "updated_at",
+          "updated_by"
+        ]
+      : [
+          "id",
+          "title",
+          "name",
+          "description",
+          "instructions",
+          "content",
+          "due_date",
+          "deadline",
+          "file_url",
+          "file_name",
+          "file_path",
+          "subject",
+          "class_code",
+          "class_name",
+          "section",
+          "class_id",
+          "course_id",
+          "subject_id",
+          "created_by",
+          "teacher_id",
+          "author",
+          "teacher_name",
+          "created_at",
+          "updated_at",
+          "updated_by",
+          "assessment_type",
+          "task_type",
+          "max_points",
+          "total_points",
+          "maxPoints"
+        ];
 
     // Probe the table with a single select(*) to retrieve a sample row and infer columns.
     try {
@@ -759,7 +957,10 @@ export function ClassDetail() {
   };
 
   const fetchClassAnnouncements = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
+    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+
+    if (!supabase || !cleanTeacherId) {
       setAnnouncements([]);
       return;
     }
@@ -786,20 +987,20 @@ export function ClassDetail() {
       query = query.order(orderColumn, { ascending: false });
     }
 
-    if (classColumn && id) {
-      query = query.eq(classColumn, id);
+    if (classColumn && cleanClassId) {
+      query = query.eq(classColumn, cleanClassId);
     } else if (ownerColumn) {
-      query = query.eq(ownerColumn, resolvedTeacherId);
+      query = query.eq(ownerColumn, cleanTeacherId);
     }
 
     let { data, error } = await query;
 
     if (error && isColumnMissingError(error)) {
       query = supabase.from(tableName).select("*");
-      if (classColumn && id) {
-        query = query.eq(classColumn, id);
+      if (classColumn && cleanClassId) {
+        query = query.eq(classColumn, cleanClassId);
       } else if (ownerColumn) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
+        query = query.eq(ownerColumn, cleanTeacherId);
       }
       const fallback = await query;
       data = fallback.data;
@@ -843,6 +1044,9 @@ export function ClassDetail() {
   };
 
   const fetchClassAssignments = async (resolvedTeacherId, currentClassData) => {
+    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
+    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+
     if (!supabase) {
       setAssignments([]);
       return;
@@ -856,6 +1060,7 @@ export function ClassDetail() {
 
     const columns = await getAssignmentColumns(tableName);
     const ownerColumn = resolveColumnName(columns, ["created_by", "teacher_id"]);
+    const classColumn = resolveColumnName(columns, ["class_id", "course_id", "subject_id"]);
 
     let query = supabase.from(tableName).select("*");
     const orderColumn = columns.includes("created_at")
@@ -871,8 +1076,12 @@ export function ClassDetail() {
       query = query.order(orderColumn, { ascending: false });
     }
 
-    if (ownerColumn && resolvedTeacherId) {
-      query = query.eq(ownerColumn, resolvedTeacherId);
+    if (ownerColumn && cleanTeacherId) {
+      query = query.eq(ownerColumn, cleanTeacherId);
+    }
+
+    if (classColumn && cleanClassId) {
+      query = query.eq(classColumn, cleanClassId);
     }
 
     const previousAssignments = Array.isArray(assignments) ? assignments : [];
@@ -881,10 +1090,10 @@ export function ClassDetail() {
 
     // If a column-missing error occurs, try a simpler query without ordering/filter
     if (error && isColumnMissingError(error)) {
-      console.warn("[ClassDetail] Column missing when fetching assignments, retrying without ordering/filter:", error.message || error);
+      console.warn("[ClassDetail] Column missing when fetching assignments, retrying with only class filter:", error.message || error);
       query = supabase.from(tableName).select("*");
-      if (ownerColumn && resolvedTeacherId) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
+      if (classColumn && cleanClassId) {
+        query = query.eq(classColumn, cleanClassId);
       }
       const fallback = await query;
       data = fallback.data;
@@ -893,25 +1102,10 @@ export function ClassDetail() {
 
     if (error) {
       console.error("[ClassDetail] Failed to fetch assignments:", error);
-
-      // Try a full-table fallback to see if any rows are visible without filters
-      try {
-        const all = await supabase.from(tableName).select("*");
-        if (!all.error && Array.isArray(all.data) && all.data.length > 0) {
-          console.warn("[ClassDetail] Using full-table fallback data after fetch error.");
-          data = all.data;
-          error = null;
-        }
-      } catch (allErr) {
-        console.warn("[ClassDetail] Full-table fallback failed:", allErr);
-      }
-
-      if (error) {
-        setAsgError("Unable to load assignments from database.");
-        // Restore previous assignments (including optimistic ones) instead of clearing the UI
-        setAssignments(previousAssignments);
-        return;
-      }
+      setAsgError("Unable to load assignments from database.");
+      // Restore previous assignments (including optimistic ones) instead of clearing the UI
+      setAssignments(previousAssignments);
+      return;
     }
 
     const classCode = String(currentClassData?.code || "").trim();
@@ -927,31 +1121,19 @@ export function ClassDetail() {
       const rowSubject = String(row?.subject || row?.class_code || "").trim();
       const rowSection = String(row?.section || "").trim();
 
-      const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-      const sectionMatches = !classSection || !rowSection || rowSection === classSection;
+      const subjectMatches = Boolean(classCode && rowSubject && rowSubject === classCode);
+      const sectionMatches = !classSection || (rowSection && rowSection === classSection);
 
-      if (rowCourseId) {
-        if (!classId || rowCourseId === classId) return true;
+      if (cleanClassId && rowCourseId) return rowCourseId === cleanClassId;
+      if (cleanClassId && !rowCourseId && rowSubject) return subjectMatches && sectionMatches;
 
-        // Legacy rows can carry a different class identifier; allow semantic fallback.
-        if (rowSubject || rowSection) {
-          return subjectMatches && sectionMatches;
-        }
-
-        return false;
-      }
-
-      return subjectMatches && sectionMatches;
+      return false;
     });
 
-    // If strict class matching yields nothing but the query returned rows,
-    // prefer showing rows for this teacher over a false empty state.
-    const rowsToRender = filtered.length > 0 || rows.length === 0 ? filtered : rows;
+    console.log("[ClassDetail] fetchClassAssignments - filtered:", filtered.length);
+    if (filtered.length > 0) console.log("[ClassDetail] fetchClassAssignments - sample row keys:", Object.keys(filtered[0] || {}));
 
-    console.log("[ClassDetail] fetchClassAssignments - filtered:", filtered.length, "rowsToRender:", rowsToRender.length);
-    if (rowsToRender.length > 0) console.log("[ClassDetail] fetchClassAssignments - sample row keys:", Object.keys(rowsToRender[0] || {}));
-
-    const serverAssignments = rowsToRender.map((row) => ({ ...normalizeAssignmentRecord(row), _optimistic: false }));
+    const serverAssignments = filtered.map((row) => ({ ...normalizeAssignmentRecord(row), _optimistic: false }));
     setAssignments((previous) => {
       const prev = Array.isArray(previous) ? previous : [];
       const optimistic = prev.filter((item) => item?._optimistic);
@@ -962,7 +1144,10 @@ export function ClassDetail() {
   };
 
   const fetchClassMaterials = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
+    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+
+    if (!supabase || !cleanTeacherId) {
       setMaterials([]);
       return;
     }
@@ -970,6 +1155,7 @@ export function ClassDetail() {
     try {
       const columns = await getMaterialColumns();
       const ownerColumn = resolveColumnName(columns, ["teacher_id", "created_by"]);
+      const classColumn = resolveColumnName(columns, ["subject_id", "class_id", "course_id"]);
 
       let query = supabase
         .from("class_materials")
@@ -977,7 +1163,11 @@ export function ClassDetail() {
         .order("created_at", { ascending: false });
 
       if (ownerColumn) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
+        query = query.eq(ownerColumn, cleanTeacherId);
+      }
+
+      if (classColumn && cleanClassId) {
+        query = query.eq(classColumn, cleanClassId);
       }
 
       let { data, error } = await query;
@@ -993,7 +1183,10 @@ export function ClassDetail() {
       if (error && isColumnMissingError(error)) {
         query = supabase.from("class_materials").select("*");
         if (ownerColumn) {
-          query = query.eq(ownerColumn, resolvedTeacherId);
+          query = query.eq(ownerColumn, cleanTeacherId);
+        }
+        if (classColumn && cleanClassId) {
+          query = query.eq(classColumn, cleanClassId);
         }
         const fallback = await query;
         data = fallback.data;
@@ -1011,12 +1204,16 @@ export function ClassDetail() {
       const classSection = String(currentClassData?.section || "").trim();
 
       const filtered = (data ?? []).filter((row) => {
+        const rowClassId = String(row?.subject_id || row?.class_id || row?.course_id || "").trim();
         const rowSubject = String(row?.subject || "").trim();
         const rowSection = String(row?.section || "").trim();
 
-        const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-        const sectionMatches = !classSection || !rowSection || rowSection === classSection;
-        return subjectMatches && sectionMatches;
+        const subjectMatches = Boolean(classCode && rowSubject && rowSubject === classCode);
+        const sectionMatches = !classSection || (rowSection && rowSection === classSection);
+
+        if (cleanClassId && rowClassId) return rowClassId === cleanClassId;
+        if (cleanClassId && !rowClassId && rowSubject) return subjectMatches && sectionMatches;
+        return false;
       });
 
       setMaterials(filtered.map(normalizeMaterialRecord));
@@ -1064,7 +1261,7 @@ export function ClassDetail() {
       }
 
       await Promise.all([
-        loadAvailableStudents(),
+        loadAvailableStudents(foundClass),
         loadAssignedStudents(resolvedTeacherId, id),
         fetchClassMaterials(resolvedTeacherId, foundClass),
         fetchClassAssignments(resolvedTeacherId, foundClass),
@@ -1266,6 +1463,8 @@ export function ClassDetail() {
       return;
     }
 
+
+
     setIsStudentSubmitting(true);
     setStuError("");
 
@@ -1454,12 +1653,22 @@ export function ClassDetail() {
         payload.file_path = uploadedFiles[0]?.filePath;  // Single file
       }
 
-      if (columns.includes("subject_id") || columns.includes("subject")) {  // 👈 Likely your column name
-        payload.subject_id = classData?.id || classData?.subject_id;  // 👈 Use class/subject UUID
+      if (columns.includes("subject_id")) {
+        payload.subject_id = classData?.id || classData?.subject_id || null;
         if (!payload.subject_id) {
           console.warn("[ClassDetail] No subject_id found in classData:", classData);
         }
-      } else if (columns.includes("subject")) {
+      }
+
+      if (columns.includes("class_id")) {
+        payload.class_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("course_id")) {
+        payload.course_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("subject")) {
         payload.subject = String(classData?.code || classData?.name || "").trim() || null;
       }
 
@@ -1702,6 +1911,18 @@ export function ClassDetail() {
 
       if (columns.includes("subject")) {
         payload.subject = String(classData?.code || "").trim() || null;
+      }
+
+      if (columns.includes("subject_id")) {
+        payload.subject_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("class_id")) {
+        payload.class_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("course_id")) {
+        payload.course_id = classData?.id || classData?.subject_id || null;
       }
 
       if (columns.includes("section")) {
@@ -2602,15 +2823,31 @@ export function ClassDetail() {
       s.studentId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(s.yearLevel || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const classGradeValue = getClassGradeValue(classData);
+  const classGradeNormalized = normalizeGradeLevel(classGradeValue);
 
   const filteredAvailableStudents = availableStudents
     .filter((student) => !assignedStudents.some((assigned) => String(assigned.id) === String(student.id)))
     .filter((student) => {
-      const name = getStudentFullName(student).toLowerCase();
-      const lrn = String(student.lrn || "").toLowerCase();
-      const yearLevel = String(student.year_level || "").toLowerCase();
-      const query = studentPickerQuery.toLowerCase();
-      return name.includes(query) || lrn.includes(query) || yearLevel.includes(query);
+      const name = normalizeSearchText(getStudentFullName(student));
+      const lrn = normalizeSearchText(student.lrn || "");
+      const yearLevelRaw = student.grade_level || student.year_level || "";
+      const yearLevel = normalizeSearchText(yearLevelRaw);
+      const yearLevelCompact = yearLevel.replace(/\s+/g, "");
+      const query = normalizeSearchText(studentPickerQuery);
+      const queryCompact = query.replace(/\s+/g, "");
+      const queryGradeNormalized = normalizeGradeLevel(query);
+      const studentGradeNormalized = normalizeGradeLevel(yearLevelRaw);
+
+      const matchesQuery =
+        !query ||
+        name.includes(query) ||
+        lrn.includes(query) ||
+        yearLevel.includes(query) ||
+        yearLevelCompact.includes(queryCompact) ||
+        (queryGradeNormalized && studentGradeNormalized === queryGradeNormalized);
+
+      return matchesQuery;
     });
 
   useEffect(() => {
@@ -2623,6 +2860,17 @@ export function ClassDetail() {
     selectAllCheckboxRef.current.checked = allSelected;
     selectAllCheckboxRef.current.indeterminate = partiallySelected;
   }, [selectedStudentIds, filteredAvailableStudents]);
+
+  useEffect(() => {
+    if (!showStudentModal) return;
+    loadAvailableStudents(classData);
+  }, [showStudentModal, id, classGradeNormalized, teacherProfileId]);
+
+  useEffect(() => {
+    if (!showStudentModal) return;
+    console.log("[ClassDetail] Student modal search input:", studentPickerQuery);
+    console.log("[ClassDetail] Filtered available students:", filteredAvailableStudents);
+  }, [showStudentModal, studentPickerQuery, filteredAvailableStudents]);
 
   const getDaysUntilDue = (dueDate) => {
     const diff = Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24));
@@ -4301,7 +4549,8 @@ export function ClassDetail() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Add Student</h3>
-                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â  {classData.section}</p>
+                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} — {classData.section}</p>
+
                 </div>
               </div>
               <button onClick={() => setShowStudentModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -4358,9 +4607,17 @@ export function ClassDetail() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {filteredAvailableStudents.length === 0 ? (
+                    {isStudentsLoading ? (
                       <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No available students found.</td>
+                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading students...</td>
+                      </tr>
+                    ) : filteredAvailableStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
+                          {availableStudents.length === 0 && hasLoadedStudents
+                            ? "No students found in the database."
+                            : "No available students found."}
+                        </td>
                       </tr>
                     ) : (
                       filteredAvailableStudents.map((student) => (
@@ -4373,7 +4630,11 @@ export function ClassDetail() {
                             <input
                               type="checkbox"
                               checked={selectedStudentIds.includes(student.id)}
-                              onChange={() => toggleStudentSelection(student.id)}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                event.stopPropagation();
+                                toggleStudentSelection(student.id);
+                              }}
                               className="accent-green-600"
                             />
                           </td>

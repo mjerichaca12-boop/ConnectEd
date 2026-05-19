@@ -55,15 +55,60 @@ const getViewAllPath = (role) => {
   return "/notifications";
 };
 
+const getNotificationNavigationPath = (notification, role, currentPath = "") => {
+  const type = String(notification.type || "").toLowerCase();
+  const classId = notification.classId || notification.relatedId || notification.related_id;
+  const targetPage = notification.targetPage || notification.path;
+
+  const isTeacher = role === "teacher";
+  const isAdmin = role === "admin";
+
+  switch (type) {
+    case "assignment":
+    case "assignments":
+      if (classId) {
+        return isTeacher ? `/teacher/class/${classId}` : `/classes/${classId}`;
+      }
+      return isTeacher ? "/teacher/classes" : "/subjects";
+
+    case "announcement":
+    case "announcements":
+      return isTeacher ? "/teacher/announcements" : isAdmin ? "/admin/announcements" : "/announcements";
+
+    case "messages":
+    case "message":
+      return isTeacher ? "/teacher/messages" : isAdmin ? "/admin/messages" : "/messages";
+
+    case "grades":
+    case "grade":
+      return isTeacher ? "/teacher/grades" : "/grades";
+
+    case "attendance":
+      return isTeacher ? "/teacher/attendance" : "/attendance";
+
+    default:
+      if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
+        return targetPage;
+      }
+      if (currentPath && currentPath !== "/teacher/notifications" && currentPath !== "/admin/notifications" && currentPath !== "/notifications") {
+        return currentPath;
+      }
+      return isTeacher ? "/teacher/dashboard" : isAdmin ? "/admin/dashboard" : "/";
+  }
+};
+
 const mapRow = (n, role) => ({
   id: String(n.id),
   userId: String(n.user_id || ""),
-  type: String(n.type || ""),
+  type: String(n.type || "").toLowerCase(),
   title: String(n.title || ""),
-  message: String(n.body || ""),
+  message: String(n.body || n.message || ""),
   isRead: Boolean(n.is_read),
   timestamp: new Date(n.created_at).toLocaleString(),
   path: getPathForType(n.type, role),
+  relatedId: n.related_id,
+  classId: n.class_id || n.related_id,
+  targetPage: n.target_page || getPathForType(n.type, role),
 });
 
 function NotificationDropdown({
@@ -102,7 +147,9 @@ function NotificationDropdown({
       } else {
         const { data: authData, error: authError } = await supabase.auth.getUser();
         if (authError) {
-          console.error("[NotificationDropdown] Supabase auth error:", authError);
+          if (!authError.message?.toLowerCase().includes("session missing") && authError.name !== "AuthSessionMissingError") {
+            console.error("[NotificationDropdown] Supabase auth error:", authError);
+          }
         }
 
         const authUser = authData?.user ?? null;
@@ -265,7 +312,13 @@ function NotificationDropdown({
     onMarkAsRead?.(item.id);
     onNotificationsChange?.(updated);
     setIsOpen(false);
-    navigate(item.path || getViewAllPath(user?.role));
+
+    // Conditional contextual navigation
+    const currentPath = window.location.pathname;
+    const targetPath = getNotificationNavigationPath(item, user?.role, currentPath);
+    if (targetPath && targetPath !== currentPath) {
+      navigate(targetPath);
+    }
   };
 
   const handleMarkAllRead = async () => {
@@ -298,9 +351,16 @@ function NotificationDropdown({
     onNotificationsChange?.(updated);
   };
 
-  const filtered = dedupeNotifications(notifications).filter((n) =>
-    categoryFilter === "all" ? true : (n.type || "").toLowerCase() === categoryFilter
-  );
+  const filtered = dedupeNotifications(notifications).filter((n) => {
+    if (categoryFilter === "all") return true;
+    const t = String(n.type || "").toLowerCase().trim();
+    if (categoryFilter === "messages" && (t === "messages" || t === "message")) return true;
+    if (categoryFilter === "assignments" && (t === "assignments" || t === "assignment")) return true;
+    if (categoryFilter === "grades" && (t === "grades" || t === "grade")) return true;
+    if (categoryFilter === "attendance" && (t === "attendance")) return true;
+    if (categoryFilter === "system" && (t === "system" || t === "announcement" || t === "announcements")) return true;
+    return t === categoryFilter;
+  });
 
   return (
     <div className="relative" ref={dropdownRef}>

@@ -5,7 +5,7 @@ export async function getCalendarEvents(): Promise<CalendarEvent[]> {
     const { data, error } = await supabase
         .from('school_calendar_events')
         .select('*')
-        .order('date', { ascending: true });
+        .order('event_date', { ascending: true });
 
     if (error) {
         // Fallback for missing table during dev
@@ -18,7 +18,7 @@ export async function getCalendarEvents(): Promise<CalendarEvent[]> {
 
     return (data || []).map(event => ({
         id: event.id,
-        date: event.date,
+        date: event.event_date,
         title: event.title,
         type: event.type || 'Event',
         description: event.description,

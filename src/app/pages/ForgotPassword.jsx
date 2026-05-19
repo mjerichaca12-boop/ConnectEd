@@ -2,55 +2,84 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
+import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
+
 function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const navigate = useNavigate();
-  const validateEmail = (email2) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email2);
+
+  const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+
+  const sendResetEmail = async () => {
+    if (!supabase) {
+      throw new Error("Auth service is not configured. Please try again later.");
+    }
+
+    const redirectTo = getAuthRedirectUrl("reset-password");
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo
+    });
+
+    if (resetError) {
+      const message = String(resetError.message || "").toLowerCase();
+      if (message.includes("user") || message.includes("email") || message.includes("not found")) {
+        return;
+      }
+      throw resetError;
+    }
   };
-  const handleSubmit = (e) => {
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) {
-      setError("Please enter your email address");
+      setError("Please enter your email address.");
       return;
     }
     if (!validateEmail(email)) {
-      setError("Please enter a valid email address");
+      setError("Please enter a valid email address.");
       return;
     }
+
     setLoading(true);
     setError("");
-    setTimeout(() => {
-      setLoading(false);
+
+    try {
+      await sendResetEmail();
       setEmailSent(true);
-    }, 2e3);
-  };
-  const handleResendEmail = () => {
-    setLoading(true);
-    setTimeout(() => {
+    } catch (err) {
+      console.error("Forgot password request failed:", err);
+      setError("Unable to send reset link right now. Please try again.");
+    } finally {
       setLoading(false);
-    }, 2e3);
+    }
   };
+
+  const handleResendEmail = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await sendResetEmail();
+    } catch (err) {
+      console.error("Forgot password resend failed:", err);
+      setError("Unable to resend reset link right now. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return <div className="min-h-screen bg-gray-50">
-      {
-    /* Main Content */
-  }
       <div className="w-full py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
-            {
-    /* LEFT COLUMN */
-  }
             <div className="w-full flex flex-col justify-center">
               <button
-    type="button"
-    onClick={() => navigate("/")}
-    className="mb-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
-  >
+                type="button"
+                onClick={() => navigate("/")}
+                className="mb-6 inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+              >
                 <ArrowLeft className="w-4 h-4" />
                 Back to Landing Page
               </button>
@@ -58,15 +87,11 @@ function ForgotPassword() {
               <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
                 Reset your password
               </h1>
-              
+
               <p className="text-lg text-gray-600 leading-relaxed">
-                No worries! Enter your email address and we'll send you a link to reset your password. 
-                Make sure to check your spam folder if you don't see it in your inbox.
+                Enter your registered email address and we will send a secure link to reset your password.
               </p>
 
-              {
-    /* Abstract Shape */
-  }
               <div className="mt-10 relative h-64 hidden md:block">
                 <div className="absolute top-0 left-0 w-32 h-32 bg-emerald-100 rounded-full opacity-60" />
                 <div className="absolute top-12 left-24 w-40 h-40 bg-emerald-200 rounded-full opacity-40" />
@@ -74,16 +99,13 @@ function ForgotPassword() {
               </div>
             </div>
 
-            {
-    /* RIGHT COLUMN - Forgot Password Card */
-  }
             <div className="w-full flex justify-center">
               <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.4 }}
-    className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md border border-gray-200"
-  >
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+                className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md border border-gray-200"
+              >
                 {!emailSent ? <>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="p-3 bg-emerald-50 rounded-lg">
@@ -99,44 +121,38 @@ function ForgotPassword() {
                     </p>
 
                     {error && <motion.div
-    initial={{ opacity: 0, scale: 0.95 }}
-    animate={{ opacity: 1, scale: 1 }}
-    className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3"
-  >
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3"
+                      >
                         <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                         <p className="text-red-600 text-sm">{error}</p>
                       </motion.div>}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
-                      {
-    /* Email Input */
-  }
                       <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
                           Email Address
                         </label>
                         <input
-    type="email"
-    id="email"
-    name="email"
-    value={email}
-    onChange={(e) => {
-      setEmail(e.target.value);
-      setError("");
-    }}
-    placeholder="Enter your email address"
-    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-  />
+                          type="email"
+                          id="email"
+                          name="email"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            setError("");
+                          }}
+                          placeholder="Enter your email address"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                        />
                       </div>
 
-                      {
-    /* Submit Button */
-  }
                       <button
-    type="submit"
-    disabled={loading}
-    className="w-full bg-emerald-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-emerald-700 transition-all disabled:bg-emerald-400 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]"
-  >
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-emerald-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-emerald-700 transition-all disabled:bg-emerald-400 disabled:cursor-not-allowed"
+                      >
                         {loading ? <span className="flex items-center justify-center gap-2">
                             <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -146,34 +162,28 @@ function ForgotPassword() {
                           </span> : "Send Reset Link"}
                       </button>
 
-                      {
-    /* Back to Login */
-  }
                       <div className="text-center">
                         <Link
-    to="/login"
-    className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors"
-  >
+                          to="/login"
+                          className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors"
+                        >
                           <ArrowLeft className="w-4 h-4" />
                           Back to Login
                         </Link>
                       </div>
                     </form>
                   </> : <motion.div
-    initial={{ opacity: 0, scale: 0.9 }}
-    animate={{ opacity: 1, scale: 1 }}
-    transition={{ duration: 0.5, type: "spring" }}
-  >
-                    {
-    /* Success State */
-  }
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.5, type: "spring" }}
+                  >
                     <div className="text-center">
                       <motion.div
-    initial={{ scale: 0 }}
-    animate={{ scale: 1 }}
-    transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-    className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-6"
-  >
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                        className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-full mb-6"
+                      >
                         <CheckCircle className="w-8 h-8 text-emerald-600" />
                       </motion.div>
 
@@ -182,34 +192,33 @@ function ForgotPassword() {
                       </h2>
 
                       <p className="text-gray-600 mb-6 leading-relaxed">
-                        We've sent a password reset link to <span className="font-semibold text-gray-900">{email}</span>. 
-                        Click the link in the email to create a new password.
+                        Password reset link sent to your email.
                       </p>
 
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
                         <p className="text-sm text-emerald-800">
-                          <strong>Didn't receive the email?</strong> Check your spam folder or try resending the link.
+                          If the email is registered, you will receive a secure reset link shortly.
                         </p>
                       </div>
 
-                      {
-    /* Resend Email Button */
-  }
+                      {error && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                          {error}
+                        </div>
+                      )}
+
                       <button
-    onClick={handleResendEmail}
-    disabled={loading}
-    className="w-full bg-white text-emerald-600 px-6 py-3 rounded-lg font-medium border-2 border-emerald-600 hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-4"
-  >
+                        onClick={handleResendEmail}
+                        disabled={loading}
+                        className="w-full bg-white text-emerald-600 px-6 py-3 rounded-lg font-medium border-2 border-emerald-600 hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+                      >
                         {loading ? "Resending..." : "Resend Email"}
                       </button>
 
-                      {
-    /* Back to Login */
-  }
                       <Link
-    to="/login"
-    className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors"
-  >
+                        to="/login"
+                        className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 text-sm font-medium transition-colors"
+                      >
                         <ArrowLeft className="w-4 h-4" />
                         Back to Login
                       </Link>
@@ -222,6 +231,7 @@ function ForgotPassword() {
       </div>
     </div>;
 }
+
 export {
   ForgotPassword
 };

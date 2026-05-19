@@ -15,7 +15,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
 
 function Classes() {
   const navigate = useNavigate();
@@ -47,7 +47,8 @@ function Classes() {
       room: "",
       semester: "Current School Year",
       studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
-      students: []
+      students: [],
+      gradeLevel: String(subject.grade_level || subject.year_level || "").trim()
     }));
   };
 
@@ -55,7 +56,8 @@ function Classes() {
     const code = String(subject?.code || "").trim().toLowerCase();
     const name = String(subject?.name || "").trim().toLowerCase();
     const section = String(subject?.section || "").trim().toLowerCase();
-    const semanticKey = [code, name, section].filter(Boolean).join("|");
+    const gradeLevel = String(subject?.gradeLevel || subject?.grade_level || subject?.year_level || "").trim().toLowerCase();
+    const semanticKey = [code, name, section, gradeLevel].filter(Boolean).join("|");
 
     if (semanticKey) {
       return semanticKey;
@@ -87,11 +89,22 @@ function Classes() {
       return;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section, schedule, enrolled")
+      .select("id, code, name, section:grade_level, schedule, enrolled, grade_level")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
+
+    if (error && isColumnMissingError(error)) {
+      const fallback = await supabase
+        .from("subjects")
+        .select("id, code, name, section:grade_level, schedule, enrolled")
+        .eq("teacher_id", id)
+        .order("code", { ascending: true });
+
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       console.error("Failed to load teacher subjects:", error);

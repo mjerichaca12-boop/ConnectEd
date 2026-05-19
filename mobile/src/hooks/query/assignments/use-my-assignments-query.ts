@@ -18,6 +18,13 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
                     queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
                 }
             )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'submissions' },
+                () => {
+                    queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
+                }
+            )
             .subscribe();
 
         return () => {
