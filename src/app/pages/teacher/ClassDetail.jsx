@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { supabase } from "@/app/lib/supabaseClient";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -811,7 +812,7 @@ export function ClassDetail() {
       const { data, error } = await supabase.from(tableName).select("*").limit(1);
       if (error) {
         console.error("[ClassDetail] Failed to resolve assignment columns via sample query:", error);
-        // Do not trust default columns when the sample query failed — return defaults but mark as untrusted
+        // Do not trust default columns when the sample query failed ΓÇö return defaults but mark as untrusted
         setAssignmentColumns(defaultColumns);
         setAssignmentColumnsTrusted(false);
         setAsgSupportsFiles(defaultColumns.includes("file_url") || defaultColumns.includes("file_name") || defaultColumns.includes("file_path"));
@@ -1602,7 +1603,7 @@ export function ClassDetail() {
           if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
             setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
           } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-            setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
+            setMatError(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads for authenticated users.`);
           } else {
             setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
           }
@@ -1632,7 +1633,7 @@ export function ClassDetail() {
         });
       }
 
-      // ✅ FIXED: Use FIRST file URL as plain string (not JSON array)
+      // Γ£à FIXED: Use FIRST file URL as plain string (not JSON array)
       const firstFileUrl = uploadedFiles[0]?.fileUrl;
 
       const columns = await getMaterialColumns();
@@ -1640,11 +1641,11 @@ export function ClassDetail() {
         title,
         description: String(matForm.description || "").trim() || null,
         file_type: fileType,
-        file_url: firstFileUrl,  // 👈 Plain URL string - CRITICAL FIX
-        teacher_id: effectiveTeacherId  // 👈 Always include
+        file_url: firstFileUrl,  // ≡ƒæê Plain URL string - CRITICAL FIX
+        teacher_id: effectiveTeacherId  // ≡ƒæê Always include
       };
 
-      // ✅ FIXED: Conditionally add fields ONLY if columns exist
+      // Γ£à FIXED: Conditionally add fields ONLY if columns exist
       if (columns.includes("file_name")) {
         payload.file_name = uploadedFiles[0]?.fileName;  // Single file
       }
@@ -1685,7 +1686,7 @@ export function ClassDetail() {
         payload.created_at = new Date().toISOString();
       }
 
-      console.log("[ClassDetail] ✅ FIXED DB insert payload:", payload);
+      console.log("[ClassDetail] Γ£à FIXED DB insert payload:", payload);
 
       const insertResult = await supabase
         .from("class_materials")
@@ -2139,7 +2140,7 @@ export function ClassDetail() {
         if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
           throw new Error(`Storage bucket '${STORAGE_BUCKET}' not found. Create it in Supabase Storage.`);
         } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-          throw new Error(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads.`);
+          throw new Error(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads.`);
         }
         await removeAssignmentFilesFromStorage(uploadedFiles.map((item) => item.filePath));
         throw uploadResult.error;
@@ -2258,7 +2259,7 @@ export function ClassDetail() {
         throw new Error("Your Supabase session is missing. Please sign out and sign in again.");
       }
 
-      // Direct insert with returned row — no retry logic
+      // Direct insert with returned row ΓÇö no retry logic
       const insertResult = await supabase.from(tableName).insert(payload).select("*").maybeSingle();
       console.log("[ClassDetail] Assignment insert response:", insertResult);
 
@@ -2271,7 +2272,7 @@ export function ClassDetail() {
 
         const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
         if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-          setAsgError(`Database blocked by Row Level Security. In Supabase: Table Editor → ${tableName} → RLS Policies → Allow INSERT.`);
+          setAsgError(`Database blocked by Row Level Security. In Supabase: Table Editor ΓåÆ ${tableName} ΓåÆ RLS Policies ΓåÆ Allow INSERT.`);
         } else {
           setAsgError(`Failed to save assignment: ${insertResult.error.message || "Unknown error"}`);
         }
@@ -2956,7 +2957,7 @@ export function ClassDetail() {
       fileContents: [],
       onChunk: (text) => {
         accum += text;
-        setQuizMessages([...updatedMessages, { role: "assistant", content: accum + "▌", timestamp: Date.now() }]);
+        setQuizMessages([...updatedMessages, { role: "assistant", content: accum + "Γûî", timestamp: Date.now() }]);
       },
       onDone: (fullText) => {
         setQuizMessages([...updatedMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
@@ -2965,7 +2966,7 @@ export function ClassDetail() {
       },
       onError: (err) => {
         console.error("Quiz AI Error:", err);
-        setQuizMessages([...updatedMessages, { role: "assistant", content: "⚠️ Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
+        setQuizMessages([...updatedMessages, { role: "assistant", content: "ΓÜá∩╕Å Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
         setIsQuizStreaming(false);
       }
     });
@@ -3138,7 +3139,7 @@ export function ClassDetail() {
             </div>
 
             <div className="p-6">
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ STUDENTS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ STUDENTS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
               {activeTab === "students" && (
                 <div>
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
@@ -3229,7 +3230,7 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ MATERIALS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ MATERIALS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
               {activeTab === "materials" && (
                 <div>
                   <div className="flex items-center justify-between mb-6">
@@ -3331,7 +3332,7 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ASSIGNMENTS & ACTIVITIES TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ ASSIGNMENTS & ACTIVITIES TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
               {activeTab === "assignments" && (
                 <div>
                   <div className="flex items-center justify-between mb-4">
@@ -3536,7 +3537,7 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ANNOUNCEMENTS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ ANNOUNCEMENTS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
               {activeTab === "announcements" && (
                 <div>
                   <div className="flex items-center justify-between mb-6">
@@ -3663,7 +3664,7 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ══ AI QUIZ GENERATOR TAB ══ */}
+              {/* ΓòÉΓòÉ AI QUIZ GENERATOR TAB ΓòÉΓòÉ */}
               {activeTab === "quiz" && (
                 <div>
                   <div className="mb-6">
@@ -3729,28 +3730,24 @@ export function ClassDetail() {
 
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Quiz Type</label>
-                          <select
+                          <CustomSelect
                             value={quizType}
-                            onChange={(e) => setQuizType(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          >
-                            {["Multiple Choice", "True/False", "Short Answer", "Identification", "Essay", "Fill in the Blank", "Mixed"].map(t => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
+                            onChange={(value) => setQuizType(value)}
+                            options={["Multiple Choice", "True/False", "Short Answer", "Identification", "Essay", "Fill in the Blank", "Mixed"].map((t) => ({ value: t, label: t }))}
+                            placeholder="Select quiz type"
+                            className="w-full"
+                          />
                         </div>
 
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">Number of Items</label>
-                          <select
+                          <CustomSelect
                             value={quizItemCount}
-                            onChange={(e) => setQuizItemCount(Number(e.target.value))}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          >
-                            {[5, 10, 15, 20, 25, 30, 50].map(n => (
-                              <option key={n} value={n}>{n} items</option>
-                            ))}
-                          </select>
+                            onChange={(value) => setQuizItemCount(Number(value))}
+                            options={[5, 10, 15, 20, 25, 30, 50].map((n) => ({ value: String(n), label: `${n} items` }))}
+                            placeholder="Select item count"
+                            className="w-full"
+                          />
                         </div>
 
                         <div>
@@ -3909,7 +3906,7 @@ export function ClassDetail() {
         </div>
       </main>
 
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ UPLOAD MATERIAL MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ UPLOAD MATERIAL MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
       {showMaterialModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
@@ -3958,15 +3955,13 @@ export function ClassDetail() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">File Type</label>
-                <select
+                <CustomSelect
                   value={matForm.fileType}
-                  onChange={(e) => setMatForm({ ...matForm, fileType: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                >
-                  {["PDF", "DOCX", "PPTX", "XLSX", "TXT", "ZIP", "Other"].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setMatForm({ ...matForm, fileType: value })}
+                  options={["PDF", "DOCX", "PPTX", "XLSX", "TXT", "ZIP", "Other"].map((t) => ({ value: t, label: t }))}
+                  placeholder="Select file type"
+                  className="w-full"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Attach File</label>
@@ -4025,7 +4020,7 @@ export function ClassDetail() {
         </div>
       )}
 
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ CREATE ASSIGNMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ CREATE ASSIGNMENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
       {showAssignmentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto">
@@ -4126,28 +4121,32 @@ export function ClassDetail() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-purple-700 mb-1">Quiz Type</label>
-                      <select
+                      <CustomSelect
                         value={quizType}
-                        onChange={(e) => setQuizType(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      >
-                        <option value="Multiple Choice">Multiple Choice</option>
-                        <option value="True/False">True/False</option>
-                        <option value="Short Answer">Short Answer</option>
-                        <option value="Essay">Essay</option>
-                      </select>
+                        onChange={(value) => setQuizType(value)}
+                        options={[
+                          { value: "Multiple Choice", label: "Multiple Choice" },
+                          { value: "True/False", label: "True/False" },
+                          { value: "Short Answer", label: "Short Answer" },
+                          { value: "Essay", label: "Essay" },
+                        ]}
+                        placeholder="Select quiz type"
+                        className="w-full"
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-purple-700 mb-1">Difficulty</label>
-                      <select
+                      <CustomSelect
                         value={quizDifficulty}
-                        onChange={(e) => setQuizDifficulty(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      >
-                        <option value="Easy">Easy</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Hard">Hard</option>
-                      </select>
+                        onChange={(value) => setQuizDifficulty(value)}
+                        options={[
+                          { value: "Easy", label: "Easy" },
+                          { value: "Medium", label: "Medium" },
+                          { value: "Hard", label: "Hard" },
+                        ]}
+                        placeholder="Select difficulty"
+                        className="w-full"
+                      />
                     </div>
                   </div>
                   <button
@@ -4181,7 +4180,7 @@ export function ClassDetail() {
                         onChunk: (chunk) => {
                           generatedContent += chunk;
                           setQuizGenerated(generatedContent);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: generatedContent + "▌", timestamp: Date.now() }]);
+                          setQuizMessages([...currentMessages, { role: "assistant", content: generatedContent + "Γûî", timestamp: Date.now() }]);
                         },
                         onDone: (fullText) => {
                           setQuizGenerated(fullText);
@@ -4196,7 +4195,7 @@ export function ClassDetail() {
                         },
                         onError: (err) => {
                           console.error("Quiz AI Error:", err);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: "⚠️ Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
+                          setQuizMessages([...currentMessages, { role: "assistant", content: "ΓÜá∩╕Å Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
                           setIsQuizStreaming(false);
                         },
                       });
@@ -4417,7 +4416,7 @@ export function ClassDetail() {
         </div>
       )}
 
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ POST ANNOUNCEMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ POST ANNOUNCEMENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
       {showAnnouncementModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
@@ -4538,7 +4537,7 @@ export function ClassDetail() {
         </div>
       )}
 
-      {/* ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ ADD STUDENT MODAL ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ */}
+      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼ ADD STUDENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼ */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl">
@@ -4549,7 +4548,7 @@ export function ClassDetail() {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Add Student</h3>
-                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} — {classData.section}</p>
+                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} ΓÇö {classData.section}</p>
 
                 </div>
               </div>

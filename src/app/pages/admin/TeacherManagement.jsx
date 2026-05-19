@@ -1368,8 +1368,7 @@ function TeacherManagement() {
                         return (
                           <>
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900">{getTeacherName(teacher)}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{teacher.email || "Teacher Profile"}</p>
+                        <p className="font-semibold text-gray-900 whitespace-nowrap">{getTeacherName(teacher)}</p>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {teacher.email || "-"}
@@ -1510,16 +1509,18 @@ function TeacherManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
-                    <select
+                    <CustomSelect
                       value={teacherFormData.grade_level || ""}
-                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "grade_level", e.target.value)}
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
-                    >
-                      <option value="">Select grade</option>
-                      {[7, 8, 9, 10].map((g) => (
-                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
-                      ))}
-                    </select>
+                      onChange={(value) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "grade_level", value)}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="min-w-[180px]"
+                    />
                     {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
                   </div>
                   <div>
@@ -1636,16 +1637,18 @@ function TeacherManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
-                    <select
+                    <CustomSelect
                       value={editFormData.grade_level || ""}
-                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "grade_level", e.target.value)}
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
-                    >
-                      <option value="">Select grade</option>
-                      {[7, 8, 9, 10].map((g) => (
-                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
-                      ))}
-                    </select>
+                      onChange={(value) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "grade_level", value)}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="min-w-[180px]"
+                    />
                     {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
                   <div>
@@ -1711,7 +1714,7 @@ function TeacherManagement() {
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-semibold text-gray-900">Add Class Assignment</h3>
-                <p className="text-sm text-gray-500">{getTeacherName(teacherToAssign)}</p>
+                <p className="text-sm text-gray-500 whitespace-nowrap">{getTeacherName(teacherToAssign)}</p>
               </div>
               <button onClick={resetAssignModal} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <X className="w-5 h-5 text-gray-600" />
@@ -1784,7 +1787,7 @@ function TeacherManagement() {
                   {getTeacherName(selectedTeacher).charAt(0) || "T"}
                 </div>
                 <div>
-                  <h4 className="text-2xl font-bold text-gray-900">{getTeacherName(selectedTeacher)}</h4>
+                  <h4 className="text-2xl font-bold text-gray-900 whitespace-nowrap">{getTeacherName(selectedTeacher)}</h4>
                   <p className="text-gray-600">{selectedTeacher.id}</p>
                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${isTeacherActive(selectedTeacher.status) ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {normalizeTeacherStatus(selectedTeacher.status)}

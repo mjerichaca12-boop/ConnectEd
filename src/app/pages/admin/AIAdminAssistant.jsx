@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { Users, UserCog, BookOpen, Mail, RefreshCw, Sparkles } from "lucide-react";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { adminNotifications } from "@/app/components/NotificationDefault";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 
 export function AIAdminAssistant() {
   const navigate = useNavigate();
@@ -371,29 +372,47 @@ What would you like to work on today? 🏫`,
               <div className="space-y-3">
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Response Language</label>
-                  <select className="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none">
-                    <option>English</option>
-                    <option>Filipino</option>
-                    <option>Bilingual</option>
-                  </select>
+                  <CustomSelect
+                    value="English"
+                    onChange={() => {}}
+                    options={[
+                      { value: "English", label: "English" },
+                      { value: "Filipino", label: "Filipino" },
+                      { value: "Bilingual", label: "Bilingual" },
+                    ]}
+                    placeholder="Select language"
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Document Type</label>
-                  <select className="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none">
-                    <option>General</option>
-                    <option>Official Letter</option>
-                    <option>Report</option>
-                    <option>Announcement</option>
-                    <option>Evaluation Form</option>
-                  </select>
+                  <CustomSelect
+                    value="General"
+                    onChange={() => {}}
+                    options={[
+                      { value: "General", label: "General" },
+                      { value: "Official Letter", label: "Official Letter" },
+                      { value: "Report", label: "Report" },
+                      { value: "Announcement", label: "Announcement" },
+                      { value: "Evaluation Form", label: "Evaluation Form" },
+                    ]}
+                    placeholder="Select document type"
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className="text-xs text-gray-600 mb-1 block">Tone</label>
-                  <select className="w-full bg-gray-50 border border-gray-200 text-gray-900 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none">
-                    <option>Formal</option>
-                    <option>Semi-formal</option>
-                    <option>Friendly</option>
-                  </select>
+                  <CustomSelect
+                    value="Formal"
+                    onChange={() => {}}
+                    options={[
+                      { value: "Formal", label: "Formal" },
+                      { value: "Semi-formal", label: "Semi-formal" },
+                      { value: "Friendly", label: "Friendly" },
+                    ]}
+                    placeholder="Select tone"
+                    className="w-full"
+                  />
                 </div>
               </div>
             </div>

@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { CustomSelect } from "../../components/admin/CustomSelect";
 import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, ChevronDown, Sparkles } from "lucide-react";
+import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles } from "lucide-react";
 const db = supabaseAdmin || supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -793,7 +794,19 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Year Level</label>
-                    <input type="text" inputMode="numeric" maxLength={2} value={studentFormData.year_level} onChange={(e) => handleAddStudentFieldChange("year_level", e.target.value)} placeholder="e.g. 7 or 12" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.year_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    <CustomSelect
+                      value={studentFormData.year_level}
+                      onChange={(value) => handleAddStudentFieldChange("year_level", value)}
+                      options={[
+                        { value: "7", label: "Year 7" },
+                        { value: "8", label: "Year 8" },
+                        { value: "9", label: "Year 9" },
+                        { value: "10", label: "Year 10" },
+                        
+                      ]}
+                      placeholder="Select year level"
+                      className="w-full"
+                    />
                     {formErrors.year_level && <p className="text-red-500 text-sm mt-1">{formErrors.year_level}</p>}
                   </div>
                   <div>
@@ -803,14 +816,16 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
-                    <div className="relative">
-                      <select value={studentFormData.status} onChange={(e) => handleAddStudentFieldChange("status", e.target.value)} className={`w-full appearance-none px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 bg-white ${formErrors.status ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                        <option value="">Select status</option>
-                        <option value="Active">Active</option>
-                        <option value="Disabled">Disabled</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                    <CustomSelect
+                      value={studentFormData.status}
+                      onChange={(value) => handleAddStudentFieldChange("status", value)}
+                      options={[
+                        { value: "Active", label: "Active" },
+                        { value: "Disabled", label: "Disabled" },
+                      ]}
+                      placeholder="Select status"
+                      className="w-full"
+                    />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
                   </div>
                   <div className="md:col-span-2">
@@ -925,14 +940,16 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
-                    <div className="relative">
-                      <select value={editFormData.status} onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })} className="w-full appearance-none px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white">
-                        <option value="">Select status</option>
-                        <option value="Active">Active</option>
-                        <option value="Disabled">Disabled</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                    <CustomSelect
+                      value={editFormData.status}
+                      onChange={(value) => setEditFormData({ ...editFormData, status: value })}
+                      options={[
+                        { value: "Active", label: "Active" },
+                        { value: "Disabled", label: "Disabled" },
+                      ]}
+                      placeholder="Select status"
+                      className="w-full"
+                    />
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
                 </div>

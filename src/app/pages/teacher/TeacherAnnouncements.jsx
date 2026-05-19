@@ -6,6 +6,7 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
 import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { parseStoredFileList } from "@/app/lib/teacherHelpers";
 import {
   Megaphone,
@@ -636,10 +637,16 @@ function TeacherAnnouncements() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
-                      <select value={formData.targetAudience} onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })} className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="Subject-specific">Subject-specific</option>
-                        <option value="School-wide">School-wide</option>
-                      </select>
+                      <CustomSelect
+                        value={formData.targetAudience}
+                        onChange={(value) => setFormData({ ...formData, targetAudience: value })}
+                        options={[
+                          { value: "Subject-specific", label: "Subject-specific" },
+                          { value: "School-wide", label: "School-wide" },
+                        ]}
+                        placeholder="Select audience"
+                        className="w-full"
+                      />
                     </div>
                   </div>
                   {formData.targetAudience === "Subject-specific" && <div>
@@ -719,12 +726,18 @@ function TeacherAnnouncements() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">File Type</label>
-                      <select value={fileFormData.fileType} onChange={(e) => setFileFormData({ ...fileFormData, fileType: e.target.value })} className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                        <option value="PDF">PDF Document</option>
-                        <option value="DOCX">Word Document</option>
-                        <option value="PPTX">PowerPoint</option>
-                        <option value="XLSX">Excel Spreadsheet</option>
-                      </select>
+                      <CustomSelect
+                        value={fileFormData.fileType}
+                        onChange={(value) => setFileFormData({ ...fileFormData, fileType: value })}
+                        options={[
+                          { value: "PDF", label: "PDF Document" },
+                          { value: "DOCX", label: "Word Document" },
+                          { value: "PPTX", label: "PowerPoint" },
+                          { value: "XLSX", label: "Excel Spreadsheet" },
+                        ]}
+                        placeholder="Select file type"
+                        className="w-full"
+                      />
                     </div>
                   </div>
                   <button onClick={handleFileSubmit} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-all font-medium">

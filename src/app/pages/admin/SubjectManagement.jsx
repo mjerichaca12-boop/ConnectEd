@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { CustomSelect } from "../../components/admin/CustomSelect";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { toast } from "sonner";
@@ -1121,12 +1122,18 @@ function SubjectManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
-                    <select value={subjectFormData.grade_level} onChange={(e) => setSubjectFormData({ ...subjectFormData, grade_level: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select grade</option>
-                      {[7, 8, 9, 10].map((g) => (
-                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
-                      ))}
-                    </select>
+                    <CustomSelect
+                      value={subjectFormData.grade_level}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, grade_level: value })}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="w-full"
+                    />
                     {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
                   </div>
                   <div>
@@ -1185,12 +1192,18 @@ function SubjectManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
-                    <select value={editFormData.grade_level} onChange={(e) => setEditFormData({ ...editFormData, grade_level: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.grade_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select grade</option>
-                      {[7, 8, 9, 10].map((g) => (
-                        <option key={g} value={`Grade ${g}`}>Grade {g}</option>
-                      ))}
-                    </select>
+                    <CustomSelect
+                      value={editFormData.grade_level}
+                      onChange={(value) => setEditFormData({ ...editFormData, grade_level: value })}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="w-full"
+                    />
                     {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
                   <div>

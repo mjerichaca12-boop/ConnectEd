@@ -1,3 +1,5 @@
+import { CustomSelect } from "../admin/CustomSelect";
+
 const GRADE_LEVELS = ["1","2","3","4","5","6","7","8","9","10","11","12"];
 const SUBJECTS = ["English","Filipino","Math","Science","Araling Panlipunan","MAPEH","TLE","Values Education","ESP"];
 const DIFFICULTIES = ["Easy","Medium","Hard"];
@@ -13,28 +15,24 @@ export function AISettings({ settings, setSettings }) {
 
         <div>
           <label className="text-xs text-gray-500 mb-1 block">Grade Level</label>
-          <select
+          <CustomSelect
             value={settings.gradeLevel}
-            onChange={(e) => update("gradeLevel", e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            {GRADE_LEVELS.map((g) => (
-              <option key={g} value={g}>Grade {g}</option>
-            ))}
-          </select>
+            onChange={(value) => update("gradeLevel", value)}
+            options={GRADE_LEVELS.map((g) => ({ value: g, label: `Grade ${g}` }))}
+            placeholder="Select grade"
+            className="w-full"
+          />
         </div>
 
         <div>
           <label className="text-xs text-gray-500 mb-1 block">Subject</label>
-          <select
+          <CustomSelect
             value={settings.subject}
-            onChange={(e) => update("subject", e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            {SUBJECTS.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            onChange={(value) => update("subject", value)}
+            options={SUBJECTS.map((s) => ({ value: s, label: s }))}
+            placeholder="Select subject"
+            className="w-full"
+          />
         </div>
 
         <div>

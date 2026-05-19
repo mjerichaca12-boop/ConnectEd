@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 import {
   Bell,
@@ -166,6 +168,7 @@ function VideoConferencing() {
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
   const [meetingLaunchError, setMeetingLaunchError] = useState("");
+  const [pendingDeleteMeeting, setPendingDeleteMeeting] = useState(null);
 
   const saveMeetings = (updated) => setMeetings(updated);
 
@@ -565,16 +568,15 @@ function VideoConferencing() {
   };
 
   const handleDeleteMeeting = async (id) => {
-    if (!window.confirm("Delete this meeting?")) return;
     try {
       const tableName = MEETING_TABLE;
       // Use supabaseAdmin to bypass RLS for deletes
       const client = supabaseAdmin || supabase;
       await client.from(tableName).delete().eq("id", Number(id));
+      setMeetings((current) => current.filter((meeting) => String(meeting.id) !== String(id)));
     } catch (error) {
       console.error("Failed to delete meeting:", error);
     }
-    saveMeetings(meetings.filter((m) => String(m.id) !== String(id)));
   };
 
   const handleCopyLink = (link, id) => {
@@ -591,6 +593,7 @@ function VideoConferencing() {
   };
 
   const classOptions = classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }));
+  const durationOptions = ["30", "45", "60", "90", "120"].map((value) => ({ value, label: `${value} min` }));
 
   const filteredMeetings = meetings.filter((meeting) => {
     const matchesSearch = [meeting.title, meeting.class, meeting.subject].some((s) =>
@@ -834,7 +837,7 @@ function VideoConferencing() {
                           </button>
                         )}
                         <button
-                          onClick={() => handleDeleteMeeting(meeting.id)}
+                          onClick={() => setPendingDeleteMeeting(meeting)}
                           className="p-2 text-green-700 hover:text-green-950 hover:bg-green-50 rounded-lg transition-all"
                           title="Delete meeting"
                         >
@@ -849,6 +852,24 @@ function VideoConferencing() {
           </div>
         </div>
       </main>
+
+      <ConfirmDialog
+        isOpen={Boolean(pendingDeleteMeeting)}
+        onClose={() => setPendingDeleteMeeting(null)}
+        onConfirm={() => {
+          if (pendingDeleteMeeting?.id) {
+            handleDeleteMeeting(pendingDeleteMeeting.id);
+          }
+          setPendingDeleteMeeting(null);
+        }}
+        title="Delete meeting"
+        message={pendingDeleteMeeting?.title
+          ? `Are you sure you want to delete ${pendingDeleteMeeting.title}? This action cannot be undone.`
+          : "Are you sure you want to delete this meeting? This action cannot be undone."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
 
       {/* ── Create Meeting Modal ──────────────────────────────────────── */}
       {showCreateModal && (
@@ -882,16 +903,13 @@ function VideoConferencing() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-green-700 mb-1.5 uppercase tracking-wider">Class</label>
-                  <select
+                  <CustomSelect
                     value={formData.class}
-                    onChange={(e) => setFormData({ ...formData, class: e.target.value })}
-                    className={`w-full px-4 py-3 bg-green-50 text-green-950 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm ${formErrors.class ? "border-red-500" : "border-green-200"}`}
-                  >
-                    <option value="">Select class</option>
-                    {classOptions.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label || c.value}</option>
-                    ))}
-                  </select>
+                    onChange={(value) => setFormData({ ...formData, class: value })}
+                    options={classOptions}
+                    placeholder="Select class"
+                    className="w-full"
+                  />
                   {formErrors.class && <p className="mt-1 text-xs text-red-600">{formErrors.class}</p>}
                 </div>
                 <div>
@@ -931,15 +949,13 @@ function VideoConferencing() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-green-700 mb-1.5 uppercase tracking-wider">Duration</label>
-                  <select
+                  <CustomSelect
                     value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    className="w-full px-4 py-3 bg-green-50 text-green-950 border border-green-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                  >
-                    {["30", "45", "60", "90", "120"].map((d) => (
-                      <option key={d} value={d}>{d} min</option>
-                    ))}
-                  </select>
+                    onChange={(value) => setFormData({ ...formData, duration: value })}
+                    options={durationOptions}
+                    placeholder="Select duration"
+                    className="w-full"
+                  />
                 </div>
               </div>
 
