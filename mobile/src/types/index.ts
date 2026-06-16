@@ -47,16 +47,6 @@ export interface CalendarEvent {
     color?: string;
 }
 
-export interface Meeting {
-    id: string;
-    subject: string;
-    title: string;
-    time: string;
-    duration: string;
-    subject_id?: string;
-    meeting_link?: string;
-}
-
 export interface Material {
     id: string;
     title: string;

@@ -19,22 +19,6 @@ export const studentNotifications: NotificationItem[] = [
     timestamp: '2 hours ago'
   },
   {
-    id: 'student-3',
-    title: 'Attendance Marked',
-    message: 'You were marked Late for General Science on Jan 15',
-    path: '/attendance',
-    isRead: false,
-    timestamp: '1 day ago'
-  },
-  {
-    id: 'student-4',
-    title: 'Live Class Starting',
-    message: 'Mathematics - Algebra Basics is live now!',
-    path: '/video-conference',
-    isRead: false,
-    timestamp: '5 mins ago'
-  },
-  {
     id: 'student-5',
     title: 'New Announcement',
     message: 'Mid-term examinations scheduled for January 20-24',
@@ -92,22 +76,6 @@ export const teacherNotifications: NotificationItem[] = [
     path: '/teacher/messages',
     isRead: false,
     timestamp: '1 day ago'
-  },
-  {
-    id: 'teacher-3',
-    title: 'Attendance Report Ready',
-    message: 'Monthly attendance report is available.',
-    path: '/teacher/attendance',
-    isRead: false,
-    timestamp: '2 days ago'
-  },
-  {
-    id: 'teacher-4',
-    title: 'New Class Scheduled',
-    message: 'A new video conference has been scheduled for MATH101.',
-    path: '/teacher/video-conference',
-    isRead: false,
-    timestamp: '3 hours ago'
   },
   {
     id: 'teacher-5',

@@ -109,20 +109,6 @@ export default function TabLayout() {
                     }}
                 />
                 <Tabs.Screen
-                    name="meeting"
-                    options={{
-                        title: "Meeting",
-                        tabBarLabel: "Meeting",
-                        tabBarIcon: ({ color, focused }) => (
-                            <Ionicons
-                                name={focused ? "videocam" : "videocam-outline"}
-                                size={22}
-                                color={color}
-                            />
-                        ),
-                    }}
-                />
-                <Tabs.Screen
                     name="messages"
                     options={{
                         title: "Messages",
@@ -139,7 +125,6 @@ export default function TabLayout() {
 
                 {/* Hidden screens / Auxiliary */}
                 <Tabs.Screen name="menu" options={{ href: null }} />
-                <Tabs.Screen name="teacher/attendance" options={{ href: null }} />
                 <Tabs.Screen name="enrollment" options={{ href: null }} />
                 <Tabs.Screen name="profile/index" options={{ href: null }} />
                 <Tabs.Screen name="calendar/index" options={{ href: null }} />

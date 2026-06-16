@@ -52,9 +52,6 @@ const getNotificationNavigationPath = (notification, role, currentPath = "") => 
     case "grade":
       return isTeacher ? "/teacher/grades" : "/grades";
 
-    case "attendance":
-      return isTeacher ? "/teacher/attendance" : "/attendance";
-
     default:
       if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
         return targetPage;
@@ -247,7 +244,6 @@ export function Notifications() {
     if (filter === 'messages' && (t === 'messages' || t === 'message')) return true;
     if (filter === 'assignments' && (t === 'assignments' || t === 'assignment')) return true;
     if (filter === 'grades' && (t === 'grades' || t === 'grade')) return true;
-    if (filter === 'attendance' && (t === 'attendance')) return true;
     if (filter === 'system' && (t === 'system' || t === 'announcement' || t === 'announcements')) return true;
     return t === filter;
   });
@@ -260,7 +256,6 @@ export function Notifications() {
           <div className="flex items-center gap-2">
             <button onClick={markAllRead} className="text-sm text-green-600">Mark all read</button>
             <button onClick={() => setFilter('all')} className={`text-sm px-2 py-1 rounded ${filter==='all' ? 'bg-green-600 text-white' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}>All</button>
-            <button onClick={() => setFilter('attendance')} className={`text-sm px-2 py-1 rounded ${filter==='attendance' ? 'bg-green-600 text-white' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}>Attendance</button>
             <button onClick={() => setFilter('assignments')} className={`text-sm px-2 py-1 rounded ${filter==='assignments' ? 'bg-green-600 text-white' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}>Assignments</button>
             <button onClick={() => setFilter('messages')} className={`text-sm px-2 py-1 rounded ${filter==='messages' ? 'bg-green-600 text-white' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}>Messages</button>
             <button onClick={() => setFilter('grades')} className={`text-sm px-2 py-1 rounded ${filter==='grades' ? 'bg-green-600 text-white' : 'text-gray-600 bg-gray-100 hover:bg-gray-200'}`}>Grades</button>

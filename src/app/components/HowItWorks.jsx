@@ -3,7 +3,7 @@ import { useScrollReveal } from "@/app/hooks/useAnimations";
 
 const steps = [
   { number: "01", icon: Settings, title: "Administrators configure", desc: "Set up school accounts, manage teacher access, configure subjects, and define the academic calendar." },
-  { number: "02", icon: BookOpen, title: "Teachers manage", desc: "Create class sections, upload materials, record grades and attendance, and communicate with students." },
+  { number: "02", icon: BookOpen, title: "Teachers manage", desc: "Create class sections, upload materials, record grades, and communicate with students." },
   { number: "03", icon: GraduationCap, title: "Students engage", desc: "Access assignments, view grades, read announcements, message teachers, and track their academic progress." },
 ];
 

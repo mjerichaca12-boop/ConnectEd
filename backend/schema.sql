@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS public.enrollments (
     student_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     status TEXT CHECK (status IN ('pending', 'accepted', 'rejected')) DEFAULT 'pending',
     grade TEXT,
-    attendance TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     UNIQUE(subject_id, student_id)
 );

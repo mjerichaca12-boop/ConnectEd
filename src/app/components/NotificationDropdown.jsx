@@ -83,9 +83,6 @@ const getNotificationNavigationPath = (notification, role, currentPath = "") => 
     case "grade":
       return isTeacher ? "/teacher/grades" : "/grades";
 
-    case "attendance":
-      return isTeacher ? "/teacher/attendance" : "/attendance";
-
     default:
       if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
         return targetPage;
@@ -357,7 +354,6 @@ function NotificationDropdown({
     if (categoryFilter === "messages" && (t === "messages" || t === "message")) return true;
     if (categoryFilter === "assignments" && (t === "assignments" || t === "assignment")) return true;
     if (categoryFilter === "grades" && (t === "grades" || t === "grade")) return true;
-    if (categoryFilter === "attendance" && (t === "attendance")) return true;
     if (categoryFilter === "system" && (t === "system" || t === "announcement" || t === "announcements")) return true;
     return t === categoryFilter;
   });
@@ -400,7 +396,7 @@ function NotificationDropdown({
                     Mark all read
                   </button>
                 )}
-                {["all", "attendance", "assignments", "messages", "grades", "system"].map((cat) => (
+                {["all", "assignments", "messages", "grades", "system"].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setCategoryFilter(cat)}

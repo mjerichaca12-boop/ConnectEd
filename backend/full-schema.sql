@@ -60,8 +60,7 @@ SELECT
         ELSE lower(status)
     END AS status,
     created_at,
-    NULL::text AS grade,
-    NULL::text AS attendance
+    NULL::text AS grade
 FROM public.teacher_student_assignments;
 
 -- Views don't directly have RLS policies. They use the underlying table's policies.

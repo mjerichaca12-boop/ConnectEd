@@ -17,12 +17,10 @@ import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { Classes } from "./pages/teacher/Classes";
 import { ClassDetail } from "./pages/teacher/ClassDetail";
 import { GradesManagement } from "./pages/teacher/GradesManagement";
-import { AttendanceManagement } from "./pages/teacher/AttendanceManagement";
 import { TeacherAnnouncements } from "./pages/teacher/TeacherAnnouncements";
 import { ClassMaterials } from "./pages/teacher/ClassMaterials";
 import { TeacherMessages } from "./pages/teacher/TeacherMessages";
 import { TeacherProfile } from "./pages/teacher/TeacherProfile";
-import { VideoConferencing as TeacherVideoConferencing } from "./pages/teacher/VideoConferencing";
 import { Notifications } from "./pages/teacher/Notifications";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { StudentManagement } from "./pages/admin/StudentManagement";
@@ -218,14 +216,12 @@ export default function App() {
         <Route path="/subjects" element={<Navigate to="/login" replace />} />
         <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
         <Route path="/grades" element={<Navigate to="/login" replace />} />
-        <Route path="/attendance" element={<Navigate to="/login" replace />} />
         <Route path="/announcements" element={<Navigate to="/login" replace />} />
         <Route path="/content" element={<Navigate to="/login" replace />} />
         <Route path="/materials" element={<Navigate to="/login" replace />} />
         <Route path="/enrollment" element={<Navigate to="/login" replace />} />
         <Route path="/messages" element={<Navigate to="/login" replace />} />
         <Route path="/profile" element={<Navigate to="/login" replace />} />
-        <Route path="/video-conference" element={<Navigate to="/login" replace />} />
         <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
         <Route path="/notifications" element={<Navigate to="/login" replace />} />
 
@@ -234,13 +230,11 @@ export default function App() {
         <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
         <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
         <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
-        <Route path="/teacher/attendance" element={<TeacherRouteGuard><AttendanceManagement /></TeacherRouteGuard>} />
         <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
         <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
         <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
         <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
         <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
-        <Route path="/teacher/video-conference" element={<TeacherRouteGuard><TeacherVideoConferencing /></TeacherRouteGuard>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />

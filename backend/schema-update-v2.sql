@@ -1,12 +1,11 @@
 -- ============================================================
--- ConnectEd: Schema Update v2 (Grades, Attendance, Assignments)
+-- ConnectEd: Schema Update v2 (Grades, Assignments)
 -- Run this in your Supabase SQL Editor (Dashboard > SQL Editor)
 -- ============================================================
 
--- 1. ADD GRADES AND ATTENDANCE TO teacher_student_assignments
+-- 1. ADD GRADES TO teacher_student_assignments
 ALTER TABLE public.teacher_student_assignments 
-ADD COLUMN IF NOT EXISTS grades JSONB DEFAULT '{}'::jsonb,
-ADD COLUMN IF NOT EXISTS attendance JSONB DEFAULT '{}'::jsonb;
+ADD COLUMN IF NOT EXISTS grades JSONB DEFAULT '{}'::jsonb;
 
 -- 2. RECREATE ENROLLMENTS VIEW TO EXPOSE THESE NEW COLUMNS
 DROP VIEW IF EXISTS public.enrollments;
@@ -21,8 +20,7 @@ SELECT
         ELSE lower(status)
     END AS status,
     created_at,
-    grades AS grade,
-    attendance
+    grades AS grade
 FROM public.teacher_student_assignments;
 
 GRANT SELECT, UPDATE ON public.enrollments TO authenticated, anon, service_role;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, BookOpen, Shield, ArrowRight, CheckCircle, Settings, Users, BarChart2, Calendar, MessageSquare, ClipboardCheck } from "lucide-react";
+import { GraduationCap, BookOpen, Shield, ArrowRight, CheckCircle, Settings, Users, BarChart2, MessageSquare, ClipboardCheck, Calendar } from "lucide-react";
 import { useScrollReveal } from "@/app/hooks/useAnimations";
 
 const roles = [
@@ -17,17 +17,17 @@ const roles = [
     icon: BookOpen,
     title: "Teacher",
     subtitle: "Manage your classes, grades, and student interactions on the web.",
-    features: ["Create & manage class sections", "Upload materials & assignments", "Record grades and attendance", "Post class announcements", "Message students directly"],
+    features: ["Create & manage class sections", "Upload materials & assignments", "Record student grades", "Post class announcements", "Message students directly"],
     cta: "/request-access",
     ctaLabel: "Sign up as a Teacher",
-    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: Calendar, label: "Attendance" }],
+    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: MessageSquare, label: "Student Messaging" }],
   },
   {
     key: "student",
     icon: GraduationCap,
     title: "Student",
     subtitle: "Access your school on mobile — grades, assignments, and more.",
-    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track attendance history"],
+    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track learning progress"],
     mockupFeatures: [{ icon: GraduationCap, label: "Academic Records" }, { icon: MessageSquare, label: "Teacher Chat" }, { icon: Calendar, label: "Class Announcements" }],
   },
 ];

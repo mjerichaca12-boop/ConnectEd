@@ -11,7 +11,6 @@ import { useRemoveStudentMutation } from "../../../../src/hooks/query/enrollment
 const CLASS_STATS = [
     { label: "Students", value: "32", icon: "people", color: "#10B981" },
     { label: "Avg Grade", value: "88%", icon: "trending-up", color: "#3B82F6" },
-    { label: "Attendance", value: "92%", icon: "calendar", color: "#F59E0B" },
     { label: "Room", value: "301", icon: "location", color: "#8B5CF6" },
 ];
 
@@ -137,8 +136,7 @@ export default function ClassDetailScreen() {
                                 <Text style={[styles.headerText, { width: 90 }]}>STUDENT ID</Text>
                                 <Text style={[styles.headerText, { width: 180 }]}>NAME</Text>
                                 <Text style={[styles.headerText, { width: 220 }]}>CONTACT</Text>
-                                <Text style={[styles.headerText, { width: 100, textAlign: 'center' }]}>GRADE</Text>
-                                <Text style={[styles.headerText, { width: 110, textAlign: 'center' }]}>ATTENDANCE</Text>
+                                <Text style={[styles.headerText, { width: 150, textAlign: 'center' }]}>GRADE</Text>
                                 <Text style={[styles.headerText, { width: 100, textAlign: 'center' }]}>STATUS</Text>
                                 <Text style={[styles.headerText, { width: 100, textAlign: 'center' }]}>ACTIONS</Text>
                             </View>
@@ -163,18 +161,10 @@ export default function ClassDetailScreen() {
                                                 <Text style={styles.contactText}>{item.phone}</Text>
                                             </View>
                                         </View>
-                                        <View style={{ width: 100, alignItems: 'center' }}>
+                                        <View style={{ width: 150, alignItems: 'center' }}>
                                             <View style={styles.gradeBadge}>
                                                 <Ionicons name="ribbon-outline" size={14} color={Colors.light.primary} />
                                                 <Text style={styles.gradeText}>{item.grades?.overall || "-"}</Text>
-                                            </View>
-                                        </View>
-                                        <View style={{ width: 110, alignItems: 'center' }}>
-                                            <View style={styles.attendanceBadge}>
-                                                <Ionicons name="checkmark-circle-outline" size={14} color="#10B981" />
-                                                <Text style={styles.attendanceText}>
-                                                    {item.attendance?.present ? `${item.attendance.present} P` : "-"}
-                                                </Text>
                                             </View>
                                         </View>
                                         <View style={{ width: 100, alignItems: 'center' }}>
@@ -446,20 +436,6 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: 'bold',
         color: Colors.light.primary,
-        marginLeft: 4,
-    },
-    attendanceBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F0FDF4',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-    },
-    attendanceText: {
-        fontSize: 13,
-        fontWeight: 'bold',
-        color: '#10B981',
         marginLeft: 4,
     },
     statusBadge: {

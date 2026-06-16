@@ -259,6 +259,8 @@ function GradesManagement() {
   const [hasViewedSubmission, setHasViewedSubmission] = useState(false);
   const [assessmentSubmissionsMap, setAssessmentSubmissionsMap] = useState({});
   const [submittedStudentProfiles, setSubmittedStudentProfiles] = useState({});
+  const assessmentSubmissionsMapRef = useRef({});
+  const submittedStudentProfilesRef = useRef({});
   const [assessmentStatusMap, setAssessmentStatusMap] = useState({});
   const [assessmentFeedbackMap, setAssessmentFeedbackMap] = useState({});
   const assessmentGradesMapRef = useRef({});
@@ -274,6 +276,14 @@ function GradesManagement() {
   useEffect(() => {
     assessmentGradesMapRef.current = assessmentGradesMap;
   }, [assessmentGradesMap]);
+
+  useEffect(() => {
+    assessmentSubmissionsMapRef.current = assessmentSubmissionsMap;
+  }, [assessmentSubmissionsMap]);
+
+  useEffect(() => {
+    submittedStudentProfilesRef.current = submittedStudentProfiles;
+  }, [submittedStudentProfiles]);
 
   useEffect(() => {
     assessmentItemsRef.current = assessmentItems;
@@ -419,28 +429,30 @@ function GradesManagement() {
     }
 
     const assessmentLookup = new Map(assessments.map((item) => [item.id, item]));
-    const mapped = {};
-    const statusMapped = {};
+    const gradesMap = {};
+    const statusMap = {};
     const feedbackMapped = {};
+
     (data ?? []).forEach((row) => {
-      const assessmentId = String(row.assessment_id || "");
-      const studentId = String(row.student_id || "");
-      if (!assessmentId || !studentId) return;
-      const assessment = assessmentLookup.get(assessmentId);
-      const score = clampAssessmentScore(row.grade_value, assessment?.maxPoints ?? 100);
-      if (!mapped[assessmentId]) mapped[assessmentId] = {};
-      mapped[assessmentId][studentId] = score;
+      const aid = String(row.assessment_id || "").trim();
+      const sid = String(row.student_id || "").trim();
+      if (!aid || !sid) return;
 
-      if (!statusMapped[assessmentId]) statusMapped[assessmentId] = {};
-      const rowStatus = String(row.status || row.grading_status || "").trim();
-      statusMapped[assessmentId][studentId] = rowStatus || (typeof score === "number" ? "Graded" : "Pending");
+      if (!gradesMap[aid]) gradesMap[aid] = {};
+      gradesMap[aid][sid] = typeof row.grade_value === "number" ? row.grade_value : Number(row.grade_value || 0);
 
-      if (!feedbackMapped[assessmentId]) feedbackMapped[assessmentId] = {};
-      feedbackMapped[assessmentId][studentId] = String(row.feedback || "").trim();
+      if (!statusMap[aid]) statusMap[aid] = {};
+      statusMap[aid][sid] = String(row.status || "Pending");
+
+      const fb = String(row.feedback || row.feedback_text || row.comments || "").trim();
+      if (fb) {
+        if (!feedbackMapped[aid]) feedbackMapped[aid] = {};
+        feedbackMapped[aid][sid] = fb;
+      }
     });
 
-    setAssessmentGradesMap((prev) => mergeNestedMaps(prev, mapped));
-    setAssessmentStatusMap(statusMapped);
+    setAssessmentGradesMap((prev) => mergeNestedMaps(prev, gradesMap));
+    setAssessmentStatusMap((prev) => mergeNestedMaps(prev, statusMap));
     setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMapped));
   }, []);
 
@@ -487,6 +499,7 @@ function GradesManagement() {
     });
 
     setAssessmentSubmissionsMap(mapped);
+    assessmentSubmissionsMapRef.current = mapped;
 
     const submissionIds = (data ?? []).map((row) => String(row.id || "")).filter(Boolean);
     if (submissionIds.length > 0) {
@@ -749,6 +762,177 @@ function GradesManagement() {
     const timer = window.setTimeout(() => setSaveSuccess(false), 3000);
     return () => window.clearTimeout(timer);
   }, [saveSuccess]);
+
+  // Real-time subscription: update submissions map when students submit
+  useEffect(() => {
+    if (!supabase || !teacherId || !selectedClass) return;
+
+    const channel = supabase
+      .channel(`teacher-submissions-${teacherId}-${selectedClass}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        // ensure it's for the current class and teacher
+        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        // Merge into submissions map
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+
+        // Fetch and cache submitter profile if missing
+        let studentName = "Student";
+        try {
+          if (!submittedStudentProfilesRef.current[normalized.studentId]) {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("id, first_name, middle_name, last_name, lrn")
+              .eq("id", normalized.studentId)
+              .maybeSingle();
+            if (profile && profile.id) {
+              const fullName = [profile.first_name, profile.middle_name, profile.last_name]
+                .map((p) => String(p || "").trim())
+                .filter(Boolean)
+                .join(" ") || "Student";
+              const profileObj = { id: String(profile.id), studentName: fullName, studentId: String(profile.lrn || "N/A") };
+              setSubmittedStudentProfiles((prev) => {
+                const next = { ...(prev || {}) };
+                next[profileObj.id] = profileObj;
+                submittedStudentProfilesRef.current = next;
+                return next;
+              });
+              studentName = profileObj.studentName;
+            }
+          } else {
+            studentName = submittedStudentProfilesRef.current[normalized.studentId]?.studentName || studentName;
+          }
+        } catch (e) {
+          console.error("Failed to fetch submitted student profile:", e);
+        }
+
+        // Find assessment title if available
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        const assessmentTitle = assessment ? (assessment.displayName || assessment.title) : "an assessment";
+
+        // Show toast to teacher
+        try {
+          toast.success(`${studentName} submitted ${assessmentTitle}`);
+        } catch {}
+
+        // Create a notification row so NotificationDropdown picks it up in realtime
+        try {
+          await supabase.from("notifications").insert([{
+            user_id: teacherId,
+            type: "assignments",
+            title: `New submission: ${assessmentTitle}`,
+            body: `${studentName} submitted ${assessmentTitle}`,
+            related_id: normalized.assessmentId,
+            class_id: selectedClass,
+          }]);
+        } catch (err) {
+          console.error("Failed to insert notification for new submission:", err);
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "teacher_assessment_submissions" }, (payload) => {
+        const oldRow = payload.old;
+        if (!oldRow) return;
+        if (String(oldRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(oldRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(oldRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (next[normalized.assessmentId]) {
+            delete next[normalized.assessmentId][normalized.studentId];
+            if (Object.keys(next[normalized.assessmentId]).length === 0) delete next[normalized.assessmentId];
+          }
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+      })
+      // Also listen to legacy/general `submissions` table
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        // check whether this assessment belongs to the currently-loaded class
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+
+        // fetch profile if missing
+        try {
+          if (!submittedStudentProfilesRef.current[normalized.studentId]) {
+            const { data: profile } = await supabase.from("profiles").select("id, first_name, middle_name, last_name, lrn").eq("id", normalized.studentId).maybeSingle();
+            if (profile && profile.id) {
+              const fullName = [profile.first_name, profile.middle_name, profile.last_name].map((p)=>String(p||"").trim()).filter(Boolean).join(" ")||"Student";
+              const profileObj = { id: String(profile.id), studentName: fullName, studentId: String(profile.lrn||"N/A") };
+              setSubmittedStudentProfiles((prev) => { const next = { ...(prev||{}) }; next[profileObj.id]=profileObj; submittedStudentProfilesRef.current = next; return next; });
+            }
+          }
+        } catch (e) { console.error("Failed to fetch profile for submission:", e); }
+
+        const assessmentTitle = assessment.displayName || assessment.title || "an assessment";
+        try { toast.success(`${submittedStudentProfilesRef.current[normalized.studentId]?.studentName || 'Student'} submitted ${assessmentTitle}`); } catch {}
+        try { await supabase.from("notifications").insert([{ user_id: teacherId, type: "assignments", title: `New submission: ${assessmentTitle}`, body: `${submittedStudentProfilesRef.current[normalized.studentId]?.studentName || 'Student'} submitted ${assessmentTitle}`, related_id: normalized.assessmentId, class_id: selectedClass }]); } catch (e) { console.error("Failed to create notification from submissions table:", e); }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+        setAssessmentSubmissionsMap((prev) => { const next = { ...(prev||{}) }; if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {}; next[normalized.assessmentId][normalized.studentId] = normalized; assessmentSubmissionsMapRef.current = next; return next; });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, (payload) => {
+        const oldRow = payload.old;
+        if (!oldRow) return;
+        const normalized = normalizeSubmission(oldRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+        setAssessmentSubmissionsMap((prev) => { const next = { ...(prev||{}) }; if (next[normalized.assessmentId]) { delete next[normalized.assessmentId][normalized.studentId]; if (Object.keys(next[normalized.assessmentId]).length===0) delete next[normalized.assessmentId]; } assessmentSubmissionsMapRef.current = next; return next; });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [teacherId, selectedClass]);
 
   useEffect(() => {
     if (!autoSaveMessage) return;

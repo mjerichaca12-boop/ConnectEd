@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, BookOpen, ClipboardList, UserCheck,
-  Video, MessageSquare, User, Menu, X, LogOut, ChevronRight, Sparkles
+  LayoutDashboard, BookOpen, ClipboardList,
+  MessageSquare, User, Menu, X, LogOut, ChevronRight, Sparkles
 } from "lucide-react";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { supabase } from "../lib/supabaseClient";
@@ -43,8 +43,6 @@ export function TeacherSidebar({ teacherName, onLogout }) {
     { icon: LayoutDashboard, label: "Dashboard",        path: "/teacher/dashboard" },
     { icon: BookOpen,        label: "Classes",           path: "/teacher/classes" },
     { icon: ClipboardList,   label: "Grades Management", path: "/teacher/grades" },
-    { icon: UserCheck,       label: "Attendance",        path: "/teacher/attendance" },
-    { icon: Video,           label: "Video Conference",  path: "/teacher/video-conference" },
     { icon: MessageSquare,   label: "Messages",          path: "/teacher/messages" },
     { icon: User,            label: "Profile",           path: "/teacher/profile" },
     { icon: Sparkles,        label: "AI Assistant",      path: "/teacher/ai-assistant", badge: "NEW" },

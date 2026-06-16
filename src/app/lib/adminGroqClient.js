@@ -234,7 +234,7 @@ Format:
 | Criteria | Excellent (5) | Good (4) | Satisfactory (3) | Needs Improvement (2) | Unsatisfactory (1) |
 
 ### II. Platform Usage (ConnectEd specific)
-(Grade submission, attendance tracking, announcement posting, material uploads, parent communication)
+(Grade submission, announcement posting, material uploads, parent communication)
 
 ### III. Professional Responsibilities
 ### IV. Summary & Recommendations

@@ -28,14 +28,12 @@ interface BottomSheetMenuProps {
 const STUDENT_MENU: MenuItem[] = [
     { label: "School Calendar", icon: "calendar-sharp", route: "/(tabs)/calendar" },
     { label: "Grades", icon: "school-outline", route: "/(tabs)/grades" },
-    { label: "Attendance", icon: "checkbox-outline", route: "/(tabs)/attendance" },
     { label: "Chatbot", icon: "chatbubble-ellipses-outline", route: "chatbot" },
     { label: "Profile", icon: "person-outline", route: "/(tabs)/profile" },
 ];
 
 const TEACHER_MENU: MenuItem[] = [
     { label: "School Calendar", icon: "calendar-sharp", route: "/(tabs)/calendar" },
-    { label: "Attendance", icon: "calendar-outline", route: "/(tabs)/teacher/attendance" },
     { label: "Chatbot", icon: "chatbubble-ellipses-outline", route: "chatbot" },
     { label: "Faculty Profile", icon: "person-outline", route: "/(tabs)/profile" },
 ];

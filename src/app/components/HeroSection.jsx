@@ -56,7 +56,7 @@ function HeroSection() {
           className="text-gray-600 text-lg md:text-xl leading-relaxed mb-8 max-w-2xl mx-auto"
           style={{ animation: "fadeSlideUp 0.9s ease-out 0.3s both" }}
         >
-          ConnectEd unifies classroom management, grading, attendance, announcements,
+          ConnectEd unifies classroom management, grading, announcements,
           and messaging — built specifically for DepEd public schools in Dasmariñas, Cavite.
         </p>
 
