@@ -321,14 +321,21 @@ function Login() {
         id: profile.id,
         name: profile.first_name + " " + (profile.last_name || ""),
         email: profile.email,
-        role: role
+        role: role,
+        must_change_password: profile.must_change_password === true
       }));
 
       console.log("LOGIN DATA:", { email: normalizedEmail, profileId: profile.id, role });
 
-      if (role === "admin") navigate("/admin/dashboard");
-      else if (role === "teacher") navigate("/teacher/dashboard");
-      else throw new Error("Unsupported account role. Please contact an administrator.");
+      if (profile.must_change_password === true) {
+        navigate("/change-password");
+      } else if (role === "admin") {
+        navigate("/admin/dashboard");
+      } else if (role === "teacher") {
+        navigate("/teacher/dashboard");
+      } else {
+        throw new Error("Unsupported account role. Please contact an administrator.");
+      }
 
     } catch (err) {
       console.error("LOGIN CATCH ERROR:", err);
@@ -345,26 +352,9 @@ function Login() {
           <p className="text-gray-500 text-sm">Sign in to your educational portal</p>
         </div>
 
-        {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">{error}</div>}
-        {googleError && <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-xs">{googleError}</div>}
-
-        <button
-          onClick={handleGoogleSignIn}
-          disabled={googleLoading}
-          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-700 font-bold px-4 py-3.5 rounded-2xl border-2 border-emerald-500 transition-all shadow-sm mb-6 disabled:opacity-50"
-        >
-          <GoogleLogo />
-          {googleLoading ? "Connecting..." : "Continue with Google"}
-        </button>
-
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-          <span className="relative px-4 bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest">or use credentials</span>
-        </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email or Username</label>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -373,7 +363,7 @@ function Login() {
                 value={formData.usernameOrEmail}
                 onChange={handleInputChange}
                 className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
-                placeholder="Enter email"
+                placeholder="name@dasma.deped.gov.ph"
               />
             </div>
           </div>
@@ -410,9 +400,7 @@ function Login() {
           </button>
         </form>
 
-        <div className="mt-8 text-center">
-          <p className="text-sm text-gray-500">Don't have an account? <Link to="/signup" className="text-emerald-600 font-bold hover:underline">Create one</Link></p>
-        </div>
+        
       </div>
     </div>
   );

@@ -139,9 +139,23 @@ function NotificationDropdown({
 
       const key = getStorageKey(currentUser);
 
+      // Prevent null users from triggering unnecessary API calls
+      if (!currentUser || !currentUser.id) {
+        console.warn("[NotificationDropdown] Skipping notification fetch: currentUser is null.");
+        setNotifications([]);
+        return;
+      }
+
       if (!supabase?.auth?.getUser) {
         console.warn("[NotificationDropdown] Supabase auth client is unavailable; falling back to local notifications.");
       } else {
+        // Quick session check to avoid throwing AuthSessionMissingError
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+           console.warn("[NotificationDropdown] No active session found. Skipping user fetch.");
+           return;
+        }
+
         const { data: authData, error: authError } = await supabase.auth.getUser();
         if (authError) {
           if (!authError.message?.toLowerCase().includes("session missing") && authError.name !== "AuthSessionMissingError") {

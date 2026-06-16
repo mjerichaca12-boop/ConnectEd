@@ -97,11 +97,13 @@ function TeacherManagement() {
   const [assignFormData, setAssignFormData] = useState(emptyAssignForm);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [formErrors, setFormErrors] = useState({});
-  const [editFormErrors, setEditFormErrors] = useState({});
   const [assignFormErrors, setAssignFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
 
   useEffect(() => {
     if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm) {
@@ -543,10 +545,12 @@ function TeacherManagement() {
       errors.last_name = "Last name can only contain letters";
     }
 
-    if (!trimmedEmail) {
-      errors.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.email = "Invalid email format";
+    if (excludeId !== null) {
+      if (!trimmedEmail) {
+        errors.email = "Email is required";
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        errors.email = "Invalid email format";
+      }
     }
 
     if (!normalizedPhone) {
@@ -608,16 +612,18 @@ function TeacherManagement() {
       return errors;
     }
 
-    const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
-    const [emailResult] = await Promise.all([excludeId ? emailQuery.neq("id", excludeId) : emailQuery]);
+    if (excludeId !== null) {
+      const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
+      const [emailResult] = await Promise.all([emailQuery.neq("id", excludeId)]);
 
-    if (emailResult.error) {
-      errors.form = emailResult.error.message;
-      return errors;
-    }
+      if (emailResult.error) {
+        errors.form = emailResult.error.message;
+        return errors;
+      }
 
-    if ((emailResult.data ?? []).length > 0) {
-      errors.email = "Email already exists";
+      if ((emailResult.data ?? []).length > 0) {
+        errors.email = "Email already exists";
+      }
     }
 
     if (assignedClass) {
@@ -830,8 +836,23 @@ function TeacherManagement() {
     try {
       const selectedSubjectIds = normalizeSubjects(teacherFormData.subjects);
       const fullName = composeTeacherName(teacherFormData);
-      const tempPassword = teacherFormData.password || generateTempPassword();
-      const teacherEmail = teacherFormData.email.trim().toLowerCase();
+      
+      const firstNameLow = teacherFormData.first_name.trim().toLowerCase().replace(/\s+/g, "");
+      const middleNameLow = teacherFormData.middle_name.trim().toLowerCase().replace(/\s+/g, "");
+      const lastNameLow = teacherFormData.last_name.trim().toLowerCase().replace(/\s+/g, "");
+      
+      const tempPassword = `${firstNameLow}${middleNameLow}${lastNameLow}`;
+      const baseEmail = `${firstNameLow}.${lastNameLow}@dasma.deped.gov.ph`;
+      
+      // Check for duplicate emails
+      let teacherEmail = baseEmail;
+      let suffix = 1;
+      while (true) {
+        const { data: existing } = await db.from("profiles").select("id").eq("email", teacherEmail).maybeSingle();
+        if (!existing) break;
+        teacherEmail = `${firstNameLow}.${lastNameLow}.${suffix}@dasma.deped.gov.ph`;
+        suffix++;
+      }
 
       const { data: authData, error: authError } = await db.auth.admin.createUser({
         email: teacherEmail,
@@ -851,7 +872,9 @@ function TeacherManagement() {
         email: teacherEmail,
         phone: normalizePhone(teacherFormData.phone),
         status: normalizeTeacherStatus(teacherFormData.status),
-        year_level: teacherFormData.grade_level?.trim() || null
+        year_level: teacherFormData.grade_level?.trim() || null,
+        must_change_password: true,
+        is_verified: false
       };
 
       const { data, error } = await db.from("profiles").insert(payload).select(teacherSelectColumns).single();
@@ -876,7 +899,6 @@ function TeacherManagement() {
 
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
       const nextTeacherName = getTeacherName(nextTeacher);
-      const savedPassword = teacherFormData.password;
       logActivity({
         actionType: selectedSubjectIds.length > 0 ? "assigned_subject_to_teacher" : "added",
         entityType: "teacher",
@@ -885,9 +907,17 @@ function TeacherManagement() {
         details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
         timestamp: nextTeacher.created_at
       });
-      const tempMsg = savedPassword ? ` Temporary password: ${savedPassword}` : "";
-      toast.success(`${nextTeacherName} added successfully.${tempMsg}`, { duration: 6000 });
+      toast.success(`${nextTeacherName} added successfully.`, { duration: 6000 });
       resetAddModal();
+      
+      // Show credentials modal instead of simple toast. Since the instruction says "show modal ONCE containing email, temporary password", we can add a state for it.
+      setCreatedCredentials({
+        name: nextTeacherName,
+        email: teacherEmail,
+        password: tempPassword
+      });
+      setShowCredentialsModal(true);
+      
     } catch (error) {
       if (createdTeacherId) {
         try {
@@ -1250,13 +1280,10 @@ function TeacherManagement() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Teacher Management</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
@@ -1276,7 +1303,7 @@ function TeacherManagement() {
             <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Registry</h1>
+                <h1 className="text-3xl font-bold mb-2 text-blue-600">Teacher Management</h1>
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
               <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
@@ -1483,17 +1510,6 @@ function TeacherManagement() {
                     {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={teacherFormData.email}
-                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "email", e.target.value)}
-                      placeholder="teacher@example.com"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
-                    />
-                    {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                     <input
                       type="text"
@@ -1535,14 +1551,6 @@ function TeacherManagement() {
                       className="min-w-[180px]"
                     />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
-                    <div className="flex gap-2">
-                      <input type="text" value={teacherFormData.password} onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "password", e.target.value)} placeholder="Auto-generated temporary password" className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono" />
-                      <button type="button" onClick={() => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "password", generateTempPassword())} className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 text-sm text-gray-700 transition-colors">Regenerate</button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Teacher uses this password to log in. Share it securely.</p>
                   </div>
                 </div>
                 {formErrors.form && (
@@ -1879,6 +1887,69 @@ function TeacherManagement() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {showCredentialsModal && createdCredentials && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden relative">
+            <div className="p-6 border-b border-gray-200 text-center">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                <UserPlus className="w-6 h-6 text-green-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">Account Created Successfully</h3>
+              <p className="text-sm text-gray-500 mt-2">
+                Please save these credentials securely. They will only be shown this one time.
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-500 mb-1">Teacher Name</p>
+                <p className="font-semibold text-gray-900">{createdCredentials.name}</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-500 mb-1">Email</p>
+                <div className="flex items-center justify-between">
+                  <p className="font-mono text-gray-900">{createdCredentials.email}</p>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.email); toast.success("Email copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                </div>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-500 mb-1">Temporary Password</p>
+                <div className="flex items-center justify-between">
+                  <p className="font-mono text-gray-900">{createdCredentials.password}</p>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.password); toast.success("Password copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button 
+                onClick={() => {
+                  const csv = `Name,Email,Temporary Password\n"${createdCredentials.name}","${createdCredentials.email}","${createdCredentials.password}"`;
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const link = document.createElement("a");
+                  link.href = URL.createObjectURL(blob);
+                  link.download = `credentials_${createdCredentials.name.replace(/\s+/g, '_')}.csv`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }} 
+                className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl transition-all"
+              >
+                Download CSV
+              </button>
+              <button 
+                onClick={() => {
+                  setShowCredentialsModal(false);
+                  setCreatedCredentials(null);
+                }} 
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

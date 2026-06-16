@@ -16,7 +16,6 @@ export function AdminSidebar({ adminName, onLogout }) {
     { icon: LayoutDashboard, label: "Dashboard",          path: "/admin/dashboard" },
     { icon: Users,           label: "Student Management", path: "/admin/students" },
     { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers" },
-    { icon: Mail,            label: "Access Requests",    path: "/admin/access-requests" },
     { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects" },
     { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements" },
     { icon: MessageSquare,   label: "Messages",           path: "/admin/messages" },

@@ -7,12 +7,8 @@ import { Toaster } from "sonner";
 import { LandingPage } from "./pages/LandingPage";
 import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
 import { Login } from "./pages/Login";
-import { SignUp } from "./pages/SignUp";
 import { ForgotPassword } from "./pages/ForgotPassword";
-import { ResetPassword } from "./pages/ResetPassword";
-import { VerifyEmail } from "./pages/VerifyEmail";
-import { RequestAccess } from "./pages/RequestAccess";
-import { SetPassword } from "./pages/SetPassword";
+import { ChangePassword } from "./pages/ChangePassword";
 import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { Classes } from "./pages/teacher/Classes";
 import { ClassDetail } from "./pages/teacher/ClassDetail";
@@ -26,10 +22,8 @@ import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { StudentManagement } from "./pages/admin/StudentManagement";
 import { TeacherManagement } from "./pages/admin/TeacherManagement";
 import { SubjectManagement } from "./pages/admin/SubjectManagement";
-import { EnrollmentManagement } from "./pages/admin/EnrollmentManagement";
 import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminCalendar } from "./pages/admin/AdminCalendar";
-import { AdminAccessRequests } from "./pages/admin/AdminAccessRequests";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminMessages } from "./pages/admin/AdminMessages";
@@ -91,6 +85,12 @@ function TeacherRouteGuard({ children }) {
 
         const parsedUser = JSON.parse(rawUser);
         const email = String(parsedUser?.email || "").trim().toLowerCase();
+        
+        if (parsedUser?.must_change_password === true) {
+          if (isMounted) setStatus("force-change");
+          return;
+        }
+
         if (parsedUser?.role !== "teacher" || !email) {
           if (isMounted) setStatus("denied");
           return;
@@ -144,6 +144,7 @@ function TeacherRouteGuard({ children }) {
   }
 
   if (status === "device-restricted") return <DeviceRestricted role="Teacher" allowed="Desktop" />;
+  if (status === "force-change") return <Navigate to="/change-password" replace />;
   if (status === "denied") return <Navigate to="/login" replace />;
 
   return children;
@@ -203,12 +204,8 @@ export default function App() {
         <Route path="/landing" element={<LandingPage />} />
         <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/request-access" element={<RequestAccess />} />
-        <Route path="/set-password" element={<SetPassword />} />
+        <Route path="/change-password" element={<ChangePassword />} />
 
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
@@ -219,7 +216,6 @@ export default function App() {
         <Route path="/announcements" element={<Navigate to="/login" replace />} />
         <Route path="/content" element={<Navigate to="/login" replace />} />
         <Route path="/materials" element={<Navigate to="/login" replace />} />
-        <Route path="/enrollment" element={<Navigate to="/login" replace />} />
         <Route path="/messages" element={<Navigate to="/login" replace />} />
         <Route path="/profile" element={<Navigate to="/login" replace />} />
         <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
@@ -241,10 +237,8 @@ export default function App() {
         <Route path="/admin/students" element={<AdminRouteGuard><StudentManagement /></AdminRouteGuard>} />
         <Route path="/admin/teachers" element={<AdminRouteGuard><TeacherManagement /></AdminRouteGuard>} />
         <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
-        <Route path="/admin/enrollment" element={<AdminRouteGuard><EnrollmentManagement /></AdminRouteGuard>} />
         <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
-        <Route path="/admin/access-requests" element={<AdminRouteGuard><AdminAccessRequests /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />

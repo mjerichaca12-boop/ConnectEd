@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
+import { CustomSelect } from "../../components/admin/CustomSelect";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -40,6 +41,14 @@ let announcementAttachmentsTableStatus = "unknown";
 
 const ALLOWED_AUDIENCES = ["School-wide", "Students", "Teacher"];
 
+const AUDIENCE_TYPE_OPTIONS = [
+  { value: "school-wide", label: "School-wide" },
+  { value: "teachers", label: "Teachers" },
+  { value: "students", label: "Students" }
+];
+
+const DEFAULT_AUDIENCE_TYPE = "school-wide";
+
 const normalizeAudience = (value) => {
   const normalized = String(value ?? "")
     .trim()
@@ -72,6 +81,18 @@ const audienceLabelFromType = (audienceType) => {
   if (audienceType === "student") return "Students";
   if (audienceType === "teacher") return "Teacher";
   return "School-wide";
+};
+
+const databaseValueToAudienceType = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (normalized === "student" || normalized === "students") return "students";
+  if (normalized === "teacher" || normalized === "teachers") return "teachers";
+  return "school-wide";
 };
 
 
@@ -281,6 +302,8 @@ function AdminAnnouncements() {
   const [announcementColumns, setAnnouncementColumns] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [editFormData, setEditFormData] = useState(emptyForm);
+  const [audienceType, setAudienceType] = useState(DEFAULT_AUDIENCE_TYPE);
+  const [editAudienceType, setEditAudienceType] = useState(DEFAULT_AUDIENCE_TYPE);
   const [announcementFiles, setAnnouncementFiles] = useState([]);
   const [formErrors, setFormErrors] = useState({});
   const [editFormErrors, setEditFormErrors] = useState({});
@@ -446,6 +469,7 @@ function AdminAnnouncements() {
 
   const handleOpenCreateModal = () => {
     setFormData(emptyForm);
+    setAudienceType(DEFAULT_AUDIENCE_TYPE);
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
@@ -643,12 +667,14 @@ function AdminAnnouncements() {
       }
 
       const source = schoolAnnouncementResult.data || {};
+      const resolvedAudienceType = toDatabaseAudienceType(
+        source.audience_type ?? source.target_audience ?? DEFAULT_AUDIENCE_TYPE
+      );
       const basePayloads = [
         {
           title: String(source.title || "Announcement").trim() || "Announcement",
           content: String(source.content || "Attachment").trim() || "Attachment",
-          target_audience: normalizeAudience(source.target_audience || "School-wide"),
-          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide"),
+          audience_type: resolvedAudienceType,
           author: String(source.author || source.created_by_name || "Admin Office").trim() || "Admin Office",
           created_by: isUuid(source.created_by) ? source.created_by : null,
           created_by_name: source.created_by_name || null,
@@ -659,8 +685,7 @@ function AdminAnnouncements() {
         {
           title: String(source.title || "Announcement").trim() || "Announcement",
           content: String(source.content || "Attachment").trim() || "Attachment",
-          target_audience: normalizeAudience(source.target_audience || "School-wide"),
-          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide")
+          audience_type: resolvedAudienceType
         },
         {
           title: String(source.title || "Announcement").trim() || "Announcement",
@@ -838,15 +863,10 @@ function AdminAnnouncements() {
     return payload;
   };
 
-  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
+  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "", selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
     const user = getCurrentUser();
-    const targetAudience = toDatabaseAudience("School-wide");
-    const audienceType = toDatabaseAudienceType("School-wide");
-
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
-    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
-    const audienceColumn = resolveColumnName(columns, audienceCandidates);
-    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
+    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
+    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
     const timestampColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp"]);
 
     const metadata = {};
@@ -867,8 +887,6 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
-
     if (announcementId && columns.includes("id")) {
       basePayload.id = announcementId;
     }
@@ -877,19 +895,15 @@ function AdminAnnouncements() {
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
     };
 
     return [strictPayload, basePayload];
   };
 
-  const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
-    const targetAudience = toDatabaseAudience("School-wide");
-    const audienceType = toDatabaseAudienceType("School-wide");
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
-    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
-    const audienceColumn = resolveColumnName(columns, audienceCandidates);
-    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
+  const buildUpdatePayloads = (data, timestamp, columns, attachments = null, selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
+    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
+    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
     const timestampColumn = resolveColumnName(columns, ["updated_at"]);
 
     const metadata = {};
@@ -901,15 +915,13 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
-
     if (attachments) {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
     }
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
     };
 
     return [strictPayload, basePayload];
@@ -1113,6 +1125,7 @@ function AdminAnnouncements() {
   const handleCloseCreateModal = () => {
     setShowCreateModal(false);
     setFormData(emptyForm);
+    setAudienceType(DEFAULT_AUDIENCE_TYPE);
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
@@ -1125,6 +1138,9 @@ function AdminAnnouncements() {
       title: announcement.title,
       content: announcement.content
     });
+    setEditAudienceType(
+      databaseValueToAudienceType(announcement.audienceType ?? announcement.targetAudience)
+    );
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
@@ -1135,6 +1151,7 @@ function AdminAnnouncements() {
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setEditingAnnouncement(null);
+    setEditAudienceType(DEFAULT_AUDIENCE_TYPE);
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
@@ -1526,14 +1543,10 @@ function AdminAnnouncements() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-gray-900">Announcements</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
@@ -1561,7 +1574,7 @@ function AdminAnnouncements() {
                 onClick={() => {
                   handleOpenCreateModal();
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer"
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer"
               >
                 <Plus className="w-5 h-5" />
                 Create Announcement
