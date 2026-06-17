@@ -17,18 +17,16 @@ const roles = [
     icon: BookOpen,
     title: "Teacher",
     subtitle: "Manage your classes, grades, and student interactions on the web.",
-    features: ["Create & manage class sections", "Upload materials & assignments", "Record grades and attendance", "Post class announcements", "Message students directly"],
-    cta: "/request-access",
-    ctaLabel: "Sign up as a Teacher",
-    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: Calendar, label: "Attendance" }],
+    features: ["Create & manage class sections", "Upload materials & assignments", "Record grades & track work", "Post class announcements", "Message students directly"],
+    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: ClipboardCheck, label: "Assignments" }],
   },
   {
     key: "student",
     icon: GraduationCap,
     title: "Student",
     subtitle: "Access your school on mobile — grades, assignments, and more.",
-    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track attendance history"],
-    mockupFeatures: [{ icon: GraduationCap, label: "Academic Records" }, { icon: MessageSquare, label: "Teacher Chat" }, { icon: Calendar, label: "Schedule" }],
+    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track academic progress"],
+    mockupFeatures: [{ icon: GraduationCap, label: "Academic Records" }, { icon: MessageSquare, label: "Teacher Chat" }, { icon: BookOpen, label: "Subjects" }],
   },
 ];
 

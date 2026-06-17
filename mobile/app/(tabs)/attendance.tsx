@@ -18,6 +18,7 @@ import { supabase } from '../../src/lib/supabase';
 import Colors from '../../src/constants/Colors';
 import Layout from '../../src/constants/Layout';
 import AppHeader from '../../src/components/common/AppHeader';
+import { getStudentAttendance } from '../../src/data/attendance/get-student-attendance';
 
 interface AttendanceRecord {
     id: string;
@@ -43,49 +44,7 @@ export default function AttendanceScreen() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Not authenticated');
 
-            // 1. Fetch attendance records
-            const { data: attendance, error: attendanceError } = await supabase
-                .from('teacher_student_attendance')
-                .select('*')
-                .eq('student_id', user.id)
-                .order('attendance_date', { ascending: false });
-
-            if (attendanceError) throw attendanceError;
-
-            if (!attendance || attendance.length === 0) {
-                setAttendanceData([]);
-                return;
-            }
-
-            // 2. Fetch subject details for each record
-            const subjectIds = [...new Set(attendance.map(a => a.subject_id))];
-            const { data: subjects, error: subjectsError } = await supabase
-                .from('subjects')
-                .select('id, name, code')
-                .in('id', subjectIds);
-
-            if (subjectsError) throw subjectsError;
-
-            const subjectMap = new Map(subjects?.map(s => [s.id, s]));
-
-            // 3. Map records
-            const mappedRecords: AttendanceRecord[] = attendance.map(a => {
-                const subject = subjectMap.get(a.subject_id);
-                return {
-                    id: a.id,
-                    date: new Date(a.attendance_date).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                    }),
-                    status: a.attendance_status || 'Unmarked',
-                    subject_id: a.subject_id,
-                    subject_name: subject?.name || 'Unknown Subject',
-                    subject_code: subject?.code || 'N/A',
-                    remarks: a.remarks || ''
-                };
-            });
-
+            const mappedRecords = await getStudentAttendance(user.id);
             setAttendanceData(mappedRecords);
         } catch (err: any) {
             console.error('[attendance] Fetch error:', err);
@@ -203,13 +162,16 @@ export default function AttendanceScreen() {
                                     <Ionicons name="calendar-outline" size={16} color="#64748B" />
                                     <Text style={styles.footerText}>{item.date}</Text>
                                 </View>
-                                {item.remarks ? (
-                                    <View style={styles.footerItem}>
-                                        <Ionicons name="chatbox-ellipses-outline" size={16} color="#64748B" />
-                                        <Text style={styles.footerText}>{item.remarks}</Text>
-                                    </View>
-                                ) : null}
                             </View>
+                            {item.remarks ? (
+                                <View style={styles.remarksContainer}>
+                                    <Ionicons name="chatbox-ellipses-outline" size={16} color="#059669" />
+                                    <Text style={styles.remarksText}>
+                                        <Text style={styles.remarksLabel}>Teacher Remarks: </Text>
+                                        {item.remarks}
+                                    </Text>
+                                </View>
+                            ) : null}
                         </View>
                     ))
                 )}
@@ -382,5 +344,25 @@ const styles = StyleSheet.create({
         marginTop: 12,
         fontSize: 14,
         color: '#64748B',
+    },
+    remarksContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        backgroundColor: '#ECFDF5',
+        padding: 10,
+        borderRadius: 8,
+        marginTop: 12,
+        gap: 8,
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
+    },
+    remarksText: {
+        fontSize: 13,
+        color: '#065F46',
+        flex: 1,
+        lineHeight: 18,
+    },
+    remarksLabel: {
+        fontWeight: 'bold',
     }
 });

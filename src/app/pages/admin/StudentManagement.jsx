@@ -35,6 +35,13 @@ function StudentManagement() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentToDelete, setStudentToDelete] = useState(null);
+  
+  // Masterlist Sync States
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [masterListPending, setMasterListPending] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState(null);
+
   const [studentFormData, setStudentFormData] = useState({
     first_name: "",
     middle_name: "",
@@ -302,19 +309,45 @@ function StudentManagement() {
 
     setIsSubmitting(true);
 
+    let createdAuthId = null;
+
     try {
-      const newStudentId = generateUUID();
+      const tempPassword = studentFormData.password || generateTempPassword();
+      const studentEmail = studentFormData.email.trim().toLowerCase();
+
+      // 1. Create Auth user
+      const { data: authData, error: authError } = await db.auth.admin.createUser({
+        email: studentEmail,
+        password: tempPassword,
+        email_confirm: true
+      });
+
+      if (authError) {
+        throw authError;
+      }
+
+      createdAuthId = authData.user.id;
+
+      // 2. Insert profile record
+      const payload = {
+        id: createdAuthId,
+        ...buildPayload(studentFormData),
+        email: studentEmail,
+        must_change_password: true
+      };
+
       const { data, error } = await db
         .from("profiles")
-        .insert({ id: newStudentId, ...buildPayload(studentFormData) })
+        .insert(payload)
         .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
         .single();
 
       if (error) {
+        // cleanup auth user
+        await db.auth.admin.deleteUser(createdAuthId).catch(() => {});
         throw error;
       }
 
-      const savedPassword = studentFormData.password;
       if (data) {
         setStudents((current) => [data, ...current.filter((student) => student.id !== data.id)]);
         const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
@@ -342,12 +375,123 @@ function StudentManagement() {
       });
       setFormErrors({});
       setShowAddModal(false);
-      setSuccessMessage(`Student account added successfully.${savedPassword ? ` Temporary password: ${savedPassword}` : ""}`);
+      setSuccessMessage(`Student account added successfully. Temporary password: ${tempPassword}`);
     } catch (error) {
       console.error("Add student error:", error);
       setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add student."));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Masterlist Sync Methods
+  const handleFetchMasterlist = async () => {
+    setErrorMessage("");
+    setSuccessMessage("");
+    setImportSummary(null);
+    try {
+      const { data, error } = await db
+        .from("student_masterlist")
+        .select("*")
+        .eq("account_created", false);
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setSuccessMessage("No pending student records found in student_masterlist.");
+        return;
+      }
+
+      setMasterListPending(data);
+      setShowImportModal(true);
+    } catch (err) {
+      console.error("Fetch masterlist error:", err);
+      setErrorMessage(err.message || "Failed to load student masterlist.");
+    }
+  };
+
+  const handleImportMasterlist = async () => {
+    setImporting(true);
+    setErrorMessage("");
+    const succeeded = [];
+    const failed = [];
+
+    for (const record of masterListPending) {
+      try {
+        const studentLrn = String(record.lrn).trim();
+        const studentEmail = `${studentLrn}@student.connected`;
+        const tempPassword = generateTempPassword();
+
+        // 1. Create Auth user
+        const { data: authData, error: authError } = await db.auth.admin.createUser({
+          email: studentEmail,
+          password: tempPassword,
+          email_confirm: true
+        });
+
+        if (authError) {
+          throw new Error(`Auth Error: ${authError.message}`);
+        }
+
+        const authUserId = authData.user.id;
+
+        // 2. Insert profile record
+        const { error: insertError } = await db.from("profiles").insert({
+          id: authUserId,
+          first_name: record.first_name.trim(),
+          middle_name: record.middle_name?.trim() || null,
+          last_name: record.last_name.trim(),
+          email: studentEmail,
+          lrn: studentLrn,
+          year_level: String(record.year_level || "7").trim(),
+          section: record.section?.trim() || null,
+          status: "Active",
+          role: "student",
+          must_change_password: true
+        });
+
+        if (insertError) {
+          await db.auth.admin.deleteUser(authUserId).catch(() => {});
+          throw new Error(`Profile Error: ${insertError.message}`);
+        }
+
+        // 3. Mark as account_created = true in student_masterlist
+        const { error: updateError } = await db
+          .from("student_masterlist")
+          .update({ account_created: true })
+          .eq("id", record.id);
+
+        if (updateError) {
+          console.warn("Failed to mark masterlist record as account_created:", updateError);
+        }
+
+        succeeded.push({
+          name: `${record.first_name} ${record.last_name}`,
+          email: studentEmail,
+          password: tempPassword,
+          lrn: studentLrn
+        });
+      } catch (err) {
+        console.error(`Failed to import student LRN ${record.lrn}:`, err);
+        failed.push({
+          name: `${record.first_name} ${record.last_name}`,
+          lrn: record.lrn,
+          reason: err.message || "Unknown error"
+        });
+      }
+    }
+
+    setImportSummary({ succeeded, failed });
+    setMasterListPending([]);
+    setImporting(false);
+    
+    if (succeeded.length > 0) {
+      const { data } = await db
+        .from("profiles")
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .eq("role", "student")
+        .order("created_at", { ascending: false });
+      if (data) setStudents(data);
     }
   };
 
@@ -619,10 +763,16 @@ function StudentManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Database</h1>
                 <p className="text-gray-600">{students.length} student profiles loaded from Supabase</p>
               </div>
-              <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20">
-                <UserPlus className="w-5 h-5" />
-                Add Student
-              </button>
+              <div className="flex gap-3">
+                <button onClick={handleFetchMasterlist} className="flex items-center gap-2 px-5 py-3 bg-white border border-gray-250 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer">
+                  <Download className="w-4 h-4" />
+                  Import Masterlist
+                </button>
+                <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20 cursor-pointer">
+                  <UserPlus className="w-5 h-5" />
+                  Add Student
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1090,6 +1240,116 @@ function StudentManagement() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {importSummary ? "Import Summary" : `Sync Student Masterlist (${masterListPending.length})`}
+              </h3>
+              <button onClick={() => { setShowImportModal(false); setImportSummary(null); }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {importSummary ? (
+                /* Import Summary Screen */
+                <div className="space-y-4">
+                  {importSummary.succeeded.length > 0 && (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                      <h4 className="font-semibold text-green-850 text-sm mb-2">Successfully Imported ({importSummary.succeeded.length})</h4>
+                      <p className="text-xs text-green-700 mb-3 font-medium">Accounts generated. Please copy these temporary passwords for the students:</p>
+                      <div className="max-h-[200px] overflow-y-auto border border-green-150 rounded-lg bg-white divide-y divide-green-100 text-xs">
+                        {importSummary.succeeded.map((s, idx) => (
+                          <div key={idx} className="p-3 flex justify-between items-center gap-4 hover:bg-green-50/50">
+                            <div>
+                              <p className="font-semibold text-gray-800">{s.name}</p>
+                              <p className="text-gray-500 font-mono text-[10px]">{s.email} | LRN: {s.lrn}</p>
+                            </div>
+                            <span className="bg-green-100 text-green-900 font-mono font-bold px-2.5 py-1 rounded text-xs">
+                              {s.password}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {importSummary.failed.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <h4 className="font-semibold text-red-800 text-sm mb-2">Failed Records ({importSummary.failed.length})</h4>
+                      <div className="max-h-[150px] overflow-y-auto border border-red-155 rounded-lg bg-white divide-y divide-red-100 text-xs">
+                        {importSummary.failed.map((f, idx) => (
+                          <div key={idx} className="p-2.5 flex justify-between items-center text-red-700">
+                            <span className="font-semibold">{f.name} (LRN: {f.lrn})</span>
+                            <span className="text-xs">{f.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-4">
+                    <button
+                      onClick={() => { setShowImportModal(false); setImportSummary(null); }}
+                      className="px-6 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 font-semibold cursor-pointer"
+                    >
+                      Done & Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Import Preview Screen */
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    The following students from <span className="font-semibold text-blue-400">student_masterlist</span> do not have accounts yet. ConnectEd will generate accounts ending in <span className="font-semibold text-green-600">@student.connected</span> and temporary passwords.
+                  </p>
+                  
+                  <div className="max-h-[350px] overflow-y-auto border border-gray-200 rounded-xl bg-gray-50 divide-y divide-gray-200">
+                    {masterListPending.map((student, idx) => (
+                      <div key={student.id || idx} className="p-3.5 flex justify-between items-center gap-4 bg-white hover:bg-gray-50/50">
+                        <div className="text-left">
+                          <p className="font-semibold text-gray-800">
+                            {student.first_name} {student.middle_name ? `${student.middle_name} ` : ""}{student.last_name}
+                          </p>
+                          <p className="text-xs text-gray-500">LRN: {student.lrn} | Grade: {student.year_level || "7"} - {student.section || "A"}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full uppercase">Pending Import</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => setShowImportModal(false)}
+                      disabled={importing}
+                      className="px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleImportMasterlist}
+                      disabled={importing}
+                      className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      {importing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Importing & Creating...
+                        </>
+                      ) : (
+                        "Import & Generate Accounts"
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

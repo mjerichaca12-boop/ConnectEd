@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Image } from "react-native";
-import { useLocalSearchParams, useSegments, useRouter } from "expo-router";
+import { useLocalSearchParams, useSegments, useRouter, useGlobalSearchParams } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
+import * as Linking from "expo-linking";
 
 import Colors from "../../../../src/constants/Colors";
 import Layout from "../../../../src/constants/Layout";
@@ -17,8 +18,9 @@ import FileUploadComponent from "../../../../src/components/common/FileUploadCom
 import { supabase } from "../../../../src/lib/supabase";
 import { useMyAssignmentsQuery } from "../../../../src/hooks/query/assignments/use-my-assignments-query";
 
-const AssignmentItem = ({ title, dueDate, status, onPress }: any) => {
+const AssignmentItem = ({ title, dueDate, status, grade, onPress }: any) => {
     const isLate = status === "late";
+    const hasGrade = typeof grade !== "undefined" && grade !== null;
     return (
         <TouchableOpacity 
             style={[styles.itemContainer, isLate && styles.lateItemContainer]} 
@@ -28,8 +30,13 @@ const AssignmentItem = ({ title, dueDate, status, onPress }: any) => {
                 <Text style={[styles.title, isLate && styles.lateText]}>{title}</Text>
                 <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
-            <View style={{ alignItems: "flex-end" }}>
-                <StatusBadge status={status} style={{ marginBottom: 8 }} />
+            <View style={{ alignItems: "center", flexDirection: "row", gap: 8 }}>
+                {hasGrade && (
+                    <View style={{ backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: "#BBF7D0" }}>
+                        <Text style={{ color: "#166534", fontWeight: "bold", fontSize: 12 }}>Grade: {grade}</Text>
+                    </View>
+                )}
+                <StatusBadge status={status} />
             </View>
         </TouchableOpacity>
     );
@@ -98,24 +105,58 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 .from('class-materials')
                 .getPublicUrl(storagePath);
 
-            // 2. Insert into submissions table
+            // 2. Upsert into submissions table
             const { error } = await supabase
                 .from('submissions')
-                .insert({
+                .upsert({
                     assignment_id: assignment.id,
-                    student_id: userId,
-                    file_url: publicUrl,
-                    status: 'submitted'
-                });
+                    user_id: userId,
+                    file_url: publicUrl
+                }, { onConflict: 'assignment_id,user_id' });
 
             if (error) throw error;
+
+            // Fetch teacher_id from subjects table using course_id / subjectId
+            let teacherId = null;
+            const subjectId = assignment.course_id || assignment.subject_id;
+            if (subjectId) {
+                const { data: subjectData } = await supabase
+                    .from('subjects')
+                    .select('teacher_id')
+                    .eq('id', subjectId)
+                    .maybeSingle();
+                
+                if (subjectData && subjectData.teacher_id) {
+                    teacherId = subjectData.teacher_id;
+                }
+            }
+
+            // If we found teacherId, upsert into teacher_assessment_submissions as well
+            if (teacherId && subjectId) {
+                const { error: teacherSubError } = await supabase
+                    .from('teacher_assessment_submissions')
+                    .upsert({
+                        teacher_id: teacherId,
+                        subject_id: subjectId,
+                        assessment_id: assignment.id,
+                        student_id: userId,
+                        response_text: "Submitted via Mobile App",
+                        file_url: publicUrl,
+                        file_name: pickedFile.name,
+                        file_path: storagePath,
+                        status: 'submitted'
+                    }, { onConflict: 'teacher_id,subject_id,assessment_id,student_id' });
+                if (teacherSubError) {
+                    console.error("Failed to upsert into teacher_assessment_submissions:", teacherSubError);
+                }
+            }
 
             Alert.alert(
                 "Submission Complete", 
                 "Your assignment has been successfully submitted.",
                 [{ text: "OK", onPress: () => {
                     queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
-                    onBack();
+                    onBack("submitted");
                 }}]
             );
         } catch (err: any) {
@@ -126,8 +167,89 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
         }
     };
 
-    const handleViewSubmission = () => {
-        Alert.alert("Submission", "Viewing submitted assignment...");
+    const handleViewSubmission = async () => {
+        const fileUrl = assignment.submission?.file_url;
+        if (!fileUrl) {
+            Alert.alert("Error", "No file found for this submission.");
+            return;
+        }
+
+        try {
+            if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+                await Linking.openURL(fileUrl);
+            } else {
+                const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
+                if (data?.publicUrl) {
+                    await Linking.openURL(data.publicUrl);
+                }
+            }
+        } catch (err) {
+            console.error("View submission error:", err);
+            Alert.alert("Error", "Could not open submission URL.");
+        }
+    };
+
+    const handleUndoSubmit = async () => {
+        Alert.alert(
+            "Undo Submission",
+            "Are you sure you want to undo your submission? This will delete your submitted file and return the task to the Upcoming tab.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Yes, Undo",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsSubmitting(true);
+                        try {
+                            const { data: userData } = await supabase.auth.getUser();
+                            const userId = userData.user?.id;
+                            if (!userId) throw new Error("User not authenticated");
+
+                            // 1. Delete from submissions
+                            const { error: deleteSubError } = await supabase
+                                .from('submissions')
+                                .delete()
+                                .eq('assignment_id', assignment.id)
+                                .eq('user_id', userId);
+
+                            if (deleteSubError) throw deleteSubError;
+
+                            // 2. Delete from teacher_assessment_submissions
+                            const { error: deleteTeacherSubError } = await supabase
+                                .from('teacher_assessment_submissions')
+                                .delete()
+                                .eq('assessment_id', assignment.id)
+                                .eq('student_id', userId);
+
+                            if (deleteTeacherSubError) {
+                                console.warn("Failed to delete from teacher_assessment_submissions:", deleteTeacherSubError);
+                            }
+
+                            // 3. Delete ungraded record from teacher_assessment_grades to revert status to pending
+                            const { error: deleteGradeError } = await supabase
+                                .from('teacher_assessment_grades')
+                                .delete()
+                                .eq('assessment_id', assignment.id)
+                                .eq('student_id', userId)
+                                .not('status', 'in', '("Graded","graded","returned","Returned")');
+
+                            if (deleteGradeError) {
+                                console.warn("Failed to delete from teacher_assessment_grades:", deleteGradeError);
+                            }
+
+                            Alert.alert("Submission Undone", "Your submission has been undone successfully.");
+                            queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+                            onBack("upcoming");
+                        } catch (err: any) {
+                            console.error("Undo submit error:", err);
+                            Alert.alert("Error", err.message || "Failed to undo submission.");
+                        } finally {
+                            setIsSubmitting(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     return (
@@ -152,7 +274,15 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                         <Text style={styles.sectionTitle}>Reference Materials</Text>
                         <TouchableOpacity 
                             style={styles.fileDownloadCard}
-                            onPress={() => Alert.alert("Download", "Opening file: " + (assignment.file_name || "Attachment"))}
+                            onPress={async () => {
+                                if (assignment.file_url) {
+                                    try {
+                                        await Linking.openURL(assignment.file_url);
+                                    } catch (err) {
+                                        Alert.alert("Error", "Could not open reference material URL.");
+                                    }
+                                }
+                            }}
                         >
                             <Ionicons name="document-text-outline" size={24} color={Colors.light.primary} />
                             <View style={{ flex: 1, marginLeft: 12 }}>
@@ -196,6 +326,22 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                              onPress={handleViewSubmission}
                              variant="secondary"
                          />
+                         {(!assignment.submission?.grade) && (
+                              <TouchableOpacity 
+                                  style={{ 
+                                      marginTop: 12, 
+                                      padding: 12, 
+                                      alignItems: 'center', 
+                                      backgroundColor: '#FEF2F2', 
+                                      borderRadius: 8, 
+                                      borderWidth: 1, 
+                                      borderColor: '#FCA5A5' 
+                                  }}
+                                  onPress={handleUndoSubmit}
+                              >
+                                  <Text style={{ color: '#DC2626', fontWeight: 'bold', fontSize: 16 }}>Undo Submit</Text>
+                              </TouchableOpacity>
+                          )}
                     </View>
                 )}
             </ScrollView>
@@ -205,10 +351,12 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
 export default function SubjectAssignments() {
     const segments = useSegments();
+    const { id: globalId } = useGlobalSearchParams();
     const { id: localId } = useLocalSearchParams();
 
-    // Improved ID extraction: filter segments for a valid UUID or use localId if it's not the placeholder
+    // Improved ID extraction
     const subjectId = (() => {
+        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
         if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const found = segments.find(s => uuidRegex.test(s));
@@ -219,7 +367,7 @@ export default function SubjectAssignments() {
     const [activeTab, setActiveTab] = useState("upcoming");
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
 
-    const { data: assignments = [], isLoading } = useMyAssignmentsQuery({ subjectId });
+    const { data: assignments = [], isLoading, error } = useMyAssignmentsQuery({ subjectId });
 
     if (isLoading) {
         return (
@@ -233,11 +381,18 @@ export default function SubjectAssignments() {
     const statusFilter = activeTab === "upcoming" ? "pending" : activeTab;
     const filteredAssignments = assignments.filter((a) => a.status === statusFilter);
 
+    console.log(`[assignment UI] subjectId: ${subjectId}, Total: ${assignments.length}, Filtered (${statusFilter}): ${filteredAssignments.length}`);
+
     if (selectedAssignment) {
         return (
             <DetailedAssignmentView 
                 assignment={selectedAssignment} 
-                onBack={() => setSelectedAssignment(null)} 
+                onBack={(nextTab?: string) => {
+                    setSelectedAssignment(null);
+                    if (nextTab) {
+                        setActiveTab(nextTab);
+                    }
+                }} 
             />
         );
     }
@@ -270,6 +425,7 @@ export default function SubjectAssignments() {
                         title={item.title}
                         dueDate={item.dueDate}
                         status={item.status}
+                        grade={item.submission?.grade}
                         onPress={() => setSelectedAssignment(item)}
                     />
                 )}

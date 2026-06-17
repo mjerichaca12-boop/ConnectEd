@@ -279,11 +279,13 @@ function Login() {
         id: profile.id,
         name: profile.first_name + " " + (profile.last_name || ""),
         email: profile.email,
-        role: role
+        role: role,
+        must_change_password: profile.must_change_password
       }));
 
       if (role === "admin") navigate("/admin/dashboard");
       else if (role === "teacher") navigate("/teacher/dashboard");
+      else if (profile.must_change_password) navigate("/secure-account");
       else navigate("/dashboard");
 
     } catch (err) {
@@ -360,9 +362,6 @@ function Login() {
           </button>
         </form>
 
-        <div className="mt-8 text-center">
-          <p className="text-sm text-gray-500">Don't have an account? <Link to="/signup" className="text-emerald-600 font-bold hover:underline">Create one</Link></p>
-        </div>
       </div>
     </div>
   );

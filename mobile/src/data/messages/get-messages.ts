@@ -4,7 +4,18 @@ export async function getMessages(id: string) {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
-    // Try room first
+    // Try conversation first (unified web group chat)
+    const { data: convData, error: convError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', id)
+        .order('created_at', { ascending: true });
+
+    if (!convError && convData && convData.length > 0) {
+        return convData;
+    }
+
+    // Try room next (mobile group chat)
     const { data: roomData, error: roomError } = await supabase
         .from('messages')
         .select('*')
@@ -16,7 +27,6 @@ export async function getMessages(id: string) {
     }
 
     // fallback to one-to-one
-    // We remove the strict 'room_id is null' filter to allow visibility even if column is missing or schema is in transition
     const { data: directData, error: directError } = await supabase
         .from('messages')
         .select('*')
@@ -26,7 +36,6 @@ export async function getMessages(id: string) {
 
     if (directError) {
         console.error('[messages] Direct fetch error:', directError);
-        // If it fails because of missing room_id in previous tries, we at least return what we got
         return [];
     }
     return directData || [];
@@ -48,7 +57,13 @@ export async function sendMessage(targetId: string, content: string, fileUrl?: s
     };
 
     if (isRoom) {
-        insertData.room_id = targetId;
+        if (targetId.startsWith('group_')) {
+            insertData.conversation_id = targetId;
+            insertData.receiver_id = null;
+        } else {
+            insertData.room_id = targetId;
+            insertData.receiver_id = null;
+        }
     } else {
         insertData.receiver_id = targetId;
     }

@@ -10,7 +10,6 @@ const overviewItems = [
 const features = [
   { icon: BookOpen, title: "Course & Academic Management", desc: "Create classes, upload materials, post assignments, and organize your entire curriculum in one place.", tag: "Core" },
   { icon: BarChart2, title: "Performance Insights", desc: "Track grades, submissions, and academic progress with real-time analytics and visualizations.", tag: "Analytics" },
-  { icon: Calendar, title: "Attendance Monitoring", desc: "Mark and monitor daily attendance per class. Automatically flags absences and generates reports.", tag: "Tracking" },
   { icon: MessageSquare, title: "Communication Center", desc: "Post class-specific or school-wide announcements. Students receive real-time updates instantly.", tag: "Comms" },
   { icon: Lock, title: "Secure Messaging", desc: "Teachers message individual students. Secure, in-platform communication with full privacy.", tag: "Security" },
   { icon: Shield, title: "Administrative Dashboard", desc: "Manage users, monitor school-wide data, and control system access from a single command center.", tag: "Admin" },

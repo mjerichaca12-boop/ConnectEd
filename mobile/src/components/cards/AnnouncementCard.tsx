@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ViewStyle, Image } from "react-native";
 import Colors from "../../constants/Colors";
+import { Ionicons } from "@expo/vector-icons";
 
 interface AnnouncementCardProps {
     title: string;
@@ -9,6 +10,7 @@ interface AnnouncementCardProps {
     author: string;
     author_role?: string;
     image_url?: string;
+    attachments?: Array<{ file_name: string; file_url?: string; file_type?: string }>;
     onPress: () => void;
     style?: ViewStyle;
 }
@@ -20,6 +22,7 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
     author,
     author_role,
     image_url,
+    attachments,
     onPress,
     style,
 }) => {
@@ -36,6 +39,19 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
                 </View>
             )}
             <Text style={styles.content} numberOfLines={3}>{content}</Text>
+            
+            {attachments && attachments.length > 0 && (
+                <View style={styles.attachmentsRow}>
+                    {attachments.map((att, idx) => (
+                        <View key={idx} style={styles.attachmentPill}>
+                            <Ionicons name={"paper-clip" as any} size={14} color={Colors.light.primary} />
+                            <Text style={styles.attachmentText} numberOfLines={1}>
+                                {att.file_name || "Attached File"}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            )}
         </TouchableOpacity>
     );
 };
@@ -91,6 +107,33 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: Colors.light.textSecondary,
         lineHeight: 20,
+    },
+    attachmentsRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8,
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: "#F1F5F9",
+    },
+    attachmentPill: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        gap: 4,
+        maxWidth: '100%',
+    },
+    attachmentText: {
+        fontSize: 12,
+        fontWeight: "500",
+        color: "#334155",
+        flexShrink: 1,
     },
 });
 

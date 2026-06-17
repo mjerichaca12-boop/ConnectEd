@@ -16,8 +16,6 @@ function Sidebar({ studentName, onLogout }) {
     { icon: Sparkles,        label: "AI Assistant",     path: "/ai-assistant",     color: "green" },
     { icon: BookOpen,        label: "Subjects",         path: "/subjects",         color: "green" },
     { icon: GraduationCap,   label: "Grades",           path: "/grades",           color: "green" },
-    { icon: Calendar,        label: "Attendance",       path: "/attendance",       color: "blue" },
-    { icon: Video,           label: "Video Conference", path: "/video-conference", color: "blue" },
     { icon: MessageSquare,   label: "Messages",         path: "/messages",         color: "green" },
     { icon: User,            label: "Profile",          path: "/profile",          color: "blue" },
   ];

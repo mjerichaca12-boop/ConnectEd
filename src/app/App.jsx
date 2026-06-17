@@ -12,6 +12,7 @@ import { ForgotPassword } from "./pages/ForgotPassword";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { RequestAccess } from "./pages/RequestAccess";
 import { SetPassword } from "./pages/SetPassword";
+import { SecureAccount } from "./pages/SecureAccount";
 import { StudentDashboard } from "./pages/StudentDashboard";
 import { Subjects } from "./pages/Subjects";
 import { SubjectDetail } from "./pages/SubjectDetail";
@@ -102,7 +103,11 @@ function StudentRouteGuard({ children }) {
     try {
       const parsedUser = JSON.parse(rawUser);
       if (parsedUser?.role === "student") {
-        setStatus("allowed");
+        if (parsedUser?.must_change_password) {
+          setStatus("force-password-change");
+        } else {
+          setStatus("allowed");
+        }
       } else {
         setStatus("denied");
       }
@@ -113,6 +118,7 @@ function StudentRouteGuard({ children }) {
 
   if (status === "checking") return null;
   if (status === "device-restricted") return <DeviceRestricted role="Student" allowed="Mobile" />;
+  if (status === "force-password-change") return <Navigate to="/secure-account" replace />;
   if (status === "denied") return <Navigate to="/login" replace />;
 
   return children;
@@ -251,11 +257,10 @@ export default function App() {
         <Route path="/landing" element={<LandingPage />} />
         <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<SignUp />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/request-access" element={<RequestAccess />} />
         <Route path="/set-password" element={<SetPassword />} />
+        <Route path="/secure-account" element={<SecureAccount />} />
 
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
@@ -264,14 +269,12 @@ export default function App() {
         <Route path="/subjects" element={<StudentRouteGuard><Subjects /></StudentRouteGuard>} />
         <Route path="/subject/:id" element={<StudentRouteGuard><SubjectDetail /></StudentRouteGuard>} />
         <Route path="/grades" element={<StudentRouteGuard><Grades /></StudentRouteGuard>} />
-        <Route path="/attendance" element={<StudentRouteGuard><Attendance /></StudentRouteGuard>} />
         <Route path="/announcements" element={<StudentRouteGuard><Announcements /></StudentRouteGuard>} />
         <Route path="/content" element={<StudentRouteGuard><StudentContent /></StudentRouteGuard>} />
         <Route path="/materials" element={<StudentRouteGuard><StudentMaterials /></StudentRouteGuard>} />
         <Route path="/enrollment" element={<StudentRouteGuard><StudentEnrollment /></StudentRouteGuard>} />
         <Route path="/messages" element={<StudentRouteGuard><Messages /></StudentRouteGuard>} />
         <Route path="/profile" element={<StudentRouteGuard><Profile /></StudentRouteGuard>} />
-        <Route path="/video-conference" element={<StudentRouteGuard><VideoConferencing /></StudentRouteGuard>} />
         <Route path="/ai-assistant" element={<StudentRouteGuard><StudentAIAssistant /></StudentRouteGuard>} />
         <Route path="/notifications" element={<StudentRouteGuard><NotificationsPage /></StudentRouteGuard>} />
 
@@ -280,13 +283,11 @@ export default function App() {
         <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
         <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
         <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
-        <Route path="/teacher/attendance" element={<TeacherRouteGuard><AttendanceManagement /></TeacherRouteGuard>} />
         <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
         <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
         <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
         <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
         <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
-        <Route path="/teacher/video-conference" element={<TeacherRouteGuard><TeacherVideoConferencing /></TeacherRouteGuard>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
@@ -296,7 +297,6 @@ export default function App() {
         <Route path="/admin/enrollment" element={<AdminRouteGuard><EnrollmentManagement /></AdminRouteGuard>} />
         <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
-        <Route path="/admin/access-requests" element={<AdminRouteGuard><AdminAccessRequests /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />

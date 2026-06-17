@@ -3,13 +3,27 @@ import { View, StyleSheet, FlatList } from "react-native";
 import Colors from "../../../../src/constants/Colors";
 import MeetingCard from "../../../../src/components/cards/MeetingCard";
 
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useGlobalSearchParams, useSegments } from "expo-router";
 import { useMeetingsQuery } from "../../../../src/hooks/query/meetings/use-meetings-query";
 import { ActivityIndicator } from "react-native";
 
 export default function SubjectMeetings() {
-    const { id } = useLocalSearchParams();
-    const { data: meetings = [], isLoading } = useMeetingsQuery({ subjectId: id as string });
+    const segments = useSegments();
+    const { id: globalId } = useGlobalSearchParams();
+    const { id: localId } = useLocalSearchParams();
+    
+    // Robust ID extraction from params or route segments
+    const subjectId = (() => {
+        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
+        if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const found = segments.find(s => uuidRegex.test(s));
+        if (found) return found;
+        if (segments[2] && segments[2] !== '[id]') return segments[2];
+        return localId as string;
+    })();
+
+    const { data: meetings = [], isLoading } = useMeetingsQuery({ subjectId });
 
     if (isLoading) {
         return (

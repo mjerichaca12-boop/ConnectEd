@@ -6,28 +6,38 @@ import Colors from "../../../src/constants/Colors";
 import { useMaterialsQuery } from "../../../src/hooks/query/materials/use-materials-query";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { supabase } from "../../../src/lib/supabase";
 
 export default function TeacherMaterialsScreen() {
     // Passing undefined for subjectId to fetch ALL materials for the current teacher (as per my update to getMaterials)
     const { data: materials = [], isLoading } = useMaterialsQuery({ subjectId: undefined as any });
 
     const handleDownload = async (material: any) => {
-        if (!material.file_url) {
+        const fileUrl = material.file_url;
+        if (!fileUrl) {
             Alert.alert("Error", "No file attached.");
             return;
         }
 
         try {
+            let targetUrl = fileUrl;
+            if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+                const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
+                if (data?.publicUrl) {
+                    targetUrl = data.publicUrl;
+                }
+            }
+
             const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
             if (!storageDir) {
-                Linking.openURL(material.file_url);
+                await Linking.openURL(targetUrl);
                 return;
             }
 
             const fileName = `${material.title.replace(/\s+/g, '_')}`;
             const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
             
-            const { uri } = await FileSystem.downloadAsync(material.file_url, fileUri);
+            const { uri } = await FileSystem.downloadAsync(targetUrl, fileUri);
             
             if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(uri);

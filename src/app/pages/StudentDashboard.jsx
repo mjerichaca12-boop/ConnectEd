@@ -240,7 +240,7 @@ export function StudentDashboard() {
           </div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 bg-green-100 rounded-lg">
@@ -259,16 +259,6 @@ export function StudentDashboard() {
               </div>
               <p className="text-gray-500 text-sm mb-1">Average Grade</p>
               <p className="text-2xl font-bold text-gray-900">{averageGrade}%</p>
-            </div>
-
-            <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                </div>
-              </div>
-              <p className="text-gray-500 text-sm mb-1">Attendance Rate</p>
-              <p className="text-2xl font-bold text-gray-900">{attendanceRate}%</p>
             </div>
 
             <div className="bg-white rounded-xl p-6 border border-gray-200 hover:border-gray-300 transition-colors shadow-sm">

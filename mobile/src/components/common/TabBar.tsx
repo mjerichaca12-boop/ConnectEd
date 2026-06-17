@@ -19,14 +19,12 @@ export default function TabBar({ state, descriptors, navigation, onMenuPress, ro
             { name: "teacher/grades", type: "route", icon: "trending-up" },
             { name: "teacher/announcements", type: "route", icon: "megaphone" },
             { name: "teacher/messages", type: "route", icon: "chatbubbles" },
-            { name: "teacher/meeting", type: "route", icon: "videocam" },
             { name: "menu", type: "action" }
         ]
         : [
             { name: "home", type: "route", icon: "home" },
             { name: "assignment", type: "route", icon: "checkbox" },
             { name: "subjects", type: "route", icon: "book" },
-            { name: "meeting", type: "route", icon: "videocam" },
             { name: "messages", type: "route", icon: "chatbubbles" },
             { name: "menu", type: "action" }
         ];

@@ -36,6 +36,12 @@ export default function SubjectsScreen() {
                             teacher: sub.profiles
                                 ? `${sub.profiles.first_name || ""} ${sub.profiles.last_name || ""}`.trim()
                                 : "Faculty",
+                            description: sub.description ?? "",
+                            gradeLevel: sub.grade_level ?? "",
+                            schedule: sub.schedule ?? "TBA",
+                            credits: sub.credits ?? 0,
+                            capacity: sub.capacity ?? 40,
+                            enrolled: sub.enrolled ?? 0,
                             enrollStatus: enrollment.status,
                         }
                     ];
@@ -123,7 +129,12 @@ export default function SubjectsScreen() {
                                 code={item.code}
                                 title={item.name}
                                 teacher={item.teacher}
-                                schedule={"TBA"}
+                                schedule={item.schedule}
+                                description={item.description}
+                                gradeLevel={item.gradeLevel}
+                                credits={item.credits}
+                                capacity={item.capacity}
+                                enrolled={item.enrolled}
                                 onPress={() => {
                                     if (item.enrollStatus === "accepted") {
                                         router.push(`/subjects/${item.id}` as any);

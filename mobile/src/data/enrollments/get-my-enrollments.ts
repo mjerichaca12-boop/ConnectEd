@@ -7,12 +7,18 @@ export interface EnrollmentWithSubject {
     status: 'pending' | 'accepted' | 'rejected' | 'approved' | 'active' | 'Active';
     grade?: any;
     attendance?: any;
+    section?: string; // <-- Expose section dynamically from view
     subjects: {
         id: string;
         code: string;
         name: string;
-        description: string;
+        description?: string | null;
         teacher_id: string;
+        grade_level?: string | null; // <-- Expose grade level dynamically from subject
+        schedule?: string | null;
+        credits?: number | null;
+        capacity?: number | string | null;
+        enrolled?: number | string | null;
         profiles?: {
             first_name: string;
             last_name: string;
@@ -25,20 +31,26 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
     const { data, error } = await supabase
-        .from('enrollments')
+        .from('teacher_student_assignments')
         .select(`
             id,
             student_id,
             subject_id,
             status,
-            grade,
+            grades,
             attendance,
+            section,
             subjects:subject_id (
                 id,
                 code,
                 name,
                 description,
                 teacher_id,
+                grade_level,
+                schedule,
+                credits,
+                capacity,
+                enrolled,
                 profiles:teacher_id (
                     first_name,
                     last_name
@@ -64,5 +76,14 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
         throw error;
     }
 
-    return (data as any[] || []).filter(Boolean);
+    return (data || []).map((e: any) => ({
+        id: String(e.id),
+        student_id: e.student_id,
+        subject_id: e.subject_id,
+        status: e.status?.toLowerCase() === 'active' ? 'accepted' : e.status?.toLowerCase(),
+        grade: e.grades,
+        attendance: e.attendance,
+        section: e.section,
+        subjects: e.subjects
+    })) as any;
 }

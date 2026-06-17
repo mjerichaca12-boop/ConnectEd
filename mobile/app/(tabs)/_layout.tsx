@@ -6,18 +6,15 @@ import BottomSheetMenu from "../../src/components/common/bottom-sheet-menu";
 import TabBar from "../../src/components/common/TabBar";
 import { supabase } from "../../src/lib/supabase";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import ChatbotWidget, { ChatbotWidgetRef } from "../../src/components/chatbot/chatbot-widget";
-
 export default function TabLayout() {
     const [menuVisible, setMenuVisible] = useState(false);
     const [role, setRole] = useState<"student" | "teacher" | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const chatbotRef = useRef<ChatbotWidgetRef>(null);
 
     const router = useRouter();
     const segments = useSegments();
     const insets = useSafeAreaInsets();
-    const isMessagesTab = segments.includes("messages");
+    const isMessagesTab = (segments as string[]).includes("messages");
 
     useEffect(() => {
         // Session and role check
@@ -31,18 +28,9 @@ export default function TabLayout() {
                     return;
                 }
 
-                // Role logic using secure Session Metadata
-                let userRole = session.user?.user_metadata?.role || "student";
-
-                // Testing overrides for user
-                const userEmail = session.user?.email;
-                if (userEmail === "euriqt214@gmail.com") {
-                    userRole = "student";
-                } else if (userEmail === "erijiao18@gmail.com") {
-                    userRole = "teacher";
-                }
-
-                setRole(userRole as "student" | "teacher");
+                // Force role to student as this app is strictly for students
+                const userRole = "student";
+                setRole(userRole);
             } catch (err) {
                 console.error("Session check failed:", err);
                 router.replace("/login" as Href);
@@ -108,20 +96,7 @@ export default function TabLayout() {
                         tabBarLabel: "Home",
                     }}
                 />
-                <Tabs.Screen
-                    name="meeting"
-                    options={{
-                        title: "Meeting",
-                        tabBarLabel: "Meeting",
-                        tabBarIcon: ({ color, focused }) => (
-                            <Ionicons
-                                name={focused ? "videocam" : "videocam-outline"}
-                                size={22}
-                                color={color}
-                            />
-                        ),
-                    }}
-                />
+                <Tabs.Screen name="meeting" options={{ href: null }} />
                 <Tabs.Screen
                     name="messages"
                     options={{
@@ -149,15 +124,11 @@ export default function TabLayout() {
                 <Tabs.Screen name="grades" options={{ href: null }} />
             </Tabs>
 
-            {/* Global Chatbot Widget - Hidden in messages tab to avoid button overlap */}
-            {!isMessagesTab && <ChatbotWidget ref={chatbotRef} role={role} />}
-
             {/* Bottom Sheet Menu */}
             <BottomSheetMenu 
                 visible={menuVisible} 
                 role={role} 
                 onClose={() => setMenuVisible(false)} 
-                onChatbotPress={() => chatbotRef.current?.open()}
             />
         </View>
     );

@@ -179,6 +179,7 @@ function ClassMaterials() {
       "file_path",
       "subject",
       "section",
+      "subject_id",
       "teacher_id",
       "created_by",
       "created_at"
@@ -232,7 +233,7 @@ function ClassMaterials() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("code, name, section")
+      .select("id, code, name, section")
       .eq("teacher_id", resolvedTeacherId)
       .order("code", { ascending: true });
 
@@ -253,7 +254,7 @@ function ClassMaterials() {
 
       if (subjectLabel && !subjectSet.has(subjectLabel)) {
         subjectSet.add(subjectLabel);
-        subjects.push({ value: subjectLabel, label: subjectLabel });
+        subjects.push({ value: item.id || subjectLabel, label: subjectLabel });
       }
 
       const sectionLabel = String(item.section || "").trim();
@@ -458,6 +459,10 @@ function ClassMaterials() {
         payload.subject = materialForm.subject.trim() || null;
       }
 
+      if (columns.includes("subject_id")) {
+        payload.subject_id = materialForm.subject.trim() || null;
+      }
+
       if (columns.includes("section")) {
         payload.section = materialForm.section.trim() || null;
       }
@@ -491,6 +496,10 @@ function ClassMaterials() {
           file_url: fileUrl,
           file_name: storedFileName
         };
+
+        if (columns.includes("subject_id")) {
+          fallbackPayload.subject_id = materialForm.subject.trim() || null;
+        }
 
         if (hasTeacherIdColumn) {
           fallbackPayload.teacher_id = teacherId;

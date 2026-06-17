@@ -122,11 +122,15 @@ const getAssignmentLifecycle = (dueDate) => {
   return { key: "open", label: "Open", cls: "bg-emerald-100 text-emerald-700" };
 };
 
+
+
 const normalizeAnnouncementRecordLocal = (row) => {
-  const fileName = String(row?.file_name || "").trim();
-  const filePath = String(row?.file_path || "").trim();
-  const fileUrl = String(row?.file_url || "").trim();
-  const fileType = String(row?.file_type || "").trim();
+  const attachments = Array.isArray(row?.attachments) ? row.attachments : [];
+  const firstAttachment = attachments[0] || {};
+  const fileName = String(row?.file_name || firstAttachment.name || "").trim();
+  const filePath = String(row?.file_path || firstAttachment.path || "").trim();
+  const fileUrl = String(row?.file_url || firstAttachment.url || "").trim();
+  const fileType = String(row?.file_type || firstAttachment.mimeType || "").trim();
 
   return {
     id: String(row?.id || ""),
@@ -575,6 +579,13 @@ export function ClassDetail() {
       return "";
     }
 
+    // Try 'class_announcements' first for subject-scoped announcements
+    const { error: classAnnError } = await supabase.from('class_announcements').select("id", { count: "exact", head: true });
+    if (!classAnnError) {
+      setAnnouncementTable('class_announcements');
+      return 'class_announcements';
+    }
+
     const { error } = await supabase.from(ANNOUNCEMENT_TABLE).select("id", { count: "exact", head: true });
     if (error) {
       console.error("[ClassDetail] Announcements table check failed:", error);
@@ -609,6 +620,24 @@ export function ClassDetail() {
     if (!tableName) {
       setAnnouncementColumns([]);
       return [];
+    }
+
+    if (tableName === 'class_announcements') {
+      const classAnnColumns = [
+        "id",
+        "class_id",
+        "teacher_id",
+        "title",
+        "content",
+        "attachments",
+        "created_at",
+        "updated_at",
+        "author",
+        "created_by_name",
+        "priority"
+      ];
+      setAnnouncementColumns(classAnnColumns);
+      return classAnnColumns;
     }
 
     const defaultColumns = [
@@ -2258,6 +2287,20 @@ export function ClassDetail() {
       if (columns.includes("file_name")) payload.file_name = nextFileName || null;
       if (columns.includes("file_path")) payload.file_path = nextFilePath || null;
       if (columns.includes("file_url")) payload.file_url = nextFileUrl || null;
+
+      if (columns.includes("attachments")) {
+        if (nextFileUrl) {
+          payload.attachments = [{
+            url: nextFileUrl,
+            name: nextFileName,
+            path: nextFilePath,
+            size: annFile ? annFile.size : null,
+            mimeType: annFile ? annFile.type : (nextFileName.endsWith('.pdf') ? 'application/pdf' : 'image/png')
+          }];
+        } else {
+          payload.attachments = [];
+        }
+      }
 
       if (!isEditingAnnouncement && columns.includes("created_at")) {
         payload.created_at = new Date().toISOString();

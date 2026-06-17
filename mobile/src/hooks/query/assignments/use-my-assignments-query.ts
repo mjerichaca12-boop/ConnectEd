@@ -25,8 +25,16 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
         };
     }, [queryClient, subjectId]);
 
+    const isSubjectIntent = 'subjectId' in (filters || {});
+    const isSubjectReady = !!(subjectId && subjectId !== 'undefined' && subjectId !== '[id]');
+    const isGlobalIntent = !isSubjectIntent;
+    const isEnabled = isGlobalIntent || isSubjectReady;
+
     return useQuery({
         queryKey: ['my-assignments', subjectId],
         queryFn: () => getMyAssignments(subjectId),
+        enabled: isEnabled,
+        refetchOnMount: true,
+        staleTime: 0,
     });
 }

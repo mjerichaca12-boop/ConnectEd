@@ -53,7 +53,6 @@ export default function SubjectLayout() {
                 <MaterialTopTabs.Screen name="announcement" options={{ title: "Announcement" }} />
                 <MaterialTopTabs.Screen name="assignment" options={{ title: "Assignment" }} />
                 <MaterialTopTabs.Screen name="materials" options={{ title: "Materials" }} />
-                <MaterialTopTabs.Screen name="meeting" options={{ title: "Meeting" }} />
             </MaterialTopTabs>
         </View>
     );

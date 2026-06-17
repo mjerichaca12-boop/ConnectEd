@@ -10,6 +10,8 @@ import { supabase } from "../../src/lib/supabase";
 import { useAnnouncementsQuery } from "../../src/hooks/query/announcements/use-announcements-query";
 import { useEventsQuery } from "../../src/hooks/query/events/use-events-query";
 import { useMyEnrollmentsQuery } from "../../src/hooks/query/enrollments/use-my-enrollments-query";
+import { useMyAssignmentsQuery } from "../../src/hooks/query/assignments/use-my-assignments-query";
+import { TaskSummarySection } from "../../src/components/sections/TaskSummarySection";
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -18,8 +20,16 @@ export default function HomeScreen() {
     const { data: eventsData, isLoading: isEventsLoading } = useEventsQuery(3);
     const { data: enrollments, isLoading: isEnrollmentsLoading } = useMyEnrollmentsQuery();
     
+    const { data: assignments = [], isLoading: isAssignmentsLoading } = useMyAssignmentsQuery();
+    
     const announcements = announcementsData || [];
     const events = eventsData || [];
+
+    const taskSummary = {
+        upcoming: assignments.filter(a => a.status === 'pending').length,
+        submitted: assignments.filter(a => a.status === 'submitted' || a.status === 'graded' || a.status === 'returned').length,
+        late: assignments.filter(a => a.status === 'late').length
+    };
 
     const isEnrolled = enrollments?.some(e => e.status === 'accepted') || false;
 
@@ -88,6 +98,9 @@ export default function HomeScreen() {
                     <Text style={styles.welcomeSub}>Here&apos;s what&apos;s happening today</Text>
                 </View>
 
+                {/* Task Summary Section */}
+                <TaskSummarySection counts={taskSummary} />
+
                 {/* Latest Announcements Section - Visible only if Enrolled */}
                 {isEnrolled && !isAnnouncementsLoading && announcements.length > 0 && (
                     <View style={styles.section}>
@@ -106,6 +119,7 @@ export default function HomeScreen() {
                                 author={ann.author || "Faculty"}
                                 author_role={ann.author_role}
                                 image_url={ann.image_url}
+                                attachments={ann.attachments}
                                 onPress={() =>
                                     router.push({
                                         pathname: `/(tabs)/announcement/${ann.id}`,

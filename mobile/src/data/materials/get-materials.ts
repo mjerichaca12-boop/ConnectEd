@@ -4,30 +4,50 @@ import { Material } from "../../types";
 export interface GetMaterialsArgs {
     subjectId?: string;
     teacherId?: string;
+    allowFallback?: boolean;
 }
 
-export async function getMaterials({ subjectId, teacherId }: GetMaterialsArgs): Promise<Material[]> {
+export async function getMaterials({ subjectId, teacherId, allowFallback = true }: GetMaterialsArgs): Promise<Material[]> {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isValidId = subjectId && uuidRegex.test(subjectId);
+    const isValidId = !!(subjectId && uuidRegex.test(subjectId));
 
-    console.log(`[materials] Fetching for ID: "${subjectId}", Valid: ${isValidId}`);
+    const isSubjectExplicit = subjectId && subjectId !== 'undefined' && subjectId !== '[id]';
+
+    if (isSubjectExplicit && !isValidId) {
+        console.warn(`[materials] Invalid subjectId provided: ${subjectId}`);
+        return [];
+    }
+
+    console.log(`[materials] Fetching for ID: "${subjectId}", Valid: ${isValidId}, Fallback: ${allowFallback}`);
 
     let data: any[] = [];
     let error: any = null;
 
     if (isValidId) {
+        // Fetch materials for specific subject
         const result = await supabase
             .from('class_materials')
             .select('*')
-            .or(`subject_id.eq.${subjectId},subject_id.is.null`);
+            .eq('subject_id', subjectId);
         data = result.data || [];
         error = result.error;
         console.log(`[materials] Subject-specific count: ${data.length}`);
+    } else if (teacherId) {
+        // Fetch materials for a specific teacher (when no subject is selected)
+        const result = await supabase
+            .from('class_materials')
+            .select('*')
+            .eq('teacher_id', teacherId);
+        data = result.data || [];
+        error = result.error;
+        console.log(`[materials] Teacher-specific count: ${data.length}`);
     }
 
-    // FALLBACK: If ID is invalid OR no materials found for this subject, 
-    // fetch ALL materials so the user has something to show.
-    if (!isValidId || (!error && data.length === 0)) {
+    // Automatically disable fallback if a specific subject was requested, to prevent global leaks
+    const effectiveAllowFallback = allowFallback && !isSubjectExplicit;
+
+    // FALLBACK: Only run if allowed AND no materials found
+    if (effectiveAllowFallback && (!error && data.length === 0)) {
         console.log('[materials] Running Global Fallback (fetch all)...');
         const fallback = await supabase
             .from('class_materials')

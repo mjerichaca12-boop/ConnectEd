@@ -38,17 +38,27 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
     const [isDownloading, setIsDownloading] = useState(false);
 
     const handleDownload = async () => {
-        if (!material.file_url) {
+        const fileUrl = material.file_url;
+        if (!fileUrl) {
             Alert.alert("Error", "This material does not have a file attached.");
             return;
         }
 
         try {
-            // First attempt: Just open the URL (most reliable across platforms)
-            const supported = await Linking.canOpenURL(material.file_url);
-            if (supported) {
-                await Linking.openURL(material.file_url);
+            let targetUrl = fileUrl;
+            if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+                const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
+                if (data?.publicUrl) {
+                    targetUrl = data.publicUrl;
+                }
+            }
+
+            // First attempt: Directly open the URL (most reliable across modern platforms)
+            try {
+                await Linking.openURL(targetUrl);
                 return;
+            } catch (openErr) {
+                console.log("Direct URL open failed, attempting fallback:", openErr);
             }
 
             // Fallback: Download via FileSystem (for specific mobile needs)
@@ -59,7 +69,7 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
                 const fileName = `${material.title.replace(/\s+/g, '_')}_${Date.now()}.${material.type || 'pdf'}`;
                 const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
                 
-                const { uri } = await FileSystem.downloadAsync(material.file_url, fileUri);
+                const { uri } = await FileSystem.downloadAsync(targetUrl, fileUri);
                 
                 if (await Sharing.isAvailableAsync()) {
                     await Sharing.shareAsync(uri);
@@ -107,7 +117,7 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
                 <View style={styles.infoContainer}>
                     <Text style={styles.infoTitle}>Description</Text>
                     <Text style={styles.infoText}>
-                        This material is required reading for the upcoming week. Please ensure you have reviewed it before the next lecture.
+                        {material.description || "This material is required reading for the upcoming week. Please ensure you have reviewed it before the next lecture."}
                     </Text>
                 </View>
             </View>
@@ -117,14 +127,16 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
 
 import { useMaterialsQuery } from "../../../../src/hooks/query/materials/use-materials-query";
 import { useSubjectDetailQuery } from "../../../../src/hooks/query/subjects/use-subject-detail-query";
-import { useLocalSearchParams, useRouter, useSegments } from "expo-router";
+import { useLocalSearchParams, useGlobalSearchParams, useRouter, useSegments } from "expo-router";
 
 export default function SubjectMaterials() {
     const segments = useSegments();
+    const { id: globalId } = useGlobalSearchParams();
     const { id: localId } = useLocalSearchParams();
     
-    // Improved ID extraction: filter segments for a valid UUID or use localId if it's not the placeholder
+    // Improved ID extraction
     const id = (() => {
+        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
         if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
         
         // Look for anything that looks like a UUID in segments
@@ -132,32 +144,18 @@ export default function SubjectMaterials() {
         const found = segments.find(s => uuidRegex.test(s));
         if (found) return found;
 
-        // Fallback to segments[2] if it's not the placeholder
         if (segments[2] && segments[2] !== '[id]') return segments[2];
-        
         return localId as string;
     })();
     const { data: subject, isLoading: isSubjectLoading } = useSubjectDetailQuery(id as string);
     const { data: queryData = [], isLoading: isMaterialsLoading, refetch: refetchMaterials } = useMaterialsQuery({ 
         subjectId: id as string,
-        teacherId: subject?.teacher_id
+        teacherId: subject?.teacher_id,
+        allowFallback: false // Don't show random materials if subject materials are empty
     });
     
-    // Hard fallback: if query returns empty, try fetching all materials directly
-    const [materials, setMaterials] = useState<any[]>([]);
-    
-    React.useEffect(() => {
-        if (queryData && queryData.length > 0) {
-            setMaterials(queryData);
-        } else if (!isMaterialsLoading) {
-            // If empty, try one more time without the subject filter
-            import('../../../../src/data/materials/get-materials').then(({ getMaterials }) => {
-                getMaterials({ subjectId: undefined as any }).then(all => {
-                    if (all && all.length > 0) setMaterials(all);
-                });
-            });
-        }
-    }, [queryData, isMaterialsLoading]);
+    // Use query data directly instead of syncing to local state via useEffect
+    const materials = queryData;
 
     const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
     const [isTeacher, setIsTeacher] = useState(false);

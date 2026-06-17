@@ -152,6 +152,9 @@ function StudentMaterials() {
   const [showQuizTaking, setShowQuizTaking] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState(null);
   const fileInputRef = useRef(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [comments, setComments] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [materials, setMaterials] = useState([]);
   const [activities, setActivities] = useState([]);
@@ -363,32 +366,128 @@ function StudentMaterials() {
       return;
     }
     setSelectedActivity(activity);
+    setSelectedFile(null);
     setSelectedFileName("");
+    setComments("");
     setShowSubmitModal(true);
   };
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0];
+    setSelectedFile(file || null);
     setSelectedFileName(file ? file.name : "");
   };
 
-  const handleConfirmSubmit = () => {
-    if (!selectedFileName) return;
+  const handleConfirmSubmit = async () => {
+    if (!selectedFile) return;
     if (selectedActivity && getAssignmentLifecycle(selectedActivity.dueDate).key === "closed") {
       alert("Assignment is already closed");
       return;
     }
-    const updated = [...submittedIds, selectedActivity.id];
-    setSubmittedIds(updated);
-    localStorage.setItem("student_submissions", JSON.stringify(updated));
-    // Mark in activities list
-    setActivities((prev) =>
-      prev.map((a) =>
-        a.id === selectedActivity.id ? { ...a, status: "submitted", submittedDate: new Date().toISOString() } : a
-      )
-    );
-    setShowSubmitModal(false);
-    setSelectedActivity(null);
+
+    setIsSubmitting(true);
+    try {
+      const userData = localStorage.getItem("currentUser");
+      if (!userData) throw new Error("User not found in local storage.");
+      const user = JSON.parse(userData);
+      const studentId = user.id;
+
+      if (!studentId) throw new Error("Student ID not resolved.");
+
+      // 1. Upload file to Supabase storage
+      const storagePath = `submissions/${studentId}/${Date.now()}_${selectedFile.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, selectedFile, {
+          cacheControl: "3600",
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Retrieve public URL
+      const { data: urlData } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(storagePath);
+      const publicUrl = urlData?.publicUrl || "";
+
+      if (!publicUrl) throw new Error("Failed to retrieve public file URL.");
+
+      // 3. Upsert into submissions table
+      const { error: subError } = await supabase
+        .from("submissions")
+        .upsert({
+          assignment_id: selectedActivity.id,
+          user_id: studentId,
+          file_url: publicUrl
+        }, { onConflict: "assignment_id,user_id" });
+
+      if (subError) throw subError;
+
+      // 4. Fetch teacher_id and subject_id from subjects
+      let teacherId = selectedActivity.teacherId;
+      let subjectId = selectedActivity.subjectId;
+
+      if (!teacherId || !subjectId) {
+        // Query as fallback
+        const { data: subjectData } = await supabase
+          .from("subjects")
+          .select("id, teacher_id")
+          .eq("code", selectedActivity.classCode)
+          .limit(1)
+          .maybeSingle();
+        
+        if (subjectData) {
+          teacherId = subjectData.teacher_id;
+          subjectId = subjectData.id;
+        }
+      }
+
+      // 5. Upsert into teacher_assessment_submissions
+      if (teacherId && subjectId) {
+        const { error: teacherSubError } = await supabase
+          .from("teacher_assessment_submissions")
+          .upsert({
+            teacher_id: teacherId,
+            subject_id: subjectId,
+            assessment_id: selectedActivity.id,
+            student_id: studentId,
+            response_text: comments.trim() || "Submitted via Web Dashboard",
+            file_url: publicUrl,
+            file_name: selectedFile.name,
+            file_path: storagePath,
+            status: "submitted"
+          }, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+        
+        if (teacherSubError) {
+          console.error("Failed to upsert into teacher_assessment_submissions:", teacherSubError);
+        }
+      }
+
+      // 6. Update local storage and state
+      const updated = [...submittedIds, selectedActivity.id];
+      setSubmittedIds(updated);
+      localStorage.setItem("student_submissions", JSON.stringify(updated));
+
+      // Mark in activities list
+      setActivities((prev) =>
+        prev.map((a) =>
+          a.id === selectedActivity.id ? { ...a, status: "submitted", submittedDate: new Date().toISOString() } : a
+        )
+      );
+
+      alert("Assignment submitted successfully!");
+      setShowSubmitModal(false);
+      setSelectedActivity(null);
+      setSelectedFile(null);
+      setSelectedFileName("");
+      setComments("");
+    } catch (err) {
+      console.error("[StudentMaterials] Submission error:", err);
+      alert(err.message || "Failed to submit assignment.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleQuizComplete = async (score) => {
@@ -874,6 +973,8 @@ function StudentMaterials() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Comments (Optional)</label>
                 <textarea
                   rows={3}
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm resize-none"
                   placeholder="Any notes for your teacher..."
                 />
@@ -886,12 +987,12 @@ function StudentMaterials() {
                 >
                   Cancel
                 </button>
-                <button
+                 <button
                   onClick={handleConfirmSubmit}
-                  disabled={!selectedFileName || getAssignmentLifecycle(selectedActivity.dueDate).key === "closed"}
+                  disabled={!selectedFile || isSubmitting || getAssignmentLifecycle(selectedActivity.dueDate).key === "closed"}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-700 hover:to-teal-700 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Submit Work
+                  {isSubmitting ? "Submitting..." : "Submit Work"}
                 </button>
               </div>
             </div>

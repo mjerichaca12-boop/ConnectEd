@@ -5,6 +5,7 @@ import AppHeader from "../../src/components/common/AppHeader";
 import { supabase } from "../../src/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { getMyEnrollments, EnrollmentWithSubject } from "../../src/data/enrollments/get-my-enrollments";
+import { useFocusEffect } from "@react-navigation/native";
 
 function gradeToPoints(numericGrade: number): number {
     if (numericGrade >= 90) return 4.0;
@@ -116,24 +117,6 @@ export default function GradesScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchGrades();
-
-        // Real-time: teacher gives/updates a grade → re-fetch
-        const channel = supabase
-            .channel('grades-realtime')
-            .on(
-                'postgres_changes',
-                { event: "UPDATE", schema: "public", table: "teacher_student_grades" },
-                () => {
-                    fetchGrades();
-                }
-            )
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, []);
-
     const getGradeRemarks = (grade: number) => {
         if (grade >= 90) return "Outstanding";
         if (grade >= 85) return "Excellent";
@@ -200,6 +183,28 @@ export default function GradesScreen() {
             setIsLoading(false);
         }
     }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            fetchGrades();
+        }, [fetchGrades])
+    );
+
+    useEffect(() => {
+        // Real-time: teacher gives/updates a grade → re-fetch
+        const channel = supabase
+            .channel('grades-realtime')
+            .on(
+                'postgres_changes',
+                { event: "*", schema: "public", table: "teacher_student_grades" },
+                () => {
+                    fetchGrades();
+                }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [fetchGrades]);
 
     if (selectedGrade) {
         return <DetailedGradeView grade={selectedGrade} onBack={() => setSelectedGrade(null)} />;

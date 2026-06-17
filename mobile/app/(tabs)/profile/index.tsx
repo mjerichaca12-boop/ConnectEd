@@ -11,7 +11,15 @@ import { supabase } from "../../../src/lib/supabase";
 import { useRouter, Href } from "expo-router";
 import { useMyEnrollmentsQuery } from "../../../src/hooks/query/enrollments/use-my-enrollments-query";
 
-// Simple setting option row
+/**
+ * Renders a standard profile navigation/action option row.
+ * 
+ * @param {object} props The component props.
+ * @param {string} props.label The label text to show.
+ * @param {() => void} props.onPress Callback function on press.
+ * @param {string} [props.icon] Optional Ionicons icon name.
+ * @param {React.ReactNode} [props.rightElement] Optional custom right side element.
+ */
 const ProfileOption = ({ label, onPress, icon, rightElement }: any) => (
     <TouchableOpacity style={styles.option} onPress={onPress}>
         <View style={styles.optionLeft}>
@@ -22,6 +30,10 @@ const ProfileOption = ({ label, onPress, icon, rightElement }: any) => (
     </TouchableOpacity>
 );
 
+/**
+ * Main Student/Teacher Profile tab screen showing academic information, 
+ * enrollment status, and security/preference settings.
+ */
 export default function ProfileScreen() {
     const router = useRouter();
 
@@ -40,6 +52,17 @@ export default function ProfileScreen() {
     
     // Enrollment query for dynamic status
     const { data: enrollments, isLoading: isLoadingEnrollments } = useMyEnrollmentsQuery();
+
+    // Resolve dynamic year level and section from active enrollments (accepted or active)
+    const activeEnrollment = enrollments?.find(
+        e => e.status === 'accepted' || e.status === 'active' || e.status === 'Active'
+    );
+    const resolvedYearLevel = role === 'student' && activeEnrollment?.subjects?.grade_level 
+        ? activeEnrollment.subjects.grade_level 
+        : yearLevel;
+    const resolvedSection = role === 'student' && activeEnrollment?.section 
+        ? activeEnrollment.section 
+        : section;
 
     // Notifications state (persistent via profile)
     const [pushEnabled, setPushEnabled] = useState(false);
@@ -314,9 +337,9 @@ export default function ProfileScreen() {
                     </View>
                     <Text style={styles.name}>{displayName}</Text>
                     <Text style={styles.studentId}>{userEmail || "Not signed in"}</Text>
-                    <Text style={styles.program}>
-                        {role === "teacher" ? "Senior Faculty" : "BS Computer Science"}
-                    </Text>
+                    {role === "teacher" && (
+                        <Text style={styles.program}>Senior Faculty</Text>
+                    )}
                 </View>
 
                 {/* Academic Info */}
@@ -361,27 +384,14 @@ export default function ProfileScreen() {
                             <View style={styles.infoRow}>
                                 <Text style={styles.label}>Year Level:</Text>
                                 {isEditingAcademic ? (
-                                    <TextInput
-                                        style={styles.input}
-                                        value={yearLevel}
-                                        onChangeText={setYearLevel}
-                                    />
+                                    <Text style={[styles.value, { color: "#64748B" }]}>
+                                        {resolvedYearLevel} (Managed by Administrator)
+                                    </Text>
                                 ) : (
-                                    <Text style={styles.value}>{yearLevel}</Text>
+                                    <Text style={styles.value}>{resolvedYearLevel}</Text>
                                 )}
                             </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.label}>Section:</Text>
-                                {isEditingAcademic ? (
-                                    <TextInput
-                                        style={styles.input}
-                                        value={section}
-                                        onChangeText={setSection}
-                                    />
-                                ) : (
-                                    <Text style={styles.value}>{section}</Text>
-                                )}
-                            </View>
+
                         </>
                     )}
 

@@ -487,6 +487,7 @@ function VideoConferencing() {
         title: formData.title.trim(),
         class_name: className,
         subject: formData.subject.trim(),
+        subject_id: selectedClass.value || null,
         scheduled_date: formData.date,
         scheduled_time: formData.time,
         duration_minutes: Number(formData.duration || 60) || 60,

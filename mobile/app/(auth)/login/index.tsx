@@ -8,9 +8,10 @@ import {
     Platform,
     ActivityIndicator,
 } from "react-native";
-import { Link, useRouter, Href } from "expo-router";
+import { useRouter, Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supabase } from "../../../src/lib/supabase";
 import styles from "./_styles";
 
 export default function LoginScreen() {
@@ -18,54 +19,56 @@ export default function LoginScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
-        if (!email) {
-            alert("Please enter your email");
+        if (!email || !password) {
+            alert("Please enter your email and password.");
             return;
         }
 
         setIsLoading(true);
         try {
-            const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-            const response = await fetch(`${API_URL}/auth/direct-login`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Bypass-Tunnel-Reminder": "true"
-                },
-                body: JSON.stringify({ email: email.trim() }),
+            // Use Supabase signInWithPassword directly so verified-email accounts work
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: email.trim(),
+                password,
             });
 
-            if (!response.ok) {
-                const textError = await response.text();
-                throw new Error(textError.includes('Tunnel') ? 'Backend tunnel is down. Please restart it.' : textError);
+            if (error) throw error;
+
+            // Fetch user profile to check role and must_change_password status
+            const { data: profile, error: profileError } = await supabase
+                .from("profiles")
+                .select("role, must_change_password")
+                .eq("id", data.user.id)
+                .maybeSingle();
+
+            if (profileError || !profile) {
+                await supabase.auth.signOut();
+                alert("Account profile not found.");
+                return;
             }
 
-            const data = await response.json();
+            if (profile.role !== 'student') {
+                await supabase.auth.signOut();
+                alert("Only student accounts are permitted to use the mobile application. Teachers must use the web portal.");
+                return;
+            }
 
-            if (data.success && data.session) {
-                // Import supabase if not already present
-                const { supabase } = require("../../../src/lib/supabase");
-                
-                const { error } = await supabase.auth.setSession({
-                    access_token: data.session.access_token,
-                    refresh_token: data.session.refresh_token,
-                });
-
-                if (error) {
-                    throw error;
-                }
-
-                const userRole = data.user?.user_metadata?.role || 'student';
-                router.replace(userRole === "teacher" ? "/(tabs)/teacher-home" : "/(tabs)/home" as Href);
+            if (profile.must_change_password) {
+                router.replace("/(auth)/secure-account" as Href);
             } else {
-                alert(data.error || "Login Failed");
+                router.replace("/(tabs)/home" as Href);
             }
         } catch (error: any) {
-            console.error("Login failed:", error);
-            alert(error.message || "Network error logging in.");
+            console.log("Login failed: invalid credentials or network error");
+            // Customize error message for wrong password or email as requested
+            if (error.message && error.message.toLowerCase().includes("credentials")) {
+                alert("Wrong password or email. Please check your credentials and try again.");
+            } else {
+                alert(error.message || "Wrong password or email.");
+            }
         } finally {
             setIsLoading(false);
         }
@@ -94,6 +97,7 @@ export default function LoginScreen() {
                         />
                     </View>
 
+                    {/* Password field with visibility icon toggle */}
                     <View style={styles.inputContainer}>
                         <Ionicons name="lock-closed-outline" size={20} color="#94A3B8" style={styles.icon} />
                         <TextInput
@@ -102,9 +106,26 @@ export default function LoginScreen() {
                             placeholderTextColor="#94A3B8"
                             value={password}
                             onChangeText={setPassword}
-                            secureTextEntry
+                            secureTextEntry={!showPassword}
+                            autoCapitalize="none"
                         />
+                        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+                            <Ionicons
+                                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                                size={20}
+                                color="#94A3B8"
+                            />
+                        </TouchableOpacity>
                     </View>
+
+                    {/* Forgot Password link */}
+                    <TouchableOpacity
+                        onPress={() => router.push("/(auth)/forgot-password" as Href)}
+                        style={{ alignSelf: "flex-end", marginTop: -8, marginBottom: 16 }}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={styles.signUpText}>Forgot Password?</Text>
+                    </TouchableOpacity>
 
                     <TouchableOpacity 
                         style={[styles.loginButton, isLoading && { opacity: 0.7 }]} 
@@ -118,7 +139,7 @@ export default function LoginScreen() {
                         )}
                     </TouchableOpacity>
 
-                    {/* Footer removed to disable registration */}
+                    <View style={{ height: 20 }} />
                 </View>
             </KeyboardAvoidingView>
         </SafeAreaView>

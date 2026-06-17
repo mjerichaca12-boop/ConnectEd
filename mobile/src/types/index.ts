@@ -21,10 +21,12 @@ export interface Announcement {
     content: string;
     date: string;
     author: string;
+    author_role?: string;
     type: "general" | "urgent" | "event" | "Announcement" | "Assignment" | "Files";
     image_url?: string;
     file_url?: string;
     file_name?: string;
+    attachments?: any[];
 }
 
 export interface Assignment {
@@ -33,9 +35,18 @@ export interface Assignment {
     subject?: string;
     title: string;
     dueDate: string;
-    status: "pending" | "submitted" | "late" | "graded";
+    status: "pending" | "submitted" | "late" | "graded" | "returned";
     grade?: number;
     instructions?: string;
+    file_url?: string;
+    file_name?: string;
+    submission?: {
+        id: string;
+        file_url?: string | null;
+        grade?: number;
+        teacher_comment?: string;
+        status?: string;
+    } | null;
 }
 
 export interface CalendarEvent {

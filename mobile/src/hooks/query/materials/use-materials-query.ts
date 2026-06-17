@@ -7,15 +7,19 @@ export function useMaterialsQuery(args: GetMaterialsArgs) {
     const queryClient = useQueryClient();
 
     useEffect(() => {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const isValidUuid = !!(args.subjectId && uuidRegex.test(args.subjectId));
+
+        const channelName = isValidUuid ? `materials-rt-${args.subjectId}` : 'materials-rt-global';
         const channel = supabase
-            .channel(`materials-rt-${args.subjectId || 'global'}`)
+            .channel(channelName)
             .on(
                 'postgres_changes',
                 { 
                     event: '*', 
                     schema: 'public', 
                     table: 'class_materials', 
-                    filter: args.subjectId ? `subject_id=eq.${args.subjectId}` : undefined 
+                    filter: isValidUuid ? `subject_id=eq.${args.subjectId}` : undefined 
                 },
                 () => {
                     queryClient.invalidateQueries({ queryKey: ['materials', args.subjectId, args.teacherId] });
@@ -29,8 +33,14 @@ export function useMaterialsQuery(args: GetMaterialsArgs) {
     }, [queryClient, args.subjectId, args.teacherId]);
 
     return useQuery({
-        queryKey: ['materials', args.subjectId, args.teacherId],
+        queryKey: ['materials', args.subjectId, args.teacherId, args.allowFallback],
         queryFn: () => getMaterials(args),
-        enabled: !!(args.subjectId || args.teacherId),
+        enabled: !!(
+            (args.subjectId && args.subjectId !== 'undefined' && args.subjectId !== '[id]') || 
+            args.teacherId ||
+            args.allowFallback !== false
+        ),
+        refetchOnMount: true,
+        staleTime: 0,
     });
 }
