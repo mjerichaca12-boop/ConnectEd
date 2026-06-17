@@ -1296,15 +1296,11 @@ function GradesManagement() {
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-green-900">Grades Management</h2>
-                {hasUnsavedChanges && <span className="text-sm text-amber-600 font-medium animate-pulse">⚠ Unsaved changes</span>}
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}

@@ -97,6 +97,7 @@ function TeacherManagement() {
   const [assignFormData, setAssignFormData] = useState(emptyAssignForm);
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [formErrors, setFormErrors] = useState({});
+  const [editFormErrors, setEditFormErrors] = useState({});
   const [assignFormErrors, setAssignFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");

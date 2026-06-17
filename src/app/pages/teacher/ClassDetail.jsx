@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
@@ -7,6 +7,7 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { supabase } from "@/app/lib/supabaseClient";
 import { v4 as uuidv4 } from "uuid";
+import { toast } from "sonner";
 import {
   sanitizeFileName,
   isColumnMissingError,
@@ -268,6 +269,22 @@ export function ClassDetail() {
   const [stuError, setStuError] = useState("");
   const [showDeleteStudentModal, setShowDeleteStudentModal] = useState(false);
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
+  
+  // Advanced Add Student State
+  const [addStudentMode, setAddStudentMode] = useState("individual"); // "individual", "masterlist", "csv"
+  const [masterlistStudents, setMasterlistStudents] = useState([]);
+  const [selectedMasterlistIds, setSelectedMasterlistIds] = useState([]);
+  const [masterlistQuery, setMasterlistQuery] = useState("");
+  const [masterlistYearFilter, setMasterlistYearFilter] = useState("all");
+  const [masterlistSectionFilter, setMasterlistSectionFilter] = useState("all");
+  const [isMasterlistLoading, setIsMasterlistLoading] = useState(false);
+  
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreviewData, setCsvPreviewData] = useState([]);
+  const [csvValidRecords, setCsvValidRecords] = useState([]);
+  const [csvErrorRecords, setCsvErrorRecords] = useState([]);
+  const [isCsvValidating, setIsCsvValidating] = useState(false);
+  const csvFileInputRef = useRef(null);
 
   // Material form
   const [matForm, setMatForm] = useState({ title: "", description: "", fileType: "PDF" });
@@ -1417,11 +1434,34 @@ export function ClassDetail() {
   };
 
 
+  const loadMasterlistStudents = async () => {
+    if (!supabase) return;
+    setIsMasterlistLoading(true);
+    try {
+      const { data, error } = await supabase.from("student_masterlist").select("*").order("first_name", { ascending: true });
+      if (error) {
+        console.error("Failed to fetch masterlist:", error);
+      } else {
+        setMasterlistStudents(data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching masterlist:", err);
+    } finally {
+      setIsMasterlistLoading(false);
+    }
+  };
+
   const handleOpenStudentModal = () => {
     setSelectedStudentIds([]);
     setStudentPickerQuery("");
     setStuError("");
+    setAddStudentMode("individual");
+    setSelectedMasterlistIds([]);
+    setMasterlistQuery("");
+    setCsvFile(null);
+    setCsvPreviewData([]);
     setShowStudentModal(true);
+    loadMasterlistStudents();
   };
   const toggleStudentSelection = (studentId) => {
     setSelectedStudentIds((current) => {
@@ -1494,8 +1534,182 @@ export function ClassDetail() {
       await loadAssignedStudents(teacherProfileId, id);
       setSelectedStudentIds([]);
       setShowStudentModal(false);
+      toast.success(`Successfully enrolled ${payload.length} student(s).`);
     } catch (error) {
-      setStuError(error instanceof Error ? error.message : "Unable to add student.");
+      const msg = error instanceof Error ? error.message : "Unable to add student.";
+      setStuError(msg);
+      toast.error(msg);
+    } finally {
+      setIsStudentSubmitting(false);
+    }
+  };
+
+  const handleImportMasterlist = async () => {
+    if (!supabase || !teacherProfileId) return;
+    if (selectedMasterlistIds.length === 0) {
+      setStuError("Please select at least one student from the masterlist.");
+      return;
+    }
+
+    const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
+    if (selectedStudents.length === 0) return;
+
+    setIsStudentSubmitting(true);
+    setStuError("");
+
+    try {
+      const selectedLrns = selectedStudents.map(s => String(s.lrn || "").replace(/\D/g, "")).filter(Boolean);
+      const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", selectedLrns);
+      const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
+
+      const payload = [];
+      const skippedCount = selectedStudents.length;
+      
+      for (const student of selectedStudents) {
+        const lrn = String(student.lrn || "").replace(/\D/g, "");
+        const profileId = lrnToProfileId.get(lrn);
+        if (profileId) {
+          payload.push({
+            teacher_id: teacherProfileId,
+            student_id: profileId,
+            subject_id: id,
+            section: String(classData?.section || "").trim() || null,
+            status: "Active"
+          });
+        }
+      }
+
+      if (payload.length > 0) {
+        const { error } = await supabase.from("teacher_student_assignments").insert(payload);
+        if (error && error.code !== "23505") throw error;
+      }
+
+      await loadAssignedStudents(teacherProfileId, id);
+      setShowStudentModal(false);
+      
+      const skipped = selectedStudents.length - payload.length;
+      if (skipped > 0) {
+        toast.warning(`Imported ${payload.length} student(s). Skipped ${skipped} without an account.`);
+      } else {
+        toast.success(`Imported ${payload.length} student(s) from Masterlist.`);
+      }
+    } catch (err) {
+      setStuError(err.message || "Failed to import from masterlist.");
+    } finally {
+      setIsStudentSubmitting(false);
+    }
+  };
+
+  const handleCsvFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file);
+    setIsCsvValidating(true);
+    setStuError("");
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const rows = text.split('\n').map(row => row.trim()).filter(Boolean);
+        if (rows.length < 2) throw new Error("CSV file is empty or missing headers");
+        
+        const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+        const lrnIdx = headers.indexOf('lrn');
+        const firstNameIdx = headers.indexOf('first_name');
+        const lastNameIdx = headers.indexOf('last_name');
+        const middleNameIdx = headers.indexOf('middle_name');
+        const yearLevelIdx = headers.indexOf('year_level');
+        const sectionIdx = headers.indexOf('section');
+        
+        if (lrnIdx === -1 || firstNameIdx === -1 || lastNameIdx === -1) {
+          throw new Error("CSV missing required headers: lrn, first_name, last_name");
+        }
+        
+        const records = [];
+        const errors = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length > lrnIdx && cols[lrnIdx]) {
+            const lrn = cols[lrnIdx].replace(/\D/g, "");
+            if (!lrn) {
+              errors.push(`Row ${i+1}: Invalid LRN`);
+              continue;
+            }
+            records.push({
+               lrn,
+               first_name: cols[firstNameIdx],
+               last_name: cols[lastNameIdx],
+               middle_name: middleNameIdx !== -1 ? cols[middleNameIdx] : null,
+               year_level: yearLevelIdx !== -1 ? cols[yearLevelIdx] : null,
+               section: sectionIdx !== -1 ? cols[sectionIdx] : null,
+            });
+          } else {
+             errors.push(`Row ${i+1}: Missing LRN`);
+          }
+        }
+        
+        setCsvPreviewData(records);
+        setCsvValidRecords(records);
+        setCsvErrorRecords(errors);
+      } catch (err) {
+        setStuError(err.message);
+        setCsvFile(null);
+      } finally {
+        setIsCsvValidating(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCSV = async () => {
+    if (!supabase || !teacherProfileId || csvValidRecords.length === 0) return;
+    setIsStudentSubmitting(true);
+    setStuError("");
+    try {
+      const { data: existingMaster } = await supabase.from("student_masterlist").select("id, lrn");
+      const existingLrns = new Map((existingMaster || []).map(r => [String(r.lrn || "").replace(/\D/g, ""), r.id]));
+      
+      const newRecords = csvValidRecords.filter(r => !existingLrns.has(String(r.lrn || "").replace(/\D/g, ""))).map(r => ({ ...r, account_created: false }));
+      
+      if (newRecords.length > 0) {
+        const { error } = await supabase.from("student_masterlist").insert(newRecords);
+        if (error) throw error;
+      }
+      
+      const csvLrns = csvValidRecords.map(r => String(r.lrn || "").replace(/\D/g, ""));
+      const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", csvLrns);
+      const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
+      
+      const enrollPayload = csvValidRecords.map(student => {
+         const profileId = lrnToProfileId.get(String(student.lrn || "").replace(/\D/g, ""));
+         if (!profileId) return null;
+         return {
+           teacher_id: teacherProfileId,
+           student_id: profileId,
+           subject_id: id,
+           section: String(classData?.section || "").trim() || null,
+           status: "Active"
+         };
+      }).filter(Boolean);
+
+      if (enrollPayload.length > 0) {
+        const { error: assignError } = await supabase.from("teacher_student_assignments").insert(enrollPayload);
+        if (assignError && assignError.code !== "23505") throw assignError;
+      }
+
+      await loadAssignedStudents(teacherProfileId, id);
+      setShowStudentModal(false);
+      
+      const skipped = csvValidRecords.length - enrollPayload.length;
+      if (skipped > 0) {
+        toast.warning(`Enrolled ${enrollPayload.length} students. Skipped ${skipped} without accounts.`);
+      } else {
+        toast.success(`Successfully imported and enrolled ${enrollPayload.length} students from CSV.`);
+      }
+    } catch (err) {
+      setStuError(err.message || "Failed to process CSV enrollment.");
     } finally {
       setIsStudentSubmitting(false);
     }
@@ -1517,8 +1731,11 @@ export function ClassDetail() {
       }
 
       await loadAssignedStudents(teacherProfileId, id);
+      toast.success("Student removed successfully.");
     } catch (error) {
-      setStuError(error instanceof Error ? error.message : "Unable to remove student.");
+      const msg = error instanceof Error ? error.message : "Unable to remove student.";
+      setStuError(msg);
+      toast.error(msg);
     }
   };
 
@@ -3001,69 +3218,6 @@ export function ClassDetail() {
         </div>
 
         <div className="p-6 space-y-6">
-          <ConfirmDialog
-            isOpen={showDeleteStudentModal && Boolean(pendingDeleteStudent)}
-            onClose={() => {
-              setShowDeleteStudentModal(false);
-              setPendingDeleteStudent(null);
-            }}
-            onConfirm={confirmDeleteStudent}
-            title="Remove Student"
-            message={pendingDeleteStudent
-              ? `Are you sure you want to remove ${pendingDeleteStudent.name} from this class?`
-              : "Are you sure you want to remove this student from this class?"}
-            confirmText="Remove"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteMaterialModal && Boolean(pendingDeleteMaterial)}
-            onClose={() => {
-              setShowDeleteMaterialModal(false);
-              setPendingDeleteMaterial(null);
-            }}
-            onConfirm={confirmDeleteMaterial}
-            title="Delete Material"
-            message={pendingDeleteMaterial
-              ? `Are you sure you want to delete this material? (${pendingDeleteMaterial.title})`
-              : "Are you sure you want to delete this material?"}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
-            onClose={() => {
-              setShowDeleteAssignmentModal(false);
-              setPendingDeleteAssignment(null);
-            }}
-            onConfirm={confirmDeleteAssignment}
-            title="Delete Assignment / Activity"
-            message={pendingDeleteAssignment
-              ? `Are you sure you want to delete ${pendingDeleteAssignment.title}? This action cannot be undone.`
-              : "Are you sure you want to delete this assignment/activity? This action cannot be undone."}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteAnnouncementModal && Boolean(pendingDeleteAnnouncement)}
-            onClose={() => {
-              setShowDeleteAnnouncementModal(false);
-              setPendingDeleteAnnouncement(null);
-            }}
-            onConfirm={confirmDeleteAnnouncement}
-            title="Delete Announcement"
-            message={pendingDeleteAnnouncement
-              ? `Are you sure you want to delete ${pendingDeleteAnnouncement.title}? This action cannot be undone.`
-              : "Are you sure you want to delete this announcement? This action cannot be undone."}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
 
           <button
             onClick={() => navigate("/teacher/classes")}
@@ -4537,19 +4691,18 @@ export function ClassDetail() {
         </div>
       )}
 
-      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼ ADD STUDENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é ├â┬ó├óΓé¼┼í├é┬¼ */}
+      {/* ••••• ADD STUDENT MODAL ••••• */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-xl flex flex-col max-h-[90vh]">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <Users className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Add Student</h3>
-                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} ΓÇö {classData.section}</p>
-
+                  <h3 className="text-lg font-bold text-gray-900">Add Students</h3>
+                  <p className="text-sm text-gray-500">Enroll students in {classData.code} — {classData.section}</p>
                 </div>
               </div>
               <button onClick={() => setShowStudentModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -4557,104 +4710,359 @@ export function ClassDetail() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {stuError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{stuError}</div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Students</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by Name, ID, or Year Level"
-                    value={studentPickerQuery}
-                    onChange={(e) => setStudentPickerQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                  />
-                </div>
-              </div>
-
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  ref={selectAllCheckboxRef}
-                  type="checkbox"
-                  onChange={(e) => {
-                    const allFilteredIds = filteredAvailableStudents.map((student) => student.id);
-                    if (e.target.checked) {
-                      setSelectedStudentIds((current) => Array.from(new Set([...current, ...allFilteredIds])));
-                    } else {
-                      const removable = new Set(allFilteredIds);
-                      setSelectedStudentIds((current) => current.filter((idValue) => !removable.has(idValue)));
-                    }
-                  }}
-                  className="accent-green-600"
-                  aria-label="Select All Students"
-                />
-                <span>Select All Students</span>
-              </label>
-
-              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {isStudentsLoading ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading students...</td>
-                      </tr>
-                    ) : filteredAvailableStudents.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
-                          {availableStudents.length === 0 && hasLoadedStudents
-                            ? "No students found in the database."
-                            : "No available students found."}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredAvailableStudents.map((student) => (
-                        <tr
-                          key={student.id}
-                          className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
-                          onClick={() => toggleStudentSelection(student.id)}
-                        >
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedStudentIds.includes(student.id)}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => {
-                                event.stopPropagation();
-                                toggleStudentSelection(student.id);
-                              }}
-                              className="accent-green-600"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">{getStudentFullName(student)}</td>
-                          <td className="px-4 py-3 text-sm text-green-600">{student.lrn || "N/A"}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{student.year_level || "N/A"}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+            <div className="px-6 pt-4 border-b border-gray-100 flex gap-6 shrink-0">
+              <button onClick={() => setAddStudentMode("individual")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "individual" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Individual Student</button>
+              <button onClick={() => setAddStudentMode("masterlist")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "masterlist" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Import from Masterlist</button>
+              <button onClick={() => setAddStudentMode("csv")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "csv" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Upload CSV</button>
             </div>
 
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
+            <div className="p-6 overflow-y-auto flex-1">
+              {stuError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 mb-4">{stuError}</div>
+              )}
+
+              {addStudentMode === "individual" && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Enrolled Students</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search by Name, ID, or Year Level"
+                        value={studentPickerQuery}
+                        onChange={(e) => setStudentPickerQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      onChange={(e) => {
+                        const allFilteredIds = filteredAvailableStudents.map((student) => student.id);
+                        if (e.target.checked) {
+                          setSelectedStudentIds((current) => Array.from(new Set([...current, ...allFilteredIds])));
+                        } else {
+                          const removable = new Set(allFilteredIds);
+                          setSelectedStudentIds((current) => current.filter((idValue) => !removable.has(idValue)));
+                        }
+                      }}
+                      className="accent-green-600"
+                    />
+                    <span>Select All Students</span>
+                  </label>
+
+                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {isStudentsLoading ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading students...</td></tr>
+                        ) : filteredAvailableStudents.length === 0 ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No available students found.</td></tr>
+                        ) : (
+                          filteredAvailableStudents.map((student) => (
+                            <tr
+                              key={student.id}
+                              className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
+                              onClick={() => toggleStudentSelection(student.id)}
+                            >
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudentIds.includes(student.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    toggleStudentSelection(student.id);
+                                  }}
+                                  className="accent-green-600"
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{getStudentFullName(student)}</td>
+                              <td className="px-4 py-3 text-sm text-green-600">{student.lrn || "N/A"}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.year_level || "N/A"}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {addStudentMode === "masterlist" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search Masterlist..."
+                        value={masterlistQuery}
+                        onChange={(e) => setMasterlistQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 text-sm"
+                      />
+                    </div>
+                    <div className="w-full md:w-48">
+                      <CustomSelect
+                        value={masterlistYearFilter}
+                        onChange={setMasterlistYearFilter}
+                        options={[
+                          { value: "all", label: "All Years" },
+                          ...Array.from(new Set(masterlistStudents.map(s => s.year_level).filter(Boolean))).sort().map(y => ({ value: y, label: y }))
+                        ]}
+                      />
+                    </div>
+                    <div className="w-full md:w-48">
+                      <CustomSelect
+                        value={masterlistSectionFilter}
+                        onChange={setMasterlistSectionFilter}
+                        options={[
+                          { value: "all", label: "All Sections" },
+                          ...Array.from(new Set(masterlistStudents.map(s => s.section).filter(Boolean))).sort().map(s => ({ value: s, label: s }))
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const filtered = masterlistStudents.filter(s => {
+                      const q = masterlistQuery.toLowerCase();
+                      const matchesQuery = !q || (
+                        (s.first_name && s.first_name.toLowerCase().includes(q)) ||
+                        (s.last_name && s.last_name.toLowerCase().includes(q)) ||
+                        (s.lrn && String(s.lrn).includes(q))
+                      );
+                      const matchesYear = masterlistYearFilter === "all" || (s.year_level && s.year_level.toLowerCase() === masterlistYearFilter.toLowerCase());
+                      const matchesSection = masterlistSectionFilter === "all" || (s.section && s.section.toLowerCase() === masterlistSectionFilter.toLowerCase());
+                      return matchesQuery && matchesYear && matchesSection;
+                    });
+
+                    return (
+                      <>
+                        <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMasterlistIds(Array.from(new Set([...selectedMasterlistIds, ...filtered.map(f => f.id)])));
+                              } else {
+                                const removable = new Set(filtered.map(f => f.id));
+                                setSelectedMasterlistIds(selectedMasterlistIds.filter(id => !removable.has(id)));
+                              }
+                            }}
+                            className="accent-green-600"
+                          />
+                          <span>Select All Filtered</span>
+                        </label>
+                        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LRN</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {isMasterlistLoading ? (
+                                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading masterlist...</td></tr>
+                              ) : filtered.length === 0 ? (
+                                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No students found.</td></tr>
+                              ) : (
+                                filtered.map((student) => (
+                                  <tr
+                                    key={student.id}
+                                    className={`cursor-pointer transition-colors ${selectedMasterlistIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
+                                    onClick={() => {
+                                      setSelectedMasterlistIds(curr => curr.includes(student.id) ? curr.filter(id => id !== student.id) : [...curr, student.id]);
+                                    }}
+                                  >
+                                    <td className="px-4 py-3">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedMasterlistIds.includes(student.id)}
+                                        onChange={() => {}}
+                                        className="accent-green-600"
+                                      />
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-900">{[student.first_name, student.last_name].filter(Boolean).join(" ")}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{student.lrn || "-"}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{student.section || student.year_level || "-"}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {addStudentMode === "csv" && (
+                <div className="space-y-4">
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-sm text-gray-600 mb-2">Upload a CSV file to enroll multiple students</p>
+                    <p className="text-xs text-gray-500 mb-4">Required columns: lrn, first_name, last_name. Optional: middle_name, year_level, section</p>
+                    <button onClick={() => csvFileInputRef.current?.click()} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">
+                      {csvFile ? csvFile.name : "Select CSV File"}
+                    </button>
+                    <input type="file" accept=".csv" ref={csvFileInputRef} onChange={handleCsvFileUpload} className="hidden" />
+                  </div>
+
+                  {isCsvValidating && <p className="text-sm text-gray-500 text-center">Validating file...</p>}
+                  
+                  {!isCsvValidating && (csvValidRecords.length > 0 || csvErrorRecords.length > 0) && (
+                    <div className="space-y-3">
+                      <div className="flex gap-4">
+                        <div className="flex-1 bg-green-50 rounded-xl p-3 border border-green-100">
+                          <p className="text-xs font-semibold text-green-700 uppercase">Valid Records</p>
+                          <p className="text-xl font-bold text-green-800">{csvValidRecords.length}</p>
+                        </div>
+                        <div className="flex-1 bg-red-50 rounded-xl p-3 border border-red-100">
+                          <p className="text-xs font-semibold text-red-700 uppercase">Errors</p>
+                          <p className="text-xl font-bold text-red-800">{csvErrorRecords.length}</p>
+                        </div>
+                      </div>
+
+                      {csvErrorRecords.length > 0 && (
+                        <div className="bg-red-50 p-3 rounded-lg border border-red-200 max-h-32 overflow-y-auto">
+                          <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
+                            {csvErrorRecords.map((err, i) => <li key={i}>{err}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {csvValidRecords.length > 0 && (
+                        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">LRN</th>
+                                <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Name</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {csvValidRecords.slice(0, 10).map((r, i) => (
+                                <tr key={i}>
+                                  <td className="px-4 py-2 text-sm text-gray-600">{r.lrn}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{r.first_name} {r.last_name}</td>
+                                </tr>
+                              ))}
+                              {csvValidRecords.length > 10 && (
+                                <tr>
+                                  <td colSpan={2} className="px-4 py-2 text-xs text-gray-500 text-center italic">...and {csvValidRecords.length - 10} more</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
               <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
-              <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">{isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}</button>
+              
+              {addStudentMode === "individual" && (
+                <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}
+                </button>
+              )}
+              {addStudentMode === "masterlist" && (
+                <button onClick={handleImportMasterlist} disabled={isStudentSubmitting || selectedMasterlistIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Importing..." : `Import Selected (${selectedMasterlistIds.length})`}
+                </button>
+              )}
+              {addStudentMode === "csv" && (
+                <button onClick={handleImportCSV} disabled={isStudentSubmitting || csvValidRecords.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Processing..." : `Enroll ${csvValidRecords.length} Students`}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={showDeleteStudentModal && Boolean(pendingDeleteStudent)}
+        onClose={() => {
+          setShowDeleteStudentModal(false);
+          setPendingDeleteStudent(null);
+        }}
+        onConfirm={confirmDeleteStudent}
+        title="Remove Student"
+        message={pendingDeleteStudent
+          ? `Are you sure you want to remove ${pendingDeleteStudent.name} from this class?`
+          : "Are you sure you want to remove this student from this class?"}
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteMaterialModal && Boolean(pendingDeleteMaterial)}
+        onClose={() => {
+          setShowDeleteMaterialModal(false);
+          setPendingDeleteMaterial(null);
+        }}
+        onConfirm={confirmDeleteMaterial}
+        title="Delete Material"
+        message={pendingDeleteMaterial
+          ? `Are you sure you want to delete this material? (${pendingDeleteMaterial.title})`
+          : "Are you sure you want to delete this material?"}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
+        onClose={() => {
+          setShowDeleteAssignmentModal(false);
+          setPendingDeleteAssignment(null);
+        }}
+        onConfirm={confirmDeleteAssignment}
+        title="Delete Assignment / Activity"
+        message={pendingDeleteAssignment
+          ? `Are you sure you want to delete ${pendingDeleteAssignment.title}? This action cannot be undone.`
+          : "Are you sure you want to delete this assignment/activity? This action cannot be undone."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteAnnouncementModal && Boolean(pendingDeleteAnnouncement)}
+        onClose={() => {
+          setShowDeleteAnnouncementModal(false);
+          setPendingDeleteAnnouncement(null);
+        }}
+        onConfirm={confirmDeleteAnnouncement}
+        title="Delete Announcement"
+        message={pendingDeleteAnnouncement
+          ? `Are you sure you want to delete ${pendingDeleteAnnouncement.title}? This action cannot be undone.`
+          : "Are you sure you want to delete this announcement? This action cannot be undone."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

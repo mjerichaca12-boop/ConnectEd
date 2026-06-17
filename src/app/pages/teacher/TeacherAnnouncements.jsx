@@ -439,14 +439,13 @@ function TeacherAnnouncements() {
   return <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {
     /* Top Bar */
-  }
+        }
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Announcements</h2>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
     notifications={notificationList}
     onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}

@@ -501,14 +501,10 @@ export function TeacherDashboard() {
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 flex flex-col min-h-screen lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
-              <h2 className="text-lg font-bold text-gray-900">Dashboard</h2>
-            </div>
+          <div className="px-6 py-4 flex items-center justify-end gap-4">
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
