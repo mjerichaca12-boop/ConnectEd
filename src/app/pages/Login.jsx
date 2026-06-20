@@ -24,6 +24,8 @@ function Login() {
   const [formData, setFormData] = useState({ usernameOrEmail: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({ usernameOrEmail: "", password: "" });
+  const [touched, setTouched] = useState({ usernameOrEmail: false, password: false });
   const [loading, setLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -191,9 +193,32 @@ function Login() {
     };
   }, [navigate]);
 
+  const validateField = (name, value) => {
+    if (name === "usernameOrEmail") {
+      if (!value.trim()) return "Email is required.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return "Please enter a valid email address.";
+    }
+    if (name === "password") {
+      if (!value) return "Password is required.";
+      if (value.length < 6) return "Password must be at least 6 characters.";
+    }
+    return "";
+  };
+
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
     setError("");
+    // Clear the field error as the user types (if it was touched)
+    if (touched[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
+    }
+  };
+
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
   };
 
   const handleGoogleSignIn = async () => {
@@ -219,10 +244,13 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.usernameOrEmail || !formData.password) {
-      setError("Please fill in all fields.");
-      return;
-    }
+
+    // Run validation on all fields before submitting
+    const emailErr = validateField("usernameOrEmail", formData.usernameOrEmail);
+    const passwordErr = validateField("password", formData.password);
+    setTouched({ usernameOrEmail: true, password: true });
+    setFieldErrors({ usernameOrEmail: emailErr, password: passwordErr });
+    if (emailErr || passwordErr) return;
 
     setLoading(true);
     const normalizedEmail = formData.usernameOrEmail.trim().toLowerCase();
@@ -243,30 +271,30 @@ function Login() {
     try {
       console.log("LOGIN ATTEMPT:", { email: normalizedEmail });
 
-      // Clear any stale session before attempting a fresh password login.
+      // Clear only the local session token before attempting a fresh login.
+      // Using scope: 'global' can race with the immediately following signInWithPassword
+      // and cause spurious 400 errors even with correct credentials.
       try {
-        await supabase.auth.signOut({ scope: "global" });
+        await supabase.auth.signOut({ scope: "local" });
       } catch (signOutError) {
         console.warn("LOGIN signOut cleanup warning:", signOutError);
       }
 
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password: formData.password
       });
 
-      console.log("LOGIN ERROR:", authError);
-      const { data: authSessionData } = await supabase.auth.getSession();
-      console.log("LOGIN SESSION AFTER ATTEMPT:", authSessionData);
+      console.log("LOGIN AUTH RESULT:", { userId: authData?.user?.id, error: authError?.message });
 
       if (authError) {
         const authMessage = String(authError.message || "").toLowerCase();
-        if (authMessage.includes("invalid login credentials")) {
-          setError("Login failed. The password may be incorrect, or the invitation may not be fully activated yet.");
+        if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
+          setError("Invalid email or password. Please try again.");
         } else if (authMessage.includes("email not confirmed")) {
           setError("Please confirm your invitation email before logging in.");
         } else if (authMessage.includes("token")) {
-          setError("Login session could not be created. Please sign out, refresh, and try again.");
+          setError("Login session could not be created. Please refresh the page and try again.");
         } else {
           setError(authError.message || "Invalid email or password. Please try again.");
         }
@@ -352,7 +380,7 @@ function Login() {
           <p className="text-gray-500 text-sm">Sign in to your educational portal</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
             <div className="relative">
@@ -362,10 +390,21 @@ function Login() {
                 name="usernameOrEmail"
                 value={formData.usernameOrEmail}
                 onChange={handleInputChange}
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                onBlur={handleBlur}
+                className={`w-full pl-11 pr-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                  touched.usernameOrEmail && fieldErrors.usernameOrEmail
+                    ? "border-red-400 focus:ring-red-300 bg-red-50"
+                    : "border-gray-200 focus:ring-emerald-500"
+                }`}
                 placeholder="name@dasma.deped.gov.ph"
               />
             </div>
+            {touched.usernameOrEmail && fieldErrors.usernameOrEmail && (
+              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                <span className="inline-block w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />
+                {fieldErrors.usernameOrEmail}
+              </p>
+            )}
           </div>
 
           <div>
@@ -377,19 +416,38 @@ function Login() {
                 name="password"
                 value={formData.password}
                 onChange={handleInputChange}
-                className="w-full pl-11 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                onBlur={handleBlur}
+                className={`w-full pl-11 pr-12 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                  touched.password && fieldErrors.password
+                    ? "border-red-400 focus:ring-red-300 bg-red-50"
+                    : "border-gray-200 focus:ring-emerald-500"
+                }`}
                 placeholder="••••••••"
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <div className="mt-2 text-right">
-              <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:underline">
-                Forgot Password?
-              </Link>
-            </div>
+            {touched.password && fieldErrors.password ? (
+              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                <span className="inline-block w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />
+                {fieldErrors.password}
+              </p>
+            ) : (
+              <div className="mt-2 text-right">
+                <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:underline">
+                  Forgot Password?
+                </Link>
+              </div>
+            )}
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+              <span className="mt-0.5 w-4 h-4 flex-shrink-0 text-red-500">&#9888;</span>
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
 
           <button
             type="submit"

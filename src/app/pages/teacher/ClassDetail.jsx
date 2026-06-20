@@ -5,6 +5,7 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
+import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
@@ -141,6 +142,28 @@ const getAssignmentLifecycle = (dueDate) => {
   return { key: "open", label: "Open", cls: "bg-emerald-100 text-emerald-700" };
 };
 
+const parsePriorityMetadata = (priority) => {
+  try {
+    if (priority && String(priority).trim().startsWith('{')) {
+      const parsed = JSON.parse(priority);
+      return {
+        is_pinned: !!parsed.is_pinned,
+        status: parsed.status || "Published",
+        scheduled_at: parsed.scheduled_at || null,
+        link_url: parsed.link_url || ""
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+  return {
+    is_pinned: priority === "pinned",
+    status: "Published",
+    scheduled_at: null,
+    link_url: ""
+  };
+};
+
 const normalizeAnnouncementRecordLocal = (row) => {
   const fileName = String(row?.file_name || "").trim();
   const filePath = String(row?.file_path || "").trim();
@@ -179,6 +202,7 @@ const normalizeAnnouncementRecordLocal = (row) => {
     : [];
 
   const attachments = structuredAttachments.length > 0 ? structuredAttachments : legacyAttachment;
+  const meta = parsePriorityMetadata(row?.priority);
 
   return {
     id: String(row?.id || ""),
@@ -186,7 +210,7 @@ const normalizeAnnouncementRecordLocal = (row) => {
     content: String(row?.content || "").trim(),
 
     targetAudience: normalizeAudience(row?.target_audience || row?.audience || row?.targetAudience || "Students"),
-    author: String(row?.author || row?.created_by_name || "").trim(),
+    author: String(row?.author || row?.created_by_name || "Faculty").trim(),
     fileName: attachments[0]?.fileName || fileName,
     filePath: attachments[0]?.filePath || filePath,
     fileUrl: attachments[0]?.fileUrl || fileUrl,
@@ -195,7 +219,11 @@ const normalizeAnnouncementRecordLocal = (row) => {
     datePosted: row?.created_at || row?.date_posted || row?.updated_at || new Date().toISOString(),
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
-    section: String(row?.section || "").trim()
+    section: String(row?.section || "").trim(),
+    isPinned: meta.is_pinned,
+    status: meta.status,
+    scheduledAt: meta.scheduled_at,
+    linkUrl: meta.link_url
   };
 };
 
@@ -227,7 +255,7 @@ export function ClassDetail() {
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("students");
+  const [activeTab, setActiveTab] = useState("lessons");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Quiz AI state
@@ -250,6 +278,17 @@ export function ClassDetail() {
   const [materials, setMaterials] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+
+  // Live dashboard metrics state
+  const [metrics, setMetrics] = useState({
+    totalLessons: 0,
+    publishedLessons: 0,
+    activitiesCount: 0,
+    assessmentsCount: 0,
+    quizzesCount: 0,
+    pendingSubmissions: 0,
+    upcomingDeadlines: 0,
+  });
 
   // Modal states
   const [showMaterialModal, setShowMaterialModal] = useState(false);
@@ -347,6 +386,15 @@ export function ClassDetail() {
   const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
   const [showDeleteAnnouncementModal, setShowDeleteAnnouncementModal] = useState(false);
   const [pendingDeleteAnnouncement, setPendingDeleteAnnouncement] = useState(null);
+  const [activeAnnouncementTab, setActiveAnnouncementTab] = useState("Active");
+  const [selectedAnnouncementDetail, setSelectedAnnouncementDetail] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+
+  useEffect(() => {
+    const handleCloseMenu = () => setOpenMenuId(null);
+    window.addEventListener("click", handleCloseMenu);
+    return () => window.removeEventListener("click", handleCloseMenu);
+  }, []);
   const annFileRef = useRef(null);
 
   const getStudentFullName = (student) => {
@@ -542,6 +590,110 @@ export function ClassDetail() {
     });
 
     syncStudentsIntoClassData(mapped);
+  };
+
+  const fetchDashboardMetrics = async (teacherId, subjectId) => {
+    if (!supabase || !teacherId || !subjectId) return;
+    try {
+      // 1. Fetch lessons count
+      const { data: lessons, error: lessonsError } = await supabase
+        .from("lessons")
+        .select("id, status")
+        .eq("subject_id", subjectId)
+        .eq("teacher_id", teacherId);
+
+      if (lessonsError) throw lessonsError;
+
+      const activeLessons = lessons.filter(l => l.status !== "Archived");
+      const totalLessons = activeLessons.length;
+      const publishedLessons = activeLessons.filter(l => l.status === "Published").length;
+
+      const activeLessonIds = activeLessons.map(l => l.id);
+
+      let activitiesCount = 0;
+      let assessmentsCount = 0;
+      let quizzesCount = 0;
+      let pendingSubmissions = 0;
+      let upcomingDeadlines = 0;
+
+      if (activeLessonIds.length > 0) {
+        // 2. Fetch lesson activities
+        const { data: activities, error: actError } = await supabase
+          .from("lesson_activities")
+          .select("activity_type, activity_id")
+          .in("lesson_id", activeLessonIds);
+
+        if (actError) throw actError;
+
+        if (activities && activities.length > 0) {
+          activitiesCount = activities.filter(a => a.activity_type === "Activity").length;
+          assessmentsCount = activities.filter(a => a.activity_type === "Assessment").length;
+          quizzesCount = activities.filter(a => a.activity_type === "Quiz").length;
+
+          const assignmentIds = activities.filter(a => a.activity_type !== "Quiz").map(a => a.activity_id);
+          const quizIds = activities.filter(a => a.activity_type === "Quiz").map(a => a.activity_id);
+
+           // 3. Pending Submissions:
+           // Submissions with status = 'Submitted' for the assignments
+           let subCount = 0;
+           const validAssignmentIds = (assignmentIds || []).filter(Boolean);
+           if (validAssignmentIds.length > 0) {
+             const { count, error: subError } = await supabase
+               .from("submissions")
+               .select("id", { count: "exact", head: true })
+               .in("assignment_id", validAssignmentIds)
+               .eq("status", "Submitted");
+             if (!subError) subCount = count || 0;
+           }
+
+           // Quiz Attempts with status = 'Submitted' for the quizzes
+           let quizAttemptCount = 0;
+           const validQuizIds = (quizIds || []).filter(Boolean);
+           if (validQuizIds.length > 0) {
+             const { count, error: qaError } = await supabase
+               .from("quiz_attempts")
+               .select("id", { count: "exact", head: true })
+               .in("quiz_id", validQuizIds)
+               .eq("status", "Submitted");
+             if (!qaError) quizAttemptCount = count || 0;
+           }
+ 
+           pendingSubmissions = subCount + quizAttemptCount;
+ 
+           // 4. Upcoming Deadlines:
+           // Assignments with due_date within next 7 days (now <= due_date <= now + 7 days)
+           if (validAssignmentIds.length > 0) {
+             const now = new Date();
+             const sevenDaysFromNow = new Date();
+             sevenDaysFromNow.setDate(now.getDate() + 7);
+ 
+             const { data: dueAssignments, error: dueError } = await supabase
+               .from("assignments")
+               .select("due_date")
+               .in("id", validAssignmentIds)
+               .gte("due_date", now.toISOString())
+               .lte("due_date", sevenDaysFromNow.toISOString());
+ 
+             if (!dueError && dueAssignments) {
+               upcomingDeadlines = dueAssignments.length;
+             }
+          }
+        }
+      }
+
+      setMetrics({
+        totalLessons,
+        publishedLessons,
+        activitiesCount,
+        assessmentsCount,
+        quizzesCount,
+        pendingSubmissions,
+        upcomingDeadlines,
+      });
+
+    } catch (err) {
+      console.error("Error fetching dashboard metrics:", err);
+    }
   };
 
   const loadAvailableStudents = async (classObj) => {
@@ -953,12 +1105,13 @@ export function ClassDetail() {
             const path = String(attachment?.path || attachment?.filePath || "").trim();
             if (!path) return attachment;
 
+            const bucket = path.includes("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
             const signed = await supabase.storage
-              .from(ANNOUNCEMENT_STORAGE_BUCKET)
+              .from(bucket)
               .createSignedUrl(path, 60 * 60);
 
             if (signed.error) {
-              console.error("[ClassDetail] Announcement signed URL generation failed:", signed.error, path);
+              console.error("[ClassDetail] Announcement signed URL generation failed:", signed.error, path, "bucket:", bucket);
               return attachment;
             }
 
@@ -1283,7 +1436,8 @@ export function ClassDetail() {
         loadAssignedStudents(resolvedTeacherId, id),
         fetchClassMaterials(resolvedTeacherId, foundClass),
         fetchClassAssignments(resolvedTeacherId, foundClass),
-        fetchClassAnnouncements(resolvedTeacherId, foundClass)
+        fetchClassAnnouncements(resolvedTeacherId, foundClass),
+        fetchDashboardMetrics(resolvedTeacherId, id)
       ]);
 
       if (isMounted) {
@@ -2698,7 +2852,16 @@ export function ClassDetail() {
   };
 
   const resetAnnouncementForm = (preserveMessages = false) => {
-    setAnnForm({ title: "", content: "" });
+    setAnnForm({
+      title: "",
+      content: "",
+      link_url: "",
+      is_pinned: false,
+      status: "Published",
+      scheduled_date: "",
+      scheduled_time: "08:00",
+      publishImmediately: true
+    });
     setAnnFiles([]);
     setAnnFileNames([]);
     setAnnOriginalFiles({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
@@ -2725,9 +2888,24 @@ export function ClassDetail() {
 
     setIsEditingAnnouncement(true);
     setEditingAnnouncementId(announcement.id);
+    
+    let sDate = "";
+    let sTime = "08:00";
+    if (announcement.scheduledAt) {
+      const d = new Date(announcement.scheduledAt);
+      sDate = d.toISOString().split("T")[0];
+      sTime = d.toTimeString().split(" ")[0].substring(0, 5);
+    }
+
     setAnnForm({
       title: announcement.title || "",
-      content: announcement.content || ""
+      content: announcement.content || "",
+      link_url: announcement.linkUrl || "",
+      is_pinned: !!announcement.isPinned,
+      status: announcement.status || "Published",
+      scheduled_date: sDate,
+      scheduled_time: sTime,
+      publishImmediately: announcement.status !== "Scheduled"
     });
     setAnnOriginalFiles({
       fileNames: existingAttachments.map((item) => item.fileName || "").filter(Boolean),
@@ -2743,6 +2921,62 @@ export function ClassDetail() {
       annFileRef.current.value = "";
     }
     setShowAnnouncementModal(true);
+  };
+
+  const togglePinAnnouncement = async (e, ann) => {
+    e.stopPropagation();
+    if (!supabase) return;
+    const nextPinned = !ann.isPinned;
+    const tableName = await getAnnouncementTableName();
+    
+    const priorityPayload = JSON.stringify({
+      is_pinned: nextPinned,
+      status: ann.status,
+      scheduled_at: ann.scheduledAt,
+      link_url: ann.linkUrl
+    });
+
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .update({ priority: priorityPayload })
+        .eq("id", ann.id);
+
+      if (error) throw error;
+      toast.success(nextPinned ? "Announcement pinned successfully" : "Announcement unpinned successfully");
+      await fetchClassAnnouncements(teacherProfileId, classData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update announcement priority.");
+    }
+  };
+
+  const toggleArchiveAnnouncement = async (e, ann) => {
+    e.stopPropagation();
+    if (!supabase) return;
+    const nextStatus = ann.status === "Archived" ? "Published" : "Archived";
+    const tableName = await getAnnouncementTableName();
+
+    const priorityPayload = JSON.stringify({
+      is_pinned: ann.isPinned,
+      status: nextStatus,
+      scheduled_at: ann.scheduledAt,
+      link_url: ann.linkUrl
+    });
+
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .update({ priority: priorityPayload })
+        .eq("id", ann.id);
+
+      if (error) throw error;
+      toast.success(nextStatus === "Archived" ? "Announcement archived successfully" : "Announcement restored successfully");
+      await fetchClassAnnouncements(teacherProfileId, classData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to archive/restore announcement.");
+    }
   };
 
   const validateAnnouncementFiles = (files) => {
@@ -2763,9 +2997,15 @@ export function ClassDetail() {
     const uniquePaths = [...new Set(parseStoredFileList(filePaths))];
     if (uniquePaths.length === 0 || !supabase) return;
 
-    const { error } = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).remove(uniquePaths);
-    if (error && !isStorageNotFoundError(error)) {
-      throw new Error(error.message || "Unable to remove file from storage.");
+    // Files uploaded after the RLS fix live in ANNOUNCEMENT_STORAGE_BUCKET.
+    // Legacy files that were uploaded to class-materials as a workaround
+    // can be identified because their path starts with "announcements/".
+    for (const path of uniquePaths) {
+      const bucket = path.startsWith("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
+      const { error } = await supabase.storage.from(bucket).remove([path]);
+      if (error && !isStorageNotFoundError(error)) {
+        console.warn("[ClassDetail] Could not remove file from storage:", error.message, path);
+      }
     }
   };
 
@@ -2777,11 +3017,38 @@ export function ClassDetail() {
 
     const uploaded = [];
 
+    // Resolve a valid class UUID for use as the first path segment.
+    // The storage RLS policy checks split_part(name, '/', 1) as the class UUID.
+    let classUuid = "";
+    if (isUuid(id)) {
+      classUuid = String(id).trim();
+    } else {
+      const targetClassId = classData?.id || id;
+      if (isUuid(targetClassId)) {
+        classUuid = String(targetClassId).trim();
+      } else {
+        const savedClasses = localStorage.getItem("teacher_classes");
+        if (savedClasses) {
+          try {
+            const parsed = JSON.parse(savedClasses);
+            const found = parsed.find(c => isUuid(c.id));
+            if (found) classUuid = String(found.id).trim();
+          } catch (_) {}
+        }
+      }
+    }
+
     try {
       for (const file of selectedFiles) {
         const timestamp = Date.now();
         const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
-        const uploadedPath = `${String(id || "unknown-class").trim()}/${teacherProfileId}/${storedFileName}`;
+
+        // Path: <class_uuid>/<teacher_uuid>/<filename>
+        // The RLS policy on class-announcements bucket checks split_part(name,'/',1) as the class UUID
+        // and verifies the current user is teacher of that class (via TSA or subjects.teacher_id).
+        const uploadedPath = classUuid
+          ? `${classUuid}/${teacherProfileId}/${storedFileName}`
+          : `${teacherProfileId}/${storedFileName}`;
 
         const uploadResult = await supabase.storage
           .from(ANNOUNCEMENT_STORAGE_BUCKET)
@@ -2793,10 +3060,22 @@ export function ClassDetail() {
           throw new Error(uploadResult.error.message || "Unable to upload file.");
         }
 
+        // Build a signed URL so students can download even from a private bucket
+        const { data: signedUrlData, error: signedUrlErr } = await supabase.storage
+          .from(ANNOUNCEMENT_STORAGE_BUCKET)
+          .createSignedUrl(uploadedPath, 60 * 60 * 24 * 365); // 1 year
+
+        const fileUrl = signedUrlData?.signedUrl
+          || `storage://${ANNOUNCEMENT_STORAGE_BUCKET}/${uploadedPath}`;
+
+        if (signedUrlErr) {
+          console.warn("[ClassDetail] Could not create signed URL:", signedUrlErr.message);
+        }
+
         uploaded.push({
           name: file.name,
           path: uploadedPath,
-          url: `storage://${ANNOUNCEMENT_STORAGE_BUCKET}/${uploadedPath}`,
+          url: fileUrl,
           mimeType: file.type || null,
           size: Number(file.size || 0)
         });
@@ -2819,20 +3098,61 @@ export function ClassDetail() {
       setAnnError("Title is required.");
       return;
     }
+    if (!content) {
+      setAnnError("Content is required.");
+      return;
+    }
 
     if (!supabase) {
       setAnnError("Supabase client is not configured.");
       return;
     }
 
-    if (!teacherProfileId) {
-      setAnnError("Teacher profile could not be resolved.");
+    // ── Verify active auth session (auth.uid() powers all RLS checks) ────────
+    let authUid = "";
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        setAnnError("Authentication session expired. Please log in again.");
+        console.error("[ClassDetail] Session check failed:", sessionError);
+        return;
+      }
+      authUid = sessionData.session.user?.id || "";
+    } catch (sessionErr) {
+      setAnnError("Authentication session expired. Please log in again.");
+      console.error("[ClassDetail] Session check exception:", sessionErr);
+      return;
+    }
+
+    if (!authUid) {
+      setAnnError("You must be logged in as a teacher to post announcements.");
+      return;
+    }
+
+    // ── Resolve effective teacher ID — must match auth.uid() for RLS ─────────
+    // In Supabase, profiles.id == auth.uid() for all normal users.
+    // If they somehow differ, prefer authUid which is what RLS sees.
+    let effectiveTeacherId = teacherProfileId || authUid;
+    if (effectiveTeacherId !== authUid) {
+      console.warn(
+        "[ClassDetail] teacherProfileId does not match authUid — using authUid for RLS compliance.",
+        { teacherProfileId, authUid }
+      );
+      effectiveTeacherId = authUid;
+      setTeacherProfileId(authUid);
+    }
+
+    // ── Resolve and validate class UUID ──────────────────────────────────────
+    const classId = String((isUuid(id) ? id : classData?.id) || "").trim();
+    if (!classId || !isUuid(classId)) {
+      setAnnError("Class information could not be found. Please navigate back and try again.");
+      console.error("[ClassDetail] Invalid class ID:", { routeId: id, classData });
       return;
     }
 
     const tableName = await getAnnouncementTableName();
     if (!tableName) {
-      setAnnError("Announcements table is not available.");
+      setAnnError("Announcements table is not available. Please contact support.");
       return;
     }
 
@@ -2843,9 +3163,33 @@ export function ClassDetail() {
       return;
     }
 
+    let status = "Published";
+    let scheduled_at = null;
+
+    if (!annForm.publishImmediately) {
+      if (!annForm.scheduled_date) {
+        setAnnError("Scheduled date is required for scheduled announcements.");
+        return;
+      }
+      status = "Scheduled";
+      scheduled_at = new Date(
+        `${annForm.scheduled_date}T${annForm.scheduled_time || "00:00"}`
+      ).toISOString();
+    }
+
     setIsPostingAnnouncement(true);
     setAnnError("");
     setAnnSuccess("");
+
+    console.log("[ClassDetail] Announcement save — debug context:", {
+      authUid,
+      effectiveTeacherId,
+      classId,
+      tableName,
+      isEditing: isEditingAnnouncement,
+      status,
+      fileCount: selectedFiles.length,
+    });
 
     const existingAttachments = Array.isArray(annOriginalFiles?.attachments)
       ? annOriginalFiles.attachments.map((attachment) => ({
@@ -2877,15 +3221,26 @@ export function ClassDetail() {
       if (audienceTypeColumn) payload[audienceTypeColumn] = "student";
 
       if (columns.includes("created_by_name")) payload.created_by_name = teacherName;
-      if (columns.includes("created_by") && isUuid(teacherProfileId)) payload.created_by = teacherProfileId;
-      if (columns.includes("teacher_id") && isUuid(teacherProfileId)) payload.teacher_id = teacherProfileId;
+      // Use effectiveTeacherId (= authUid) so RLS INSERT check passes
+      if (columns.includes("created_by") && isUuid(effectiveTeacherId)) payload.created_by = effectiveTeacherId;
+      if (columns.includes("teacher_id") && isUuid(effectiveTeacherId)) payload.teacher_id = effectiveTeacherId;
       if (columns.includes("subject")) payload.subject = String(classData?.code || "").trim() || null;
       if (columns.includes("class_code")) payload.class_code = String(classData?.code || "").trim() || null;
       if (columns.includes("class_name")) payload.class_name = String(classData?.name || "").trim() || null;
       if (columns.includes("section")) payload.section = String(classData?.section || "").trim() || null;
-      if (columns.includes("class_id")) payload.class_id = String(id || "").trim() || null;
-      if (columns.includes("course_id")) payload.course_id = String(id || "").trim() || null;
-      if (columns.includes("subject_id")) payload.subject_id = String(id || "").trim() || null;
+      // classId is pre-validated above — required NOT NULL and used by RLS
+      if (columns.includes("class_id")) payload.class_id = classId;
+      if (columns.includes("course_id")) payload.course_id = classId;
+      if (columns.includes("subject_id")) payload.subject_id = classId;
+
+      if (columns.includes("priority")) {
+        payload.priority = JSON.stringify({
+          is_pinned: !!annForm.is_pinned,
+          status: status,
+          scheduled_at: scheduled_at,
+          link_url: annForm.link_url || ""
+        });
+      }
 
       if (columns.includes("attachments")) {
         payload.attachments = nextAttachments;
@@ -2912,13 +3267,31 @@ export function ClassDetail() {
         ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
         : await supabase.from(tableName).insert(payload).select("*").single();
 
-      console.log("[ClassDetail] Announcement insert/update result:", writeResult);
+      console.log("[ClassDetail] Announcement write result:", writeResult);
 
       if (writeResult.error) {
         if (uploadedAttachments.length > 0) {
           await removeAnnouncementFilesFromStorage(uploadedAttachments.map((item) => item.path));
         }
-        throw new Error(writeResult.error.message || "Failed to save announcement.");
+
+        const errMsg = writeResult.error.message || "";
+        console.error("[ClassDetail] Supabase write error:", writeResult.error);
+
+        // Map known Supabase/Postgres error messages to user-friendly text
+        if (errMsg.includes("row-level security") || errMsg.includes("new row violates")) {
+          throw new Error(
+            "You do not have permission to post announcements in this class. " +
+            "Ensure you are the assigned teacher and your session is active."
+          );
+        } else if (errMsg.includes("not-null") || errMsg.includes("null value")) {
+          throw new Error("A required field is missing. Please fill in the title and content.");
+        } else if (errMsg.includes("foreign key") || errMsg.includes("violates foreign key")) {
+          throw new Error("Class information could not be found. Please navigate back to the class and try again.");
+        } else if (errMsg.includes("unique") || errMsg.includes("duplicate")) {
+          throw new Error("This announcement already exists. Please try editing it instead.");
+        } else {
+          throw new Error(`Failed to save announcement: ${errMsg || "Unknown database error."}`);
+        }
       }
 
       let oldFileCleanupFailed = false;
@@ -2934,6 +3307,23 @@ export function ClassDetail() {
         }
       }
 
+      // Send notifications to students if published immediately
+      if (!isEditingAnnouncement && status === "Published" && assignedStudents.length > 0) {
+        const notificationInserts = assignedStudents.map(student => ({
+          user_id: student.id,
+          type: "announcement",
+          title: "New Announcement Posted",
+          message: `"${title}" is now available in your class.`,
+          related_id: String(id),
+          is_read: false
+        }));
+
+        const { error: notifErr } = await supabase
+          .from("notifications")
+          .insert(notificationInserts);
+        if (notifErr) console.error("[ClassDetail] Notification insert failed:", notifErr);
+      }
+
       if (writeResult.data) {
         const normalized = normalizeAnnouncementRecordLocal(writeResult.data);
         if (isEditingAnnouncement) {
@@ -2943,16 +3333,19 @@ export function ClassDetail() {
         }
       }
 
-      await fetchClassAnnouncements(teacherProfileId, classData);
+      await fetchClassAnnouncements(effectiveTeacherId || teacherProfileId, classData);
+      await fetchDashboardMetrics(effectiveTeacherId || teacherProfileId, id);
+
       if (oldFileCleanupFailed) {
-        setAnnError("Announcement was saved, but old file cleanup failed. Please retry or contact admin.");
+        setAnnError("Announcement was saved, but old file cleanup failed. Please contact support if files are missing.");
       }
       setAnnSuccess(isEditingAnnouncement ? "Announcement updated successfully." : "Announcement posted successfully.");
       resetAnnouncementForm(true);
       setShowAnnouncementModal(false);
     } catch (error) {
       console.error("[ClassDetail] Announcement save failed:", error);
-      setAnnError(error instanceof Error ? error.message : "Unable to save announcement.");
+      const msg = error instanceof Error ? error.message : "Unable to save announcement. Please try again.";
+      setAnnError(msg);
     } finally {
       setIsPostingAnnouncement(false);
     }
@@ -2991,13 +3384,14 @@ export function ClassDetail() {
     try {
       if (uniqueTargetPaths.length > 0) {
         for (const path of uniqueTargetPaths) {
-          const downloadResult = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).download(path);
+          const bucket = path.includes("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
+          const downloadResult = await supabase.storage.from(bucket).download(path);
           if (downloadResult.error) {
             if (!isStorageNotFoundError(downloadResult.error)) {
               throw new Error(downloadResult.error.message || "Failed to prepare file deletion.");
             }
           } else {
-            backups.push({ filePath: path, blob: downloadResult.data });
+            backups.push({ filePath: path, blob: downloadResult.data, bucket });
           }
         }
 
@@ -3008,7 +3402,7 @@ export function ClassDetail() {
       if (error) {
         if (backups.length > 0) {
           for (const backup of backups) {
-            const restoreResult = await supabase.storage.from(ANNOUNCEMENT_STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
+            const restoreResult = await supabase.storage.from(backup.bucket).upload(backup.filePath, backup.blob, {
               upsert: true,
               contentType: backup.blob.type || "application/octet-stream"
             });
@@ -3021,6 +3415,7 @@ export function ClassDetail() {
       }
 
       await fetchClassAnnouncements(teacherProfileId, classData);
+      await fetchDashboardMetrics(teacherProfileId, id);
       setAnnSuccess("Announcement deleted successfully.");
     } catch (error) {
       console.error("[ClassDetail] Announcement delete failed:", error);
@@ -3131,10 +3526,8 @@ export function ClassDetail() {
 
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
-    { id: "materials", label: "Materials", icon: <BookOpen className="w-4 h-4" /> },
-    { id: "assignments", label: "Assignments & Activities", icon: <FileText className="w-4 h-4" /> },
+    { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
-    { id: "quiz", label: "AI Quiz Generator", icon: <Sparkles className="w-4 h-4" /> },
   ];
 
   const handleQuizFileChange = async (e) => {
@@ -3241,34 +3634,120 @@ export function ClassDetail() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <Users className="w-3.5 h-3.5" />
-                  Students
+            {/* Dashboard Stats Panel */}
+            <div className="space-y-4">
+              {/* Row 1 */}
+              <div>
+                <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Class Overview</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div 
+                    onClick={() => setActiveTab("students")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Users className="w-4 h-4 text-white" />
+                      </div>
+                      Students
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{assignedStudents.length}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab("lessons")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <BookOpen className="w-4 h-4 text-white" />
+                      </div>
+                      Lessons
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.totalLessons}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab("lessons")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Sparkles className="w-4 h-4 text-white" />
+                      </div>
+                      Published Lessons
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.publishedLessons}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab("announcements")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Megaphone className="w-4 h-4 text-white" />
+                      </div>
+                      Announcements
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{announcements.length}</p>
+                  </div>
                 </div>
-                <p className="text-2xl font-semibold mt-1">{assignedStudents.length}</p>
               </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  Materials
+
+              {/* Row 2 */}
+              <div>
+                <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Classroom Activity</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <ClipboardList className="w-4 h-4 text-white" />
+                      </div>
+                      Activities
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.activitiesCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <FileText className="w-4 h-4 text-white" />
+                      </div>
+                      Assessments
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.assessmentsCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <CheckCircle className="w-4 h-4 text-white" />
+                      </div>
+                      Quizzes
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.quizzesCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Clock className="w-4 h-4 text-white" />
+                      </div>
+                      Pending Submissions
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.pendingSubmissions}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer col-span-2 md:col-span-1 shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Calendar className="w-4 h-4 text-white" />
+                      </div>
+                      Upcoming Deadlines
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.upcomingDeadlines}</p>
+                  </div>
                 </div>
-                <p className="text-2xl font-semibold mt-1">{materials.length}</p>
-              </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <FileText className="w-3.5 h-3.5" />
-                  Assignments
-                </div>
-                <p className="text-2xl font-semibold mt-1">{assignments.length}</p>
-              </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <Megaphone className="w-3.5 h-3.5" />
-                  Announcements
-                </div>
-                <p className="text-2xl font-semibold mt-1">{announcements.length}</p>
               </div>
             </div>
           </div>
@@ -3384,675 +3863,261 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ MATERIALS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
-              {activeTab === "materials" && (
-                <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Class Materials</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Upload files visible to all enrolled students</p>
-                      {matError && <p className="text-sm text-red-600 mt-2">{matError}</p>}
-                      {matSuccess && <p className="text-sm text-green-600 mt-2">{matSuccess}</p>}
-                    </div>
-                    <button
-                      onClick={openCreateMaterialModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Upload Material
-                    </button>
-                  </div>
-
-                  {materials.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <BookOpen className="w-7 h-7 text-green-600" />
-                      </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No materials uploaded yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Upload lecture notes, slides, or reference files for your students.</p>
-                      <button
-                        onClick={openCreateMaterialModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                      >
-                        <Upload className="w-4 h-4" />
-                        Upload First Material
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {materials.map((mat) => (
-                        <div
-                          key={mat.id}
-                          className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-200 hover:bg-green-50 transition-all"
-                        >
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-gray-200 flex-shrink-0">
-                            {getFileIcon(mat.fileType)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900 text-sm">{mat.title}</p>
-                            {mat.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mat.description}</p>}
-                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                              <span>{mat.fileType}</span>
-                              <span>|</span>
-                              <span>{new Date(mat.uploadDate).toLocaleDateString()}</span>
-                              {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                                <>
-                                  <span>|</span>
-                                  <span>{mat.attachments.length} file{mat.attachments.length === 1 ? "" : "s"}</span>
-                                </>
-                              )}
-                            </div>
-                            {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {mat.attachments.map((attachment, index) => (
-                                  <a
-                                    key={`${mat.id}-attachment-${index}`}
-                                    href={attachment.fileUrl || attachment.filePath || "#"}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs hover:bg-green-100"
-                                  >
-                                    <File className="w-3 h-3" />
-                                    {attachment.fileName || `File ${index + 1}`}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => openEditMaterialModal(mat)}
-                              className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            >
-                              <FileText className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleDeleteMaterial(mat.id);
-                              }}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* ╠ü╠ü LESSONS TAB ╠ü╠ü */}
+              {activeTab === "lessons" && (
+                <TeacherLessonsTab 
+                  subjectId={id} 
+                  teacherId={teacherProfileId} 
+                  onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
+                />
               )}
-
-              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ ASSIGNMENTS & ACTIVITIES TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
-              {activeTab === "assignments" && (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Assignments &amp; Activities</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Post tasks for students to accomplish and submit</p>
-                      {asgError && <p className="text-sm text-red-600 mt-2">{asgError}</p>}
-                      {asgSuccess && <p className="text-sm text-green-600 mt-2">{asgSuccess}</p>}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          const params = new URLSearchParams();
-                          params.set("classId", String(id || ""));
-                          navigate(`/teacher/grades?${params.toString()}`, {
-                            state: {
-                              selectedClassId: String(id || ""),
-                              selectedSubjectCode: String(classData?.code || ""),
-                              selectedSubjectName: String(classData?.name || ""),
-                              selectedSection: String(classData?.section || ""),
-                            },
-                          });
-                        }}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-lg transition-all font-medium text-sm"
-                      >
-                        <TrendingUp className="w-4 h-4" />
-                        Grade Students
-                      </button>
-                      <button
-                        onClick={openCreateAssignmentModal}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Create Task
-                      </button>
-                    </div>
-                  </div>
-
-                  {assignments.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <FileText className="w-7 h-7 text-blue-400" />
-                      </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No assignments yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Create assignments or activities for your students to complete.</p>
-                      <button
-                        onClick={openCreateAssignmentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Create First Task
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {assignments.map((asg) => {
-                        const due = getDaysUntilDue(asg.dueDate);
-                        const lifecycle = getAssignmentLifecycle(asg.dueDate);
-                        return (
-                          <div
-                            key={asg.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              const params = new URLSearchParams();
-                              params.set("classId", String(id || ""));
-                              params.set("assessmentId", String(asg.id || ""));
-
-                              navigate(`/teacher/grades?${params.toString()}`, {
-                                state: {
-                                  selectedClassId: String(id || ""),
-                                  selectedAssessmentId: String(asg.id || ""),
-                                  selectedAssessmentType: String(asg.type || "assignment"),
-                                  selectedAssessmentTitle: String(asg.title || ""),
-                                  selectedSubjectCode: String(classData?.code || ""),
-                                  selectedSubjectName: String(classData?.name || ""),
-                                  selectedSection: String(classData?.section || ""),
-                                },
-                              });
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-
-                              const params = new URLSearchParams();
-                              params.set("classId", String(id || ""));
-                              params.set("assessmentId", String(asg.id || ""));
-
-                              navigate(`/teacher/grades?${params.toString()}`, {
-                                state: {
-                                  selectedClassId: String(id || ""),
-                                  selectedAssessmentId: String(asg.id || ""),
-                                  selectedAssessmentType: String(asg.type || "assignment"),
-                                  selectedAssessmentTitle: String(asg.title || ""),
-                                  selectedSubjectCode: String(classData?.code || ""),
-                                  selectedSubjectName: String(classData?.name || ""),
-                                  selectedSection: String(classData?.section || ""),
-                                },
-                              });
-                            }}
-                            className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${asg.type === "activity" ? "bg-purple-100 text-purple-700" : asg.type === "quiz" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
-                                    {asg.type === "activity" ? "Activity" : asg.type === "quiz" ? "Quiz" : "Assignment"}
-                                  </span>
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${lifecycle.cls}`}>
-                                    {lifecycle.label}
-                                  </span>
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${due.color}`}>
-                                    {due.label}
-                                  </span>
-                                </div>
-                                <h4 className="font-semibold text-gray-900 text-sm">{asg.title}</h4>
-                                {asg.description && (
-                                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">{asg.description}</p>
-                                )}
-                                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" />
-                                    Due: {new Date(asg.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                  </span>
-                                  <span>Max Points: {asg.maxPoints}</span>
-                                </div>
-                                {Array.isArray(asg.attachments) && asg.attachments.length > 0 && (
-                                  <div className="flex flex-wrap gap-2 mt-3">
-                                    {asg.attachments.map((attachment, index) => (
-                                      <a
-                                        key={`${asg.id}-attachment-${index}`}
-                                        href={attachment.fileUrl || attachment.filePath || "#"}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        onClick={(event) => event.stopPropagation()}
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
-                                      >
-                                        <File className="w-3 h-3" />
-                                        {attachment.fileName || `File ${index + 1}`}
-                                      </a>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex gap-2 flex-shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-
-                                    const params = new URLSearchParams();
-                                    params.set("classId", String(id || ""));
-                                    params.set("assessmentId", String(asg.id || ""));
-
-                                    navigate(`/teacher/grades?${params.toString()}`, {
-                                      state: {
-                                        selectedClassId: String(id || ""),
-                                        selectedAssessmentId: String(asg.id || ""),
-                                        selectedAssessmentType: String(asg.type || "assignment"),
-                                        selectedAssessmentTitle: String(asg.title || ""),
-                                        selectedSubjectCode: String(classData?.code || ""),
-                                        selectedSubjectName: String(classData?.name || ""),
-                                        selectedSection: String(classData?.section || ""),
-                                      },
-                                    });
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                  title="Grade this activity"
-                                >
-                                  <TrendingUp className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    openEditAssignmentModal(asg.id);
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                >
-                                  <FileText className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    handleDeleteAssignment(asg);
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ ANNOUNCEMENTS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
               {activeTab === "announcements" && (
                 <div>
-                  <div className="flex items-center justify-between mb-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Class Announcements</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Post updates visible to all students in this class</p>
+                      <h3 className="text-xl font-bold text-gray-900">Class Announcements</h3>
+                      <p className="text-sm text-gray-500 mt-0.5">Manage and post announcements for your class.</p>
                       {annError && <p className="text-sm text-red-600 mt-2">{annError}</p>}
                       {annSuccess && <p className="text-sm text-green-600 mt-2">{annSuccess}</p>}
                     </div>
                     <button
                       onClick={openCreateAnnouncementModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
                     >
                       <Megaphone className="w-4 h-4" />
-                      Post Announcement
+                      New Announcement
                     </button>
                   </div>
 
-                  {announcements.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Megaphone className="w-7 h-7 text-purple-400" />
-                      </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No announcements yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Post important updates, reminders, or news for your class.</p>
+                  {/* Feed Filters & Mini Dashboard */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6 border-b border-gray-100 pb-4">
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-xl self-start">
                       <button
-                        onClick={openCreateAnnouncementModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                        onClick={() => setActiveAnnouncementTab("Active")}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                          activeAnnouncementTab === "Active"
+                            ? "bg-white text-purple-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
                       >
-                        <Megaphone className="w-4 h-4" />
-                        Post First Announcement
+                        Active Feed
+                      </button>
+                      <button
+                        onClick={() => setActiveAnnouncementTab("Archived")}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                          activeAnnouncementTab === "Archived"
+                            ? "bg-white text-purple-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        Archive
                       </button>
                     </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {announcements.map((ann) => (
-                        <div key={ann.id} className="p-5 bg-white border border-gray-200 rounded-xl hover:border-purple-300 hover:shadow-sm transition-all">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <span className="text-xs text-gray-400">
-                                  {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                </span>
-                              </div>
-                              <h4 className="font-semibold text-gray-900 text-sm">{ann.title}</h4>
-                              <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
-                              {Array.isArray(ann.attachments) && ann.attachments.length > 0 && (
-                                <div className="mt-3 space-y-2">
-                                  {ann.attachments.map((attachment, index) => {
-                                    const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
-                                    const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${index + 1}`).trim();
-                                    const attachmentKind = String(attachment?.kind || "document");
 
-                                    if (!attachmentUrl) {
-                                      return (
-                                        <div key={`${ann.id}-att-${index}`} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
-                                          <File className="w-3 h-3" />
-                                          {attachmentName}
-                                        </div>
-                                      );
-                                    }
+                    <div className="flex items-center gap-4 text-xs font-medium text-gray-500 self-end sm:self-auto">
+                      <div className="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-3 py-1 rounded-full">
+                        <span className="font-bold">{announcements.filter(a => a.isPinned && a.status !== "Archived").length}</span> Pinned
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
+                        <span className="font-bold">{announcements.length}</span> Total
+                      </div>
+                    </div>
+                  </div>
 
-                                    if (attachmentKind === "image") {
+                  {(() => {
+                    const filteredList = announcements.filter((ann) => {
+                      if (activeAnnouncementTab === "Archived") {
+                        return ann.status === "Archived";
+                      }
+                      return ann.status !== "Archived";
+                    });
+
+                    // Order: Pinned on top, then newest first
+                    const sortedList = [...filteredList].sort((a, b) => {
+                      if (a.isPinned && !b.isPinned) return -1;
+                      if (!a.isPinned && b.isPinned) return 1;
+                      return new Date(b.datePosted).getTime() - new Date(a.datePosted).getTime();
+                    });
+
+                    if (sortedList.length === 0) {
+                      return (
+                        <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                          <div className="w-14 h-14 bg-purple-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Megaphone className="w-6 h-6 text-purple-600" />
+                          </div>
+                          <h4 className="font-bold text-gray-900 mb-1">
+                            {activeAnnouncementTab === "Archived" ? "No archived announcements" : "No announcements posted yet"}
+                          </h4>
+                          <p className="text-gray-500 text-sm max-w-sm mx-auto mb-5">
+                            {activeAnnouncementTab === "Archived"
+                              ? "Announcements you archive will be moved here and hidden from student feeds."
+                              : "Get your students' attention! Post a lesson update, course announcement, or resource link."}
+                          </p>
+                          {activeAnnouncementTab !== "Archived" && (
+                            <button
+                              onClick={openCreateAnnouncementModal}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+                            >
+                              <Megaphone className="w-4 h-4" />
+                              Create Announcement
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {sortedList.map((ann) => (
+                          <div
+                            key={ann.id}
+                            onClick={() => setSelectedAnnouncementDetail(ann)}
+                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-purple-200 transition-all duration-200 cursor-pointer relative group ${
+                              ann.isPinned ? "border-purple-200 bg-purple-50/10 ring-1 ring-purple-100" : "border-gray-200"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                                  {ann.isPinned && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                                      <Sparkles className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
+                                      Pinned
+                                    </span>
+                                  )}
+                                  {ann.status === "Scheduled" && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Scheduled: {ann.scheduledAt ? new Date(ann.scheduledAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-gray-500 font-medium">
+                                    By {ann.author} &bull; {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                  </span>
+                                </div>
+
+                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-purple-700 transition-colors">
+                                  {ann.title}
+                                </h4>
+
+                                <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3 leading-relaxed">
+                                  {ann.content}
+                                </p>
+
+                                {/* Optional Link Indicator */}
+                                {ann.linkUrl && (
+                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-purple-600 font-semibold hover:underline">
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Attachment Link Associated</span>
+                                  </div>
+                                )}
+
+                                {/* Attachments Listing */}
+                                {Array.isArray(ann.attachments) && ann.attachments.length > 0 && (
+                                  <div className="mt-3.5 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                                    {ann.attachments.map((attachment, idx) => {
+                                      const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
+                                      const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${idx + 1}`).trim();
+                                      const attachmentKind = String(attachment?.kind || "document");
+
+                                      if (!attachmentUrl) {
+                                        return (
+                                          <div
+                                            key={`${ann.id}-att-${idx}`}
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-600 text-xs font-medium border border-gray-100"
+                                          >
+                                            <File className="w-3.5 h-3.5 text-gray-400" />
+                                            <span className="truncate max-w-[150px]">{attachmentName}</span>
+                                          </div>
+                                        );
+                                      }
+
                                       return (
-                                        <a key={`${ann.id}-att-${index}`} href={attachmentUrl} target="_blank" rel="noreferrer" className="block">
-                                          <img
-                                            src={attachmentUrl}
-                                            alt={attachmentName || "Announcement attachment"}
-                                            className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
-                                          />
+                                        <a
+                                          key={`${ann.id}-att-${idx}`}
+                                          href={attachmentUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 text-purple-700 text-xs font-medium border border-purple-100/50 hover:border-purple-200 transition-all"
+                                        >
+                                          {attachmentKind === "image" ? (
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                          ) : (
+                                            <File className="w-3.5 h-3.5 text-purple-500" />
+                                          )}
+                                          <span className="truncate max-w-[180px]">{attachmentName}</span>
                                         </a>
                                       );
-                                    }
+                                    })}
+                                  </div>
+                                )}
+                              </div>
 
-                                    if (attachmentKind === "video") {
-                                      return (
-                                        <div key={`${ann.id}-att-${index}`} className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                                          <video
-                                            controls
-                                            src={attachmentUrl}
-                                            className="w-full max-h-80 bg-black"
-                                          />
-                                        </div>
-                                      );
-                                    }
-
-                                    return (
-                                      <a
-                                        key={`${ann.id}-att-${index}`}
-                                        href={attachmentUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100 mr-2"
-                                      >
-                                        <File className="w-3 h-3" />
-                                        {attachmentName}
-                                      </a>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex gap-2 flex-shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => openEditAnnouncementModal(ann)}
-                                className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                              >
-                                <FileText className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => requestDeleteAnnouncement(ann)}
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ΓòÉΓòÉ AI QUIZ GENERATOR TAB ΓòÉΓòÉ */}
-              {activeTab === "quiz" && (
-                <div>
-                  <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="p-2 bg-violet-100 rounded-lg">
-                        <Sparkles className="w-5 h-5 text-violet-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">AI Quiz Generator</h3>
-                        <p className="text-sm text-gray-500">Generate quizzes for {classData?.name || "this class"} using AI</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Settings panel */}
-                    <div className="lg:col-span-1 space-y-4">
-                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
-                        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Quiz Settings</h4>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Topic / Subject</label>
-                          <input
-                            type="text"
-                            placeholder={`e.g. ${classData?.name || "Photosynthesis"}`}
-                            value={quizTopic}
-                            onChange={(e) => setQuizTopic(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Reference Material (Optional)</label>
-                          <div className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => quizMaterialInputRef.current?.click()}
-                              className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-all bg-white"
-                            >
-                              <FilePlus className="w-4 h-4" />
-                              {quizMaterialFile ? "Change File" : "Select Reference File"}
-                            </button>
-                            {quizMaterialFile && (
-                              <div className="flex items-center justify-between px-3 py-2 bg-violet-50 border border-violet-100 rounded-lg">
-                                <span className="text-xs text-violet-700 font-medium truncate max-w-[150px]">
-                                  {quizMaterialFile.name}
-                                </span>
+                              {/* Three-Dot Menu Options */}
+                              <div className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setQuizMaterialFile(null);
-                                    setQuizMaterialContent("");
-                                    if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(openMenuId === ann.id ? null : ann.id);
                                   }}
-                                  className="p-1 text-violet-400 hover:text-violet-600"
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <Sparkles className="w-4 h-4 rotate-90" />
                                 </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
 
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Quiz Type</label>
-                          <CustomSelect
-                            value={quizType}
-                            onChange={(value) => setQuizType(value)}
-                            options={["Multiple Choice", "True/False", "Short Answer", "Identification", "Essay", "Fill in the Blank", "Mixed"].map((t) => ({ value: t, label: t }))}
-                            placeholder="Select quiz type"
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Number of Items</label>
-                          <CustomSelect
-                            value={quizItemCount}
-                            onChange={(value) => setQuizItemCount(Number(value))}
-                            options={[5, 10, 15, 20, 25, 30, 50].map((n) => ({ value: String(n), label: `${n} items` }))}
-                            placeholder="Select item count"
-                            className="w-full"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Difficulty</label>
-                          <div className="flex gap-2">
-                            {["Easy", "Medium", "Hard"].map(d => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => setQuizDifficulty(d)}
-                                className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${quizDifficulty === d
-                                    ? d === "Hard" ? "border-red-500 bg-red-50 text-red-700"
-                                      : d === "Easy" ? "border-green-500 bg-green-50 text-green-700"
-                                        : "border-violet-500 bg-violet-50 text-violet-700"
-                                    : "border-gray-200 text-gray-500 hover:border-gray-300"
-                                  }`}
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleGenerateQuiz}
-                          disabled={isQuizStreaming || (!quizTopic.trim() && !quizInput.trim())}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Sparkles className="w-4 h-4" />
-                          {isQuizStreaming ? "Generating..." : "Generate Quiz"}
-                        </button>
-
-                        {quizMessages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => { setQuizMessages([]); setQuizGenerated(""); setQuizTopic(""); }}
-                            className="w-full flex items-center justify-center gap-2 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 text-xs font-medium transition-all"
-                          >
-                            <RefreshCw className="w-3 h-3" />
-                            Clear & Start Over
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
-                        <h4 className="text-xs font-semibold text-violet-700 mb-2 flex items-center gap-1.5">
-                          <ClipboardList className="w-3.5 h-3.5" />
-                          Quick Prompts
-                        </h4>
-                        <div className="space-y-2">
-                          {[
-                            `Create ${quizItemCount} ${quizType} questions about ${quizTopic || classData?.name || "the subject"}`,
-                            `Make a ${quizDifficulty.toLowerCase()} quiz on ${quizTopic || classData?.name || "today's lesson"}`,
-                            `Generate an assessment with answer key for ${quizTopic || classData?.name || "this topic"}`,
-                          ].map((prompt, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => setQuizInput(prompt)}
-                              className="w-full text-left text-xs text-violet-700 bg-white border border-violet-200 rounded-lg px-3 py-2 hover:bg-violet-50 transition-colors line-clamp-2"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Chat/Output panel */}
-                    <div className="lg:col-span-2 flex flex-col gap-3">
-                      <div className="min-h-[400px] max-h-[550px] overflow-y-auto border border-gray-200 rounded-xl bg-white p-4 space-y-3">
-                        {quizMessages.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                            <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center mb-3">
-                              <Sparkles className="w-7 h-7 text-violet-400" />
-                            </div>
-                            <p className="text-gray-500 font-medium">AI Quiz Generator</p>
-                            <p className="text-gray-400 text-sm mt-1">Set your quiz parameters on the left and click Generate Quiz, or type a custom prompt below.</p>
-                          </div>
-                        ) : (
-                          quizMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                              <div className={`max-w-[90%] rounded-xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-violet-600 text-white" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
-                                <pre className="whitespace-pre-wrap font-sans leading-relaxed">{msg.content}</pre>
+                                {openMenuId === ann.id && (
+                                  <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-lg py-1.5 z-30 ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    <button
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        openEditAnnouncementModal(ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        setOpenMenuId(null);
+                                        togglePinAnnouncement(e, ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5 fill-current" />
+                                      {ann.isPinned ? "Unpin" : "Pin"}
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        setOpenMenuId(null);
+                                        toggleArchiveAnnouncement(e, ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      {ann.status === "Archived" ? "Restore" : "Archive"}
+                                    </button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <button
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        requestDeleteAnnouncement(ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
-                          ))
-                        )}
+                          </div>
+                        ))}
                       </div>
-
-                      {/* Custom prompt input */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={quizInput}
-                          onChange={(e) => setQuizInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerateQuiz(); } }}
-                          placeholder="Type a custom quiz request or modification..."
-                          className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleGenerateQuiz}
-                          disabled={isQuizStreaming || (!quizTopic.trim() && !quizInput.trim())}
-                          className="p-2.5 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                        >
-                          <Send className="w-5 h-5" />
-                        </button>
-                      </div>
-
-                      {quizGenerated && (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={openCreateQuizModal}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-semibold transition-all"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Create Quiz
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { navigator.clipboard.writeText(quizGenerated); }}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 text-xs font-medium transition-all"
-                          >
-                            <ClipboardList className="w-3.5 h-3.5" />
-                            Copy Quiz
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const blob = new Blob([quizGenerated], { type: "text/plain" });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `Quiz_${classData?.name || "Class"}_${new Date().toISOString().split("T")[0]}.txt`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(url);
-                            }}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-xs font-semibold transition-all"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Download Quiz
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -4060,638 +4125,8 @@ export function ClassDetail() {
         </div>
       </main>
 
-      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ UPLOAD MATERIAL MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
-      {showMaterialModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Upload className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{isEditingMaterial ? "Edit Class Material" : "Upload Class Material"}</h3>
-                  <p className="text-sm text-gray-500">
-                    {isEditingMaterial ? "Update details and attachment for this material" : `Visible to all students in ${classData.code}`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowMaterialModal(false);
-                  resetMaterialForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Chapter 1 - Introduction"
-                  value={matForm.title}
-                  onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-                <textarea
-                  rows={3}
-                  placeholder="Optional short description..."
-                  value={matForm.description}
-                  onChange={(e) => setMatForm({ ...matForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">File Type</label>
-                <CustomSelect
-                  value={matForm.fileType}
-                  onChange={(value) => setMatForm({ ...matForm, fileType: value })}
-                  options={["PDF", "DOCX", "PPTX", "XLSX", "TXT", "ZIP", "Other"].map((t) => ({ value: t, label: t }))}
-                  placeholder="Select file type"
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attach File</label>
-                {isEditingMaterial && Array.isArray(matOriginalFiles.fileNames) && matOriginalFiles.fileNames.length > 0 && (
-                  <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-xs text-gray-700 mb-1">Current files:</p>
-                    <p className="text-xs text-green-700">{matOriginalFiles.fileNames.join(", ")}</p>
-                  </div>
-                )}
-                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-green-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-green-500">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="*/*"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const selectedFiles = Array.from(e.target.files || []);
-                      setMatFiles(selectedFiles);
-                      setMatFileNames(selectedFiles.map((file) => file.name));
-                      setMatError("");
-                    }}
-                  />
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2 group-hover:text-green-500 transition-colors" />
-                  <p className="text-sm text-gray-500">
-                    {matFileNames.length > 0
-                      ? `${matFileNames.length} file${matFileNames.length === 1 ? "" : "s"} selected`
-                      : "Click to select file(s)"}
-                  </p>
-                  {matFileNames.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1 truncate">{matFileNames.join(", ")}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">All file formats accepted (PDF, DOCX, PPTX, images, videos, ZIP, etc.)</p>
-                </label>
-              </div>
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowMaterialModal(false);
-                  resetMaterialForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={isEditingMaterial ? handleEditMaterial : handleAddMaterial}
-                disabled={isUploadingMaterial}
-                className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isUploadingMaterial ? (isEditingMaterial ? "Updating..." : "Uploading...") : (isEditingMaterial ? "Update Material" : "Upload Material")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ CREATE ASSIGNMENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
-      {showAssignmentModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {isEditingAssignment ? "Edit Assignment / Activity" : "Create Assignment / Activity"}
-                  </h3>
-                  <p className="text-sm text-gray-500">{isEditingAssignment ? "Update the task details" : `Students in ${classData.code} will see this task`}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAssignmentModal(false);
-                  resetAssignmentForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Type</label>
-                <div className="flex gap-3">
-                  {["assignment", "activity", "quiz"].map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setAsgForm({ ...asgForm, type: t })}
-                      className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium capitalize transition-all ${asgForm.type === t ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {asgForm.type === 'quiz' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
-                  <label className="block text-sm font-medium text-purple-900 mb-2">Generate Quiz with AI</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Quiz Topic</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Photosynthesis"
-                        value={quizTopic}
-                        onChange={(e) => setQuizTopic(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 placeholder-gray-400 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Reference Material (Optional)</label>
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => quizMaterialInputRef.current?.click()}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-purple-200 rounded-lg text-sm text-purple-600 hover:bg-purple-50 transition-all bg-white"
-                        >
-                          <FilePlus className="w-4 h-4" />
-                          {quizMaterialFile ? "Change File" : "Select Reference File"}
-                        </button>
-                        {quizMaterialFile && (
-                          <div className="flex items-center justify-between px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
-                            <span className="text-xs text-purple-700 font-medium truncate max-w-[150px]">
-                              {quizMaterialFile.name}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setQuizMaterialFile(null);
-                                setQuizMaterialContent("");
-                                if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
-                              }}
-                              className="p-1 text-purple-400 hover:text-purple-600"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Number of Questions</label>
-                      <input
-                        type="number"
-                        min="5"
-                        max="50"
-                        value={quizItemCount}
-                        onChange={(e) => setQuizItemCount(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-white text-gray-900 placeholder-gray-400 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Quiz Type</label>
-                      <CustomSelect
-                        value={quizType}
-                        onChange={(value) => setQuizType(value)}
-                        options={[
-                          { value: "Multiple Choice", label: "Multiple Choice" },
-                          { value: "True/False", label: "True/False" },
-                          { value: "Short Answer", label: "Short Answer" },
-                          { value: "Essay", label: "Essay" },
-                        ]}
-                        placeholder="Select quiz type"
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Difficulty</label>
-                      <CustomSelect
-                        value={quizDifficulty}
-                        onChange={(value) => setQuizDifficulty(value)}
-                        options={[
-                          { value: "Easy", label: "Easy" },
-                          { value: "Medium", label: "Medium" },
-                          { value: "Hard", label: "Hard" },
-                        ]}
-                        placeholder="Select difficulty"
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!quizTopic.trim()) {
-                        alert("Please enter a quiz topic");
-                        return;
-                      }
-
-                      setAsgForm((prev) => ({
-                        ...prev,
-                        type: "quiz",
-                        title: prev.title.trim() ? prev.title : `${quizTopic} Quiz`,
-                      }));
-
-                      setIsQuizStreaming(true);
-                      setQuizGenerated(""); // Reset before generating
-
-                      const materialInfo = quizMaterialContent ? `\n\nREFERENCE MATERIAL:\n${quizMaterialContent}` : "";
-                      const prompt = `Generate a ${quizType} quiz about ${quizTopic} with ${quizItemCount} questions at ${quizDifficulty} difficulty level. Format as a numbered list with clear questions and answers.${materialInfo}`;
-                      const userMessage = { role: "user", content: prompt, timestamp: Date.now() };
-                      const currentMessages = [...quizMessages, userMessage];
-
-                      setQuizMessages([...currentMessages, { role: "assistant", content: "", timestamp: Date.now() }]);
-
-                      let generatedContent = "";
-                      streamMessage({
-                        messages: currentMessages.map((m) => ({ role: m.role, content: m.content })),
-                        fileContents: [],
-                        onChunk: (chunk) => {
-                          generatedContent += chunk;
-                          setQuizGenerated(generatedContent);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: generatedContent + "Γûî", timestamp: Date.now() }]);
-                        },
-                        onDone: (fullText) => {
-                          setQuizGenerated(fullText);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
-                          setAsgForm((prev) => ({
-                            ...prev,
-                            type: "quiz",
-                            title: prev.title.trim() ? prev.title : `${quizTopic} Quiz`,
-                            description: fullText,
-                          }));
-                          setIsQuizStreaming(false);
-                        },
-                        onError: (err) => {
-                          console.error("Quiz AI Error:", err);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: "ΓÜá∩╕Å Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
-                          setIsQuizStreaming(false);
-                        },
-                      });
-                    }}
-                    disabled={isQuizStreaming || !quizTopic.trim()}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {isQuizStreaming ? "Generating Quiz..." : "Generate Quiz"}
-                  </button>
-                  {quizGenerated && (
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Generated Quiz</label>
-                      <textarea
-                        rows={6}
-                        value={quizGenerated}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setQuizGenerated(value);
-                          setAsgForm((prev) => ({ ...prev, description: value }));
-                        }}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Problem Set 1"
-                  value={asgForm.title}
-                  onChange={(e) => setAsgForm({ ...asgForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Instructions / Description</label>
-                <textarea
-                  rows={3}
-                  placeholder="Describe what students need to do..."
-                  value={asgForm.description}
-                  onChange={(e) => setAsgForm({ ...asgForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Due Date <span className="text-red-600">*</span></label>
-                  <input
-                    type="date"
-                    value={asgForm.dueDate}
-                    onChange={(e) => setAsgForm({ ...asgForm, dueDate: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Max Points</label>
-                  <input
-                    type="number"
-                    value={asgForm.maxPoints}
-                    onChange={(e) => setAsgForm({ ...asgForm, maxPoints: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                {asgSupportsFiles ? (
-                  <>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      {isEditingAssignment ? "Replace Reference File (Optional)" : "Attach Reference File (Optional)"}
-                    </label>
-                    {isEditingAssignment && Array.isArray(asgOriginalFile?.fileNames) && asgOriginalFile.fileNames.length > 0 && (
-                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-xs text-gray-700">Current files:</p>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {asgOriginalFile.fileNames.map((fileName, index) => (
-                            <span key={`${fileName}-${index}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">
-                              <File className="w-3 h-3" />
-                              {fileName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <label className={`block border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-blue-500 ${asgPickedMaterialIds.length > 0 ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 hover:border-blue-500"}`}>
-                      <input
-                        ref={asgFileRef}
-                        type="file"
-                        multiple
-                        accept="*/*"
-                        className="sr-only"
-                        disabled={asgPickedMaterialIds.length > 0}
-                        onChange={(e) => {
-                          const selectedFiles = Array.from(e.target.files || []);
-                          setAsgFiles(selectedFiles);
-                          setAsgFileNames(selectedFiles.map((file) => file.name));
-                          setAsgError("");
-                        }}
-                      />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-blue-500 transition-colors" />
-                      <p className="text-sm text-gray-500">
-                        {asgFileNames.length > 0
-                          ? `${asgFileNames.length} file${asgFileNames.length === 1 ? "" : "s"} selected`
-                          : asgPickedMaterialIds.length > 0 ? "Clear material selection to upload a new file" : "Click to attach files"}
-                      </p>
-                      {asgFileNames.length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1 truncate">{asgFileNames.join(", ")}</p>
-                      )}
-                    </label>
-                  </>
-                ) : (
-                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-                    <p className="text-xs text-amber-700">File attachments are not supported with the current database schema.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Pick from Class Materials */}
-              {asgSupportsFiles && materials.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <BookOpen className="w-4 h-4 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Or Pick from Class Materials</label>
-                    {asgPickedMaterialIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAsgPickedMaterialIds([]);
-                          setAsgMaterialAttachments({ fileNames: [], filePaths: [], fileUrls: [] });
-                        }}
-                        className="ml-auto text-xs text-red-500 hover:text-red-700"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-200 rounded-xl p-2 bg-gray-50">
-                    {materials.map((mat) => {
-                      const isPicked = asgPickedMaterialIds.includes(mat.id);
-                      return (
-                        <button
-                          key={mat.id}
-                          type="button"
-                          onClick={() => {
-                            let newIds;
-                            if (isPicked) {
-                              newIds = asgPickedMaterialIds.filter((mid) => mid !== mat.id);
-                            } else {
-                              newIds = [...asgPickedMaterialIds, mat.id];
-                              // Clear new file uploads when selecting a material
-                              setAsgFiles([]);
-                              setAsgFileNames([]);
-                              if (asgFileRef.current) asgFileRef.current.value = "";
-                            }
-                            setAsgPickedMaterialIds(newIds);
-                            const pickedMats = materials.filter((m) => newIds.includes(m.id));
-                            setAsgMaterialAttachments({
-                              fileNames: pickedMats.flatMap((m) => m.fileNames?.length ? m.fileNames : m.fileName ? [m.fileName] : []),
-                              filePaths: pickedMats.flatMap((m) => m.filePaths?.length ? m.filePaths : m.filePath ? [m.filePath] : []),
-                              fileUrls: pickedMats.flatMap((m) => m.fileUrls?.length ? m.fileUrls : m.fileUrl ? [m.fileUrl] : []),
-                            });
-                          }}
-                          className={`w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all ${isPicked
-                              ? "border-green-400 bg-green-50"
-                              : "border-gray-100 bg-white hover:border-green-200 hover:bg-green-50/40"
-                            }`}
-                        >
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${isPicked ? "border-green-500 bg-green-500" : "border-gray-300"
-                            }`}>
-                            {isPicked && <CheckCircle className="w-3 h-3 text-white" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{mat.title}</p>
-                            {mat.description && (
-                              <p className="text-xs text-gray-500 truncate">{mat.description}</p>
-                            )}
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-xs text-gray-400">{mat.fileType}</span>
-                              {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                                <span className="text-xs text-green-600">{mat.attachments.length} file{mat.attachments.length === 1 ? "" : "s"}</span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {asgPickedMaterialIds.length > 0 && (
-                    <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" />
-                      {asgPickedMaterialIds.length} material{asgPickedMaterialIds.length === 1 ? "" : "s"} selected as attachment
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 sticky bottom-0 bg-white">
-              <button
-                onClick={() => {
-                  setShowAssignmentModal(false);
-                  resetAssignmentForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={isEditingAssignment ? handleEditAssignment : handleAddAssignment}
-                disabled={isPostingAssignment}
-                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isPostingAssignment ? (isEditingAssignment ? "Updating..." : "Saving...") : (isEditingAssignment ? "Update Task" : "Post Task")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ POST ANNOUNCEMENT MODAL ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
-      {showAnnouncementModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{isEditingAnnouncement ? "Edit Announcement" : "Post Announcement"}</h3>
-                  <p className="text-sm text-gray-500">{isEditingAnnouncement ? "Update this class announcement" : `All students in ${classData.code} will be notified`}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAnnouncementModal(false);
-                  resetAnnouncementForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Subject / Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Reminder: Quiz next Monday"
-                  value={annForm.title}
-                  onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Message</label>
-                <textarea
-                  rows={5}
-                  placeholder="Write your announcement here..."
-                  value={annForm.content}
-                  onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachments (Optional)</label>
-                {isEditingAnnouncement && annOriginalFiles.fileNames.length > 0 && (
-                  <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <p className="text-xs text-gray-700 mb-1">Current files:</p>
-                    <div className="space-y-1">
-                      {annOriginalFiles.fileNames.map((name, index) => (
-                        <p key={`existing-ann-file-${index}`} className="text-xs text-purple-700 truncate">{name}</p>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-purple-500">
-                  <input
-                    ref={annFileRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.zip"
-                    multiple
-                    className="sr-only"
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.files || []);
-                      const deduped = selected.filter((file, index, all) => {
-                        const key = `${file.name}::${file.size}::${file.lastModified}`;
-                        return all.findIndex((candidate) => `${candidate.name}::${candidate.size}::${candidate.lastModified}` === key) === index;
-                      });
-                      const validationError = validateAnnouncementFiles(deduped);
-                      if (validationError) {
-                        setAnnError(validationError);
-                        setAnnFiles([]);
-                        setAnnFileNames([]);
-                        return;
-                      }
-                      setAnnFiles(deduped);
-                      setAnnFileNames(deduped.map((file) => file.name));
-                      setAnnError("");
-                    }}
-                  />
-                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-purple-500 transition-colors" />
-                  <p className="text-sm text-gray-500 group-hover:text-purple-600 transition-colors">
-                    {annFileNames.length > 0 ? `${annFileNames.length} file(s) selected` : "Click to attach files"}
-                  </p>
-                </label>
-                {annFileNames.length > 0 && (
-                  <div className="mt-2 space-y-1 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
-                    {annFileNames.map((name, index) => (
-                      <p key={`selected-ann-file-${index}`} className="text-xs text-gray-600 truncate">{name}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAnnouncementModal(false);
-                  resetAnnouncementForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveAnnouncement}
-                disabled={isPostingAnnouncement}
-                className="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isPostingAnnouncement
-                  ? (isEditingAnnouncement ? "Updating..." : "Posting...")
-                  : (isEditingAnnouncement ? "Update Announcement" : "Post Announcement")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ••••• ADD STUDENT MODAL ••••• */}
+      {/* AI QUIZ GENERATOR TAB REMOVED */}
+          {/* ••••• ADD STUDENT MODAL ••••• */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-4xl w-full shadow-xl flex flex-col max-h-[90vh]">
@@ -5063,6 +4498,315 @@ export function ClassDetail() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {/* ••••• CREATE / EDIT ANNOUNCEMENT MODAL ••••• */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isEditingAnnouncement ? "Edit Announcement" : "Create Announcement"}
+                  </h3>
+                  <p className="text-xs text-gray-500">Post updates and news directly to student dashboards</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAnnouncementModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {annError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                  <span>{annError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Announcement Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Midterm Examination Guidelines"
+                  value={annForm.title}
+                  onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Message / Content <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={5}
+                  placeholder="Write your announcement details here..."
+                  value={annForm.content}
+                  onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Reference Link (Optional)
+                </label>
+                <input
+                  type="url"
+                  placeholder="e.g. https://classroom.google.com/..."
+                  value={annForm.link_url}
+                  onChange={(e) => setAnnForm({ ...annForm, link_url: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Attachments (Optional)
+                </label>
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-purple-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                  <p className="text-xs text-gray-650 mb-1">Click to select files from your computer</p>
+                  <p className="text-[10px] text-gray-400">PDF, DOCX, Images, and ZIP (Max 15MB)</p>
+                  <input
+                    type="file"
+                    multiple
+                    ref={annFileRef}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setAnnFiles(files);
+                      setAnnFileNames(files.map((file) => file.name));
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+                {annFileNames.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {annFileNames.map((name, i) => (
+                      <div key={i} className="flex items-center justify-between bg-purple-50/40 border border-purple-100 rounded-lg px-3 py-1.5 text-xs text-purple-750 font-medium">
+                        <span className="truncate max-w-[300px]">{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextFiles = Array.from(annFiles).filter((_, idx) => idx !== i);
+                            setAnnFiles(nextFiles);
+                            setAnnFileNames(nextFiles.map(f => f.name));
+                          }}
+                          className="text-red-500 hover:text-red-750 font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-150 pt-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800">Pin Announcement</span>
+                    <span className="text-[10px] text-gray-550">Always keep this announcement at the top of the feed</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={annForm.is_pinned}
+                      onChange={(e) => setAnnForm({ ...annForm, is_pinned: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800">Publish Immediately</span>
+                    <span className="text-[10px] text-gray-550">Post right now or set a date/time to schedule</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={annForm.publishImmediately}
+                      onChange={(e) => setAnnForm({ ...annForm, publishImmediately: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                {!annForm.publishImmediately && (
+                  <div className="grid grid-cols-2 gap-3 bg-purple-50/20 border border-purple-100 rounded-xl p-3.5 animate-in slide-in-from-top-2 duration-150">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
+                        Publish Date
+                      </label>
+                      <input
+                        type="date"
+                        value={annForm.scheduled_date}
+                        onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
+                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
+                        Publish Time
+                      </label>
+                      <input
+                        type="time"
+                        value={annForm.scheduled_time}
+                        onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
+                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
+              <button
+                onClick={() => setShowAnnouncementModal(false)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-55 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAnnouncement}
+                disabled={isPostingAnnouncement}
+                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-750 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+              >
+                {isPostingAnnouncement ? "Saving..." : isEditingAnnouncement ? "Update Announcement" : "Post Announcement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ••••• ANNOUNCEMENT DETAIL VIEW MODAL ••••• */}
+      {selectedAnnouncementDetail && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 truncate max-w-[320px]">
+                    {selectedAnnouncementDetail.title}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    By {selectedAnnouncementDetail.author} &bull; {new Date(selectedAnnouncementDetail.datePosted).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAnnouncementDetail(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              {selectedAnnouncementDetail.isPinned && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-150/40 text-purple-800 rounded-full text-xs font-bold border border-purple-200">
+                  <Sparkles className="w-3.5 h-3.5 fill-purple-650 text-purple-650" />
+                  Pinned Announcement
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                  {selectedAnnouncementDetail.content}
+                </p>
+              </div>
+
+              {selectedAnnouncementDetail.linkUrl && (
+                <div className="bg-purple-50/30 border border-purple-100 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-purple-850 uppercase tracking-wider">Reference Link</p>
+                    <p className="text-xs text-gray-600 truncate mt-0.5">{selectedAnnouncementDetail.linkUrl}</p>
+                  </div>
+                  <a
+                    href={selectedAnnouncementDetail.linkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-shrink-0 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-750 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                  >
+                    Open Link
+                  </a>
+                </div>
+              )}
+
+              {Array.isArray(selectedAnnouncementDetail.attachments) && selectedAnnouncementDetail.attachments.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wide">Attachments</h4>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {selectedAnnouncementDetail.attachments.map((attachment, idx) => {
+                      const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
+                      const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${idx + 1}`).trim();
+                      const attachmentKind = String(attachment?.kind || "document");
+
+                      if (!attachmentUrl) return null;
+
+                      return (
+                        <div
+                          key={`detail-att-${idx}`}
+                          className="border border-gray-150 rounded-xl p-3 bg-gray-50/50 hover:bg-gray-50 transition-colors flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 bg-white rounded-lg border border-gray-100">
+                              <File className="w-5 h-5 text-gray-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-800 truncate max-w-[280px]">
+                                {attachmentName}
+                              </p>
+                              <p className="text-[10px] text-gray-400 capitalize">
+                                {attachmentKind} File
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={attachmentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-all"
+                          >
+                            <Download className="w-3.5 h-3.5 text-gray-500" />
+                            Download
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex shrink-0">
+              <button
+                onClick={() => setSelectedAnnouncementDetail(null)}
+                className="w-full px-4 py-2.5 bg-gray-105 border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-150 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

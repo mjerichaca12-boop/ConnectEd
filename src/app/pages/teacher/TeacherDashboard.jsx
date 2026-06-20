@@ -43,6 +43,8 @@ export function TeacherDashboard() {
   const [announcementTable, setAnnouncementTable] = useState("");
   const [announcementsError, setAnnouncementsError] = useState("");
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
+  const [draftLessonsCount, setDraftLessonsCount] = useState(0);
+  const [publishedLessonsCount, setPublishedLessonsCount] = useState(0);
   const totalClasses = assignedSubjects.length;
 
   const getAnnouncementTableName = async () => {
@@ -219,6 +221,18 @@ export function TeacherDashboard() {
     setGradesEncodedTotal(Number(count || 0));
   };
 
+  const fetchLessonsCount = async (id) => {
+    if (!supabase || !id) return;
+    const { data, error } = await supabase
+      .from("lessons")
+      .select("status")
+      .eq("teacher_id", id);
+    if (!error && data) {
+      setDraftLessonsCount(data.filter(l => l.status === "Draft").length);
+      setPublishedLessonsCount(data.filter(l => l.status === "Published").length);
+    }
+  };
+
   const fetchRecentGrades = async (id) => {
     if (!supabase || !id) {
       setRecentGrades([]);
@@ -337,6 +351,7 @@ export function TeacherDashboard() {
     fetchTeacherStudentTotal(teacherId);
     fetchGradesEncodedTotal(teacherId);
     fetchRecentGrades(teacherId);
+    fetchLessonsCount(teacherId);
   }, [teacherId]);
 
   useEffect(() => {
@@ -534,10 +549,12 @@ export function TeacherDashboard() {
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
               { icon: BookOpen,    label: "Total Classes",   value: totalClasses,  color: "emerald" },
               { icon: Users,       label: "Total Students",  value: totalStudents,   color: "blue" },
+              { icon: BookOpen,    label: "Published Lessons", value: publishedLessonsCount, color: "emerald" },
+              { icon: BookOpen,    label: "Draft Lessons",   value: draftLessonsCount, color: "red" },
               { icon: GraduationCap, label: "Grades Encoded", value: gradesEncodedTotal, color: "emerald" },
             ].map((stat) => {
               const Icon = stat.icon;
