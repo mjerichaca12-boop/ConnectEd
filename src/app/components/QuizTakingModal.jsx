@@ -171,7 +171,7 @@ export function QuizTakingModal({ isOpen, onClose, quizTitle, quizContent, onCom
               </div>
               <div>
                 <h4 className="text-2xl font-bold text-gray-900">Quiz Completed!</h4>
-                <p className="text-gray-500 mt-1">Great job finishing the assessment.</p>
+                <p className="text-gray-500 mt-1">Great job finishing the seatwork.</p>
               </div>
 
               <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100 max-w-sm mx-auto">

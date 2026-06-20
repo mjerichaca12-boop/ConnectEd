@@ -284,10 +284,10 @@ export function ClassDetail() {
     totalLessons: 0,
     publishedLessons: 0,
     activitiesCount: 0,
-    assessmentsCount: 0,
+    seatworksCount: 0,
+    assignmentsCount: 0,
     quizzesCount: 0,
-    pendingSubmissions: 0,
-    upcomingDeadlines: 0,
+    materialsCount: 0,
   });
 
   // Modal states
@@ -611,10 +611,10 @@ export function ClassDetail() {
       const activeLessonIds = activeLessons.map(l => l.id);
 
       let activitiesCount = 0;
-      let assessmentsCount = 0;
+      let seatworksCount = 0;
+      let assignmentsCount = 0;
       let quizzesCount = 0;
-      let pendingSubmissions = 0;
-      let upcomingDeadlines = 0;
+      let materialsCount = 0;
 
       if (activeLessonIds.length > 0) {
         // 2. Fetch lesson activities
@@ -626,69 +626,29 @@ export function ClassDetail() {
         if (actError) throw actError;
 
         if (activities && activities.length > 0) {
-          activitiesCount = activities.filter(a => a.activity_type === "Activity").length;
-          assessmentsCount = activities.filter(a => a.activity_type === "Assessment").length;
+          activitiesCount = activities.filter(a => ["Activity", "Assignment", "Assessment", "Seatwork", "Quiz"].includes(a.activity_type)).length;
+          seatworksCount = activities.filter(a => a.activity_type === "Assessment" || a.activity_type === "Seatwork").length;
+          assignmentsCount = activities.filter(a => a.activity_type === "Assignment").length;
           quizzesCount = activities.filter(a => a.activity_type === "Quiz").length;
-
-          const assignmentIds = activities.filter(a => a.activity_type !== "Quiz").map(a => a.activity_id);
-          const quizIds = activities.filter(a => a.activity_type === "Quiz").map(a => a.activity_id);
-
-           // 3. Pending Submissions:
-           // Submissions with status = 'Submitted' for the assignments
-           let subCount = 0;
-           const validAssignmentIds = (assignmentIds || []).filter(Boolean);
-           if (validAssignmentIds.length > 0) {
-             const { count, error: subError } = await supabase
-               .from("submissions")
-               .select("id", { count: "exact", head: true })
-               .in("assignment_id", validAssignmentIds)
-               .eq("status", "Submitted");
-             if (!subError) subCount = count || 0;
-           }
-
-           // Quiz Attempts with status = 'Submitted' for the quizzes
-           let quizAttemptCount = 0;
-           const validQuizIds = (quizIds || []).filter(Boolean);
-           if (validQuizIds.length > 0) {
-             const { count, error: qaError } = await supabase
-               .from("quiz_attempts")
-               .select("id", { count: "exact", head: true })
-               .in("quiz_id", validQuizIds)
-               .eq("status", "Submitted");
-             if (!qaError) quizAttemptCount = count || 0;
-           }
- 
-           pendingSubmissions = subCount + quizAttemptCount;
- 
-           // 4. Upcoming Deadlines:
-           // Assignments with due_date within next 7 days (now <= due_date <= now + 7 days)
-           if (validAssignmentIds.length > 0) {
-             const now = new Date();
-             const sevenDaysFromNow = new Date();
-             sevenDaysFromNow.setDate(now.getDate() + 7);
- 
-             const { data: dueAssignments, error: dueError } = await supabase
-               .from("assignments")
-               .select("due_date")
-               .in("id", validAssignmentIds)
-               .gte("due_date", now.toISOString())
-               .lte("due_date", sevenDaysFromNow.toISOString());
- 
-             if (!dueError && dueAssignments) {
-               upcomingDeadlines = dueAssignments.length;
-             }
-          }
         }
+
+        // 3. Fetch lesson materials count
+        const { count: matCount, error: matError } = await supabase
+          .from("lesson_materials")
+          .select("*", { count: "exact", head: true })
+          .in("lesson_id", activeLessonIds);
+
+        if (!matError) materialsCount = matCount || 0;
       }
 
       setMetrics({
         totalLessons,
         publishedLessons,
         activitiesCount,
-        assessmentsCount,
+        seatworksCount,
+        assignmentsCount,
         quizzesCount,
-        pendingSubmissions,
-        upcomingDeadlines,
+        materialsCount
       });
 
     } catch (err) {
@@ -3667,16 +3627,16 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("lessons")}
+                    onClick={() => setActiveTab("materials")}
                     className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
                       <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <Sparkles className="w-4 h-4 text-white" />
+                        <BookOpen className="w-4 h-4 text-white" />
                       </div>
-                      Published Lessons
+                      Materials
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.publishedLessons}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.materialsCount + materials.length}</p>
                   </div>
 
                   <div 
@@ -3695,27 +3655,27 @@ export function ClassDetail() {
               </div>
 
               {/* Row 2 */}
-              <div>
+              <div className="mt-6">
                 <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Classroom Activity</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
-                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <ClipboardList className="w-4 h-4 text-white" />
-                      </div>
-                      Activities
-                    </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.activitiesCount}</p>
-                  </div>
-
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
                       <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
                         <FileText className="w-4 h-4 text-white" />
                       </div>
-                      Assessments
+                      Seatworks
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.assessmentsCount}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.seatworksCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <ClipboardList className="w-4 h-4 text-white" />
+                      </div>
+                      Assignments
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{metrics.assignmentsCount}</p>
                   </div>
 
                   <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
@@ -3726,26 +3686,6 @@ export function ClassDetail() {
                       Quizzes
                     </div>
                     <p className="text-3xl font-bold mt-2 text-white">{metrics.quizzesCount}</p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
-                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <Clock className="w-4 h-4 text-white" />
-                      </div>
-                      Pending Submissions
-                    </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.pendingSubmissions}</p>
-                  </div>
-
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer col-span-2 md:col-span-1 shadow-sm group">
-                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <Calendar className="w-4 h-4 text-white" />
-                      </div>
-                      Upcoming Deadlines
-                    </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.upcomingDeadlines}</p>
                   </div>
                 </div>
               </div>

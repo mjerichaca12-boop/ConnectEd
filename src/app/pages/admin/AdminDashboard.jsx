@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+
+const db = supabaseAdmin || supabase;
 import { useActivity } from "../../lib/ActivityContext";
 import {
   Users,
@@ -12,7 +14,8 @@ import {
   Megaphone,
   AlertTriangle,
   Loader2,
-  Sparkles
+  Sparkles,
+  Key
 } from "lucide-react";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -34,7 +37,8 @@ export function AdminDashboard() {
     totalEnrollments: 0,
     activeAnnouncements: 0,
     newStudentsThisMonth: 0,
-    newTeachersThisMonth: 0
+    newTeachersThisMonth: 0,
+    totalPendingResets: 0
   });
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState("");
@@ -75,7 +79,7 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("subjects")
       .select("id, code, name")
       .order("code", { ascending: true });
@@ -92,7 +96,7 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("profiles")
       .select("id, first_name, middle_name, last_name, email, role")
       .eq("role", "teacher")
@@ -268,7 +272,7 @@ export function AdminDashboard() {
 
     const fetchSubjectsCount = async () => {
       for (const tableName of subjectTableCandidates) {
-        const result = await supabase.from(tableName).select("id", { count: "exact", head: true });
+        const result = await db.from(tableName).select("id", { count: "exact", head: true });
         if (!result.error) {
           return result.count ?? 0;
         }
@@ -277,10 +281,11 @@ export function AdminDashboard() {
       return 0;
     };
 
-    const [studentsResult, teachersResult, subjectsCount] = await Promise.all([
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
-      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher"),
-      fetchSubjectsCount()
+    const [studentsResult, teachersResult, subjectsCount, pendingResetsResult] = await Promise.all([
+      db.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
+      db.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher"),
+      fetchSubjectsCount(),
+      db.from("password_reset_requests").select("id", { count: "exact", head: true }).eq("status", "Pending")
     ]);
 
     if (studentsResult.error) {
@@ -295,7 +300,8 @@ export function AdminDashboard() {
       ...current,
       totalStudents: studentsResult.count ?? 0,
       totalTeachers: teachersResult.count ?? 0,
-      totalSubjects: subjectsCount
+      totalSubjects: subjectsCount,
+      totalPendingResets: pendingResetsResult.count ?? 0
     }));
   };
 
@@ -621,6 +627,23 @@ export function AdminDashboard() {
                   <p className="text-3xl font-bold text-gray-900">
                     {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalSubjects.toLocaleString()}
                   </p>
+                </div>
+
+                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-amber-300 transition-colors cursor-pointer" onClick={() => navigate("/admin/password-resets")}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <Key className="w-6 h-6 text-amber-500" />
+                    </div>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-1">Pending Password Resets</p>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-3xl font-bold text-gray-900">
+                      {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalPendingResets.toLocaleString()}
+                    </p>
+                    {!statsLoading && stats.totalPendingResets > 0 && (
+                      <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">Needs Action</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

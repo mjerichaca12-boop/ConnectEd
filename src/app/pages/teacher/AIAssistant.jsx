@@ -15,7 +15,7 @@ const WELCOME_MSG = {
 I can help you create:
 - 📝 Activities and quizzes from your class materials
 - 📋 Lesson plans in DepEd **DLL format**
-- 📊 Rubrics and assessment tools
+- 📊 Rubrics and seatwork tools
 - 📖 Summaries of uploaded materials
 - ✉️ Parent communication letters
 - 🌐 Filipino/English translations

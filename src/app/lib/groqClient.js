@@ -37,7 +37,7 @@ ${isStudent ? `
 ` : `
 - Generate activities, quizzes, and exams from uploaded materials
 - Create detailed lesson plans in DepEd DLL/DLP format
-- Design rubrics for various assessment types
+- Design rubrics for various seatwork types
 - Summarize and simplify complex materials
 - Suggest differentiated instruction strategies
 - Write parent communication letters in Filipino or English
@@ -189,7 +189,7 @@ export const buildQuickPrompt = (action, settings) => {
     activity: `Generate a detailed classroom activity for ${context}.\nNumber of tasks: ${itemCount}.\nFormat your response as:\n## Activity Title\n**Grade Level:** | **Subject:** | **Duration:**\n### Learning Objectives\n### Materials Needed\n### Instructions (numbered steps)\n### Expected Output\n### Grading Guide\n`,
     quiz: `Create a ${itemCount}-item quiz for ${context}.\nFormat your response as:\n## Quiz Title\n**Grade Level:** | **Subject:** | **Total Points:**\n### Part I – Multiple Choice (items 1-${Math.ceil(itemCount*0.4)})\n### Part II – True or False (items)\n### Part III – Identification (items)\n---\n## Answer Key\n(complete answers with explanations)\n`,
     lessonPlan: `Create a complete Daily Lesson Log (DLL) for ${context}.\nFollow the official DepEd DLL format:\n## Daily Lesson Log (DLL)\n**School:** | **Teacher:** | **Grade & Section:** | **Date:**\n### I. Objectives\n- Content Standards\n- Performance Standards  \n- Learning Competencies (with LC Code)\n### II. Content (Subject Matter)\n### III. Learning Resources\n### IV. Procedures\n**A. Reviewing Previous Lesson (5 mins)**\n**B. Establishing Purpose (5 mins)**\n**C. Presenting Examples (10 mins)**\n**D. Discussing Concepts (15 mins)**\n**E. Developing Mastery (10 mins)**\n**F. Finding Practical Applications (5 mins)**\n**G. Generalization (5 mins)**\n**H. Evaluating Learning (5 mins)**\n**I. Assignment**\n### V. Remarks\n### VI. Reflection\n`,
-    rubric: `Create a detailed grading rubric for a ${subject} assessment for ${context}.\nFormat as a markdown table:\n| Criteria | Excellent (4) | Proficient (3) | Developing (2) | Beginning (1) |\nInclude at least 5 criteria rows.\nAdd a Total Score row and grading scale at the bottom.\n`,
+    rubric: `Create a detailed grading rubric for a ${subject} seatwork for ${context}.\nFormat as a markdown table:\n| Criteria | Excellent (4) | Proficient (3) | Developing (2) | Beginning (1) |\nInclude at least 5 criteria rows.\nAdd a Total Score row and grading scale at the bottom.\n`,
     summarize: `Summarize the uploaded class material for ${context}.\nFormat your response as:\n## Material Summary\n**Subject:** | **Grade Level:**\n### Main Topic\n### Key Concepts (bulleted list)\n### Important Terms & Definitions (table format)\n### Key Takeaways (numbered)\n### Review Questions (${itemCount} questions with answers)\n`,
     parentLetter: `Write a formal parent communication letter in ${language} for Grade ${gradeLevel} ${subject} class.\nFormat:\n[School Letterhead]\nDate: ___________\nDear Parent/Guardian,\n[Professional body — warm but formal tone]\n[Clear main message]\n[Call to action if needed]\nRespectfully yours,\n[Teacher Name]\n[Position]\n`,
     translate: `Translate the following educational content to ${language}.\nKeep all academic and subject-specific terms accurate.\nMaintain age-appropriate language for Grade ${gradeLevel}.\nPreserve the original formatting (headers, lists, tables).\nAfter translating, add a glossary of key terms with both English and ${language} versions.\n`,

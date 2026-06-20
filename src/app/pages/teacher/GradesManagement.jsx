@@ -7,6 +7,7 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { StudentGradebookModal } from "./components/StudentGradebookModal";
 import * as LucideIcons from "lucide-react";
 import {
   createDefaultGradeRecord,
@@ -267,6 +268,7 @@ function GradesManagement() {
   const assessmentItemsRef = useRef([]);
   const [autoSaveStateMap, setAutoSaveStateMap] = useState({});
   const [autoSaveMessage, setAutoSaveMessage] = useState("");
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState(null);
   const autoSaveTimersRef = useRef({});
 
   useEffect(() => {
@@ -1505,28 +1507,46 @@ function GradesManagement() {
                           </th>
                         )}
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Overall</th>
+                        <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Completion</th>
+                        <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Last Activity</th>
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filteredByView.map((student) => {
                         const isPassed = student.overallGrade >= 75;
+                        const studentSubmissions = assessmentItems.filter(a => assessmentSubmissionsMap[a.id]?.[student.id]);
+                        const completionRate = assessmentItems.length > 0 ? Math.round((studentSubmissions.length / assessmentItems.length) * 100) : 0;
+                        let lastActivityDate = null;
+                        studentSubmissions.forEach(a => {
+                          const sub = assessmentSubmissionsMap[a.id]?.[student.id];
+                          if (sub && sub.submittedAt) {
+                            const date = new Date(sub.submittedAt);
+                            if (!lastActivityDate || date > lastActivityDate) {
+                              lastActivityDate = date;
+                            }
+                          }
+                        });
                         return (
-                          <tr key={student.id} className={`hover:bg-green-50 transition-colors ${!isPassed ? "bg-red-50" : "bg-white"}`}>
+                          <tr 
+                            key={student.id} 
+                            onClick={() => setSelectedStudentForModal(student)}
+                            className={`cursor-pointer hover:bg-green-50 transition-colors ${!isPassed ? "bg-red-50" : "bg-white"}`}
+                          >
                             <td className="px-5 py-4">
                               <div className="flex items-center gap-3">
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${isPassed ? "bg-green-600" : "bg-red-600"}`}>
                                   {student.studentName.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-green-900">{student.studentName}</p>
+                                  <p className="font-medium text-green-900 group-hover:text-green-700">{student.studentName}</p>
                                   <p className="text-xs text-gray-500">{student.studentId}</p>
                                 </div>
                               </div>
                             </td>
                             {/* Term grade inputs - conditionally shown */}
                             {(activeTerm === "all" || activeTerm === "term1") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="number" min="0" max="100"
                                   value={student.term1Grade ?? ""}
@@ -1536,7 +1556,7 @@ function GradesManagement() {
                               </td>
                             )}
                             {(activeTerm === "all" || activeTerm === "term2") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="number" min="0" max="100"
                                   value={student.term2Grade ?? ""}
@@ -1546,7 +1566,7 @@ function GradesManagement() {
                               </td>
                             )}
                             {(activeTerm === "all" || activeTerm === "term3") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="number" min="0" max="100"
                                   value={student.term3Grade ?? ""}
@@ -1558,48 +1578,36 @@ function GradesManagement() {
                             {/* Designation Averages - conditionally shown */}
                             {(activeDesignation === "all" || activeDesignation === "Quiz") && (
                               <td className="px-3 py-4 text-center bg-violet-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.quizAverage ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quizAverage", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-violet-200 rounded-lg focus:outline-none focus:ring-2 ring-violet-500 text-sm"
-                                />
+                                <span className="font-semibold text-violet-700">{student.quizAverage ?? 0}</span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Activity") && (
                               <td className="px-3 py-4 text-center bg-orange-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.activityGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "activityGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 ring-orange-500 text-sm"
-                                />
+                                <span className="font-semibold text-orange-700">{student.activityGrade ?? 0}</span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Assignment") && (
                               <td className="px-3 py-4 text-center bg-sky-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.assignmentGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "assignmentGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 ring-sky-500 text-sm"
-                                />
+                                <span className="font-semibold text-sky-700">{student.assignmentGrade ?? 0}</span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Exam") && (
                               <td className="px-3 py-4 text-center bg-red-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.examGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "examGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-red-200 rounded-lg focus:outline-none focus:ring-2 ring-red-500 text-sm"
-                                />
+                                <span className="font-semibold text-red-700">{student.examGrade ?? 0}</span>
                               </td>
                             )}
                             <td className="px-5 py-4 text-center">
                               <span className={`inline-block px-3 py-1.5 rounded-full text-sm font-bold ${isPassed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                                 {student.overallGrade}%
                               </span>
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <span className="text-xs font-semibold text-gray-700">
+                                {completionRate}% <span className="text-[10px] text-gray-400">({studentSubmissions.length}/{assessmentItems.length})</span>
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-center text-xs text-gray-500">
+                              {lastActivityDate ? lastActivityDate.toLocaleDateString() : "Never"}
                             </td>
                             <td className="px-5 py-4 text-center">
                               <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${isPassed ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
@@ -1644,16 +1652,16 @@ function GradesManagement() {
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="p-5 border-b border-gray-100">
-                <h3 className="text-base font-semibold text-green-900">Assessment-Based Grading</h3>
+                <h3 className="text-base font-semibold text-green-900">Activity-Based Performance Evaluation</h3>
                 <p className="text-xs text-gray-600 mt-0.5">
-                  Review student submissions and assign grades for each assessment.
+                  Review student submissions and assign grades across all activities.
                 </p>
               </div>
 
               {assessmentItems.length === 0 ? (
                 <div className="p-8 text-center">
                   <EmptyStateIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm">No assessments found for this class yet.</p>
+                  <p className="text-gray-400 text-sm">No seatworks found for this class yet.</p>
                 </div>
               ) : (
                 <div className="p-4">
@@ -1661,7 +1669,7 @@ function GradesManagement() {
                     {/* Left: Assessment List */}
                     <div className="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Assessments</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Seatworks</p>
                       </div>
                       <div className="flex-1 max-h-[600px] overflow-y-auto scrollbar-hide p-2 space-y-2">
                         {assessmentItems.map((assessment) => {
@@ -1694,7 +1702,7 @@ function GradesManagement() {
                       {selectedAssessment ? (
                         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Assessment Details</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Seatwork Details</p>
                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${selectedAssessment.type === "activity" ? "bg-purple-100 text-purple-700" : selectedAssessment.type === "quiz" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
                               {selectedAssessment.type === "activity" ? "Activity" : selectedAssessment.type === "quiz" ? "Quiz" : "Assignment"}
                             </span>
@@ -1750,7 +1758,7 @@ function GradesManagement() {
                         </div>
                       ) : (
                         <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-                          <p className="text-sm text-gray-500">Select an assessment to view details</p>
+                          <p className="text-sm text-gray-500">Select a seatwork to view details</p>
                         </div>
                       )}
 
@@ -1949,6 +1957,17 @@ function GradesManagement() {
           )}
         </div>
       </main>
+
+      {/* Gradebook Modal */}
+      {selectedStudentForModal && (
+        <StudentGradebookModal
+          student={selectedStudentForModal}
+          assessmentItems={assessmentItems}
+          submissions={assessmentSubmissionsMap}
+          grades={gradesCache?.[selectedClass]?.[selectedStudentForModal.id] || {}}
+          onClose={() => setSelectedStudentForModal(null)}
+        />
+      )}
     </div>
   );
 }

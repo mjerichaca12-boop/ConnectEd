@@ -90,7 +90,7 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
       const { error } = await supabase.from(table).delete().eq("id", itemToDelete.activity_id);
       if (error) throw error;
       
-      toast.success(`${itemToDelete.activity_type} deleted successfully`);
+      toast.success(`${itemToDelete.activity_type === "Assessment" ? "Seatwork" : itemToDelete.activity_type} deleted successfully`);
       loadActivities();
       if (onActivitiesChange) onActivitiesChange();
     } catch (err) {
@@ -152,7 +152,7 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
                 </div>
                 <div>
                   <h4 className="font-semibold text-gray-900">{act.title}</h4>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">{act.activity_type}</p>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider">{act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">

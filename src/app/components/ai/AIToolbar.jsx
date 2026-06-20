@@ -15,7 +15,7 @@ const TEACHER_ACTIONS = [
     icon: "📊",
     label: "Rubric",
     prompt: (s) =>
-      `Create an assessment rubric for Grade ${s.gradeLevel} ${s.subject} in ${s.language}.`,
+      `Create a seatwork rubric for Grade ${s.gradeLevel} ${s.subject} in ${s.language}.`,
   },
   {
     icon: "📖",

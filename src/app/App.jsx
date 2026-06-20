@@ -26,6 +26,7 @@ import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminCalendar } from "./pages/admin/AdminCalendar";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
+import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
 import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
@@ -241,6 +242,7 @@ export default function App() {
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
+        <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
         <Route path="/admin/ai-assistant" element={<AdminRouteGuard><AIAdminAssistant /></AdminRouteGuard>} />
         <Route path="/admin/notifications" element={<AdminRouteGuard><NotificationsPage /></AdminRouteGuard>} />

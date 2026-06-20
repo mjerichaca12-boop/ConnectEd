@@ -163,7 +163,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
           .update(payload)
           .eq("id", initialAssignmentId);
         if (error) throw error;
-        toast.success(`${formData.task_category} updated successfully!`);
+        toast.success(`${formData.task_category === "Assessment" ? "Seatwork" : formData.task_category} updated successfully!`);
       } else {
         const { data, error } = await supabase
           .from("assignments")
@@ -183,7 +183,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         const { error: actError } = await supabase.from("lesson_activities").insert(activityPayload);
         if (actError) throw actError;
 
-        toast.success(`${formData.task_category} created successfully!`);
+        toast.success(`${formData.task_category === "Assessment" ? "Seatwork" : formData.task_category} created successfully!`);
       }
 
       onSuccess();
@@ -299,8 +299,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
                     onChange={(val) => handleSelectChange("task_category", val)}
                     options={[
                       { value: "Assignment", label: "Assignment" },
-                      { value: "Activity", label: "Activity" },
-                      { value: "Assessment", label: "Assessment" }
+                      { value: "Assessment", label: "Seatwork" }
                     ]}
                   />
                 </div>

@@ -6,30 +6,39 @@ import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState("student");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const navigate = useNavigate();
 
-  const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim()) || String(value || "").trim().endsWith(".local");
 
-  const sendResetEmail = async () => {
+  const sendResetRequest = async () => {
     if (!supabase) {
-      throw new Error("Auth service is not configured. Please try again later.");
+      throw new Error("Service is not configured. Please try again later.");
     }
 
-    const redirectTo = getAuthRedirectUrl("reset-password");
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo
-    });
+    // Attempt to lookup user ID
+    const { data: userProfile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', email.trim())
+      .eq('role', role)
+      .maybeSingle();
+      
+    if (profileError) throw profileError;
 
-    if (resetError) {
-      const message = String(resetError.message || "").toLowerCase();
-      if (message.includes("user") || message.includes("email") || message.includes("not found")) {
-        return;
-      }
-      throw resetError;
-    }
+    const { error: insertError } = await supabase
+      .from('password_reset_requests')
+      .insert({
+        user_id: userProfile?.id || null,
+        email: email.trim(),
+        role: role,
+        status: 'Pending'
+      });
+
+    if (insertError) throw insertError;
   };
 
   const handleSubmit = async (e) => {
@@ -47,24 +56,11 @@ function ForgotPassword() {
     setError("");
 
     try {
-      await sendResetEmail();
-      setEmailSent(true);
+      await sendResetRequest();
+      setRequestSent(true);
     } catch (err) {
       console.error("Forgot password request failed:", err);
-      setError("Unable to send reset link right now. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendEmail = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      await sendResetEmail();
-    } catch (err) {
-      console.error("Forgot password resend failed:", err);
-      setError("Unable to resend reset link right now. Please try again.");
+      setError("Unable to send request right now. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -89,7 +85,7 @@ function ForgotPassword() {
               </h1>
 
               <p className="text-lg text-gray-600 leading-relaxed">
-                Enter your registered email address and we will send a secure link to reset your password.
+                Please contact the administrator to reset your password. Submit a request below.
               </p>
 
               <div className="mt-10 relative h-64 hidden md:block">
@@ -106,7 +102,7 @@ function ForgotPassword() {
                 transition={{ duration: 0.4 }}
                 className="bg-white rounded-xl shadow-lg p-8 w-full max-w-md border border-gray-200"
               >
-                {!emailSent ? <>
+                {!requestSent ? <>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="p-3 bg-emerald-50 rounded-lg">
                         <Mail className="w-6 h-6 text-emerald-600" />
@@ -117,7 +113,7 @@ function ForgotPassword() {
                     </div>
 
                     <p className="text-gray-600 mb-6">
-                      Enter the email address associated with your ConnectEd account.
+                      Submit a password reset request to your system administrator.
                     </p>
 
                     {error && <motion.div
@@ -129,13 +125,27 @@ function ForgotPassword() {
                         <p className="text-red-600 text-sm">{error}</p>
                       </motion.div>}
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Account Type
+                        </label>
+                        <select
+                          value={role}
+                          onChange={(e) => setRole(e.target.value)}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                        >
+                          <option value="student">Student</option>
+                          <option value="teacher">Teacher</option>
+                        </select>
+                      </div>
+
                       <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                          Email Address
+                          {role === 'student' ? 'Student Email' : 'Teacher Email'}
                         </label>
                         <input
-                          type="email"
+                          type="text"
                           id="email"
                           name="email"
                           value={email}
@@ -143,7 +153,7 @@ function ForgotPassword() {
                             setEmail(e.target.value);
                             setError("");
                           }}
-                          placeholder="Enter your email address"
+                          placeholder={`Enter your ${role} email`}
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                         />
                       </div>
@@ -159,7 +169,7 @@ function ForgotPassword() {
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                             </svg>
                             Sending...
-                          </span> : "Send Reset Link"}
+                          </span> : "Request Password Reset"}
                       </button>
 
                       <div className="text-center">
@@ -188,32 +198,18 @@ function ForgotPassword() {
                       </motion.div>
 
                       <h2 className="text-3xl font-bold text-gray-900 mb-4">
-                        Check your email
+                        Request Submitted
                       </h2>
 
                       <p className="text-gray-600 mb-6 leading-relaxed">
-                        Password reset link sent to your email.
+                        Your request has been submitted successfully. Please wait for administrator approval.
                       </p>
 
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
                         <p className="text-sm text-emerald-800">
-                          If the email is registered, you will receive a secure reset link shortly.
+                          The administrator will generate a temporary password for you. Check back later or contact your school administration.
                         </p>
                       </div>
-
-                      {error && (
-                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                          {error}
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleResendEmail}
-                        disabled={loading}
-                        className="w-full bg-white text-emerald-600 px-6 py-3 rounded-lg font-medium border-2 border-emerald-600 hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-4"
-                      >
-                        {loading ? "Resending..." : "Resend Email"}
-                      </button>
 
                       <Link
                         to="/login"

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 export function LessonReviewSubTab({ lesson }) {
   const [materials, setMaterials] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -68,6 +69,21 @@ export function LessonReviewSubTab({ lesson }) {
         }).filter(act => act.title); // Filter out orphans
 
         setActivities(enrichedActivities);
+
+        // Fetch Class Announcements
+        const { data: annData, error: annError } = await supabase
+          .from("class_announcements")
+          .select("*")
+          .eq("class_id", lesson.subject_id)
+          .order("created_at", { ascending: false })
+          .limit(5); // Show latest 5 announcements
+        
+        if (annError) {
+          console.error("Announcements error:", annError);
+        } else {
+          setAnnouncements(annData || []);
+        }
+
       }
     } catch (err) {
       console.error(err);
@@ -101,7 +117,7 @@ export function LessonReviewSubTab({ lesson }) {
       {/* Lesson Header Simulation */}
       <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
         <div className="inline-block px-3 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-full mb-4 uppercase tracking-wider">
-          Module {lesson.order_index || 1}
+          Week {lesson.order_index || 1}
         </div>
         <h1 className="text-3xl font-extrabold text-gray-900 mb-4">{lesson.title}</h1>
         
@@ -132,6 +148,34 @@ export function LessonReviewSubTab({ lesson }) {
           </div>
         )}
       </div>
+
+      {/* Announcements Section */}
+      {announcements.length > 0 && (
+        <div className="bg-white rounded-2xl p-8 border border-blue-100 shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <BookOpen className="w-6 h-6 text-blue-500" /> Class Announcements
+          </h2>
+          <div className="space-y-4">
+            {announcements.map(ann => (
+              <div key={ann.id} className="p-4 rounded-xl border border-blue-50 bg-blue-50/30">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-bold text-gray-900">{ann.title}</h3>
+                  <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-100">
+                    {new Date(ann.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                {ann.content && (
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-3">{ann.content}</p>
+                )}
+                {ann.created_by_name && (
+                  <p className="text-xs text-gray-500 mt-3 font-medium">Posted by {ann.created_by_name}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Materials Section */}
       <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
@@ -186,7 +230,7 @@ export function LessonReviewSubTab({ lesson }) {
                   <div>
                     <h4 className="font-bold text-gray-900">{act.title}</h4>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                      <span className="uppercase font-semibold tracking-wider text-gray-400">{act.activity_type}</span>
+                      <span className="uppercase font-semibold tracking-wider text-gray-400">{act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}</span>
                       {act.points && <span className="flex items-center gap-1">• {act.points} Points</span>}
                       {act.due && <span className="flex items-center gap-1 text-orange-600 font-medium">• Due: {new Date(act.due).toLocaleDateString()}</span>}
                     </div>
@@ -216,7 +260,7 @@ export function LessonReviewSubTab({ lesson }) {
                 
                 <button 
                   className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                  onClick={() => toast.info(`This is a preview. The "${act.activity_type}" will open here for students.`)}
+                  onClick={() => toast.info(`This is a preview. The "${act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}" will open here for students.`)}
                 >
                   Start Task
                 </button>

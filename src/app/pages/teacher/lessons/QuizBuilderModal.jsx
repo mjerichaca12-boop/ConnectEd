@@ -7,6 +7,7 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
   const [activeTab, setActiveTab] = useState("questions");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showAddQuestionTypes, setShowAddQuestionTypes] = useState(false);
   
   const [quizDetails, setQuizDetails] = useState({
     title: "",
@@ -114,6 +115,7 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
         points: 1
       }
     ]);
+    setShowAddQuestionTypes(false);
   };
 
   const updateQuestion = (id, field, value) => {
@@ -138,7 +140,6 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!quizDetails.title) return toast.error("Quiz title is required");
-    if (questions.length === 0) return toast.error("Please add at least one question");
 
     let totalPoints = 0;
     for (const q of questions) {
@@ -455,25 +456,48 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
               ))}
 
               {/* Add Question Toolbar */}
-              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-2 justify-center">
-                <span className="text-sm font-semibold text-gray-500 w-full text-center mb-2">Add New Question</span>
-                {[
-                  { type: "Multiple Choice", label: "Multiple Choice" },
-                  { type: "True/False", label: "True / False" },
-                  { type: "Identification", label: "Identification" },
-                  { type: "Short Answer", label: "Short Answer" },
-                  { type: "Essay", label: "Essay" }
-                ].map(btn => (
-                  <button 
-                    key={btn.type}
-                    onClick={() => addQuestion(btn.type)}
-                    className="px-3 py-2 bg-gray-50 hover:bg-green-50 border border-gray-200 hover:border-green-300 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:text-green-700 flex items-center gap-1"
+              {!showAddQuestionTypes ? (
+                <div className="flex justify-center mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddQuestionTypes(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 hover:border-green-300 hover:bg-green-50 rounded-xl text-sm font-semibold text-gray-700 hover:text-green-700 transition-all shadow-sm"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    {btn.label}
+                    <Plus className="w-5 h-5" />
+                    Add New Question
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="bg-white border border-green-200 rounded-xl p-5 shadow-sm mt-6 flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  <div className="w-full flex items-center justify-between">
+                    <span className="text-sm font-bold text-gray-700">Select Question Type</span>
+                    <button 
+                      onClick={() => setShowAddQuestionTypes(false)}
+                      className="text-gray-400 hover:text-gray-600 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-3 w-full">
+                    {[
+                      { type: "Multiple Choice", label: "Multiple Choice" },
+                      { type: "True/False", label: "True / False" },
+                      { type: "Identification", label: "Identification" },
+                      { type: "Short Answer", label: "Short Answer" },
+                      { type: "Essay", label: "Essay" }
+                    ].map(btn => (
+                      <button 
+                        key={btn.type}
+                        onClick={() => addQuestion(btn.type)}
+                        className="px-4 py-2.5 bg-gray-50 hover:bg-green-50 border border-gray-200 hover:border-green-300 rounded-lg text-sm font-medium transition-colors text-gray-700 hover:text-green-700 flex items-center gap-2 flex-1 min-w-[140px] justify-center"
+                      >
+                        <Plus className="w-4 h-4" />
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="max-w-2xl mx-auto space-y-6">

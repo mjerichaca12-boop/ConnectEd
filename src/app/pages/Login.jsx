@@ -196,7 +196,7 @@ function Login() {
   const validateField = (name, value) => {
     if (name === "usernameOrEmail") {
       if (!value.trim()) return "Email is required.";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return "Please enter a valid email address.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) && !value.trim().endsWith('.local')) return "Please enter a valid email address.";
     }
     if (name === "password") {
       if (!value) return "Password is required.";
