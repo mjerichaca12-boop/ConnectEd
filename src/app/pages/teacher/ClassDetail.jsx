@@ -379,8 +379,6 @@ export function ClassDetail() {
   const [annOriginalFiles, setAnnOriginalFiles] = useState({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
   const [announcementTable, setAnnouncementTable] = useState(ANNOUNCEMENT_TABLE_CANDIDATES[0]);
   const [announcementColumns, setAnnouncementColumns] = useState([]);
-  const [annError, setAnnError] = useState("");
-  const [annSuccess, setAnnSuccess] = useState("");
   const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false);
   const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
   const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
@@ -1147,7 +1145,7 @@ export function ClassDetail() {
 
     if (error) {
       console.error("[ClassDetail] Failed to fetch announcements:", error);
-      setAnnError("Unable to load announcements from database.");
+      toast.error("Unable to load announcements from database.");
       setAnnouncements([]);
       return;
     }
@@ -2828,8 +2826,8 @@ export function ClassDetail() {
     setIsEditingAnnouncement(false);
     setEditingAnnouncementId(null);
     if (!preserveMessages) {
-      setAnnError("");
-      setAnnSuccess("");
+      
+      
     }
     if (annFileRef.current) {
       annFileRef.current.value = "";
@@ -2875,8 +2873,8 @@ export function ClassDetail() {
     });
     setAnnFiles([]);
     setAnnFileNames(existingAttachments.map((item) => item.fileName || "").filter(Boolean));
-    setAnnError("");
-    setAnnSuccess("");
+    
+    
     if (annFileRef.current) {
       annFileRef.current.value = "";
     }
@@ -3055,16 +3053,16 @@ export function ClassDetail() {
     const content = String(annForm.content || "").trim();
 
     if (!title) {
-      setAnnError("Title is required.");
+      toast.error("Title is required.");
       return;
     }
     if (!content) {
-      setAnnError("Content is required.");
+      toast.error("Content is required.");
       return;
     }
 
     if (!supabase) {
-      setAnnError("Supabase client is not configured.");
+      toast.error("Supabase client is not configured.");
       return;
     }
 
@@ -3073,19 +3071,19 @@ export function ClassDetail() {
     try {
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !sessionData?.session) {
-        setAnnError("Authentication session expired. Please log in again.");
+        toast.error("Authentication session expired. Please log in again.");
         console.error("[ClassDetail] Session check failed:", sessionError);
         return;
       }
       authUid = sessionData.session.user?.id || "";
     } catch (sessionErr) {
-      setAnnError("Authentication session expired. Please log in again.");
+      toast.error("Authentication session expired. Please log in again.");
       console.error("[ClassDetail] Session check exception:", sessionErr);
       return;
     }
 
     if (!authUid) {
-      setAnnError("You must be logged in as a teacher to post announcements.");
+      toast.error("You must be logged in as a teacher to post announcements.");
       return;
     }
 
@@ -3105,21 +3103,21 @@ export function ClassDetail() {
     // ── Resolve and validate class UUID ──────────────────────────────────────
     const classId = String((isUuid(id) ? id : classData?.id) || "").trim();
     if (!classId || !isUuid(classId)) {
-      setAnnError("Class information could not be found. Please navigate back and try again.");
+      toast.error("Class information could not be found. Please navigate back and try again.");
       console.error("[ClassDetail] Invalid class ID:", { routeId: id, classData });
       return;
     }
 
     const tableName = await getAnnouncementTableName();
     if (!tableName) {
-      setAnnError("Announcements table is not available. Please contact support.");
+      toast.error("Announcements table is not available. Please contact support.");
       return;
     }
 
     const selectedFiles = Array.from(annFiles || []);
     const validationError = validateAnnouncementFiles(selectedFiles);
     if (validationError) {
-      setAnnError(validationError);
+      toast.error(validationError);
       return;
     }
 
@@ -3128,7 +3126,7 @@ export function ClassDetail() {
 
     if (!annForm.publishImmediately) {
       if (!annForm.scheduled_date) {
-        setAnnError("Scheduled date is required for scheduled announcements.");
+        toast.error("Scheduled date is required for scheduled announcements.");
         return;
       }
       status = "Scheduled";
@@ -3138,8 +3136,8 @@ export function ClassDetail() {
     }
 
     setIsPostingAnnouncement(true);
-    setAnnError("");
-    setAnnSuccess("");
+    
+    
 
     console.log("[ClassDetail] Announcement save — debug context:", {
       authUid,
@@ -3297,15 +3295,15 @@ export function ClassDetail() {
       await fetchDashboardMetrics(effectiveTeacherId || teacherProfileId, id);
 
       if (oldFileCleanupFailed) {
-        setAnnError("Announcement was saved, but old file cleanup failed. Please contact support if files are missing.");
+        toast.error("Announcement was saved, but old file cleanup failed. Please contact support if files are missing.");
       }
-      setAnnSuccess(isEditingAnnouncement ? "Announcement updated successfully." : "Announcement posted successfully.");
+      toast.success(isEditingAnnouncement ? "Announcement updated successfully." : "Announcement posted successfully.");
       resetAnnouncementForm(true);
       setShowAnnouncementModal(false);
     } catch (error) {
       console.error("[ClassDetail] Announcement save failed:", error);
       const msg = error instanceof Error ? error.message : "Unable to save announcement. Please try again.";
-      setAnnError(msg);
+      toast.error(msg);
     } finally {
       setIsPostingAnnouncement(false);
     }
@@ -3322,14 +3320,14 @@ export function ClassDetail() {
 
     const tableName = await getAnnouncementTableName();
     if (!tableName) {
-      setAnnError("Announcements table is not available.");
+      toast.error("Announcements table is not available.");
       return;
     }
 
     const announcementId = String(targetAnnouncement.id);
     const previous = announcements;
-    setAnnError("");
-    setAnnSuccess("");
+    
+    
     setAnnouncements((current) => current.filter((item) => String(item.id) !== announcementId));
 
     const targetFilePaths = [
@@ -3376,11 +3374,11 @@ export function ClassDetail() {
 
       await fetchClassAnnouncements(teacherProfileId, classData);
       await fetchDashboardMetrics(teacherProfileId, id);
-      setAnnSuccess("Announcement deleted successfully.");
+      toast.success("Announcement deleted successfully.");
     } catch (error) {
       console.error("[ClassDetail] Announcement delete failed:", error);
       setAnnouncements(previous);
-      setAnnError(error instanceof Error ? error.message : "Unable to delete announcement.");
+      toast.error(error instanceof Error ? error.message : "Unable to delete announcement.");
     }
   };
 
@@ -3817,9 +3815,7 @@ export function ClassDetail() {
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">Class Announcements</h3>
                       <p className="text-sm text-gray-500 mt-0.5">Manage and post announcements for your class.</p>
-                      {annError && <p className="text-sm text-red-600 mt-2">{annError}</p>}
-                      {annSuccess && <p className="text-sm text-green-600 mt-2">{annSuccess}</p>}
-                    </div>
+                      </div>
                     <button
                       onClick={openCreateAnnouncementModal}
                       className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
@@ -4464,13 +4460,6 @@ export function ClassDetail() {
             </div>
 
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {annError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <span>{annError}</span>
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                   Announcement Title <span className="text-red-500">*</span>
