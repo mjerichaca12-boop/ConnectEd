@@ -1297,8 +1297,7 @@ function GradesManagement() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
-
-      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
+<main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
@@ -1310,6 +1309,7 @@ function GradesManagement() {
               />
             </div>
           </div>
+          
         </div>
 
         <div className="p-6 space-y-6">

@@ -576,7 +576,7 @@ export function AdminDashboard() {
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
               </div>
-              <h1 className="text-3xl font-bold mb-1 text-gray-900">Welcome back, {adminName}!</h1>
+              <h1 className="text-3xl font-bold mb-1 text-gray-900">{JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {adminName}!</h1>
               <p className="text-gray-600">ConnectEd system overview and management center</p>
             </div>
           </div>

@@ -158,11 +158,18 @@ function Login() {
           throw new Error("The Student Portal is only accessible via Mobile devices.");
         }
 
+        const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
+        const isFirstLogin = !hasCompletedLoginSession;
+        if (isFirstLogin) {
+          localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
+        }
+
         const currentUser = {
           id: profile.id,
           name: profile.first_name + " " + (profile.last_name || ""),
           email: profile.email,
-          role: role
+          role: role,
+          isFirstLogin: isFirstLogin
         };
 
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
@@ -345,12 +352,19 @@ function Login() {
         return;
       }
 
+      const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
+      const isFirstLogin = !hasCompletedLoginSession;
+      if (isFirstLogin) {
+        localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
+      }
+
       localStorage.setItem("currentUser", JSON.stringify({
         id: profile.id,
         name: profile.first_name + " " + (profile.last_name || ""),
         email: profile.email,
         role: role,
-        must_change_password: profile.must_change_password === true
+        must_change_password: profile.must_change_password === true,
+        isFirstLogin: isFirstLogin
       }));
 
       console.log("LOGIN DATA:", { email: normalizedEmail, profileId: profile.id, role });

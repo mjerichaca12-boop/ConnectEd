@@ -25,7 +25,12 @@ import {
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
-const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+
+const sanitizeAttachmentFileName = (fileName) =>
+  String(fileName)
+    .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+    .replace(/_+/g, "_");
 const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
@@ -61,7 +66,7 @@ export function AdminMessages() {
   const [allTeachers, setAllTeachers] = useState([]);
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
-  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -400,6 +405,17 @@ export function AdminMessages() {
           fileType: fileType,
           fileSize: fileSize,
           attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
         });
         
         // Update last message time
@@ -443,7 +459,7 @@ export function AdminMessages() {
               // Load messages for this group conversation
               const { data: groupMessages, error: groupMsgError } = await db
                 .from("messages")
-                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read")
+                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
                 .eq("conversation_id", conv.id)
                 .order("created_at", { ascending: true });
 
@@ -483,6 +499,17 @@ export function AdminMessages() {
                   fileName: fileName,
                   fileType: fileType,
                   attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
                   rawRow: row
                 });
                 return {
@@ -496,6 +523,17 @@ export function AdminMessages() {
                   fileType: fileType,
                   fileSize: fileSize,
                   attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
                   isRead: Boolean(row.is_read),
                   isSeen: String(row.sender_id || "") === currentAdminId,
                 };
@@ -678,111 +716,166 @@ export function AdminMessages() {
   };
 
   const handleAttachmentChange = (e) => {
-    const file = e.target.files?.[0] || null;
-    if (!file) { setAttachmentFile(null); return; }
-    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
-      setPageError("File too large. Max 50 MB.");
-      setAttachmentFile(null);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    if (attachmentFiles.length + files.length > 10) {
+      setPageError("Maximum 10 attachments allowed per message.");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    setAttachmentFile(file);
+    const validFiles = [];
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        setPageError("One or more files exceed the 10MB limit.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+      validFiles.push(file);
+    }
+    setAttachmentFiles(prev => [...prev, ...validFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setPageError("");
   };
 
-  const clearAttachment = () => {
-    setAttachmentFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const removeAttachment = (index) => {
+    setAttachmentFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-
-    // Validation checks
-    if (!messageInput.trim() && !attachmentFile) {
-      console.warn("[AdminMessages] Cannot send empty message");
-      return;
-    }
-    if (!selectedConv) {
-      console.warn("[AdminMessages] No conversation selected");
-      return;
-    }
-    // Admin ID can be null for the hardcoded login, so we use a fixed sender_id instead
-    
-    const now = new Date().toISOString();
+    const text = String(messageInput || "").trim();
+    const activeConversation = selectedConv;
     const adminSenderId = adminId || HARDCODED_ADMIN_ID;
+    if ((!text && attachmentFiles.length === 0) || !activeConversation || !adminSenderId || !supabase) return;
+
     setIsUploading(true);
 
-    // Upload attachment if present
-    let uploadedFileUrl = "";
-    let uploadedFileName = "";
-    let uploadedFileType = "";
-    let uploadedFileSize = 0;
+    const recipientIds = activeConversation.isGroup
+      ? buildStableIdList(activeConversation.participantIds)
+      : [String(activeConversation.participantId || "").trim()].filter(Boolean);
 
-    if (attachmentFile) {
-      const safeName = String(attachmentFile.name)
-        .replace(/[^a-zA-Z0-9._-]/g, "_")
-        .replace(/_+/g, "_");
-      const filePath = `${adminSenderId}/${selectedConv.participantId || "group"}/${Date.now()}_${safeName}`;
-      const { error: uploadError } = await supabase.storage
-        .from(MESSAGE_ATTACHMENT_BUCKET)
-        .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
+    if (recipientIds.length === 0) { setPageError("No recipients found."); setIsUploading(false); return; }
 
-      if (uploadError) {
-        console.error("[AdminMessages] Attachment upload failed:", uploadError);
-        setPageError("File upload failed. Message not sent.");
-        setIsUploading(false);
-        return;
+    const now = new Date().toISOString();
+    let uploadedAttachments = [];
+
+    if (attachmentFiles.length > 0) {
+      for (const file of attachmentFiles) {
+        if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+          setPageError("File too large. Max 10MB.");
+          setIsUploading(false);
+          return;
+        }
+        const cleanedName = sanitizeAttachmentFileName(file.name);
+        const filePath = `${adminSenderId}/${activeConversation.participantId || "group"}/${Date.now()}_${cleanedName}`;
+        const uploadResult = await db.storage
+          .from(MESSAGE_ATTACHMENT_BUCKET)
+          .upload(filePath, file, { cacheControl: "3600", upsert: false });
+          
+        if (uploadResult.error) {
+          console.error("Upload error:", uploadResult.error);
+          setPageError(`File upload failed: ${uploadResult.error.message}`);
+          setIsUploading(false);
+          return;
+        }
+        
+        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        uploadedAttachments.push({
+          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_name: cleanedName,
+          file_type: String(file.type || "application/octet-stream").trim(),
+          file_size: Number(file.size || 0),
+        });
       }
-
-      const { data: urlData } = supabase.storage
-        .from(MESSAGE_ATTACHMENT_BUCKET)
-        .getPublicUrl(filePath);
-      uploadedFileUrl = String(urlData?.publicUrl || "").trim();
-      uploadedFileName = safeName;
-      uploadedFileType = String(attachmentFile.type || "application/octet-stream");
-      uploadedFileSize = attachmentFile.size;
     }
 
-    const textContent = messageInput.trim() || (attachmentFile ? "Sent an attachment" : "");
-
-    try {
-      const base = {
+    const messageText = text || (uploadedAttachments.length > 0 ? `Sent ${uploadedAttachments.length} attachment(s)` : "");
+    
+    let insertPayload;
+    if (activeConversation.isGroup) {
+      insertPayload = [{
         sender_id: adminSenderId,
-        message_text: textContent,
-        content: textContent,
+        receiver_id: null,
+        conversation_id: activeConversation.id,
+        message_text: messageText,
+        content: messageText,
         timestamp: now,
-        file_url: uploadedFileUrl || null,
-        file_name: uploadedFileName || null,
-        file_type: uploadedFileType || null,
-        file_size: uploadedFileSize || null,
-      };
+        status: "sent"
+      }];
+    } else {
+      insertPayload = recipientIds.map((recipientId) => ({
+        sender_id: adminSenderId,
+        receiver_id: recipientId,
+        conversation_id: null,
+        message_text: messageText,
+        content: messageText,
+        timestamp: now,
+        status: "sent"
+      }));
+    }
 
-      const insertPayload = selectedConv.isGroup
-        ? { ...base, receiver_id: null, conversation_id: selectedConv.id }
-        : { ...base, receiver_id: selectedConv.participantId, conversation_id: null };
+    let data, error;
+    try {
+      const result = await db
+        .from("messages")
+        .insert(insertPayload)
+        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status");
+      data = result.data;
+      error = result.error;
+    } catch (err) {
+      error = err;
+    }
 
-      const { data, error } = await db.from("messages").insert(insertPayload).select();
-
-      if (error) {
-        console.error("[AdminMessages] Supabase insert failed:", error);
-        setPageError(`Failed to send: ${error.message}`);
-      } else {
-        console.log("[AdminMessages] Message saved to database:", data);
-        if (data?.[0]) {
-          markMessageSeen(data[0].id);
-          appendIncomingMessage(data[0], adminSenderId);
-        } else {
-          await loadConversationsFromDB();
+    if (error) {
+      console.error("[AdminMessages] Supabase insert failed:", JSON.stringify(error, null, 2), error);
+      setPageError(`Failed to send: ${error.message}`);
+    } else if (data && uploadedAttachments.length > 0) {
+      const attachmentPayloads = [];
+      for (const msgRow of data) {
+        for (const att of uploadedAttachments) {
+          attachmentPayloads.push({
+            message_id: msgRow.id,
+            ...att
+          });
         }
       }
-    } catch (err) {
-      console.error("[AdminMessages] Supabase send error:", err);
-      setPageError("Failed to send message. Please try again.");
+      if (attachmentPayloads.length > 0) {
+        await db.from("message_attachments").insert(attachmentPayloads);
+      }
+    }
+
+    if (data && data.length > 0) {
+      const msg = {
+        id: String(data[0].id || `${Date.now()}_${Math.random()}`),
+        from: "admin",
+        senderName: adminName || 'Admin',
+        text: messageText,
+        time: String(data[0].timestamp || now),
+        status: "sent",
+        attachments: uploadedAttachments.map(a => ({
+          id: Math.random().toString(),
+          url: a.file_url,
+          name: a.file_name,
+          type: a.file_type,
+          size: a.file_size,
+          kind: a.file_type.startsWith('image/') ? 'image' : a.file_type.startsWith('video/') ? 'video' : 'document'
+        }))
+      };
+
+      markMessageSeen(msg.id);
+
+      const updated = conversations.map((c) =>
+        c.id === activeConversation.id
+          ? { ...c, messages: [...(c.messages || []), msg], lastMessageTime: msg.time }
+          : c
+      );
+      saveConversations(updated);
     }
 
     setMessageInput("");
-    clearAttachment();
+    setAttachmentFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setPageError("");
     setIsUploading(false);
   };
 
@@ -1131,44 +1224,43 @@ export function AdminMessages() {
                                 </p>
                               )}
                               <p className="leading-relaxed">{msg.text}</p>
-                              {msg.fileUrl && (
-                                <div className="mt-2">
-                                  {msg.attachmentKind === "image" ? (
-                                    <img
-                                      src={msg.fileUrl}
-                                      alt={msg.fileName || "attachment"}
-                                      className="max-w-full rounded-lg border border-white/20"
-                                      style={{ maxHeight: "200px" }}
-                                    />
-                                  ) : msg.attachmentKind === "video" ? (
-                                    <video
-                                      controls
-                                      src={msg.fileUrl}
-                                      className="max-w-full rounded-lg"
-                                      style={{ maxHeight: "200px" }}
-                                    />
-                                  ) : (
-                                    <a
-                                      href={msg.fileUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-                                        isAdmin
-                                          ? "bg-blue-500/30 text-blue-100 hover:bg-blue-500/40"
-                                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                      }`}
-                                    >
-                                      <Download className="w-4 h-4 flex-shrink-0" />
-                                      <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
-                                      {msg.fileSize > 0 && (
-                                        <span className="text-xs opacity-70 flex-shrink-0">
-                                          ({(msg.fileSize / 1024).toFixed(1)} KB)
-                                        </span>
-                                      )}
-                                    </a>
-                                  )}
-                                </div>
-                              )}
+                              {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
+                                  <div className="mt-2 space-y-2">
+                                    {!msg.attachments?.length && (msg.fileUrl || msg.fileName) && (
+                                      <div className={`flex items-center gap-2 p-2 rounded-lg ${
+                                        isAdmin ? "bg-blue-500/30 text-blue-100" : "bg-gray-100 text-gray-700"
+                                      }`}>
+                                        {msg.attachmentKind === "image" ? (
+                                          <img src={msg.fileUrl} alt="attachment" className="max-w-[200px] rounded-md" />
+                                        ) : msg.attachmentKind === "video" ? (
+                                          <Video className="w-5 h-5" />
+                                        ) : (
+                                          <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
+                                            <Download className="w-4 h-4 flex-shrink-0" />
+                                            <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
+                                    
+                                    {msg.attachments?.map((att, idx) => (
+                                      <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg ${
+                                        isAdmin ? "bg-blue-500/30 text-blue-100" : "bg-gray-100 text-gray-700"
+                                      }`}>
+                                        {att.kind === "image" ? (
+                                          <img src={att.url} alt="attachment" className="max-w-[200px] max-h-[200px] rounded-md object-contain" />
+                                        ) : att.kind === "video" ? (
+                                          <Video className="w-5 h-5" />
+                                        ) : (
+                                          <a href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
+                                            <Download className="w-4 h-4 flex-shrink-0" />
+                                            <span className="truncate max-w-[200px]">{att.name || "Download file"}</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               <p className={`text-xs mt-1 ${isAdmin ? "text-blue-100" : "text-gray-600"} text-right`}>
                                 {getTimeLabel(msg.time)}
                               </p>
@@ -1188,24 +1280,19 @@ export function AdminMessages() {
                     {pageError && (
                       <p className="text-xs text-red-500 mb-2">{pageError}</p>
                     )}
-                    {attachmentFile && (
-                      <div className="flex items-center justify-between gap-3 px-3 py-2 mb-2 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Paperclip className="w-4 h-4 flex-shrink-0 text-blue-500" />
-                          <span className="truncate">{attachmentFile.name}</span>
-                          <span className="text-xs text-blue-400 flex-shrink-0">
-                            ({(attachmentFile.size / 1024).toFixed(1)} KB)
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={clearAttachment}
-                          className="text-blue-400 hover:text-red-500 flex-shrink-0"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
+                    {attachmentFiles.length > 0 && (
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-2">
+              {attachmentFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-gray-200 shadow-sm">
+                  <Paperclip className="w-4 h-4 text-emerald-500" />
+                  <span className="text-sm text-gray-700 max-w-[150px] truncate">{file.name}</span>
+                  <button type="button" onClick={() => removeAttachment(idx)} className="p-1 hover:bg-gray-100 rounded-full text-gray-500">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
                     <div className="flex items-center gap-3">
                       <label className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer flex-shrink-0 group">
                         <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
@@ -1228,7 +1315,7 @@ export function AdminMessages() {
                       />
                       <button
                         type="submit"
-                        disabled={(!messageInput.trim() && !attachmentFile) || isUploading}
+                        disabled={(!messageInput.trim() && attachmentFiles.length === 0) || isUploading}
                         className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                       >
                         {isUploading

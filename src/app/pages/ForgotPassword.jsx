@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
+import { RoleSelector } from "../components/RoleSelector";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -126,19 +127,13 @@ function ForgotPassword() {
                       </motion.div>}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Account Type
-                        </label>
-                        <select
-                          value={role}
-                          onChange={(e) => setRole(e.target.value)}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                        >
-                          <option value="student">Student</option>
-                          <option value="teacher">Teacher</option>
-                        </select>
-                      </div>
+                      <RoleSelector
+                        label="Account Type"
+                        value={role}
+                        onChange={(newRole) => setRole(newRole)}
+                        allowedRoles={["student", "teacher"]}
+                        required={true}
+                      />
 
                       <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
