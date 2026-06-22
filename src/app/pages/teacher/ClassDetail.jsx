@@ -54,7 +54,7 @@ import {
 
 const STORAGE_BUCKET = "class-materials";
 const ANNOUNCEMENT_STORAGE_BUCKET = "class-announcements";
-const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity"];
+const ASSIGNMENT_TABLE_CANDIDATES = ["assignments", "assignments_activity"];
 const ASSESSMENT_TABLE = "teacher_assessment_grades";
 const ANNOUNCEMENT_TABLE_CANDIDATES = ["class_announcements", "announcements"];
 const MAX_ANNOUNCEMENT_FILE_SIZE = 15 * 1024 * 1024;
@@ -804,9 +804,9 @@ export function ClassDetail() {
 
     // First check if table exists by trying a simple query
     try {
-      const { error: tableCheckError } = await supabase.from("class_materials").select("id", { count: "exact", head: true });
+      const { error: tableCheckError } = await supabase.from("class_materials").select("id").limit(1);
 
-      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400)) {
+      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400 || tableCheckError.code === 'PGRST205')) {
         console.warn("class_materials table not accessible in ClassDetail, using default columns:", tableCheckError);
         // Return default columns that might exist
         return ["id", "title", "description", "file_type", "file_url", "created_at"];
@@ -818,7 +818,7 @@ export function ClassDetail() {
 
     for (const columnName of candidates) {
       try {
-        const { error } = await supabase.from("class_materials").select(columnName, { count: "exact", head: true });
+        const { error } = await supabase.from("class_materials").select(columnName).limit(1);
         if (!error) {
           detected.push(columnName);
         }
@@ -845,7 +845,7 @@ export function ClassDetail() {
     }
 
     for (const tableName of ASSIGNMENT_TABLE_CANDIDATES) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(tableName).select("id").limit(1);
       if (!error) {
         setAssignmentTable(tableName);
         return tableName;
@@ -861,7 +861,7 @@ export function ClassDetail() {
     }
 
     if (assignmentTable) {
-      const { error } = await supabase.from(assignmentTable).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(assignmentTable).select("id").limit(1);
       if (!error) {
         return assignmentTable;
       }
@@ -977,7 +977,7 @@ export function ClassDetail() {
     }
 
     for (const tableName of ANNOUNCEMENT_TABLE_CANDIDATES) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(tableName).select("id").limit(1);
       if (!error) {
         setAnnouncementTable(tableName);
         return tableName;
@@ -994,7 +994,7 @@ export function ClassDetail() {
     }
 
     if (announcementTable) {
-      const { error } = await supabase.from(announcementTable).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(announcementTable).select("id").limit(1);
       if (!error) {
         return announcementTable;
       }
@@ -1176,93 +1176,105 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
-    if (!supabase) {
+    if (!supabase || !cleanTeacherId || !cleanClassId) {
       setAssignments([]);
       return;
-    }
-
-    const tableName = await getAssignmentTableName();
-    if (!tableName) {
-      setAssignments([]);
-      return;
-    }
-
-    const columns = await getAssignmentColumns(tableName);
-    const ownerColumn = resolveColumnName(columns, ["created_by", "teacher_id"]);
-    const classColumn = resolveColumnName(columns, ["class_id", "course_id", "subject_id"]);
-
-    let query = supabase.from(tableName).select("*");
-    const orderColumn = columns.includes("created_at")
-      ? "created_at"
-      : columns.includes("deadline")
-        ? "deadline"
-        : columns.includes("dueDate")
-          ? "dueDate"
-          : columns.includes("deadline")
-            ? "deadline"
-            : "";
-    if (orderColumn) {
-      query = query.order(orderColumn, { ascending: false });
-    }
-
-    if (ownerColumn && cleanTeacherId) {
-      query = query.eq(ownerColumn, cleanTeacherId);
-    }
-
-    if (classColumn && cleanClassId) {
-      query = query.eq(classColumn, cleanClassId);
     }
 
     const previousAssignments = Array.isArray(assignments) ? assignments : [];
+    const allAssignments = [];
 
-    let { data, error } = await query;
-
-    // If a column-missing error occurs, try a simpler query without ordering/filter
-    if (error && isColumnMissingError(error)) {
-      console.warn("[ClassDetail] Column missing when fetching assignments, retrying with only class filter:", error.message || error);
-      query = supabase.from(tableName).select("*");
-      if (classColumn && cleanClassId) {
-        query = query.eq(classColumn, cleanClassId);
+    // 1. Try to fetch from assignments_activity
+    try {
+      const { data, error } = await supabase.from("assignments_activity").select("*");
+      if (!error && data) {
+        const rows = (data ?? []).filter((row) => {
+          const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
+          const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
+          const classMatches = !cleanClassId || !rowCourseId || rowCourseId === cleanClassId;
+          const teacherMatches = !rowTeacherId || rowTeacherId === cleanTeacherId;
+          return classMatches && teacherMatches;
+        });
+        rows.forEach(row => allAssignments.push(normalizeAssignmentRecord(row)));
       }
-      const fallback = await query;
-      data = fallback.data;
-      error = fallback.error;
+    } catch (e) {
+      console.warn("Failed to fetch from assignments_activity in ClassDetail:", e);
     }
 
-    if (error) {
-      console.error("[ClassDetail] Failed to fetch assignments:", error);
-      setAsgError("Unable to load assignments from database.");
-      // Restore previous assignments (including optimistic ones) instead of clearing the UI
-      setAssignments(previousAssignments);
-      return;
+    // 2. Fetch lessons of this class to resolve LMS assignments and quizzes
+    let lessonIds = [];
+    try {
+      const { data: lessons, error: lessonsError } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("subject_id", cleanClassId);
+      
+      if (!lessonsError && lessons) {
+        lessonIds = lessons.map(l => l.id);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch lessons in ClassDetail:", e);
     }
 
-    const classCode = String(currentClassData?.code || "").trim();
-    const classSection = String(currentClassData?.section || "").trim();
-    const classId = String(id || "").trim();
+    if (lessonIds.length > 0) {
+      // 3. Try to fetch LMS assignments
+      try {
+        const { data, error } = await supabase
+          .from("assignments")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            const normalized = normalizeAssignmentRecord(row);
+            const isQuiz = String(row.assignment_type || "").trim().toLowerCase() === "quiz" || String(row.title || "").toLowerCase().includes("quiz");
+            allAssignments.push({
+              ...normalized,
+              type: isQuiz ? "quiz" : normalized.type || "assignment"
+            });
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS assignments in ClassDetail:", e);
+      }
 
-    const rows = data ?? [];
+      // 4. Try to fetch LMS quizzes
+      try {
+        const { data, error } = await supabase
+          .from("quizzes")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            allAssignments.push(normalizeAssignmentRecord({
+              ...row,
+              assessment_type: "quiz",
+              designation: "Quiz"
+            }));
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS quizzes in ClassDetail:", e);
+      }
+    }
 
-    console.log("[ClassDetail] fetchClassAssignments - total rows from DB:", Array.isArray(rows) ? rows.length : 0);
-
-    const filtered = rows.filter((row) => {
-      const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-      const rowSubject = String(row?.subject || row?.class_code || "").trim();
-      const rowSection = String(row?.section || "").trim();
-
-      const subjectMatches = Boolean(classCode && rowSubject && rowSubject === classCode);
-      const sectionMatches = !classSection || (rowSection && rowSection === classSection);
-
-      if (cleanClassId && rowCourseId) return rowCourseId === cleanClassId;
-      if (cleanClassId && !rowCourseId && rowSubject) return subjectMatches && sectionMatches;
-
-      return false;
+    // Deduplicate assignments by ID
+    const uniqueMap = new Map();
+    allAssignments.forEach(item => {
+      if (item.id) {
+        uniqueMap.set(item.id, item);
+      }
     });
 
-    console.log("[ClassDetail] fetchClassAssignments - filtered:", filtered.length);
-    if (filtered.length > 0) console.log("[ClassDetail] fetchClassAssignments - sample row keys:", Object.keys(filtered[0] || {}));
+    const serverAssignments = Array.from(uniqueMap.values())
+      .sort((a, b) => {
+        const timeA = new Date(a.dueDate || 0).getTime();
+        const timeB = new Date(b.dueDate || 0).getTime();
+        return timeB - timeA;
+      })
+      .map((item) => ({ ...item, _optimistic: false }));
 
-    const serverAssignments = filtered.map((row) => ({ ...normalizeAssignmentRecord(row), _optimistic: false }));
     setAssignments((previous) => {
       const prev = Array.isArray(previous) ? previous : [];
       const optimistic = prev.filter((item) => item?._optimistic);

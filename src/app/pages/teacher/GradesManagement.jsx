@@ -26,6 +26,7 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  RotateCcw,
 } from "lucide-react";
 
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
@@ -222,6 +223,7 @@ const calculateStudentAssessmentAverages = (studentId, assessmentGradesMap, asse
 };
 
 const normalizeSubmission = (row) => ({
+  id: row?.id ? String(row.id).trim() : undefined,
   assessmentId: String(row?.assessment_id || "").trim(),
   studentId: String(row?.student_id || "").trim(),
   responseText: String(row?.response_text || row?.answer_text || row?.response || "").trim(),
@@ -229,6 +231,7 @@ const normalizeSubmission = (row) => ({
   fileName: String(row?.file_name || "").trim(),
   filePath: String(row?.file_path || "").trim(),
   submittedAt: row?.submitted_at || row?.updated_at || row?.created_at || null,
+  status: String(row?.status || "Submitted").trim(),
 });
 
 /* ΓöÇΓöÇΓöÇ component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
@@ -332,35 +335,94 @@ function GradesManagement() {
   const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId) => {
     if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
 
-    let tableName = "";
-    for (const t of ASSIGNMENT_TABLE_CANDIDATES) {
-      const { error } = await supabase.from(t).select("id", { count: "exact", head: true });
-      if (!error) { tableName = t; break; }
+    const allAssessments = [];
+
+    // 1. Try to fetch from assignments_activity
+    try {
+      const { data, error } = await supabase.from("assignments_activity").select("*");
+      if (!error && data) {
+        const rows = (data ?? []).filter((row) => {
+          const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
+          const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
+          const classMatches = !classId || !rowCourseId || rowCourseId === classId;
+          const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
+          return classMatches && teacherMatches;
+        });
+        rows.forEach(row => {
+          allAssessments.push(normalizeAssessment(row));
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to fetch from assignments_activity:", e);
     }
 
-    if (!tableName) {
-      setAssessmentItems([]);
-      return [];
+    // 2. Fetch lessons of this class to resolve LMS assignments and quizzes
+    let lessonIds = [];
+    try {
+      const { data: lessons, error: lessonsError } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("subject_id", classId);
+      
+      if (!lessonsError && lessons) {
+        lessonIds = lessons.map(l => l.id);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch lessons:", e);
     }
 
-    const { data, error } = await supabase.from(tableName).select("*");
-    if (error) {
-      console.error("Failed to load assessments:", error);
-      setAssessmentItems([]);
-      return [];
+    if (lessonIds.length > 0) {
+      // 3. Try to fetch LMS assignments
+      try {
+        const { data, error } = await supabase
+          .from("assignments")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            const normalized = normalizeAssessment(row);
+            const isQuiz = String(row.assignment_type || "").trim().toLowerCase() === "quiz" || String(row.title || "").toLowerCase().includes("quiz");
+            allAssessments.push({
+              ...normalized,
+              type: isQuiz ? "quiz" : normalized.type || "assignment"
+            });
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS assignments:", e);
+      }
+
+      // 4. Try to fetch LMS quizzes
+      try {
+        const { data, error } = await supabase
+          .from("quizzes")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            allAssessments.push(normalizeAssessment({
+              ...row,
+              assessment_type: "quiz",
+              designation: "Quiz"
+            }));
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS quizzes:", e);
+      }
     }
 
-    const rows = (data ?? []).filter((row) => {
-      const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-      const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
-      const classMatches = !classId || !rowCourseId || rowCourseId === classId;
-      const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
-      return classMatches && teacherMatches;
+    // Deduplicate assessments by ID
+    const uniqueMap = new Map();
+    allAssessments.forEach(item => {
+      if (item.id) {
+        uniqueMap.set(item.id, item);
+      }
     });
 
-    const mapped = rows
-      .map(normalizeAssessment)
-      .filter((assessment) => assessment.id)
+    const mapped = Array.from(uniqueMap.values())
       .sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
 
     // Add quiz ordering for dynamic naming
@@ -462,14 +524,13 @@ function GradesManagement() {
     if (!supabase || !currentTeacherId || !classId || assessments.length === 0) {
       setAssessmentSubmissionsMap({});
       setSubmittedStudentProfiles({});
-      setAssessmentFeedbackMap({});
       return;
     }
 
     const assessmentIds = assessments.map((item) => item.id);
     const { data, error } = await supabase
       .from("teacher_assessment_submissions")
-      .select("id, assessment_id, student_id, response_text, file_url, file_name, file_path, submitted_at, updated_at, created_at")
+      .select("id, assessment_id, student_id, response_text, file_url, file_name, file_path, status, submitted_at, updated_at, created_at")
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId)
       .in("assessment_id", assessmentIds);
@@ -478,7 +539,6 @@ function GradesManagement() {
       console.error("Failed to load assessment submissions:", error);
       setAssessmentSubmissionsMap({});
       setSubmittedStudentProfiles({});
-      setAssessmentFeedbackMap({});
       return;
     }
 
@@ -507,14 +567,11 @@ function GradesManagement() {
     if (submissionIds.length > 0) {
       const { data: feedbackRows, error: feedbackError } = await supabase
         .from("submission_feedback")
-        .select("submission_id, comments, feedback_text, teacher_id")
+        .select("submission_id, comments, teacher_id")
         .eq("teacher_id", currentTeacherId)
         .in("submission_id", submissionIds);
 
-      if (feedbackError) {
-        console.error("Failed to load submission feedback:", feedbackError);
-        setAssessmentFeedbackMap({});
-      } else {
+      if (!feedbackError && feedbackRows) {
         const feedbackMap = {};
         (feedbackRows ?? []).forEach((row) => {
           const submissionId = String(row.submission_id || "");
@@ -524,13 +581,15 @@ function GradesManagement() {
           const assessmentId = String(submission.assessment_id || "");
           const studentId = String(submission.student_id || "");
           if (!assessmentId || !studentId) return;
-          if (!feedbackMap[assessmentId]) feedbackMap[assessmentId] = {};
-          feedbackMap[assessmentId][studentId] = String(row.feedback_text || row.comments || "").trim();
+          
+          const fb = String(row.comments || "").trim();
+          if (fb) {
+            if (!feedbackMap[assessmentId]) feedbackMap[assessmentId] = {};
+            feedbackMap[assessmentId][studentId] = fb;
+          }
         });
         setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMap));
       }
-    } else {
-      setAssessmentFeedbackMap({});
     }
 
     if (submittedOnlyIds.size === 0) {
@@ -764,6 +823,32 @@ function GradesManagement() {
     const timer = window.setTimeout(() => setSaveSuccess(false), 3000);
     return () => window.clearTimeout(timer);
   }, [saveSuccess]);
+
+  // Sync studentGrades averages in real-time when assessmentGradesMap or assessmentItems change
+  useEffect(() => {
+    if (studentGrades.length === 0) return;
+
+    setStudentGrades((prev) =>
+      prev.map((student) => {
+        const assessmentAverages = calculateStudentAssessmentAverages(
+          student.id,
+          assessmentGradesMap,
+          assessmentItems
+        );
+
+        const current = {
+          ...student,
+          quizAverage: assessmentAverages.quizAverage > 0 ? assessmentAverages.quizAverage : student.quizAverage,
+          activityGrade: assessmentAverages.activityGrade > 0 ? assessmentAverages.activityGrade : student.activityGrade,
+          assignmentGrade: assessmentAverages.assignmentGrade > 0 ? assessmentAverages.assignmentGrade : student.assignmentGrade,
+          examGrade: assessmentAverages.examGrade > 0 ? assessmentAverages.examGrade : student.examGrade,
+        };
+
+        const overallGrade = calculateOverallGrade(current);
+        return { ...current, overallGrade, remarks: getGradeRemarks(overallGrade) };
+      })
+    );
+  }, [assessmentGradesMap, assessmentItems]);
 
   // Real-time subscription: update submissions map when students submit
   useEffect(() => {
@@ -1086,54 +1171,128 @@ function GradesManagement() {
 
   const handleReturnAssignment = useCallback(async () => {
     const currentAssessment = assessmentItems.find((item) => item.id === selectedAssessmentId) || null;
-    const currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
+    let currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
     const currentFeedback = assessmentFeedbackMap?.[selectedAssessmentId]?.[selectedStudentId] || "";
 
-    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) return;
+    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) {
+      console.warn("[GradesManagement] Return action aborted due to missing context:", {
+        teacherId,
+        selectedClass,
+        currentAssessmentExists: !!currentAssessment,
+        selectedStudentId,
+      });
+      return;
+    }
 
     const currentGrade = assessmentGradesMap?.[selectedAssessmentId]?.[selectedStudentId] ?? "";
+
+    console.log("[GradesManagement] Manual grading process initiated:", {
+      teacherId,
+      subjectId: selectedClass,
+      studentId: selectedStudentId,
+      assessmentId: currentAssessment.id,
+      gradeValue: currentGrade,
+      feedback: currentFeedback,
+      hasSubmission: !!currentSubmission,
+    });
+
+    // Check if duplicate grade exists with status Returned to prevent duplicate creation
+    const currentStatus = assessmentStatusMap?.[selectedAssessmentId]?.[selectedStudentId];
+    if (currentStatus === "Returned") {
+      console.log("[GradesManagement] Grade already returned. Preventing duplicate grade action.");
+      toast.info("This assignment has already been returned.");
+      return;
+    }
+
+    // 1. If student did not submit anything, create a placeholder submission so feedback & grades track correctly.
+    if (!currentSubmission) {
+      console.log("[GradesManagement] Missing submission handling: Creating placeholder submission...");
+      const placeholderSubmission = {
+        teacher_id: teacherId,
+        subject_id: selectedClass,
+        assessment_id: currentAssessment.id,
+        student_id: selectedStudentId,
+        response_text: "Placeholder submission (Teacher Graded / Missing Submission)",
+        status: "Returned",
+        submitted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: newSubData, error: submissionInsertError } = await supabase
+        .from("teacher_assessment_submissions")
+        .upsert(placeholderSubmission, { onConflict: "teacher_id,subject_id,assessment_id,student_id" })
+        .select("*")
+        .maybeSingle();
+
+      if (submissionInsertError) {
+        console.error("[GradesManagement] Failed to create placeholder submission. RLS failure or DB error:", submissionInsertError);
+        toast.error("Failed to initialize submission record for grading.");
+        return;
+      }
+
+      if (newSubData) {
+        currentSubmission = normalizeSubmission(newSubData);
+        console.log("[GradesManagement] Placeholder submission created successfully:", currentSubmission);
+        
+        // Optimistically update local submissions map
+        setAssessmentSubmissionsMap((prev) => ({
+          ...prev,
+          [currentAssessment.id]: {
+            ...(prev[currentAssessment.id] || {}),
+            [selectedStudentId]: currentSubmission,
+          },
+        }));
+      }
+    }
 
     const gradePayload = {
       teacher_id: teacherId,
       subject_id: selectedClass,
       assessment_id: currentAssessment.id,
+      assessment_title: currentAssessment.title || "Assessment",
+      assessment_type: currentAssessment.type || "assignment",
+      max_points: currentAssessment.maxPoints || 100,
       student_id: selectedStudentId,
       grade_value: Number(currentGrade || 0),
       feedback: currentFeedback,
-      status: "returned",
+      status: "Returned",
       updated_at: new Date().toISOString(),
     };
+
+    console.log("[GradesManagement] Upserting into teacher_assessment_grades:", gradePayload);
 
     const { error: gradeError } = await supabase
       .from("teacher_assessment_grades")
       .upsert(gradePayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
 
     if (gradeError) {
-      console.error("Failed to return assignment:", gradeError);
+      console.error("[GradesManagement] Database write error on teacher_assessment_grades:", gradeError);
+      toast.error("Failed to save grade in gradebook.");
       return;
     }
 
+    console.log("[GradesManagement] Gradebook insertion/update success.");
+
     if (currentSubmission?.id) {
-      // Update submission status to 'done' when assignment is returned
+      console.log("[GradesManagement] Updating submission status to 'Returned' for ID:", currentSubmission.id);
       const { error: submissionUpdateError } = await supabase
         .from("teacher_assessment_submissions")
         .update({ 
-          status: 'done',
+          status: 'Returned',
           updated_at: new Date().toISOString()
         })
         .eq("id", currentSubmission.id);
 
       if (submissionUpdateError) {
-        console.error("Failed to update submission status:", submissionUpdateError);
+        console.error("[GradesManagement] Failed to update submission status:", submissionUpdateError);
       } else {
-        // Update local state to reflect the status change
         setAssessmentSubmissionsMap((prev) => ({
           ...prev,
           [currentAssessment.id]: {
             ...(prev[currentAssessment.id] || {}),
             [selectedStudentId]: {
               ...(prev[currentAssessment.id]?.[selectedStudentId] || currentSubmission || {}),
-              status: 'done'
+              status: 'Returned'
             },
           },
         }));
@@ -1146,16 +1305,19 @@ function GradesManagement() {
         updated_at: new Date().toISOString(),
       };
 
+      console.log("[GradesManagement] Syncing submission feedback:", feedbackPayload);
       const { error: feedbackError } = await supabase
         .from("submission_feedback")
         .upsert(feedbackPayload, { onConflict: "submission_id,teacher_id" });
 
       if (feedbackError) {
-        console.error("Failed to sync submission feedback:", feedbackError);
+        console.error("[GradesManagement] Failed to sync submission feedback:", feedbackError);
+      } else {
+        console.log("[GradesManagement] Synchronized submission feedback success.");
       }
     }
 
-    const key = `${selectedAssessment.id}:${selectedStudentId}`;
+    const key = `${currentAssessment.id}:${selectedStudentId}`;
     setAssessmentStatusMap((prev) => ({
       ...prev,
       [currentAssessment.id]: {
@@ -1164,10 +1326,120 @@ function GradesManagement() {
       },
     }));
 
+    // Explicitly sync the grade map locally
+    setAssessmentGradesMap((prev) => ({
+      ...prev,
+      [currentAssessment.id]: {
+        ...(prev[currentAssessment.id] || {}),
+        [selectedStudentId]: Number(currentGrade || 0),
+      },
+    }));
+
     setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
     setAutoSaveMessage("Assignment returned successfully.");
     toast.success("Assignment returned successfully.");
-  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId]);
+  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId, assessmentStatusMap]);
+
+  const handleUndoReturn = useCallback(async () => {
+    const currentAssessment = assessmentItems.find((item) => item.id === selectedAssessmentId) || null;
+    let currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
+    const currentFeedback = assessmentFeedbackMap?.[selectedAssessmentId]?.[selectedStudentId] || "";
+    const currentGrade = assessmentGradesMap?.[selectedAssessmentId]?.[selectedStudentId] ?? "";
+
+    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) {
+      console.warn("[GradesManagement] Undo Return action aborted due to missing context:", {
+        teacherId,
+        selectedClass,
+        currentAssessmentExists: !!currentAssessment,
+        selectedStudentId,
+      });
+      return;
+    }
+
+    console.log("[GradesManagement] Undo Return process initiated:", {
+      teacherId,
+      subjectId: selectedClass,
+      studentId: selectedStudentId,
+      assessmentId: currentAssessment.id,
+    });
+
+    const isQuiz = currentAssessment.type === 'quiz';
+    let revertedGradeStatus = "Graded";
+    if (currentGrade !== "") {
+      if (isQuiz) {
+        const percentage = calculateQuizPercentage(Number(currentGrade), currentAssessment.maxPoints);
+        revertedGradeStatus = determinePassFailStatus(percentage);
+      }
+    } else {
+      revertedGradeStatus = "Pending";
+    }
+
+    // 1. Update teacher_assessment_grades status
+    const gradePayload = {
+      teacher_id: teacherId,
+      subject_id: selectedClass,
+      assessment_id: currentAssessment.id,
+      assessment_title: currentAssessment.title || "Assessment",
+      assessment_type: currentAssessment.type || "assignment",
+      max_points: currentAssessment.maxPoints || 100,
+      student_id: selectedStudentId,
+      grade_value: currentGrade !== "" ? Number(currentGrade) : 0,
+      feedback: currentFeedback,
+      status: revertedGradeStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log("[GradesManagement] Reverting status in teacher_assessment_grades:", gradePayload);
+    const { error: gradeError } = await supabase
+      .from("teacher_assessment_grades")
+      .upsert(gradePayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+
+    if (gradeError) {
+      console.error("[GradesManagement] Failed to update grade status on Undo Return:", gradeError);
+      toast.error("Failed to undo return.");
+      return;
+    }
+
+    // 2. Update submission status back to "Submitted"
+    if (currentSubmission?.id) {
+      console.log("[GradesManagement] Reverting submission status to 'Submitted' for ID:", currentSubmission.id);
+      const { error: submissionUpdateError } = await supabase
+        .from("teacher_assessment_submissions")
+        .update({ 
+          status: 'Submitted',
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", currentSubmission.id);
+
+      if (submissionUpdateError) {
+        console.error("[GradesManagement] Failed to revert submission status:", submissionUpdateError);
+      } else {
+        setAssessmentSubmissionsMap((prev) => ({
+          ...prev,
+          [currentAssessment.id]: {
+            ...(prev[currentAssessment.id] || {}),
+            [selectedStudentId]: {
+              ...(prev[currentAssessment.id]?.[selectedStudentId] || currentSubmission || {}),
+              status: 'Submitted'
+            },
+          },
+        }));
+      }
+    }
+
+    const key = `${currentAssessment.id}:${selectedStudentId}`;
+    setAssessmentStatusMap((prev) => ({
+      ...prev,
+      [currentAssessment.id]: {
+        ...(prev[currentAssessment.id] || {}),
+        [selectedStudentId]: revertedGradeStatus,
+      },
+    }));
+
+    setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
+    setAutoSaveMessage("Return undone successfully.");
+    toast.success("Return undone successfully.");
+  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId, assessmentStatusMap]);
 
   const handleSave = async () => {
     if (!selectedClass || studentGrades.length === 0 || !teacherId || !supabase) return;
@@ -1821,36 +2093,43 @@ function GradesManagement() {
                             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Submission Output</p>
 
-                              {selectedStudentSubmission ? (
-                                <div className="space-y-3">
-                                  {selectedStudentSubmission.responseText ? (
-                                    <div>
-                                      <p className="text-[11px] text-gray-500 mb-1">Response</p>
-                                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedStudentSubmission.responseText}</p>
-                                    </div>
-                                  ) : null}
+                              {selectedStudentSubmission ? (() => {
+                                const isPlaceholder = selectedStudentSubmission.responseText?.startsWith("Placeholder submission");
+                                return (
+                                  <div className="space-y-3">
+                                    {!isPlaceholder && selectedStudentSubmission.responseText ? (
+                                      <div>
+                                        <p className="text-[11px] text-gray-500 mb-1">Response</p>
+                                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedStudentSubmission.responseText}</p>
+                                      </div>
+                                    ) : null}
 
-                                  {selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath ? (
-                                    <div>
-                                      <p className="text-[11px] text-gray-500 mb-1">Attachment</p>
-                                      <a
-                                        href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-xs border border-green-200 hover:bg-green-100"
-                                      >
-                                        {selectedStudentSubmission.fileName || "Open submitted file"}
-                                      </a>
-                                    </div>
-                                  ) : null}
+                                    {selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath ? (
+                                      <div>
+                                        <p className="text-[11px] text-gray-500 mb-1">Attachment</p>
+                                        <a
+                                          href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-xs border border-green-200 hover:bg-green-100"
+                                        >
+                                          {selectedStudentSubmission.fileName || "Open submitted file"}
+                                        </a>
+                                      </div>
+                                    ) : null}
 
-                                  {selectedStudentSubmission.submittedAt ? (
-                                    <p className="text-[11px] text-gray-500">
-                                      Submitted: {new Date(selectedStudentSubmission.submittedAt).toLocaleString()}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              ) : (
+                                    {!isPlaceholder && selectedStudentSubmission.submittedAt ? (
+                                      <p className="text-[11px] text-gray-500">
+                                        Submitted: {new Date(selectedStudentSubmission.submittedAt).toLocaleString()}
+                                      </p>
+                                    ) : null}
+
+                                    {isPlaceholder && !selectedStudentSubmission.fileUrl && !selectedStudentSubmission.filePath ? (
+                                      <p className="text-sm text-amber-600">No submission from this student.</p>
+                                    ) : null}
+                                  </div>
+                                );
+                              })() : (
                                 <p className="text-sm text-amber-600">No submission found for this student yet.</p>
                               )}
                             </div>
@@ -1925,11 +2204,24 @@ function GradesManagement() {
 
                                 <button
                                   type="button"
-                                  onClick={handleReturnAssignment}
-                                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-yellow-600 text-white rounded-full hover:bg-yellow-700 transition-colors font-semibold text-sm"
+                                  onClick={assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" ? handleUndoReturn : handleReturnAssignment}
+                                  className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-white rounded-full transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned"
+                                      ? "bg-red-600 hover:bg-red-700"
+                                      : "bg-yellow-600 hover:bg-yellow-700"
+                                  }`}
                                 >
-                                  <ChevronUp className="w-4 h-4" />
-                                  Return Assignment
+                                  {assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" ? (
+                                    <>
+                                      <RotateCcw className="w-4 h-4" />
+                                      Undo Return
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronUp className="w-4 h-4" />
+                                      Return Assignment
+                                    </>
+                                  )}
                                 </button>
                               </div>
                             </div>
@@ -1964,7 +2256,10 @@ function GradesManagement() {
           student={selectedStudentForModal}
           assessmentItems={assessmentItems}
           submissions={assessmentSubmissionsMap}
-          grades={gradesCache?.[selectedClass]?.[selectedStudentForModal.id] || {}}
+          grades={assessmentGradesMap}
+          statusMap={assessmentStatusMap}
+          feedbackMap={assessmentFeedbackMap}
+          studentOverallGrades={gradesCache?.[selectedClass]?.[selectedStudentForModal.id]}
           onClose={() => setSelectedStudentForModal(null)}
         />
       )}

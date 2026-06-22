@@ -1,3 +1,4 @@
+import { useUnreadMessages } from "../../contexts/UnreadMessagesContext";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
@@ -42,6 +43,8 @@ const FILTERS = [
 ];
 
 export function AdminMessages() {
+  const { unreadConversations, markAsRead } = useUnreadMessages();
+  const getUnreadCount = (conv) => unreadConversations[conv.isGroup ? `group_${conv.id}` : `dm_${conv.id}`] || 0;
   const navigate = useNavigate();
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -666,10 +669,10 @@ export function AdminMessages() {
 
     switch (activeFilter) {
       case "unread":
-        filtered = filtered.filter((c) => (c.unreadCount || 0) > 0);
+        filtered = filtered.filter((c) => (getUnreadCount(c) || 0) > 0);
         break;
       case "read":
-        filtered = filtered.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet);
+        filtered = filtered.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet);
         break;
       case "mentions":
         filtered = filtered.filter((c) =>
@@ -880,14 +883,9 @@ export function AdminMessages() {
   };
 
   const handleSelectConv = (conv) => {
-    if (conv.unreadCount > 0) {
-      const updated = conversations.map((c) =>
-        c.id === conv.id ? { ...c, unreadCount: 0 } : c
-      );
-      saveConversations(updated);
-    }
-    setSelectedConvId(conv.id);
-  };
+      markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.id);
+      setSelectedConvId(conv.id);
+    };
 
   const getTimeLabel = (iso) => {
     const diff = Math.floor((new Date() - new Date(iso)) / 1000);
@@ -908,12 +906,12 @@ export function AdminMessages() {
     }
   );
 
-  const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
   const filterCounts = {
     all: conversations.length,
-    unread: conversations.filter((c) => (c.unreadCount || 0) > 0).length,
-    read: conversations.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet).length,
+    unread: conversations.filter((c) => (getUnreadCount(c) || 0) > 0).length,
+    read: conversations.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet).length,
     mentions: conversations.filter((c) =>
       (c.messages || []).some((m) => m.from !== "admin" && m.text?.includes(`@${adminName}`))
     ).length,
@@ -1100,7 +1098,7 @@ export function AdminMessages() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? "text-gray-900" : "text-gray-700"}`}>
+                              <p className={`text-sm font-semibold truncate ${getUnreadCount(conv) > 0 ? "text-gray-900" : "text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
                               <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
@@ -1113,10 +1111,8 @@ export function AdminMessages() {
                                   ? <span className="text-purple-400 font-medium">Video Meet</span>
                                   : conv.participantRole || "Teacher"}
                               </p>
-                              {conv.unreadCount > 0 && (
-                                <span className="w-5 h-5 bg-blue-600 text-gray-900 text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
-                                  {conv.unreadCount}
-                                </span>
+                              {getUnreadCount(conv) > 0 && (
+                                <span className="w-5 h-5 bg-blue-600 text-gray-900 text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">NEW</span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (

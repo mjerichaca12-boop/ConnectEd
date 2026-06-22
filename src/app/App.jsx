@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
+import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
 import { supabase } from "./lib/supabaseClient";
 import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
@@ -198,6 +199,7 @@ function AdminRouteGuard({ children }) {
 export default function App() {
   return (
     <ActivityProvider>
+      <UnreadMessagesProvider>
       <Router>
         <Toaster position="top-right" richColors />
       <Routes>
@@ -251,6 +253,7 @@ export default function App() {
         <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
       </Routes>
       </Router>
+          </UnreadMessagesProvider>
     </ActivityProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import {
   LayoutDashboard, BookOpen, GraduationCap,
@@ -7,6 +8,7 @@ import {
 } from "lucide-react";
 
 function Sidebar({ studentName, onLogout }) {
+  const { unreadCount } = useUnreadMessages();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();

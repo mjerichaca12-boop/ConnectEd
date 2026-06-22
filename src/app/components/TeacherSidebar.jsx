@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import {
   LayoutDashboard, BookOpen, ClipboardList,
   MessageSquare, User, Menu, X, LogOut, ChevronRight, Sparkles
@@ -17,6 +18,7 @@ const getStoredCurrentUser = () => {
 };
 
 export function TeacherSidebar({ teacherName, onLogout }) {
+  const { unreadCount } = useUnreadMessages();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
@@ -135,8 +137,13 @@ export function TeacherSidebar({ teacherName, onLogout }) {
                   <Icon className={`w-4 h-4 ${active ? "text-white" : "text-gray-500 group-hover:text-green-600"}`} />
                 </div>
                 <span className="truncate">{item.label}</span>
-                {item.badge && (
-                  <span className={`ml-auto text-[9px] font-bold rounded-full px-1.5 py-0.5 leading-none flex-shrink-0
+                {item.label === "Messages" && unreadCount > 0 ? (
+                  <span className={`ml-auto text-[10px] font-bold rounded-full px-2 py-0.5 leading-none flex-shrink-0
+                    ${active ? "bg-white/20 text-white" : "bg-green-500 text-white"}`}>
+                    NEW
+                  </span>
+                ) : item.badge && (
+                  <span className={`ml-auto text-[10px] font-bold rounded-full px-2 py-0.5 leading-none flex-shrink-0
                     ${active ? "bg-white/20 text-white" : "bg-green-100 text-green-600"}`}>
                     {item.badge}
                   </span>
