@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 // Use service role client if available to bypass RLS issues for reliable messaging
 const db = supabaseAdmin || supabase;
@@ -19,8 +20,6 @@ import {
   Clock,
   Trash2,
   ChevronRight,
-  FileText,
-  Download,
   Video,
   AtSign,
   CheckCheck,
@@ -1214,41 +1213,7 @@ function TeacherMessages() {
                                 </p>
                               )}
                               {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
-                                  <div className="mb-2 space-y-2">
-                                    {!msg.attachments?.length && (msg.fileUrl || msg.fileName) && (
-                                      <div className={`flex items-center gap-2 p-2 rounded-lg ${
-                                        isTeacher ? "bg-emerald-700/50 text-emerald-100" : "bg-gray-100 text-gray-700"
-                                      }`}>
-                                        {msg.attachmentKind === "image" ? (
-                                          <img src={msg.fileUrl} alt="attachment" className="max-w-[200px] rounded-md" />
-                                        ) : msg.attachmentKind === "video" ? (
-                                          <Video className="w-5 h-5" />
-                                        ) : (
-                                          <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
-                                            <Download className="w-4 h-4 flex-shrink-0" />
-                                            <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
-                                          </a>
-                                        )}
-                                      </div>
-                                    )}
-                                    
-                                    {msg.attachments?.map((att, idx) => (
-                                      <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg ${
-                                        isTeacher ? "bg-emerald-700/50 text-emerald-100" : "bg-gray-100 text-gray-700"
-                                      }`}>
-                                        {att.kind === "image" ? (
-                                          <img src={att.url} alt="attachment" className="max-w-[200px] max-h-[200px] rounded-md object-contain" />
-                                        ) : att.kind === "video" ? (
-                                          <Video className="w-5 h-5" />
-                                        ) : (
-                                          <a href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
-                                            <Download className="w-4 h-4 flex-shrink-0" />
-                                            <span className="truncate max-w-[200px]">{att.name || "Download file"}</span>
-                                          </a>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
+                                  <MessageAttachmentPreview msg={msg} isSelf={isTeacher} />
                                 )}
                               {msg.text && <p className="leading-relaxed">{msg.text}</p>}
                               <div className={`flex items-center justify-end gap-1 mt-1`}>

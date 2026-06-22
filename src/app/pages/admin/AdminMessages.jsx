@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
 const db = supabaseAdmin || supabase;
@@ -22,7 +23,6 @@ import {
   Shield,
   UserCog,
   Paperclip,
-  Download,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -252,6 +252,16 @@ export function AdminMessages() {
       fileType: fileTypeValue,
       fileSize,
       attachmentKind: fileTypeValue ? (fileTypeValue.startsWith("image/") ? "image" : fileTypeValue.startsWith("video/") ? "video" : "document") : "",
+      attachments: Array.isArray(row?.message_attachments) 
+        ? row.message_attachments.map(a => ({
+            id: a.id,
+            url: a.file_url,
+            name: a.file_name,
+            type: a.file_type,
+            size: a.file_size,
+            kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+          }))
+        : [],
       isRead: Boolean(row.is_read),
       isSeen: isAdminSender || Boolean(row.is_read),
     };
@@ -291,10 +301,20 @@ export function AdminMessages() {
     if (!supabase || !adminId) return;
     const channel = supabase
       .channel("global-chat")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
         const newMsg = payload.new;
         if (!newMsg) return;
         const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+
+        // Fetch attachments for real-time messages (not present in the INSERT payload)
+        const { data: attData } = await supabase
+          .from("message_attachments")
+          .select("id, file_url, file_name, file_type, file_size")
+          .eq("message_id", newMsg.id);
+        if (attData && attData.length > 0) {
+          newMsg.message_attachments = attData;
+        }
+
         appendIncomingMessage(newMsg, currentAdminId);
       })
       .subscribe();
@@ -1218,41 +1238,7 @@ export function AdminMessages() {
                                   </p>
                                 )}
                                 {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
-                                    <div className="mb-2 space-y-2">
-                                      {!msg.attachments?.length && (msg.fileUrl || msg.fileName) && (
-                                        <div className={`flex items-center gap-2 p-2 rounded-lg ${
-                                          isAdmin ? "bg-blue-700/50 text-blue-100" : "bg-gray-100 text-gray-700"
-                                        }`}>
-                                          {msg.attachmentKind === "image" ? (
-                                            <img src={msg.fileUrl} alt="attachment" className="max-w-[200px] rounded-md" />
-                                          ) : msg.attachmentKind === "video" ? (
-                                            <Video className="w-5 h-5" />
-                                          ) : (
-                                            <a href={msg.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
-                                              <Download className="w-4 h-4 flex-shrink-0" />
-                                              <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
-                                            </a>
-                                          )}
-                                        </div>
-                                      )}
-                                      
-                                      {msg.attachments?.map((att, idx) => (
-                                        <div key={idx} className={`flex items-center gap-2 p-2 rounded-lg ${
-                                          isAdmin ? "bg-blue-700/50 text-blue-100" : "bg-gray-100 text-gray-700"
-                                        }`}>
-                                          {att.kind === "image" ? (
-                                            <img src={att.url} alt="attachment" className="max-w-[200px] max-h-[200px] rounded-md object-contain" />
-                                          ) : att.kind === "video" ? (
-                                            <Video className="w-5 h-5" />
-                                          ) : (
-                                            <a href={att.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm font-medium hover:underline">
-                                              <Download className="w-4 h-4 flex-shrink-0" />
-                                              <span className="truncate max-w-[200px]">{att.name || "Download file"}</span>
-                                            </a>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
+                                    <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
                                   )}
                                 {msg.text && <p className="leading-relaxed">{msg.text}</p>}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
