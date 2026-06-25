@@ -32,6 +32,7 @@ import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { AdminNotifications } from "./pages/admin/AdminNotifications";
 import { Smartphone, Monitor, ShieldAlert } from "lucide-react";
 
 const isMobileDevice = () => window.innerWidth < 1024;
@@ -247,7 +248,7 @@ export default function App() {
         <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
         <Route path="/admin/ai-assistant" element={<AdminRouteGuard><AIAdminAssistant /></AdminRouteGuard>} />
-        <Route path="/admin/notifications" element={<AdminRouteGuard><NotificationsPage /></AdminRouteGuard>} />
+        <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
 
         {/* Teacher AI */}
         <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />

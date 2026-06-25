@@ -110,7 +110,7 @@ const formatTimeAgo = (dateString) => {
   return date.toLocaleDateString();
 };
 
-export function Notifications() {
+export function AdminNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -162,11 +162,11 @@ export function Notifications() {
               return;
             }
           } catch (err) {
-            console.error("[TeacherNotifications] Notification DB load error:", err);
+            console.error("[AdminNotifications] Notification DB load error:", err);
           }
         }
       } catch (err) {
-        console.error("[TeacherNotifications] Failed to load notifications from DB:", err);
+        console.error("[AdminNotifications] Failed to load notifications from DB:", err);
       }
 
       // fallback
@@ -194,7 +194,7 @@ export function Notifications() {
         await db().from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", authUser.id);
       }
     } catch (err) {
-      console.error("[TeacherNotifications] Failed to mark read:", err);
+      console.error("[AdminNotifications] Failed to mark read:", err);
     }
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
   };
@@ -207,7 +207,7 @@ export function Notifications() {
         await db().from("notifications").update({ is_read: true }).eq("user_id", authUser.id).eq("is_read", false);
       }
     } catch (err) {
-      console.error("[TeacherNotifications] Failed to mark all read:", err);
+      console.error("[AdminNotifications] Failed to mark all read:", err);
     }
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
@@ -221,7 +221,7 @@ export function Notifications() {
         await db().from("notifications").delete().eq("id", id).eq("user_id", authUser.id);
       }
     } catch (err) {
-      console.error("[TeacherNotifications] Failed to delete notification:", err);
+      console.error("[AdminNotifications] Failed to delete notification:", err);
     }
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
@@ -288,8 +288,6 @@ export function Notifications() {
               {[
                 { id: 'all', label: 'All Notifications' },
                 { id: 'unread', label: 'Unread Only' },
-                { id: 'assignments', label: 'Assignments' },
-                { id: 'grades', label: 'Grades' },
                 { id: 'messages', label: 'Messages' },
                 { id: 'system', label: 'System & Announcements' }
               ].map(f => (

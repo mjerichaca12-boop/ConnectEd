@@ -7,7 +7,7 @@ import { Download, TrendingUp, Users, BookOpen, Calendar } from "lucide-react";
 function Reports() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");

@@ -871,8 +871,38 @@ function TeacherMessages() {
     setAttachmentFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSelectConv = (conv) => {
-    markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.id);
+  const handleSelectConv = async (conv) => {
+    markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.participantId);
+    
+    // Local sync
+    const updatedConvs = conversations.map(c => {
+      if (c.id === conv.id) {
+        return {
+          ...c,
+          messages: c.messages?.map(m => ({ ...m, isSeen: true, isRead: true })) || []
+        };
+      }
+      return c;
+    });
+    setConversations(updatedConvs);
+    
+    // DB sync
+    try {
+      if (conv.isGroup) {
+        await db.from("messages").update({ is_read: true, status: 'read' })
+          .eq("conversation_id", conv.id)
+          .neq("sender_id", teacherId)
+          .eq("is_read", false);
+      } else {
+        await db.from("messages").update({ is_read: true, status: 'read' })
+          .eq("sender_id", conv.participantId)
+          .eq("receiver_id", teacherId)
+          .eq("is_read", false);
+      }
+    } catch (err) {
+      console.error("[TeacherMessages] DB mark read error:", err);
+    }
+    
     setSelectedConvId(conv.id);
   };
 
@@ -1109,19 +1139,16 @@ function TeacherMessages() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className={`text-sm font-semibold truncate ${getUnreadCount(conv) > 0 ? "text-gray-900" : "text-gray-700"}`}>
+                              <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{getTimeLabel(conv.lastMessageTime)}</span>
+                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>{getTimeLabel(conv.lastMessageTime)}</span>
                             </div>
                             <div className="flex items-center justify-between">
                               <p className="text-xs text-gray-500 truncate">{getConversationDetailLine(conv)}</p>
-                              {getUnreadCount(conv) > 0 && (
-                                <span className="w-5 h-5 bg-green-600 text-white text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">NEW</span>
-                              )}
                             </div>
                             {conv.messages?.length > 0 && (
-                              <p className="text-xs text-gray-600 truncate mt-0.5">
+                              <p className={`text-xs truncate mt-0.5 ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "text-gray-600"}`}>
                                 {getMessagePreview(conv.messages[conv.messages.length - 1])}
                               </p>
                             )}

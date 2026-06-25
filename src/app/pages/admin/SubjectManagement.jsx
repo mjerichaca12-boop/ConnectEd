@@ -29,7 +29,7 @@ function SubjectManagement() {
   const { logActivity } = useActivity();
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);

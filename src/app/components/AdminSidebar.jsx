@@ -109,12 +109,7 @@ export function AdminSidebar({ adminName, onLogout }) {
                   <Icon className={`w-4 h-4 ${active ? "text-white" : "text-gray-500 group-hover:text-green-600"}`} />
                 </div>
                 <span className="truncate">{item.label}</span>
-                {item.label === "Messages" && unreadCount > 0 ? (
-                  <span className={`ml-auto text-[9px] font-bold rounded-full px-1.5 py-0.5 leading-none flex-shrink-0
-                    ${active ? "bg-white/20 text-white" : "bg-green-500 text-white"}`}>
-                    NEW
-                  </span>
-                ) : item.badge && (
+                {item.badge && (
                   <span className={`ml-auto text-[9px] font-bold rounded-full px-1.5 py-0.5 leading-none flex-shrink-0
                     ${active ? "bg-white/20 text-white" : "bg-green-100 text-green-600"}`}>
                     {item.badge}

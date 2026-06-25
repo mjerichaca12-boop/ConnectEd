@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
+import { adminNotifications } from "@/app/components/NotificationDefault";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
@@ -54,7 +55,7 @@ export function AdminMessages() {
   const selectedConvIdRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
@@ -902,10 +903,41 @@ export function AdminMessages() {
     setIsUploading(false);
   };
 
-  const handleSelectConv = (conv) => {
-      markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.id);
-      setSelectedConvId(conv.id);
-    };
+  const handleSelectConv = async (conv) => {
+    markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.participantId);
+    
+    // Local sync: mark all messages as read
+    const updatedConvs = conversations.map(c => {
+      if (c.id === conv.id) {
+        return {
+          ...c,
+          messages: c.messages?.map(m => ({ ...m, isSeen: true, isRead: true })) || []
+        };
+      }
+      return c;
+    });
+    setConversations(updatedConvs);
+    
+    // DB sync: mark messages as read
+    try {
+      const effectiveAdminId = adminId || HARDCODED_ADMIN_ID;
+      if (conv.isGroup) {
+        await db.from("messages").update({ is_read: true, status: 'read' })
+          .eq("conversation_id", conv.id)
+          .neq("sender_id", effectiveAdminId)
+          .eq("is_read", false);
+      } else {
+        await db.from("messages").update({ is_read: true, status: 'read' })
+          .eq("sender_id", conv.participantId)
+          .eq("receiver_id", effectiveAdminId)
+          .eq("is_read", false);
+      }
+    } catch (err) {
+      console.error("[AdminMessages] DB mark read error:", err);
+    }
+    
+    setSelectedConvId(conv.id);
+  };
 
   const getTimeLabel = (iso) => {
     const diff = Math.floor((new Date() - new Date(iso)) / 1000);
@@ -1118,10 +1150,10 @@ export function AdminMessages() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className={`text-sm font-semibold truncate ${getUnreadCount(conv) > 0 ? "text-gray-900" : "text-gray-700"}`}>
+                              <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
                                 {getTimeLabel(conv.lastMessageTime)}
                               </span>
                             </div>
@@ -1132,11 +1164,11 @@ export function AdminMessages() {
                                   : conv.participantRole || "Teacher"}
                               </p>
                               {getUnreadCount(conv) > 0 && (
-                                <span className="w-5 h-5 bg-blue-600 text-gray-900 text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">NEW</span>
+                                <span className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
-                              <p className="text-xs text-gray-600 truncate mt-0.5">
+                              <p className={`text-xs truncate mt-0.5 ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "text-gray-600"}`}>
                                 {conv.messages[conv.messages.length - 1].text}
                               </p>
                             )}

@@ -1,32 +1,41 @@
 const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs');
+const path = require('path');
 
-const supabase = createClient(
-  'https://pyeckxqaowusxcmeuolk.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5ZWNreHFhb3d1c3hjbWV1b2xrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzY1MzQ0MiwiZXhwIjoyMDg5MjI5NDQyfQ.cDPqfbnsriANJ1pGSnkdmsw5BWUuHxQP5_Fxv2Sdrbg'
-);
+const envPath = path.resolve('C:/Users/lych0/Downloads/ConnectEd/.env');
+const envContent = fs.readFileSync(envPath, 'utf8');
+const env = {};
+envContent.split('\n').forEach(line => {
+  const [key, ...valueParts] = line.split('=');
+  if (key && valueParts.length > 0) env[key.trim()] = valueParts.join('=').trim();
+});
 
-async function testInsert() {
-  const payload = {
-    sender_id: '11111111-1111-1111-1111-111111111111',
-    receiver_id: 'e1240583-9fbf-42e7-be47-6cf7d6224e90',
-    conversation_id: null,
-    message_text: 'Sent 1 attachment(s)',
-    content: 'Sent 1 attachment(s)',
-    timestamp: new Date().toISOString(),
-    status: 'sent'
-  };
+const supabase = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_SERVICE_ROLE_KEY);
 
-  console.log("Inserting payload:", payload);
-  const { data, error } = await supabase
-    .from('messages')
-    .insert([payload])
-    .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status");
+async function run() {
+  console.log('Testing INSERT into school_calendar_events...');
+  const { data, error } = await supabase.from('school_calendar_events').insert({
+    title: 'Test Event ' + Date.now(),
+    description: 'This is a test event for triggers',
+    event_date: new Date().toISOString().split('T')[0]
+  }).select('*');
 
   if (error) {
-    console.error("Insert error:", JSON.stringify(error, null, 2));
+    console.error('Failed to insert school calendar event:', error);
   } else {
-    console.log("Insert success:", data);
+    console.log('Inserted school calendar event:', data);
+    console.log('Checking if notification was generated...');
+    // Wait a brief second for trigger to complete (though it is synchronous, let's query)
+    const { data: notifications, error: notifError } = await supabase.from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (notifError) {
+      console.error('Failed to query notifications:', notifError);
+    } else {
+      console.log('Recent notifications:', notifications);
+    }
   }
 }
-
-testInsert();
+run();

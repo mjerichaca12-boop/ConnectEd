@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { adminNotifications } from "../../components/NotificationDefault";
 import { useActivity } from "../../lib/ActivityContext";
 import { Key, ShieldAlert, CheckCircle2, Loader2, X, AlertTriangle, User, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +30,7 @@ export const AdminPasswordResets = () => {
 
   // For Admin Sidebar
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   useEffect(() => {
     const fetchAdminData = async () => {

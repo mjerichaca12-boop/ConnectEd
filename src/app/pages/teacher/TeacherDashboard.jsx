@@ -9,6 +9,7 @@ import {
 import { DashboardCalendar } from "@/app/components/DashboardCalendar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { TeacherTasksAndDeadlines } from "@/app/components/TeacherTasksAndDeadlines";
 import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
@@ -580,19 +581,7 @@ export function TeacherDashboard() {
               {/* Top row: Tasks & Grades */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 {/* Tasks & Deadlines */}
-                <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-                  <h3 className="text-gray-900 font-bold text-base mb-4 flex items-center gap-2 border-b border-gray-100 pb-4">
-                    <ClipboardCheck className="w-5 h-5 text-blue-400" />
-                    Tasks & Deadlines
-                  </h3>
-                  <div className="text-center py-8 flex flex-col items-center justify-center">
-                    <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-blue-100">
-                      <ClipboardCheck className="w-6 h-6 text-blue-500" />
-                    </div>
-                    <p className="text-gray-900 font-bold">You're all caught up!</p>
-                    <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
-                  </div>
-                </div>
+                <TeacherTasksAndDeadlines teacherId={teacherId} assignedSubjects={assignedSubjects} />
 
                 {/* Recent Grades */}
                 <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">

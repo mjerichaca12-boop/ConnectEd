@@ -26,7 +26,7 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const { activities: contextActivities, logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [teacherOptions, setTeacherOptions] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [loading, setLoading] = useState(true);
