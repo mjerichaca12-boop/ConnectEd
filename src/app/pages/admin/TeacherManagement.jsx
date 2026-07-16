@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomSelect } from "../../components/admin/CustomSelect";
+import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -56,7 +57,8 @@ const emptyTeacherForm = {
   password: ""
 };
 const emptyAssignForm = {
-  assigned_class: ""
+  assignGradeLevel: "",
+  assignSection: ""
 };
 
 const getApiErrorMessage = (error, fallback = "Request failed.") => {
@@ -161,7 +163,7 @@ function TeacherManagement() {
   const getSubjectLabel = (subjectId) => {
     const subject = availableSubjects.find((item) => item.id === subjectId);
     if (!subject) return subjectId || "Unknown subject";
-    return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"})`;
+    return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"} - ${subject.section || "All Sections"})`;
   };
   const splitTeacherName = (fullName) => {
     const parts = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
@@ -250,7 +252,7 @@ function TeacherManagement() {
       }
 
       return {
-        subjectLabel: `${subject.code} - ${subject.name}`,
+        subjectLabel: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`,
         classLabel: subject.grade_level || "No grade assigned"
       };
     });
@@ -1197,16 +1199,14 @@ function TeacherManagement() {
 
     if (!teacherToAssign) return;
 
-    const assignedClass = assignFormData.assigned_class.trim();
-    if (!assignedClass) {
-      setAssignFormErrors({ assigned_class: "Class or section is required" });
+    const gradeLevel = assignFormData.assignGradeLevel;
+    const section = assignFormData.assignSection;
+    if (!gradeLevel || !section) {
+      setAssignFormErrors({ form: "Grade level and section are required" });
       return;
     }
 
-    if (!isValidAssignedClass(assignedClass)) {
-      setAssignFormErrors({ assigned_class: "Class or section is invalid" });
-      return;
-    }
+    const assignedClass = `${gradeLevel} - ${section}`;
 
     if (!db) {
       setErrorMessage("Supabase client is not configured.");
@@ -1737,7 +1737,7 @@ function TeacherManagement() {
                           const subjGradeRaw = String(subject.grade_level || "").trim();
                           return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
                         })
-                        .map((subject) => ({ value: subject.id, label: `${subject.code} - ${subject.name}` }))}
+                        .map((subject) => ({ value: subject.id, label: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})` }))}
                       placeholder={availableSubjects.length > 0 ? "Select subjects" : "No subjects available"}
                       icon={<BookOpen className="w-5 h-5" />}
                       className="min-w-[180px]"
@@ -1786,32 +1786,28 @@ function TeacherManagement() {
                 <p className="text-sm text-gray-600">{formatAssignedClasses(teacherToAssign.assigned_class) || "No classes assigned yet"}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Class or Section to Add</label>
-                <input
-                  type="text"
-                  value={assignFormData.assigned_class}
-                  onChange={(e) => {
-                    const nextValue = e.target.value;
-                    const nextError = validateTeacherField("assigned_class", nextValue, assignFormData);
-                    setAssignFormData({ assigned_class: nextValue });
-                    setAssignFormErrors((current) => {
-                      if (nextError) {
-                        return { ...current, assigned_class: nextError };
-                      }
-
-                      if (!("assigned_class" in current)) {
-                        return current;
-                      }
-
-                      const updatedErrors = { ...current };
-                      delete updatedErrors.assigned_class;
-                      return updatedErrors;
-                    });
-                  }}
-                  placeholder="e.g. 9-STEM A or Grade 10 - Section B"
-                  className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${assignFormErrors.assigned_class ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                <CustomSelect
+                  value={assignFormData.assignGradeLevel}
+                  onChange={(value) => setAssignFormData({ ...assignFormData, assignGradeLevel: value, assignSection: "" })}
+                  options={[
+                    { value: "Grade 7", label: "Grade 7" },
+                    { value: "Grade 8", label: "Grade 8" },
+                    { value: "Grade 9", label: "Grade 9" },
+                    { value: "Grade 10", label: "Grade 10" },
+                  ]}
+                  placeholder="Select Grade Level"
+                  className="w-full mb-4"
                 />
-                {assignFormErrors.assigned_class && <p className="text-red-500 text-sm mt-1">{assignFormErrors.assigned_class}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                <SectionDropdown
+                  value={assignFormData.assignSection}
+                  onChange={(value) => setAssignFormData({ ...assignFormData, assignSection: value })}
+                  gradeLevel={assignFormData.assignGradeLevel}
+                  className="w-full"
+                />
               </div>
               {assignFormErrors.form && (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

@@ -26,6 +26,7 @@ export function AIAdminAssistant() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [currentModule, setCurrentModule] = useState("Dashboard");
   const [notificationList, setNotificationList] = useState(adminNotifications);
 
   const adminName = "System Administrator";
@@ -138,6 +139,7 @@ What would you like to work on today? 🏫`,
           content: m.content 
         })),
         platformData,
+        currentModule,
         onChunk: (chunk) => {
           fullResponse += chunk;
           setMessages(prev => {
@@ -218,6 +220,7 @@ What would you like to work on today? 🏫`,
           content: m.content 
         })),
         platformData,
+        currentModule,
         onChunk: (chunk) => {
           fullResponse += chunk;
           setMessages(prev => {
@@ -371,6 +374,22 @@ What would you like to work on today? 🏫`,
               <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest mb-3">Context Settings</h3>
               <div className="space-y-3">
                 <div>
+                  <label className="text-xs text-gray-600 mb-1 block">Current Module</label>
+                  <CustomSelect
+                    value={currentModule}
+                    onChange={(val) => setCurrentModule(val)}
+                    options={[
+                      { value: "Dashboard", label: "Dashboard" },
+                      { value: "Student Management", label: "Student Management" },
+                      { value: "Teacher Management", label: "Teacher Management" },
+                      { value: "Subjects & Sections", label: "Subjects & Sections" },
+                      { value: "Reports", label: "Reports" },
+                    ]}
+                    placeholder="Select module context"
+                    className="w-full"
+                  />
+                </div>
+                <div>
                   <label className="text-xs text-gray-600 mb-1 block">Response Language</label>
                   <CustomSelect
                     value="English"
@@ -427,6 +446,7 @@ What would you like to work on today? 🏫`,
               inputText={inputText}
               onInputChange={setInputText}
               onSend={handleSend}
+              onSuggestionClick={handleSendWithText}
               onClear={() => setMessages([])}
               onExport={() => {
                 const chatText = messages.map(m => 

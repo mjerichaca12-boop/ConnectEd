@@ -140,7 +140,7 @@ export function TeacherDashboard() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section:grade_level")
+      .select("id, code, name, section, grade_level")
       .eq("teacher_id", id);
 
     if (error) {
@@ -536,7 +536,7 @@ export function TeacherDashboard() {
             <div className="absolute top-0 right-0 p-4">
               <div className="flex flex-col items-end gap-1">
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY 2026-2027</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">Term 1</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">1st Quarter</span>
               </div>
             </div>
             <div className="flex items-center gap-2 mb-1">
@@ -546,7 +546,7 @@ export function TeacherDashboard() {
             <h1 className="text-2xl font-bold text-white">
               {JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {teacherFirstName || getFirstName(teacherName)}!
             </h1>
-            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities for the current term.</p>
+            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities for the current quarter.</p>
           </div>
 
           {/* Stats Row */}

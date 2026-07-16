@@ -4,6 +4,7 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { CustomSelect } from "../../components/admin/CustomSelect";
+import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
@@ -45,7 +46,6 @@ function StudentManagement() {
     email: "",
     lrn: "",
     year_level: "",
-    phone: "",
     section: "",
     status: "Active",
     password: ""
@@ -57,7 +57,6 @@ function StudentManagement() {
     email: "",
     lrn: "",
     year_level: "",
-    phone: "",
     section: "",
     status: "Active"
   });
@@ -70,6 +69,11 @@ function StudentManagement() {
   const [masterlist, setMasterlist] = useState([]);
   const [activeTab, setActiveTab] = useState("Profiles"); // "Profiles" or "Masterlist"
   const [selectedMasterlistIds, setSelectedMasterlistIds] = useState(new Set());
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showClearMasterlistConfirm, setShowClearMasterlistConfirm] = useState(false);
+  const [isClearingMasterlist, setIsClearingMasterlist] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const fileInputRef = useRef(null);
@@ -115,7 +119,7 @@ function StudentManagement() {
 
         const [profilesRes, masterlistRes] = await Promise.all([
           db.from("profiles")
-            .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+            .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
             .eq("role", "student")
             .order("created_at", { ascending: false }),
           db.from("student_masterlist")
@@ -155,14 +159,15 @@ function StudentManagement() {
   const refreshStudents = async () => {
     if (!db) return;
 
-    const [profilesRes, masterlistRes] = await Promise.all([
+    const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
       db.from("profiles")
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
         .eq("role", "student")
         .order("created_at", { ascending: false }),
       db.from("student_masterlist")
         .select("*")
-        .order("created_at", { ascending: false })
+        .order("created_at", { ascending: false }),
+      db.from("grade_sections").select("*")
     ]);
 
     if (profilesRes.error) {
@@ -172,6 +177,15 @@ function StudentManagement() {
     setStudents(profilesRes.data ?? []);
     if (!masterlistRes.error) {
       setMasterlist(masterlistRes.data ?? []);
+    }
+    
+    if (!gradeSectionsRes.error && gradeSectionsRes.data) {
+      const map = {};
+      gradeSectionsRes.data.forEach(row => {
+        if (!map[row.grade_level]) map[row.grade_level] = [];
+        map[row.grade_level].push(row.section_name);
+      });
+      setGradeSectionsMap(map);
     }
   };
 
@@ -186,11 +200,11 @@ function StudentManagement() {
     });
   };
 
-  const normalizePhone = (value) => value.replace(/\D/g, "").slice(0, 11);
+
   const normalizeLrn = (value) => value.replace(/\D/g, "").slice(0, 12);
   const normalizeYearLevel = (value) => value.replace(/\D/g, "").slice(0, 2);
 
-  const validateAddField = (field, value) => {
+  const validateAddField = (field, value, formData) => {
     const trimmedValue = typeof value === "string" ? value.trim() : value;
 
     switch (field) {
@@ -216,12 +230,7 @@ function StudentManagement() {
         if (!/^\d+$/.test(String(trimmedValue))) return "Year level must be a valid number";
         if (String(trimmedValue).length > 2) return "Year level must be at most 2 digits";
         return "";
-      case "phone": {
-        if (!trimmedValue) return "Phone number is required";
-        const normalizedPhone = normalizePhone(String(trimmedValue));
-        if (!/^\d{11}$/.test(normalizedPhone)) return "Phone number must be exactly 11 digits";
-        return "";
-      }
+
       case "section":
         return "";
       case "status":
@@ -234,8 +243,11 @@ function StudentManagement() {
 
   const handleAddStudentFieldChange = (field, value) => {
     setStudentFormData((current) => {
-      const nextValue = field === "phone" ? normalizePhone(value) : field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
+      const nextValue = field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
       const nextFormData = { ...current, [field]: nextValue };
+      if (field === "year_level") {
+        nextFormData.section = ""; // Automatically clear the selected Section if the Grade Level changes.
+      }
       const fieldError = validateAddField(field, nextValue, nextFormData);
 
       setFormErrors((currentErrors) => {
@@ -261,7 +273,7 @@ function StudentManagement() {
     email: formData.email.trim().toLowerCase(),
     lrn: normalizeLrn(formData.lrn),
     year_level: normalizeYearLevel(formData.year_level),
-    phone: formData.phone.trim(),
+
     section: formData.section?.trim() || null,
     status: formData.status,
     role: "student"
@@ -270,10 +282,10 @@ function StudentManagement() {
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};
 
-    const fieldNames = ["first_name", "last_name", "email", "lrn", "year_level", "phone", "section", "status"];
+    const fieldNames = ["first_name", "last_name", "email", "lrn", "year_level", "section", "status"];
 
     fieldNames.forEach((field) => {
-      const fieldError = validateAddField(field, formData[field]);
+      const fieldError = validateAddField(field, formData[field], formData);
       if (fieldError) errors[field] = fieldError;
     });
 
@@ -335,7 +347,7 @@ function StudentManagement() {
       const { data, error } = await db
         .from("profiles")
         .insert({ id: newStudentId, ...buildPayload(studentFormData) })
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
         .single();
 
       if (error) {
@@ -363,7 +375,7 @@ function StudentManagement() {
         email: "",
         lrn: "",
         year_level: "",
-        phone: "",
+
         section: "",
         status: "Active",
         password: ""
@@ -403,7 +415,7 @@ function StudentManagement() {
         .from("profiles")
         .update(buildPayload(editFormData))
         .eq("id", selectedStudent.id)
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
+        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
         .single();
 
       if (error) {
@@ -431,7 +443,7 @@ function StudentManagement() {
         email: "",
         lrn: "",
         year_level: "",
-        phone: "",
+
         section: "",
         status: "Active"
       });
@@ -645,7 +657,7 @@ function StudentManagement() {
       email: student.email ?? "",
       lrn: student.lrn ?? "",
       year_level: student.year_level ?? "",
-      phone: student.phone ?? "",
+
       section: student.section ?? "",
       status: student.status ?? "Active"
     });
@@ -661,7 +673,7 @@ function StudentManagement() {
       email: "",
       lrn: "",
       year_level: "",
-      phone: "",
+
       section: "",
       status: "Active",
       password: ""
@@ -679,7 +691,7 @@ function StudentManagement() {
       email: "",
       lrn: "",
       year_level: "",
-      phone: "",
+
       section: "",
       status: "Active"
     });
@@ -724,10 +736,31 @@ function StudentManagement() {
     setStudentToDelete(null);
 
     try {
+      const cleanupTables = [
+        { name: "notifications", col: "user_id" },
+        { name: "password_reset_logs", col: "user_id" },
+        { name: "conversation_participants", col: "profile_id" },
+        { name: "conversation_reads", col: "user_id" },
+        { name: "messages", col: "sender_id" },
+        { name: "teacher_student_grades", col: "student_id" },
+        { name: "teacher_assessment_submissions", col: "student_id" },
+        { name: "teacher_assessment_grades", col: "student_id" },
+      ];
+
+      for (const table of cleanupTables) {
+        await db.from(table.name).delete().eq(table.col, studentId);
+      }
+
       const { error } = await db.from("profiles").delete().eq("id", studentId);
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(studentId);
+      } catch (e) {
+        console.error("Non-fatal: Failed to delete auth user", e);
       }
 
       logActivity({
@@ -744,6 +777,128 @@ function StudentManagement() {
       setStudents(previousStudents);
       const errMsg = err instanceof Error ? err.message : "Unable to delete student.";
       toast.error(errMsg);
+    }
+  };
+
+  const toggleStudentSelection = (id) => {
+    setSelectedStudentIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const toggleAllStudents = (filteredIds) => {
+    if (selectedStudentIds.size === filteredIds.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(filteredIds));
+    }
+  };
+
+  const handleBulkDeleteStudents = async () => {
+    if (selectedStudentIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedStudentIds);
+      
+      const results = await Promise.allSettled(
+        idsToDelete.map(async (id) => {
+          // 1. Manually delete related records to prevent 409 Foreign Key Constraint Errors
+          // This is necessary if the Supabase schema lacks ON DELETE CASCADE for these tables.
+          const cleanupTables = [
+            { name: "notifications", col: "user_id" },
+            { name: "password_reset_logs", col: "user_id" },
+            { name: "conversation_participants", col: "profile_id" },
+            { name: "conversation_reads", col: "user_id" },
+            { name: "messages", col: "sender_id" },
+            { name: "teacher_student_grades", col: "student_id" },
+            { name: "teacher_assessment_submissions", col: "student_id" },
+            { name: "teacher_assessment_grades", col: "student_id" },
+          ];
+
+          for (const table of cleanupTables) {
+            await db.from(table.name).delete().eq(table.col, id);
+          }
+
+          // 2. Delete the profile
+          const { error: profileError } = await db.from("profiles").delete().eq("id", id);
+          if (profileError) throw profileError;
+
+          // 3. Fully delete the user from Auth
+          try {
+             await supabaseAdmin.auth.admin.deleteUser(id);
+          } catch (e) {
+             console.error("Non-fatal: Failed to delete auth user", e);
+          }
+        })
+      );
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      results.forEach(result => {
+        if (result.status === "fulfilled") {
+          successCount++;
+        } else {
+          failureCount++;
+          console.error("Delete failed for a student:", result.reason);
+        }
+      });
+
+      if (successCount > 0) {
+        logActivity({
+          actionType: "deleted",
+          entityType: "student",
+          entityName: `${successCount} students`,
+          details: { action: "bulk_delete" },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      if (failureCount === 0) {
+        toast.success(`Successfully deleted ${successCount} students.`);
+      } else if (successCount > 0) {
+        toast.warning(`Deleted ${successCount} students. ${failureCount} failed (likely due to linked records).`);
+      } else {
+        throw new Error(`Failed to delete students. They might have linked records (e.g., grades, messages) that prevent deletion.`);
+      }
+
+      setSelectedStudentIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      await refreshStudents();
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      toast.error(err.message || "Unable to bulk delete students.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleClearMasterlist = async () => {
+    setIsClearingMasterlist(true);
+    try {
+      const { error } = await db.from("student_masterlist").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw error;
+      
+      logActivity({
+        actionType: "deleted",
+        entityType: "masterlist",
+        entityName: "All Imported Masterlist Records",
+        details: { action: "clear_masterlist" },
+        timestamp: new Date().toISOString()
+      });
+      
+      toast.success("Imported Masterlist cleared successfully.");
+      setMasterlist([]);
+      setSelectedMasterlistIds(new Set());
+      setShowClearMasterlistConfirm(false);
+    } catch (err) {
+      console.error("Clear masterlist error:", err);
+      toast.error(err.message || "Unable to clear masterlist.");
+    } finally {
+      setIsClearingMasterlist(false);
     }
   };
 
@@ -1062,15 +1217,40 @@ function StudentManagement() {
                   Export
                 </button>
 
-              {activeTab === "Masterlist" && selectedMasterlistIds.size > 0 && (
+              {activeTab === "Profiles" && (
                 <button
-                  onClick={handleGenerateAccounts}
-                  disabled={isGenerating}
-                  className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  disabled={selectedStudentIds.size === 0 || isBulkDeleting}
+                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
                 >
-                  {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  {isGenerating ? "Generating..." : `Generate Accounts (${selectedMasterlistIds.size})`}
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedStudentIds.size})`}
                 </button>
+              )}
+
+              {activeTab === "Masterlist" && (
+                <>
+                  {selectedMasterlistIds.size > 0 && (
+                    <button
+                      onClick={handleGenerateAccounts}
+                      disabled={isGenerating}
+                      className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                    >
+                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                      {isGenerating ? "Generating..." : `Generate Accounts (${selectedMasterlistIds.size})`}
+                    </button>
+                  )}
+                  {masterlist.length > 0 && (
+                    <button
+                      onClick={() => setShowClearMasterlistConfirm(true)}
+                      disabled={isClearingMasterlist}
+                      className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                    >
+                      {isClearingMasterlist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      {isClearingMasterlist ? "Clearing..." : "Clear Imported Masterlist"}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1082,6 +1262,14 @@ function StudentManagement() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-6 py-4 text-left w-12">
+                      <button
+                        onClick={() => toggleAllStudents(filteredStudents.map(s => s.id))}
+                        className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        {selectedStudentIds.size > 0 && selectedStudentIds.size === filteredStudents.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                      </button>
+                    </th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Full Name</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">LRN</th>
@@ -1125,7 +1313,15 @@ function StudentManagement() {
                         );
                         groupStudents.forEach((student) => {
                           rows.push(
-                            <tr key={student.id} className="hover:bg-gray-50 transition-colors">
+                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                              <td className="px-6 py-4 text-left">
+                                <button
+                                  onClick={() => toggleStudentSelection(student.id)}
+                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                  {selectedStudentIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                              </td>
                               <td className="px-6 py-4">
                                 <p className="font-semibold text-gray-900">{getFullName(student)}</p>
                                 <p className="text-xs text-gray-500 mt-0.5">Student profile</p>
@@ -1351,7 +1547,8 @@ function StudentManagement() {
                         { value: "8", label: "Year 8" },
                         { value: "9", label: "Year 9" },
                         { value: "10", label: "Year 10" },
-                        
+                        { value: "11", label: "Year 11" },
+                        { value: "12", label: "Year 12" },
                       ]}
                       placeholder="Select year level"
                       className="w-full"
@@ -1359,9 +1556,14 @@ function StudentManagement() {
                     {formErrors.year_level && <p className="text-red-500 text-sm mt-1">{formErrors.year_level}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input type="text" value={studentFormData.phone} onChange={(e) => handleAddStudentFieldChange("phone", e.target.value)} inputMode="numeric" maxLength={11} placeholder="11-digit phone number" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
+                    <label className="block text-sm font-medium text-gray-700">Section</label>
+                    <SectionDropdown
+                      value={studentFormData.section}
+                      onChange={(value) => handleAddStudentFieldChange("section", value)}
+                      gradeLevel={studentFormData.year_level ? `Grade ${studentFormData.year_level}` : ""}
+                      className="w-full"
+                    />
+                    {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
@@ -1459,32 +1661,45 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Year Level</label>
-                    <input type="text" value={editFormData.year_level} onChange={(e) => {
-                      const nextValue = normalizeYearLevel(e.target.value);
-                      setEditFormData({ ...editFormData, year_level: nextValue });
-                      setEditFormErrors((currentErrors) => {
-                        const nextErrors = { ...currentErrors };
-                        const fieldError = validateAddField("year_level", nextValue);
+                    <CustomSelect
+                      value={editFormData.year_level}
+                      onChange={(value) => {
+                        const nextFormData = { ...editFormData, year_level: value, section: "" };
+                        setEditFormData(nextFormData);
+                        setEditFormErrors((currentErrors) => {
+                          const nextErrors = { ...currentErrors };
+                          const fieldError = validateAddField("year_level", value, nextFormData);
 
-                        if (fieldError) {
-                          nextErrors.year_level = fieldError;
-                        } else {
-                          delete nextErrors.year_level;
-                        }
+                          if (fieldError) {
+                            nextErrors.year_level = fieldError;
+                          } else {
+                            delete nextErrors.year_level;
+                          }
 
-                        return nextErrors;
-                      });
-                    }} inputMode="numeric" maxLength={2} placeholder="e.g. 7 or 12" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          return nextErrors;
+                        });
+                      }}
+                      options={[
+                        { value: "7", label: "Year 7" },
+                        { value: "8", label: "Year 8" },
+                        { value: "9", label: "Year 9" },
+                        { value: "10", label: "Year 10" },
+                        { value: "11", label: "Year 11" },
+                        { value: "12", label: "Year 12" },
+                      ]}
+                      placeholder="Select year level"
+                      className="w-full"
+                    />
                     {editFormErrors.year_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.year_level}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input type="text" value={editFormData.phone} onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    {editFormErrors.phone && <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>}
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700">Section</label>
-                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} placeholder="Enter section" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <SectionDropdown
+                      value={editFormData.section}
+                      onChange={(value) => handleEditFieldChange("section", value)}
+                      gradeLevel={editFormData.year_level ? `Grade ${editFormData.year_level}` : ""}
+                      className="w-full"
+                    />
                     {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
                   </div>
                   <div>
@@ -1559,13 +1774,6 @@ function StudentManagement() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Phone Number</label>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-green-600" />
-                      <p className="text-gray-900">{selectedStudent.phone || "Not set"}</p>
-                    </div>
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-green-600" />
@@ -1634,6 +1842,26 @@ function StudentManagement() {
         title="Delete Student"
         message={studentToDelete ? `Are you sure you want to permanently delete ${getFullName(studentToDelete) || "this student"}? This action cannot be undone.` : "Are you sure you want to permanently delete this student? This action cannot be undone."}
         confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDeleteStudents}
+        title="Delete Selected Students"
+        message={`Are you sure you want to permanently delete ${selectedStudentIds.size} selected student(s)? This action cannot be undone.`}
+        confirmText="Delete All Selected"
+        cancelText="Cancel"
+        type="danger"
+      />
+      <ConfirmDialog
+        isOpen={showClearMasterlistConfirm}
+        onClose={() => setShowClearMasterlistConfirm(false)}
+        onConfirm={handleClearMasterlist}
+        title="Clear Imported Masterlist"
+        message="Are you sure you want to permanently delete ALL imported masterlist records? This action cannot be undone and will affect any pending accounts."
+        confirmText="Clear Masterlist"
         cancelText="Cancel"
         type="danger"
       />

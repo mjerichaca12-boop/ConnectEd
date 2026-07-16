@@ -4,11 +4,12 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { CustomSelect } from "../../components/admin/CustomSelect";
+import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, Plus, Eye, Edit, Trash2, Download, Clock, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus } from "lucide-react";
+import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus } from "lucide-react";
 
 const emptyForm = {
   code: "",
@@ -16,12 +17,12 @@ const emptyForm = {
   description: "",
   credits: "",
   teacher: "",
-  schedule: "",
   capacity: "",
-  grade_level: ""
+  grade_level: "",
+  section: ""
 };
 
-const subjectSelectColumns = "id, code, name, description, credits, teacher_id, schedule, capacity, enrolled, grade_level, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, credits, teacher_id, capacity, enrolled, grade_level, section, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -92,7 +93,6 @@ function SubjectManagement() {
 
   const normalizePositiveInteger = (value) => value.replace(/\D/g, "");
   const normalizeCode = (value) => value.toUpperCase().replace(/\s+/g, "");
-  const isValidSection = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
 
   const getTeacherNameById = (teacherId) => {
     if (!teacherId) return "Unassigned";
@@ -111,7 +111,7 @@ function SubjectManagement() {
     credits: Number(subjectRow.credits ?? 0),
     capacity: Number(subjectRow.capacity ?? 0),
     enrolled: Number(subjectRow.enrolled ?? 0),
-    section: String(subjectRow.grade_level || "").trim(),
+    section: String(subjectRow.section || "").trim(),
     teacher_id: (() => {
       const t = String(subjectRow.teacher_id || "").trim();
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
@@ -257,12 +257,6 @@ function SubjectManagement() {
     setAvailableStudents(available);
   };
 
-  const formatStudentName = (studentRow) => {
-    const parts = [studentRow.first_name, studentRow.middle_name, studentRow.last_name].filter(Boolean);
-    const combined = parts.join(" ").trim();
-    return combined || studentRow.email || "Unknown student";
-  };
-
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
@@ -323,6 +317,7 @@ function SubjectManagement() {
         setNotificationList(adminNotifications);
 
         await resolveSubjectTable();
+        
         await Promise.all([fetchTeachers(), fetchSubjects()]);
         setErrorMessage("");
       } catch (error) {
@@ -378,10 +373,8 @@ function SubjectManagement() {
 
     const code = normalizeCode(formData.code || "").trim();
     const name = (formData.name || "").trim();
-    const description = (formData.description || "").trim();
     const credits = normalizePositiveInteger(String(formData.credits || ""));
     const teacherId = (formData.teacher || "").trim();
-    const schedule = (formData.schedule || "").trim();
     const capacity = normalizePositiveInteger(String(formData.capacity || ""));
 
     if (!code) {
@@ -400,12 +393,6 @@ function SubjectManagement() {
 
     if (teacherId && !teachers.some((item) => item.id === teacherId)) {
       errors.teacher = "Selected teacher is invalid";
-    }
-
-
-
-    if (!schedule) {
-      errors.schedule = "Schedule is required";
     }
 
     if (!capacity) {
@@ -469,9 +456,9 @@ function SubjectManagement() {
       const t = (formData.teacher || "").trim();
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
     })(),
-    schedule: (formData.schedule || "").trim(),
     capacity: Number(normalizePositiveInteger(String(formData.capacity || ""))),
-    grade_level: (formData.grade_level || "").trim()
+    grade_level: (formData.grade_level || "").trim(),
+    section: (formData.section || "").trim() || null
   });
 
   const handleAddSubject = async (event) => {
@@ -513,13 +500,6 @@ function SubjectManagement() {
       }
 
       if (existingSubject?.id) {
-        console.warn("[SubjectManagement] prevented duplicate subject insert", {
-          teacherId: payload.teacher_id,
-          code: payload.code,
-          name: payload.name,
-          gradeLevel: payload.grade_level,
-          existingSubjectId: existingSubject.id
-        });
         setFormErrors({
           form: payload.teacher_id 
             ? "This subject is already assigned to this teacher and grade level."
@@ -527,13 +507,6 @@ function SubjectManagement() {
         });
         return;
       }
-
-      console.log("[SubjectManagement] creating subject assignment", {
-        teacherId: payload.teacher_id,
-        code: payload.code,
-        name: payload.name,
-        gradeLevel: payload.grade_level
-      });
 
       const { data, error } = await supabase.from(tableName).insert(payload).select(subjectSelectColumns).single();
 
@@ -598,9 +571,9 @@ function SubjectManagement() {
       description: String(subject.description || ""),
       credits: String(subject.credits || ""),
       teacher: String(subject.teacher_id || ""),
-      schedule: String(subject.schedule || ""),
       capacity: String(subject.capacity || ""),
-      grade_level: String(subject.grade_level || "")
+      grade_level: String(subject.grade_level || ""),
+      section: String(subject.section || "")
     });
     setShowEditModal(true);
   };
@@ -912,7 +885,7 @@ function SubjectManagement() {
   };
 
   const handleExportToCSV = () => {
-    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Schedule", "Capacity", "Enrolled"];
+    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Section", "Capacity", "Enrolled"];
     const rows = filteredSubjects.map((subject) => [
       subject.code,
       subject.name,
@@ -920,7 +893,7 @@ function SubjectManagement() {
       String(subject.credits),
       getTeacherNameById(subject.teacher_id),
       subject.grade_level || "No grade assigned",
-      subject.schedule,
+      subject.section || "No section assigned",
       String(subject.capacity),
       String(subject.enrolled)
     ]);
@@ -1058,8 +1031,7 @@ function SubjectManagement() {
                     <p className="text-gray-600 text-sm">{subject.description || "No description provided"}</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{getTeacherNameById(subject.teacher_id)}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.grade_level || "No grade assigned"}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.schedule}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.grade_level || "No grade assigned"} {subject.section ? ` - ${subject.section}` : ""}</span></div>
                     </div>
                       <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-100">
                       <div>
@@ -1120,7 +1092,7 @@ function SubjectManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
                     <CustomSelect
                       value={subjectFormData.grade_level}
-                      onChange={(value) => setSubjectFormData({ ...subjectFormData, grade_level: value })}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, grade_level: value, section: "" })}
                       options={[
                         { value: "Grade 7", label: "Grade 7" },
                         { value: "Grade 8", label: "Grade 8" },
@@ -1133,14 +1105,19 @@ function SubjectManagement() {
                     {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <SectionDropdown
+                      value={subjectFormData.section}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, section: value })}
+                      gradeLevel={subjectFormData.grade_level}
+                      className="w-full"
+                    />
+                    {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
                     <input type="text" inputMode="numeric" placeholder="e.g., 30" value={subjectFormData.capacity} onChange={(e) => setSubjectFormData({ ...subjectFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.capacity && <p className="text-red-500 text-sm mt-1">{formErrors.capacity}</p>}
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" placeholder="e.g., MWF 8:00-9:00 AM" value={subjectFormData.schedule} onChange={(e) => setSubjectFormData({ ...subjectFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.schedule && <p className="text-red-500 text-sm mt-1">{formErrors.schedule}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
@@ -1190,7 +1167,7 @@ function SubjectManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
                     <CustomSelect
                       value={editFormData.grade_level}
-                      onChange={(value) => setEditFormData({ ...editFormData, grade_level: value })}
+                      onChange={(value) => setEditFormData({ ...editFormData, grade_level: value, section: "" })}
                       options={[
                         { value: "Grade 7", label: "Grade 7" },
                         { value: "Grade 8", label: "Grade 8" },
@@ -1203,14 +1180,19 @@ function SubjectManagement() {
                     {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <SectionDropdown
+                      value={editFormData.section}
+                      onChange={(value) => setEditFormData({ ...editFormData, section: value })}
+                      gradeLevel={editFormData.grade_level}
+                      className="w-full"
+                    />
+                    {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
                     <input type="text" inputMode="numeric" value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.capacity && <p className="text-red-500 text-sm mt-1">{editFormErrors.capacity}</p>}
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" value={editFormData.schedule} onChange={(e) => setEditFormData({ ...editFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {editFormErrors.schedule && <p className="text-red-500 text-sm mt-1">{editFormErrors.schedule}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
@@ -1255,12 +1237,8 @@ function SubjectManagement() {
                     <div className="flex items-center gap-2"><User className="w-4 h-4 text-green-600" /><p className="text-gray-900">{getTeacherNameById(selectedSubject.teacher_id)}</p></div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-505 mb-1">Grade Level</label>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Grade Level</label>
                     <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.grade_level || "No grade assigned"}</p></div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Schedule</label>
-                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.schedule}</p></div>
                   </div>
                 </div>
                 <div className="space-y-4">

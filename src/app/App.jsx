@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
 import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
 import { supabase } from "./lib/supabaseClient";
 import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { LandingPage } from "./pages/LandingPage";
-import { TermsAndPrivacy } from "./pages/TermsAndPrivacy";
+import { SitePolicy } from "./pages/SitePolicy";
+import { TermsOfService } from "./pages/TermsOfService";
+import { ContactUs } from "./pages/ContactUs";
+import { Support } from "./pages/Support";
 import { Login } from "./pages/Login";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ChangePassword } from "./pages/ChangePassword";
@@ -197,16 +200,28 @@ function AdminRouteGuard({ children }) {
   return children;
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <ActivityProvider>
       <UnreadMessagesProvider>
       <Router>
+        <ScrollToTop />
         <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/landing" element={<LandingPage />} />
-        <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
+        <Route path="/privacy-policy" element={<SitePolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="/contact" element={<ContactUs />} />
+        <Route path="/support" element={<Support />} />
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/change-password" element={<ChangePassword />} />

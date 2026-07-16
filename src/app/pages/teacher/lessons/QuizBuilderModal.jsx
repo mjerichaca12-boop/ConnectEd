@@ -17,6 +17,12 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
     attempts_allowed: 1,
     shuffle_questions: false,
     shuffle_choices: false,
+    available_from: "",
+    due_date: "",
+    allow_late_submission: false,
+    late_deadline: "",
+    show_score_immediately: false,
+    show_correct_answers_after_submission: false,
   });
 
   const [questions, setQuestions] = useState([]);
@@ -48,6 +54,12 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
         attempts_allowed: qData.attempts_allowed || "",
         shuffle_questions: qData.shuffle_questions || false,
         shuffle_choices: qData.shuffle_choices || false,
+        available_from: qData.available_from ? new Date(qData.available_from).toISOString().slice(0, 16) : "",
+        due_date: qData.due_date ? new Date(qData.due_date).toISOString().slice(0, 16) : "",
+        allow_late_submission: qData.allow_late_submission || false,
+        late_deadline: qData.late_deadline ? new Date(qData.late_deadline).toISOString().slice(0, 16) : "",
+        show_score_immediately: qData.show_score_immediately || false,
+        show_correct_answers_after_submission: qData.show_correct_answers_after_submission || false,
       });
 
       let parsedAttachments = [];
@@ -156,6 +168,18 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
       totalPoints += parseInt(q.points) || 1;
     }
 
+    if (quizDetails.available_from && quizDetails.due_date) {
+      if (new Date(quizDetails.due_date) <= new Date(quizDetails.available_from)) {
+        return toast.error("Due Date must be later than Available From date.");
+      }
+      
+      const availableMs = new Date(quizDetails.due_date).getTime() - new Date(quizDetails.available_from).getTime();
+      const timeLimitMs = (parseInt(quizDetails.time_limit_minutes) || 0) * 60000;
+      if (timeLimitMs > 0 && timeLimitMs > availableMs) {
+        return toast.error("Time limit cannot exceed the available time window.");
+      }
+    }
+
     setIsSubmitting(true);
     try {
       let finalAttachments = [...existingAttachments];
@@ -189,6 +213,12 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
         attempts_allowed: parseInt(quizDetails.attempts_allowed) || null,
         shuffle_questions: quizDetails.shuffle_questions,
         shuffle_choices: quizDetails.shuffle_choices,
+        available_from: quizDetails.available_from ? new Date(quizDetails.available_from).toISOString() : null,
+        due_date: quizDetails.due_date ? new Date(quizDetails.due_date).toISOString() : null,
+        allow_late_submission: quizDetails.allow_late_submission,
+        late_deadline: quizDetails.late_deadline ? new Date(quizDetails.late_deadline).toISOString() : null,
+        show_score_immediately: quizDetails.show_score_immediately,
+        show_correct_answers_after_submission: quizDetails.show_correct_answers_after_submission,
         total_points: totalPoints,
         attachment_url: finalAttachments.length > 0 ? JSON.stringify(finalAttachments) : null,
         attachment_name: null
@@ -542,34 +572,119 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-gray-100 space-y-3">
-                  <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      name="shuffle_questions"
-                      checked={quizDetails.shuffle_questions}
-                      onChange={handleDetailChange}
-                      className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                    />
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <h4 className="font-semibold text-gray-800 flex items-center gap-2"><Clock className="w-4 h-4 text-gray-400"/> Scheduling & Availability</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
-                      <span className="block font-medium text-gray-900">Shuffle Questions</span>
-                      <span className="block text-xs text-gray-500">Randomize the order of questions for each student</span>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Available From</label>
+                      <input 
+                        type="datetime-local" 
+                        name="available_from"
+                        value={quizDetails.available_from}
+                        onChange={handleDetailChange}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-green-500/20"
+                      />
                     </div>
-                  </label>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Due Date (Deadline)</label>
+                      <input 
+                        type="datetime-local" 
+                        name="due_date"
+                        value={quizDetails.due_date}
+                        onChange={handleDetailChange}
+                        className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-green-500/20"
+                      />
+                    </div>
+                  </div>
 
-                  <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      name="shuffle_choices"
-                      checked={quizDetails.shuffle_choices}
-                      onChange={handleDetailChange}
-                      className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                    />
-                    <div>
-                      <span className="block font-medium text-gray-900">Shuffle Choices</span>
-                      <span className="block text-xs text-gray-500">Randomize the order of choices in multiple choice questions</span>
-                    </div>
-                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer h-full">
+                      <input 
+                        type="checkbox" 
+                        name="allow_late_submission"
+                        checked={quizDetails.allow_late_submission}
+                        onChange={handleDetailChange}
+                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 flex-shrink-0"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900 text-sm">Allow Late Submission</span>
+                        <span className="block text-xs text-gray-500">Students can submit after the due date</span>
+                      </div>
+                    </label>
+                    {quizDetails.allow_late_submission && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Late Submission Deadline</label>
+                        <input 
+                          type="datetime-local" 
+                          name="late_deadline"
+                          value={quizDetails.late_deadline}
+                          onChange={handleDetailChange}
+                          className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-green-500/20"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-100 space-y-3">
+                  <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2"><Settings className="w-4 h-4 text-gray-400"/> Submission & Viewing</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        name="shuffle_questions"
+                        checked={quizDetails.shuffle_questions}
+                        onChange={handleDetailChange}
+                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 flex-shrink-0"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900 text-sm">Shuffle Questions</span>
+                        <span className="block text-xs text-gray-500 leading-tight">Randomize order</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        name="shuffle_choices"
+                        checked={quizDetails.shuffle_choices}
+                        onChange={handleDetailChange}
+                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 flex-shrink-0"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900 text-sm">Shuffle Choices</span>
+                        <span className="block text-xs text-gray-500 leading-tight">Randomize options</span>
+                      </div>
+                    </label>
+                    
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        name="show_score_immediately"
+                        checked={quizDetails.show_score_immediately}
+                        onChange={handleDetailChange}
+                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 flex-shrink-0"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900 text-sm">Show Score Immediately</span>
+                        <span className="block text-xs text-gray-500 leading-tight">After submission</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        name="show_correct_answers_after_submission"
+                        checked={quizDetails.show_correct_answers_after_submission}
+                        onChange={handleDetailChange}
+                        className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500 flex-shrink-0"
+                      />
+                      <div>
+                        <span className="block font-medium text-gray-900 text-sm">Show Correct Answers</span>
+                        <span className="block text-xs text-gray-500 leading-tight">After submission</span>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

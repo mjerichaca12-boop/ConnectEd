@@ -232,7 +232,7 @@ function ClassMaterials() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("code, name, section:grade_level")
+      .select("code, name, section, grade_level")
       .eq("teacher_id", resolvedTeacherId)
       .order("code", { ascending: true });
 

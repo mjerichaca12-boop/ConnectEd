@@ -91,14 +91,14 @@ function Classes() {
 
     let { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section:grade_level, schedule, enrolled, grade_level")
+      .select("id, code, name, section, schedule, enrolled, grade_level")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
 
     if (error && isColumnMissingError(error)) {
       const fallback = await supabase
         .from("subjects")
-        .select("id, code, name, section:grade_level, schedule, enrolled")
+        .select("id, code, name, section, schedule, enrolled, grade_level")
         .eq("teacher_id", id)
         .order("code", { ascending: true });
 
@@ -351,9 +351,11 @@ function Classes() {
                     <h3 className="text-gray-900 font-bold text-xl mt-1 line-clamp-1">
                       {classItem.name}
                     </h3>
-                    {classItem.section && classItem.section !== classItem.name ? (
-                      <p className="text-gray-600 text-sm mt-1">{classItem.section}</p>
-                    ) : null}
+                    {(classItem.gradeLevel || classItem.section) && (
+                      <p className="text-gray-600 text-sm mt-1">
+                        {classItem.gradeLevel || "No grade"} {classItem.section ? `- ${classItem.section}` : ""}
+                      </p>
+                    )}
                   </div>
                   <div className="p-6 space-y-3">
                     {classItem.schedule && (

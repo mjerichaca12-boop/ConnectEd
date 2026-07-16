@@ -136,9 +136,19 @@ export function AdminAIChat({
   onExport,
   adminName,
   platformData,
+  onSuggestionClick,
 }) {
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+
+  const suggestedQuestions = [
+    "Summarize today's attendance.",
+    "How many students are enrolled per grade level?",
+    "Which section has the highest enrollment?",
+    "Show enrollment statistics.",
+    "Explain the dashboard.",
+    "What records need attention?"
+  ];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -223,6 +233,24 @@ export function AdminAIChat({
             Live data connected — {platformData.totalStudents} students
             · {platformData.totalTeachers} teachers
           </p>
+        </div>
+      )}
+
+      {/* Suggested Questions */}
+      {messages.length <= 1 && (
+        <div className="px-4 pt-2 pb-1 overflow-x-auto scrollbar-hide flex items-center gap-2 flex-shrink-0 bg-white">
+          {suggestedQuestions.map((q, idx) => (
+            <button
+              key={idx}
+              onClick={() => onSuggestionClick && onSuggestionClick(q)}
+              disabled={isStreaming}
+              className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 
+                         border border-green-200 rounded-full text-xs whitespace-nowrap 
+                         transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {q}
+            </button>
+          ))}
         </div>
       )}
 

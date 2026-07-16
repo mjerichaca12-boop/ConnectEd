@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { supabase } from "./supabaseClient";
 
 const apiKey = import.meta.env.VITE_GROQ_API_KEY;
 
@@ -16,7 +17,67 @@ const MODEL_PRIMARY  = "llama-3.3-70b-versatile";
 const MODEL_FALLBACK = "llama-3.1-8b-instant";
 const MAX_TOKENS     = 4096;
 
-const buildAdminSystemPrompt = (platformData = {}) => {
+const fetchDynamicContext = async (messages, currentModule) => {
+  if (!supabase || !messages || messages.length === 0) return "";
+  
+  const lastUserMsg = messages.filter(m => m.role === "user").pop();
+  if (!lastUserMsg) return "";
+  
+  const lowerMsg = lastUserMsg.content.toLowerCase();
+  const contextParts = [];
+
+  contextParts.push(`Current Active Module in UI: ${currentModule || "Dashboard"}`);
+
+  try {
+    if (lowerMsg.includes("student") || lowerMsg.includes("enroll") || lowerMsg.includes("grade level") || lowerMsg.includes("grade")) {
+      const { data } = await supabase.from("profiles").select("year_level, status").eq("role", "student");
+      if (data) {
+        const counts = data.reduce((acc, curr) => {
+          const yl = curr.year_level || "Unknown";
+          acc[yl] = (acc[yl] || 0) + 1;
+          return acc;
+        }, {});
+        const formattedCounts = Object.entries(counts)
+          .map(([grade, count]) => `- Grade ${grade}: ${count} students`)
+          .join("\n");
+        contextParts.push(`Student Enrollment Distribution by Grade Level:\n${formattedCounts}`);
+      }
+    }
+
+    if (lowerMsg.includes("section") || lowerMsg.includes("subject") || lowerMsg.includes("class")) {
+      const { data } = await supabase.from("subjects").select("name, grade_level, section").limit(50);
+      if (data) {
+        const formattedSubjects = data
+          .map(s => `- ${s.name} (Grade ${s.grade_level || 'N/A'}, Section: ${s.section || 'N/A'})`)
+          .join("\n");
+        contextParts.push(`Available Subjects Snapshot (limit 50):\n${formattedSubjects}`);
+      }
+    }
+
+    if (lowerMsg.includes("teacher") || lowerMsg.includes("staff")) {
+       const { data } = await supabase.from("profiles").select("status").eq("role", "teacher");
+       if (data) {
+         const counts = data.reduce((acc, curr) => {
+            const s = curr.status || "Unknown";
+            acc[s] = (acc[s] || 0) + 1;
+            return acc;
+         }, {});
+         const formattedTeachers = Object.entries(counts)
+            .map(([status, count]) => `- Status '${status}': ${count} teachers`)
+            .join("\n");
+         contextParts.push(`Teacher Status Distribution:\n${formattedTeachers}`);
+       }
+    }
+  } catch (err) {
+    console.error("Failed to fetch dynamic context", err);
+  }
+
+  return contextParts.length > 0 
+    ? `\n--- DYNAMIC DB CONTEXT (Retrieved just now based on user query) ---\n${contextParts.join("\n\n")}\n--------------------------\n` 
+    : "";
+};
+
+const buildAdminSystemPrompt = (platformData = {}, dynamicContext = "") => {
   const {
     totalStudents = 0,
     totalTeachers = 0,
@@ -33,56 +94,44 @@ in Dasmariñas, Cavite, Philippines.
 You assist the System Administrator in managing the ConnectEd 
 platform efficiently and professionally.
 
-CURRENT PLATFORM DATA (live snapshot):
+CURRENT PLATFORM DATA (Live Snapshot):
 - Total Students enrolled: ${totalStudents}
 - Total Teachers registered: ${totalTeachers}
 - Total Subjects available: ${totalSubjects}
 - Pending Access Requests: ${pendingRequests}
-- Recent Activity: ${JSON.stringify(recentActivity.slice(0, 5))}
-- Recent Announcements: ${JSON.stringify(announcements.slice(0, 3))}
+- Recent Announcements: ${announcements.slice(0, 3).map(a => `- ${a.title || 'Announcement'} (${a.priority || 'Normal'})`).join('\n')}
+${dynamicContext}
 
 YOUR CAPABILITIES:
-- Answer questions about platform statistics and data
-- Generate professional school announcements and notices
-- Draft teacher access approval/rejection messages
-- Create enrollment and academic summary reports
-- Suggest action items based on pending requests
-- Draft school calendar event descriptions
-- Generate subject management recommendations
-- Write parent/guardian communication letters
-- Create teacher evaluation templates
-- Provide data-driven insights and recommendations
-- Help interpret platform activity and trends
-- Draft official DepEd-format documents and letters
+- Answer questions about platform statistics and data.
+- Generate professional school announcements and notices.
+- Draft teacher access approval/rejection messages.
+- Create enrollment and academic summary reports.
+- Provide data-driven insights and recommendations.
 
 YOUR RULES:
-- Always be professional, formal, and respectful in tone
-- Base data-related answers on the platform snapshot provided
-- For document drafting, follow official DepEd formats
-- Respond in English unless Filipino/Tagalog is requested
-- Always clarify if data is from the live snapshot or general knowledge
-- Never make up student or teacher names — use placeholders
-- For reports, always include date, school name placeholder, 
-  and proper headings
-- Suggest practical, actionable recommendations only
-- Flag any data inconsistencies you notice in the platform snapshot
-- Never reveal raw database credentials or API keys
-- Never generate content that discriminates against students, teachers, or staff
+- Always be professional, formal, and respectful in tone.
+- CRITICAL: Base data-related answers ONLY on the platform snapshot provided. If the specific data is not present in the snapshot or the DYNAMIC DB CONTEXT block above, explicitly state that you do not have the required data available. DO NOT HALLUCINATE OR INVENT FACTS, NAMES, OR STATISTICS.
+- CRITICAL: Never output raw JSON or curly braces. Format all data as human-readable text, markdown tables, or bulleted lists.
+- For document drafting, follow official DepEd formats.
+- Respond in English unless Filipino/Tagalog is requested.
+- Never make up student or teacher names — use placeholders like [Teacher Name].
+- Suggest practical, actionable recommendations only.
+- Flag any data inconsistencies you notice in the platform snapshot.
 - If asked about non-admin topics, redirect: "I'm specialized for school administration tasks. I can help with reports, announcements, access requests, and platform management. What do you need help with?"
 
 OUTPUT FORMAT:
-- Use markdown formatting for all responses
-- Use ## for main headers, ### for sub-headers
-- Use tables for data summaries and comparisons
-- Use numbered lists for action items and steps
-- Use bold for important values and key terms
-- Always include a "Summary" section for long outputs
-- For official documents, include proper letterhead placeholders`;
+- Use markdown formatting for all responses.
+- Use ## for main headers, ### for sub-headers.
+- Use tables for data summaries and comparisons.
+- Use bold for important values and key terms.
+- Always include a "Summary" section for long outputs.`;
 };
 
 export const streamAdminMessage = async ({
   messages,
   platformData = {},
+  currentModule = "Dashboard",
   onChunk,
   onDone,
   onError,
@@ -91,14 +140,18 @@ export const streamAdminMessage = async ({
     onError?.(new Error("Groq API key not configured. Add VITE_GROQ_API_KEY to .env"));
     return;
   }
+  
   try {
+    const dynamicContext = await fetchDynamicContext(messages, currentModule);
+    const systemPrompt = buildAdminSystemPrompt(platformData, dynamicContext);
+
     const stream = await groq.chat.completions.create({
       model: MODEL_PRIMARY,
       max_tokens: MAX_TOKENS,
-      temperature: 0.5,
+      temperature: 0.3,
       stream: true,
       messages: [
-        { role: "system", content: buildAdminSystemPrompt(platformData) },
+        { role: "system", content: systemPrompt },
         ...messages,
       ],
     });
@@ -116,13 +169,16 @@ export const streamAdminMessage = async ({
   } catch (error) {
     if (error?.status === 429) {
       try {
+        const dynamicContext = await fetchDynamicContext(messages, currentModule);
+        const systemPrompt = buildAdminSystemPrompt(platformData, dynamicContext);
+        
         const fallbackStream = await groq.chat.completions.create({
           model: MODEL_FALLBACK,
           max_tokens: MAX_TOKENS,
-          temperature: 0.5,
+          temperature: 0.3,
           stream: true,
           messages: [
-            { role: "system", content: buildAdminSystemPrompt(platformData) },
+            { role: "system", content: systemPrompt },
             ...messages,
           ],
         });

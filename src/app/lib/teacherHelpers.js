@@ -479,6 +479,7 @@ export const createDefaultGradeRecord = () => ({
   term1Grade: 0,
   term2Grade: 0,
   term3Grade: 0,
+  term4Grade: 0,
   quizAverage: 0,
   activityGrade: 0,
   assignmentGrade: 0,
@@ -506,16 +507,17 @@ export const getGradeRemarks = (overallGrade) => {
 
 /**
  * Calculate overall grade from individual components
- * New 3-Term Weights:
- * - Terms (1-3): 60% (20% each)
+ * New 4-Quarter Weights:
+ * - Quarters (1-4): 60% (15% each)
  * - Quizzes: 15%
  * - Activities: 15%
  * - Assignments: 10%
  */
 export const calculateOverallGrade = (record) => {
-  const termTotal = (record.term1Grade || 0) * 0.20 + 
-                   (record.term2Grade || 0) * 0.20 + 
-                   (record.term3Grade || 0) * 0.20;
+  const termTotal = (record.term1Grade || 0) * 0.15 + 
+                   (record.term2Grade || 0) * 0.15 + 
+                   (record.term3Grade || 0) * 0.15 +
+                   (record.term4Grade || 0) * 0.15;
                    
   const componentTotal = (record.quizAverage || 0) * 0.15 +
                         (record.activityGrade || 0) * 0.15 +
