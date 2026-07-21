@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import Colors from "../../../../src/constants/Colors";
 import Layout from "../../../../src/constants/Layout";
 import AppHeader from "../../../../src/components/common/AppHeader";
@@ -13,23 +13,35 @@ import { supabase } from '../../../../src/lib/supabase';
 import { useCreateMaterialMutation } from '../../../../src/hooks/query/materials/use-create-material-mutation';
 
 const MaterialItem = ({ title, type, date, onPress }: any) => {
-    const getIconText = (type: string) => {
+    const getIconInfo = (type: string) => {
         const t = type?.toLowerCase();
-        if (t === 'pdf') return 'PDF';
-        if (t === 'doc' || t === 'docx') return 'DOC';
-        if (t === 'ppt' || t === 'pptx') return 'PPT';
-        return 'FILE';
+        if (t === 'pdf') {
+            return { name: 'document-text', color: '#EF4444', label: 'PDF' };
+        }
+        if (t === 'doc' || t === 'docx') {
+            return { name: 'document-text', color: '#3B82F6', label: 'W' };
+        }
+        if (t === 'ppt' || t === 'pptx') {
+            return { name: 'document-text', color: '#F97316', label: 'P' };
+        }
+        return { name: 'document', color: '#64748B', label: 'FILE' };
     };
 
+    const iconInfo = getIconInfo(type);
+
     return (
-        <TouchableOpacity style={styles.itemContainer} onPress={onPress}>
-            <View style={styles.iconPlaceholder}>
-                <Text style={styles.iconText}>{getIconText(type)}</Text>
+        <TouchableOpacity style={styles.itemContainer} onPress={onPress} activeOpacity={0.7}>
+            <View style={styles.iconWrapper}>
+                <Ionicons name={iconInfo.name as any} size={30} color={iconInfo.color} />
+                <View style={[styles.iconBadge, { backgroundColor: iconInfo.color }]}>
+                    <Text style={styles.iconBadgeText}>{iconInfo.label}</Text>
+                </View>
             </View>
-            <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{title}</Text>
+            <View style={styles.itemTextContainer}>
+                <Text style={styles.title} numberOfLines={1}>{title}</Text>
                 <Text style={styles.date}>Posted: {date}</Text>
             </View>
+            <Ionicons name="chevron-forward-outline" size={16} color="#CBD5E1" />
         </TouchableOpacity>
     );
 };
@@ -38,8 +50,11 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
     const [isDownloading, setIsDownloading] = useState(false);
 
     const handleDownload = async () => {
-        const fileUrl = material.file_url;
-        if (!fileUrl) {
+        let fileUrl = material.file_url;
+        if (Array.isArray(fileUrl)) {
+            fileUrl = fileUrl[0];
+        }
+        if (!fileUrl || typeof fileUrl !== 'string') {
             Alert.alert("Error", "This material does not have a file attached.");
             return;
         }
@@ -202,6 +217,42 @@ export default function SubjectMaterials() {
         }
     };
 
+    // State to keep track of collapsed sections
+    const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+    const toggleSection = (sectionTitle: string) => {
+        setCollapsedSections(prev => ({
+            ...prev,
+            [sectionTitle]: !prev[sectionTitle]
+        }));
+    };
+
+    // Grouping materials by weekly lesson number
+    const sectionsMap: { [key: string]: any[] } = {};
+    materials.forEach((m: any) => {
+        const weekNum = m.week_number;
+        const key = weekNum ? `Week ${weekNum}` : "General Resources";
+        if (!sectionsMap[key]) sectionsMap[key] = [];
+        sectionsMap[key].push(m);
+    });
+
+    const sortedKeys = Object.keys(sectionsMap).sort((a, b) => {
+        if (a === "General Resources") return 1;
+        if (b === "General Resources") return -1;
+        const numA = parseInt(a.replace("Week ", ""), 10);
+        const numB = parseInt(b.replace("Week ", ""), 10);
+        return numA - numB;
+    });
+
+    const sections = sortedKeys.map(key => {
+        const isCollapsed = !!collapsedSections[key];
+        return {
+            title: key,
+            data: isCollapsed ? [] : sectionsMap[key],
+            isCollapsed
+        };
+    });
+
     if (selectedMaterial) {
         return (
             <DetailedMaterialView 
@@ -227,8 +278,8 @@ export default function SubjectMaterials() {
                     📡 ID: {id} | 📄 Materials: {materials?.length || 0}
                 </Text>
             </View>
-            <FlatList
-                data={materials}
+            <SectionList
+                sections={sections}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.content}
                 renderItem={({ item }) => (
@@ -239,6 +290,29 @@ export default function SubjectMaterials() {
                         onPress={() => setSelectedMaterial(item)}
                     />
                 )}
+                renderSectionHeader={({ section }) => {
+                    const isCollapsed = (section as any).isCollapsed;
+                    return (
+                        <TouchableOpacity 
+                            style={styles.sectionHeaderContainer} 
+                            onPress={() => toggleSection(section.title)}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.sectionHeaderLeft}>
+                                <Ionicons 
+                                    name={isCollapsed ? "caret-forward" : "caret-down"} 
+                                    size={16} 
+                                    color="#1E293B" 
+                                    style={{ marginRight: 8 }} 
+                                />
+                                <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
+                            </View>
+                            <TouchableOpacity style={styles.moreButton} onPress={(e) => e.stopPropagation()}>
+                                <Ionicons name="ellipsis-horizontal" size={20} color="#94A3B8" />
+                            </TouchableOpacity>
+                        </TouchableOpacity>
+                    );
+                }}
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
                         <Ionicons name="document-outline" size={64} color="#CBD5E1" />
@@ -270,10 +344,9 @@ export default function SubjectMaterials() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F8FAFC",
+        backgroundColor: "#FFFFFF",
     },
     content: {
-        padding: 16,
         paddingBottom: 100, // Extra space for FAB
     },
     emptyContainer: {
@@ -309,36 +382,43 @@ const styles = StyleSheet.create({
     },
     itemContainer: {
         backgroundColor: "#FFFFFF",
-        padding: 12,
-        borderRadius: 12,
-        marginBottom: 8,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
         flexDirection: "row",
         alignItems: "center",
-        borderWidth: 1,
-        borderColor: Colors.light.border,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 1,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F1F5F9",
     },
-    iconPlaceholder: {
-        width: 40,
-        height: 40,
-        backgroundColor: "#F1F5F9",
-        borderRadius: 8,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 12,
+    iconWrapper: {
+        position: 'relative',
+        width: 36,
+        height: 36,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 16,
     },
-    iconText: {
-        fontSize: 10,
-        fontWeight: "bold",
-        color: Colors.light.textSecondary,
+    iconBadge: {
+        position: 'absolute',
+        bottom: -2,
+        left: -2,
+        paddingHorizontal: 3,
+        paddingVertical: 1,
+        borderRadius: 2,
+        minWidth: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    iconBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 7,
+        fontWeight: 'bold',
+    },
+    itemTextContainer: {
+        flex: 1,
     },
     title: {
-        fontSize: 14,
-        fontWeight: "600",
+        fontSize: 15,
+        fontWeight: "500",
         color: Colors.light.text,
         marginBottom: 2,
     },
@@ -412,5 +492,28 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 4,
         elevation: 6,
-    }
+    },
+    sectionHeaderContainer: {
+        backgroundColor: '#FFFFFF',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        marginTop: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
+    },
+    sectionHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    sectionHeaderTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1E293B',
+    },
+    moreButton: {
+        padding: 4,
+    },
 });

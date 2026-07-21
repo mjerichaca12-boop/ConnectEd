@@ -445,20 +445,29 @@ function StudentMaterials() {
 
       // 5. Upsert into teacher_assessment_submissions
       if (teacherId && subjectId) {
-        const { error: teacherSubError } = await supabase
+        const payload = {
+          teacher_id: teacherId,
+          subject_id: subjectId,
+          assessment_id: selectedActivity.id,
+          student_id: studentId,
+          response_text: comments.trim() || "Submitted via Web Dashboard",
+          file_url: publicUrl,
+          file_name: selectedFile.name,
+          file_path: storagePath,
+          status: "submitted"
+        };
+        let { error: teacherSubError } = await supabase
           .from("teacher_assessment_submissions")
-          .upsert({
-            teacher_id: teacherId,
-            subject_id: subjectId,
-            assessment_id: selectedActivity.id,
-            student_id: studentId,
-            response_text: comments.trim() || "Submitted via Web Dashboard",
-            file_url: publicUrl,
-            file_name: selectedFile.name,
-            file_path: storagePath,
-            status: "submitted"
-          }, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+          .upsert(payload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
         
+        if (teacherSubError && teacherSubError.code === 'PGRST204') {
+          const { status, ...fallbackPayload } = payload;
+          const { error: fallbackError } = await supabase
+            .from("teacher_assessment_submissions")
+            .upsert(fallbackPayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+          teacherSubError = fallbackError;
+        }
+
         if (teacherSubError) {
           console.error("Failed to upsert into teacher_assessment_submissions:", teacherSubError);
         }

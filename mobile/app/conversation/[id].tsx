@@ -42,6 +42,7 @@ export default function ConversationScreen() {
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const flatListRef = useRef<FlatList>(null);
     const isPickingRef = useRef(false);
+    const [sendingMessages, setSendingMessages] = useState<any[]>([]);
 
     const { data: messages = [], isLoading } = useConversationQuery(id);
     const { mutate: send, isPending: isSending } = useSendMessageMutation(id, isRoomBool);
@@ -82,11 +83,31 @@ export default function ConversationScreen() {
             }
 
             const messageContent = inputText.trim() || (attachment?.type === 'image' ? 'Sent a photo' : `Sent a document: ${attachment?.name}`);
+            const tempId = `temp_${Date.now()}`;
+            const tempMessage = {
+                id: tempId,
+                sender_id: currentUserId,
+                content: messageContent,
+                file_url: fileUrl,
+                file_type: fileType,
+                created_at: new Date().toISOString(),
+                status: 'sending'
+            };
+            
+            setSendingMessages(prev => [...prev, tempMessage]);
             
             send({ 
                 content: messageContent, 
                 fileUrl, 
                 fileType 
+            }, {
+                onSuccess: () => {
+                    setSendingMessages(prev => prev.filter(m => m.id !== tempId));
+                },
+                onError: (err: any) => {
+                    setSendingMessages(prev => prev.filter(m => m.id !== tempId));
+                    Alert.alert("Send Error", err.message);
+                }
             });
             
             setInputText("");
@@ -280,34 +301,68 @@ export default function ConversationScreen() {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
-    const renderMessage = ({ item }: { item: any }) => {
+    const renderMessage = ({ item, index }: { item: any, index: number }) => {
         const isMe = item.sender_id === currentUserId;
+        
+        // Find newest message sent by current user to show seen/delivered status under it
+        const reversedMessages = [...messages, ...sendingMessages].reverse();
+        const newestMyMessageIndex = reversedMessages.findIndex(m => m.sender_id === currentUserId);
+        const showStatus = isMe && index === newestMyMessageIndex;
+        
+        let statusLabel = "";
+        let statusIcon: "time-outline" | "checkmark-circle" | "checkmark-done-circle" = "checkmark-circle";
+        let statusColor = "#64748B";
+
+        if (showStatus) {
+            if (item.status === 'sending') {
+                statusLabel = "Sending";
+                statusIcon = "time-outline";
+                statusColor = "#94A3B8";
+            } else if (item.is_read) {
+                statusLabel = "Seen";
+                statusIcon = "checkmark-done-circle";
+                statusColor = Colors.light.primary;
+            } else {
+                statusLabel = "Delivered";
+                statusIcon = "checkmark-circle";
+                statusColor = "#64748B";
+            }
+        }
+
         return (
-            <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
-                {item.file_url && (item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
-                    <TouchableOpacity onPress={() => handleSaveImage(item.file_url)}>
-                        <Image source={{ uri: item.file_url }} style={styles.messageImage} resizeMode="cover" />
-                    </TouchableOpacity>
-                )}
-                {item.file_url && !(item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
-                    <TouchableOpacity 
-                        style={styles.fileContainer} 
-                        onPress={() => handleSaveFile(item.file_url, item.content?.replace('Sent a document: ', '') || 'attachment')}
-                    >
-                        <Ionicons name="document-attach" size={24} color={isMe ? "#FFF" : Colors.light.primary} />
-                        <Text style={[styles.fileText, { color: isMe ? "#FFF" : Colors.light.text }]} numberOfLines={1}>
-                            {item.content?.replace('Sent a document: ', '') || 'View Attachment'}
+            <View style={styles.messageWrapper}>
+                <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
+                    {item.file_url && (item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
+                        <TouchableOpacity onPress={() => handleSaveImage(item.file_url)}>
+                            <Image source={{ uri: item.file_url }} style={styles.messageImage} resizeMode="cover" />
+                        </TouchableOpacity>
+                    )}
+                    {item.file_url && !(item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
+                        <TouchableOpacity 
+                            style={styles.fileContainer} 
+                            onPress={() => handleSaveFile(item.file_url, item.content?.replace('Sent a document: ', '') || 'attachment')}
+                        >
+                            <Ionicons name="document-attach" size={24} color={isMe ? "#FFF" : Colors.light.primary} />
+                            <Text style={[styles.fileText, { color: isMe ? "#FFF" : Colors.light.text }]} numberOfLines={1}>
+                                {item.content?.replace('Sent a document: ', '') || 'View Attachment'}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+                    <View style={styles.messageTextContainer}>
+                        <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
+                            {item.content || item.message_text || (item.file_type === 'image' ? 'Photo' : 'Document')}
                         </Text>
-                    </TouchableOpacity>
-                )}
-                <View style={styles.messageTextContainer}>
-                    <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
-                        {item.content || item.message_text || (item.file_type === 'image' ? 'Photo' : 'Document')}
-                    </Text>
-                    <Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText]}>
-                        {formatTime(item.created_at)}
-                    </Text>
+                        <Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText]}>
+                            {formatTime(item.created_at)}
+                        </Text>
+                    </View>
                 </View>
+                {showStatus && (
+                    <View style={styles.statusContainer}>
+                        <Ionicons name={statusIcon} size={11} color={statusColor} style={{ marginRight: 3 }} />
+                        <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+                    </View>
+                )}
             </View>
         );
     };
@@ -331,7 +386,7 @@ export default function ConversationScreen() {
             >
                 <FlatList
                     ref={flatListRef}
-                    data={[...messages].reverse()}
+                    data={[...messages, ...sendingMessages].reverse()}
                     inverted
                     keyExtractor={(item) => item.id}
                     renderItem={renderMessage}
@@ -429,7 +484,23 @@ const styles = StyleSheet.create({
         maxWidth: "80%",
         padding: 12,
         borderRadius: 16,
-        marginBottom: 12,
+        marginBottom: 4,
+    },
+    messageWrapper: {
+        width: "100%",
+        marginBottom: 8,
+    },
+    statusContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-end',
+        marginRight: 4,
+        marginTop: 2,
+        marginBottom: 2,
+    },
+    statusText: {
+        fontSize: 9,
+        fontWeight: '600',
     },
     myMessage: {
         alignSelf: "flex-end",

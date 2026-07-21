@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import Colors from "../../constants/Colors";
 
 interface StatusBadgeProps {
-    status: "pending" | "submitted" | "late" | "graded" | "approved" | "rejected";
+    status: "pending" | "submitted" | "late" | "graded" | "approved" | "rejected" | "returned";
     style?: ViewStyle;
 }
 
@@ -16,6 +16,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, style }) => {
                 return { bg: "#F0FDFA", text: "#0D9488" }; // Teal (close to primary)
             case "approved":
             case "graded":
+            case "returned":
                 return { bg: "#F0FDF4", text: "#16A34A" }; // Green
             case "late":
             case "rejected":
@@ -26,11 +27,12 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, style }) => {
     };
 
     const { bg, text } = getStyles();
+    const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Unknown";
 
     return (
         <View style={[styles.container, { backgroundColor: bg }, style]}>
             <Text style={[styles.text, { color: text }]}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {label}
             </Text>
         </View>
     );

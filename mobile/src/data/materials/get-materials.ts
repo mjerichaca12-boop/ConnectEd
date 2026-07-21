@@ -26,18 +26,18 @@ export async function getMaterials({ subjectId, teacherId, allowFallback = true 
     if (isValidId) {
         // Fetch materials for specific subject
         const result = await supabase
-            .from('class_materials')
-            .select('*')
-            .eq('subject_id', subjectId);
+            .from('lesson_materials')
+            .select('*, lessons!inner(subject_id, week_number, title)')
+            .eq('lessons.subject_id', subjectId);
         data = result.data || [];
         error = result.error;
         console.log(`[materials] Subject-specific count: ${data.length}`);
     } else if (teacherId) {
         // Fetch materials for a specific teacher (when no subject is selected)
         const result = await supabase
-            .from('class_materials')
-            .select('*')
-            .eq('teacher_id', teacherId);
+            .from('lesson_materials')
+            .select('*, lessons!inner(teacher_id, subject_id, week_number, title)')
+            .eq('lessons.teacher_id', teacherId);
         data = result.data || [];
         error = result.error;
         console.log(`[materials] Teacher-specific count: ${data.length}`);
@@ -50,8 +50,8 @@ export async function getMaterials({ subjectId, teacherId, allowFallback = true 
     if (effectiveAllowFallback && (!error && data.length === 0)) {
         console.log('[materials] Running Global Fallback (fetch all)...');
         const fallback = await supabase
-            .from('class_materials')
-            .select('*')
+            .from('lesson_materials')
+            .select('*, lessons(subject_id, week_number, title)')
             .limit(50);
         
         if (fallback.error) {
@@ -97,14 +97,37 @@ export async function getMaterials({ subjectId, teacherId, allowFallback = true 
             }
         }
 
+        const lessonObj = m.lessons as any;
+        const subject_id = lessonObj?.subject_id || m.subject_id || '';
+        const week_number = lessonObj?.week_number || null;
+        const lesson_title = lessonObj?.title || '';
+
+        // Map type
+        let type: "pdf" | "doc" | "other" = "other";
+        const fileType = (m.file_type || "").toLowerCase();
+        const fileName = (m.file_name || "").toLowerCase();
+        if (fileType.includes("pdf") || fileName.endsWith(".pdf")) {
+            type = "pdf";
+        } else if (
+            fileType.includes("word") ||
+            fileType.includes("document") ||
+            fileName.endsWith(".doc") ||
+            fileName.endsWith(".docx")
+        ) {
+            type = "doc";
+        }
+
         return {
             id: m.id,
-            title: m.title || "Untitled Document",
-            type: m.type || "other",
+            title: m.file_name || "Untitled Document",
+            type,
             date: displayDate,
             file_url: finalUrl,
-            subject_id: m.subject_id,
+            subject_id,
             description: m.description || "",
+            created_at: m.created_at,
+            week_number,
+            lesson_title
         };
     });
 }

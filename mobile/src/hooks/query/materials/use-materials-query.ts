@@ -18,8 +18,7 @@ export function useMaterialsQuery(args: GetMaterialsArgs) {
                 { 
                     event: '*', 
                     schema: 'public', 
-                    table: 'class_materials', 
-                    filter: isValidUuid ? `subject_id=eq.${args.subjectId}` : undefined 
+                    table: 'lesson_materials'
                 },
                 () => {
                     queryClient.invalidateQueries({ queryKey: ['materials', args.subjectId, args.teacherId] });

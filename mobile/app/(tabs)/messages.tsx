@@ -51,6 +51,7 @@ const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type }: a
 
 export default function MessagesScreen() {
     const [searchQuery, setSearchQuery] = useState("");
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
     const { data: chats = [], isLoading: isChatsLoading, refetch: refetchChats } = useChatListQuery();
     const { data: profiles = [], isLoading: isProfilesLoading } = useSearchableProfilesQuery();
     const router = useRouter();
@@ -113,7 +114,8 @@ export default function MessagesScreen() {
         filteredChats.forEach(chat => listData.push({ type: 'chat', ...chat }));
     }
 
-    if (otherProfiles.length > 0) {
+    const showSuggested = isSearchFocused || searchQuery.trim().length > 0;
+    if (showSuggested && otherProfiles.length > 0) {
         listData.push({ type: 'header', title: searchQuery ? 'Other Users' : 'Suggested' });
         otherProfiles.forEach(profile => listData.push({ type: 'profile', ...profile }));
     }
@@ -139,6 +141,8 @@ export default function MessagesScreen() {
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholderTextColor="#94A3B8"
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity onPress={() => setSearchQuery("")}>

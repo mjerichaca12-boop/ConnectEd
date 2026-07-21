@@ -54,9 +54,15 @@ export const Button: React.FC<ButtonProps> = ({
         }
     };
 
+    const handlePress = () => {
+        if (typeof onPress === 'function') {
+            onPress();
+        }
+    };
+
     return (
         <TouchableOpacity
-            onPress={onPress}
+            onPress={handlePress}
             disabled={disabled || loading}
             style={[
                 styles.container,
@@ -73,7 +79,7 @@ export const Button: React.FC<ButtonProps> = ({
                 <ActivityIndicator color={getTextColor()} />
             ) : (
                 <Text style={[styles.text, { color: getTextColor() }, textStyle]}>
-                    {title}
+                    {typeof title === 'string' ? title : String(title || '')}
                 </Text>
             )}
         </TouchableOpacity>

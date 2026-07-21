@@ -256,10 +256,10 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
             approvedSubjectIds = subjects?.map(s => s.id).filter(Boolean) || [];
         }
 
-        // 1. Fetch school_announcements
+        // 1. Fetch school_announcements (no join to announcement_attachments — table does not exist)
         let schoolQuery = supabase
             .from('school_announcements')
-            .select('*, author_profile:profiles!author_id(role), announcement_attachments(file_url, file_type, file_name)');
+            .select('*');
         
         if (isStudent && approvedSubjectIds.length > 0) {
             schoolQuery = schoolQuery.or(`subject_id.in.(${approvedSubjectIds.join(',')}),subject_id.is.null`);
@@ -294,15 +294,16 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
 
         if (schoolAnn) {
             schoolAnn.forEach(ann => {
-                let primaryImage = resolveImageUrl(ann.image_url, ann.file_url);
-                if (!primaryImage && ann.announcement_attachments) {
-                    const imgAttachment = ann.announcement_attachments.find((att: any) => 
-                        att.file_type?.startsWith('image/') || 
-                        /\.(jpg|jpeg|png|gif|webp)$/i.test(att.file_url || '')
-                    );
-                    if (imgAttachment) {
-                        primaryImage = imgAttachment.file_url;
-                    }
+                const primaryImage = resolveImageUrl(ann.image_url, ann.file_url);
+
+                // Build attachments from the inline file columns on school_announcements
+                const attachments: any[] = [];
+                if (ann.file_url) {
+                    attachments.push({
+                        file_url: resolveFileUrl(ann.file_url),
+                        file_name: ann.file_name || "Attached File",
+                        file_type: ann.file_type || (ann.image_url ? "image/png" : "application/octet-stream")
+                    });
                 }
 
                 allAnnouncementsList.push({
@@ -313,30 +314,12 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
                         month: 'short', day: 'numeric', year: 'numeric'
                     }),
                     author: ann.author || "Faculty",
-                    author_role: ann.author_profile?.role || "staff",
+                    author_role: "staff",
                     type: ann.type || "general",
                     image_url: primaryImage,
                     file_url: resolveFileUrl(ann.file_url),
                     file_name: ann.file_name,
-                    attachments: (() => {
-                        const list = (ann.announcement_attachments || []).map((att: any) => ({
-                            file_url: resolveFileUrl(att.file_url),
-                            file_name: att.file_name,
-                            file_type: att.file_type
-                        }));
-                        if (ann.file_url) {
-                            const resolvedUrl = resolveFileUrl(ann.file_url);
-                            const alreadyExists = list.some((att: any) => att.file_url === resolvedUrl);
-                            if (!alreadyExists) {
-                                list.push({
-                                    file_url: resolvedUrl,
-                                    file_name: ann.file_name || "Attached File",
-                                    file_type: ann.file_type || (ann.image_url ? "image/png" : "application/octet-stream")
-                                });
-                            }
-                        }
-                        return list;
-                    })(),
+                    attachments,
                     created_at: ann.created_at
                 });
             });

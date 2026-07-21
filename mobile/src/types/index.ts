@@ -40,12 +40,14 @@ export interface Assignment {
     instructions?: string;
     file_url?: string;
     file_name?: string;
+    assessment_type?: "assignment" | "activity" | "quiz";
     submission?: {
         id: string;
         file_url?: string | null;
         grade?: number;
         teacher_comment?: string;
         status?: string;
+        response_text?: string | null;
     } | null;
 }
 
@@ -76,6 +78,9 @@ export interface Material {
     file_url?: string;
     subject_id: string;
     description?: string;
+    created_at?: string;
+    week_number?: number | null;
+    lesson_title?: string;
 }
 
 export type Role = "Student" | "Teacher" | "Admin";

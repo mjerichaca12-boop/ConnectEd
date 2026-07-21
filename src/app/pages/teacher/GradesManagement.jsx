@@ -905,13 +905,23 @@ function GradesManagement() {
 
     if (currentSubmission?.id) {
       // Update submission status to 'done' when assignment is returned
-      const { error: submissionUpdateError } = await supabase
+      let { error: submissionUpdateError } = await supabase
         .from("teacher_assessment_submissions")
         .update({ 
           status: 'done',
           updated_at: new Date().toISOString()
         })
         .eq("id", currentSubmission.id);
+
+      if (submissionUpdateError && submissionUpdateError.code === 'PGRST204') {
+        const { error: fallbackError } = await supabase
+          .from("teacher_assessment_submissions")
+          .update({ 
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", currentSubmission.id);
+        submissionUpdateError = fallbackError;
+      }
 
       if (submissionUpdateError) {
         console.error("Failed to update submission status:", submissionUpdateError);

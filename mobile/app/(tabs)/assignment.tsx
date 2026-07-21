@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal } from "react-native";
 import Colors from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
 import StatusBadge from "../../src/components/common/StatusBadge";
@@ -8,6 +8,7 @@ import AppHeader from "../../src/components/common/AppHeader";
 import FileUploadComponent from "../../src/components/common/FileUploadComponent";
 
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../src/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +16,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import { decode } from 'base64-arraybuffer';
-import { Image } from "react-native";
+
+import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../src/utils/quiz-parser";
 
 const AssignmentItem = ({ title, subject, dueDate, status, grade, onPress }: any) => {
     const isLate = status === "late";
@@ -43,6 +45,9 @@ const AssignmentItem = ({ title, subject, dueDate, status, grade, onPress }: any
 
 const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     const [pickedFile, setPickedFile] = useState<any>(null);
+    const [responseText, setResponseText] = useState("");
+    const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
+    const [isQuizStarted, setIsQuizStarted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const queryClient = useQueryClient();
 
@@ -70,9 +75,63 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
         }
     };
 
+    const handleImageUpload = async (useCamera: boolean = false) => {
+        try {
+            const permissionResult = useCamera 
+                ? await ImagePicker.requestCameraPermissionsAsync()
+                : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+            if (permissionResult.status !== 'granted') {
+                Alert.alert(
+                    "Permission Required", 
+                    `Please grant ${useCamera ? 'camera' : 'photo library'} permissions to upload an image.`
+                );
+                return;
+            }
+
+            const result = useCamera
+                ? await ImagePicker.launchCameraAsync({
+                    allowsEditing: true,
+                    quality: 0.8,
+                  })
+                : await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ['images'],
+                    allowsEditing: true,
+                    quality: 0.8,
+                  });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const asset = result.assets[0];
+                const uri = asset.uri;
+                const ext = uri.split('.').pop() || 'jpg';
+                const name = `image_${Date.now()}.${ext}`;
+                setPickedFile({
+                    uri: uri,
+                    name: name,
+                    mimeType: `image/${ext === 'png' ? 'png' : 'jpeg'}`,
+                    size: asset.fileSize || 1024 * 1024,
+                });
+            }
+        } catch (err) {
+            console.error("Image picker error:", err);
+            Alert.alert("Error", "Failed to select image.");
+        }
+    };
+
     const handleSubmit = async () => {
-        if (!pickedFile) {
-            Alert.alert("Validation Error", "Please attach a file before submitting.");
+        const quizData = parseQuiz(typeof assignment.instructions === 'string' ? assignment.instructions : String(assignment.instructions || ''));
+        
+        if (quizData) {
+            const unanswered = quizData.questions.filter(q => !selectedAnswers[q.questionNumber]);
+            if (unanswered.length > 0) {
+                Alert.alert(
+                    "Validation Error", 
+                    `Please answer all questions before submitting. Unanswered: ${unanswered.map(q => q.questionNumber).join(", ")}`
+                );
+                return;
+            }
+        } else if (!responseText.trim() && !pickedFile) {
+            Alert.alert("Validation Error", "Please enter a response or attach a file before submitting.");
             return;
         }
 
@@ -81,26 +140,32 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             const { data: userData, error: userError } = await supabase.auth.getUser();
             if (userError || !userData?.user) throw new Error("Not authenticated");
 
-            // 1. Upload file
-            const fileExt = pickedFile.name.split('.').pop();
-            const storagePath = `submissions/${userData.user.id}/${Date.now()}_${pickedFile.name}`;
-            
-            // Read file as base64 for reliable binary upload
-            const base64 = await FileSystem.readAsStringAsync(pickedFile.uri, { encoding: 'base64' });
-            const bytes = decode(base64);
+            let publicUrl = null;
+            let storagePath = null;
 
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('class-materials')
-                .upload(storagePath, bytes, {
-                    contentType: pickedFile.mimeType || 'application/octet-stream',
-                    upsert: true
-                });
+            // 1. Upload file if picked
+            if (pickedFile) {
+                storagePath = `submissions/${userData.user.id}/${Date.now()}_${pickedFile.name}`;
+                
+                // Read file as base64 for reliable binary upload
+                const base64 = await FileSystem.readAsStringAsync(pickedFile.uri, { encoding: 'base64' });
+                const bytes = decode(base64);
 
-            if (uploadError) throw uploadError;
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('class-materials')
+                    .upload(storagePath, bytes, {
+                        contentType: pickedFile.mimeType || 'application/octet-stream',
+                        upsert: true
+                    });
 
-            const { data: { publicUrl } } = supabase.storage
-                .from('class-materials')
-                .getPublicUrl(storagePath);
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl: url } } = supabase.storage
+                    .from('class-materials')
+                    .getPublicUrl(storagePath);
+                
+                publicUrl = url;
+            }
 
             // 2. Upsert into submissions
             const { error } = await supabase
@@ -108,10 +173,10 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 .upsert({
                     assignment_id: assignment.id,
                     user_id: userData.user.id,
-                    file_url: publicUrl
+                    file_url: publicUrl || (quizData ? "quiz-submission" : "text-only-submission")
                 }, { onConflict: 'assignment_id,user_id' });
 
-            if (error) throw error;
+            if (error && error.code !== 'PGRST205') throw error;
 
             // Fetch teacher_id from subjects table using course_id / subject_id
             let teacherId = null;
@@ -128,29 +193,100 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 }
             }
 
+            // Calculate quiz score if parsedQuiz is present
+            let score = 0;
+            let correctCount = 0;
+            let jsonText = "";
+
+            if (quizData) {
+                quizData.questions.forEach(q => {
+                    if (selectedAnswers[q.questionNumber] === q.correctAnswer) {
+                        correctCount++;
+                    }
+                });
+                score = (correctCount / quizData.questions.length) * 100;
+                jsonText = `DATA_JSON:${JSON.stringify({
+                    answers: selectedAnswers,
+                    score: Math.round(score),
+                    correctCount,
+                    totalQuestions: quizData.questions.length,
+                    questions: quizData.questions
+                })}`;
+            }
+
             // If we found teacherId, upsert into teacher_assessment_submissions as well
             if (teacherId && subjectId) {
-                const { error: teacherSubError } = await supabase
+                const payload: any = {
+                    teacher_id: teacherId,
+                    subject_id: subjectId,
+                    assessment_id: assignment.id,
+                    student_id: userData.user.id,
+                    response_text: quizData ? jsonText : (responseText.trim() || "Submitted via Mobile App"),
+                    file_url: publicUrl,
+                    file_name: pickedFile ? pickedFile.name : null,
+                    file_path: storagePath,
+                    status: 'submitted'
+                };
+                let { error: teacherSubError } = await supabase
                     .from('teacher_assessment_submissions')
+                    .upsert(payload, { onConflict: 'teacher_id,subject_id,assessment_id,student_id' });
+
+                if (teacherSubError && teacherSubError.code === 'PGRST204') {
+                    const { status, ...fallbackPayload } = payload;
+                    const { error: fallbackError } = await supabase
+                        .from('teacher_assessment_submissions')
+                        .upsert(fallbackPayload, { onConflict: 'teacher_id,subject_id,assessment_id,student_id' });
+                    teacherSubError = fallbackError;
+                }
+
+                if (teacherSubError) {
+                    console.warn("teacher_assessment_submissions info (non-fatal):", teacherSubError.message);
+                }
+            }
+
+            // Directly upsert into teacher_assessment_grades if auto-graded
+            if (quizData && teacherId && subjectId) {
+                const { error: gradeError } = await supabase
+                    .from('teacher_assessment_grades')
                     .upsert({
                         teacher_id: teacherId,
                         subject_id: subjectId,
                         assessment_id: assignment.id,
+                        assessment_title: assignment.title || '',
+                        assessment_type: assignment.assessment_type || 'quiz',
                         student_id: userData.user.id,
-                        response_text: "Submitted via Mobile App",
-                        file_url: publicUrl,
-                        file_name: pickedFile.name,
-                        file_path: storagePath,
-                        status: 'submitted'
+                        grade_value: Math.round(score),
+                        max_points: 100,
+                        status: 'Graded',
+                        feedback: `Auto-graded quiz: ${correctCount}/${quizData.questions.length} correct.`
                     }, { onConflict: 'teacher_id,subject_id,assessment_id,student_id' });
-                if (teacherSubError) {
-                    console.error("Failed to upsert into teacher_assessment_submissions:", teacherSubError);
+                
+                if (gradeError) {
+                    console.error("Failed to upsert grade:", gradeError);
                 }
+            }
+
+            // Also record in quiz_attempts table
+            if (quizData && userData?.user?.id) {
+                await supabase
+                    .from('quiz_attempts')
+                    .upsert({
+                        quiz_id: assignment.id,
+                        assignment_id: assignment.id,
+                        student_id: userData.user.id,
+                        user_id: userData.user.id,
+                        score: Math.round(score),
+                        correct_count: correctCount,
+                        total_questions: quizData.questions.length,
+                        answers: selectedAnswers,
+                        response_text: jsonText,
+                        status: 'completed'
+                    }, { onConflict: 'quiz_id,user_id' });
             }
 
             Alert.alert(
                 "Submission Complete", 
-                "Your assignment has been successfully submitted.",
+                "Your work has been successfully submitted.",
                 [{ text: "OK", onPress: () => {
                     queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
                     onBack("submitted");
@@ -208,7 +344,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                 .eq('assignment_id', assignment.id)
                                 .eq('user_id', userId);
 
-                            if (deleteSubError) throw deleteSubError;
+                            if (deleteSubError && deleteSubError.code !== 'PGRST205') throw deleteSubError;
 
                             // 2. Delete from teacher_assessment_submissions
                             const { error: deleteTeacherSubError } = await supabase
@@ -221,21 +357,29 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                 console.warn("Failed to delete from teacher_assessment_submissions:", deleteTeacherSubError);
                             }
 
-                            // 3. Delete ungraded record from teacher_assessment_grades to revert status to pending
+                            // 3. Delete record from teacher_assessment_grades to revert status to pending
                             const { error: deleteGradeError } = await supabase
                                 .from('teacher_assessment_grades')
                                 .delete()
                                 .eq('assessment_id', assignment.id)
-                                .eq('student_id', userId)
-                                .not('status', 'in', '("Graded","graded","returned","Returned")');
+                                .eq('student_id', userId);
 
                             if (deleteGradeError) {
                                 console.warn("Failed to delete from teacher_assessment_grades:", deleteGradeError);
                             }
 
-                            Alert.alert("Submission Undone", "Your submission has been undone successfully.");
-                            queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
-                            onBack("upcoming");
+                             let targetTab = "upcoming";
+                             if (assignment.dueDate && assignment.dueDate !== "TBA") {
+                                 const parsedDueDate = new Date(assignment.dueDate);
+                                 parsedDueDate.setHours(23, 59, 59, 999);
+                                 if (!isNaN(parsedDueDate.getTime()) && parsedDueDate < new Date()) {
+                                     targetTab = "late";
+                                 }
+                             }
+
+                             Alert.alert("Submission Undone", "Your submission has been undone successfully.");
+                             queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+                             onBack(targetTab);
                         } catch (err: any) {
                             console.error("Undo submit error:", err);
                             Alert.alert("Error", err.message || "Failed to undo submission.");
@@ -249,18 +393,43 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     };
 
     const handleDownloadAssignment = async () => {
-        if (!assignment.file_url) return;
+        let fileUrl = assignment.file_url;
+        // Handle arrays - extract first element
+        if (Array.isArray(fileUrl)) {
+            fileUrl = fileUrl[0];
+        }
+        if (!fileUrl || typeof fileUrl !== 'string') return;
         try {
-            const { data } = supabase.storage.from('class-materials').getPublicUrl(assignment.file_url);
-            if (data?.publicUrl) {
-                Linking.openURL(data.publicUrl);
+            if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+                await Linking.openURL(fileUrl);
+            } else {
+                let cleanPath = fileUrl;
+                if (cleanPath.startsWith('class-materials/')) {
+                    cleanPath = cleanPath.replace('class-materials/', '');
+                }
+                const { data } = supabase.storage.from('class-materials').getPublicUrl(cleanPath);
+                if (data?.publicUrl) {
+                    await Linking.openURL(data.publicUrl);
+                }
             }
         } catch(e) {
             console.error(e);
+            Alert.alert("Error", "Could not open the assignment material.");
         }
     };
 
-    const isImage = pickedFile?.mimeType?.startsWith('image/') || pickedFile?.name?.match(/\.(jpg|jpeg|png)$/i);
+    const isImage = !!(pickedFile?.mimeType?.startsWith('image/') || pickedFile?.name?.match(/\.(jpg|jpeg|png)$/i));
+    const instructionsStr = typeof assignment.instructions === 'string' ? assignment.instructions : String(assignment.instructions || '');
+    const parsedQuiz = parseQuiz(instructionsStr);
+    const isSubmitDisabled = (() => {
+        if (isSubmitting) return true;
+        if (parsedQuiz) {
+            const unansweredCount = parsedQuiz.questions.filter(q => !selectedAnswers[q.questionNumber]).length;
+            return unansweredCount > 0;
+        } else {
+            return !responseText.trim() && !pickedFile;
+        }
+    })();
 
     return (
         <View style={styles.detailedContainer}>
@@ -278,25 +447,340 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                      <StatusBadge status={assignment.status} style={{ marginTop: 8 }}/>
                 </View>
 
-                {assignment.instructions && (
-                    <View style={styles.instructionsContainer}>
-                        <Text style={styles.instructionsTitle}>Instructions</Text>
-                        <Text style={styles.instructionsText}>{assignment.instructions}</Text>
-                        
-                        {assignment.file_url && (
-                            <Button 
-                                title="Download Assignment Material" 
-                                onPress={handleDownloadAssignment}
-                                style={{ marginTop: 16 }}
-                            />
-                        )}
-                    </View>
-                )}
+                <View style={styles.instructionsContainer}>
+                    <Text style={styles.instructionsTitle}>
+                        {assignment.assessment_type === 'quiz' ? 'Quiz Questions' : 
+                         assignment.assessment_type === 'activity' ? 'Activity Instructions' : 'Instructions'}
+                    </Text>
+                    <Text style={styles.instructionsText}>
+                        {parsedQuiz ? (parsedQuiz.instructionsHeader || "Please answer the multiple-choice questions below.") : (instructionsStr || "Please complete the attached assignment and upload your work here. Ensure all requirements are met before submitting.")}
+                    </Text>
+                    
+                    {(() => {
+                        const mediaList: { url: string; fileName: string; isImage: boolean }[] = [];
+                        const addedUrls = new Set<string>();
+
+                        const resolveUrl = (rawUrl: any): string | null => {
+                            if (!rawUrl) return null;
+                            let target = rawUrl;
+                            if (Array.isArray(target)) target = target[0];
+                            if (typeof target === 'string') {
+                                let trimmed = target.trim();
+                                if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+                                    trimmed = trimmed.slice(1, -1).trim();
+                                }
+                                if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+                                    try {
+                                        const parsed = JSON.parse(trimmed);
+                                        if (Array.isArray(parsed) && parsed.length > 0) {
+                                            target = parsed[0];
+                                        } else if (parsed && typeof parsed === 'object') {
+                                            target = parsed.url || parsed.file_url || parsed.publicUrl || parsed.path || target;
+                                        }
+                                    } catch (e) {}
+                                }
+                                if (typeof target === 'string') target = target.trim();
+                            }
+
+                            if (!target || typeof target !== 'string') return null;
+                            let clean = target.trim();
+                            if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
+                                clean = clean.slice(1, -1).trim();
+                            }
+                            if (!clean) return null;
+
+                            if (clean.startsWith('http://') || clean.startsWith('https://')) {
+                                return clean;
+                            }
+
+                            if (clean.startsWith('/storage/v1/object/public/')) {
+                                const baseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://replace-this.supabase.co";
+                                return `${baseUrl.replace(/\/$/, '')}${clean}`;
+                            }
+
+                            let bucket = 'class-materials';
+                            let path = clean;
+                            if (clean.startsWith('class-materials/')) {
+                                bucket = 'class-materials';
+                                path = clean.replace(/^class-materials\//, '');
+                            } else if (clean.startsWith('announcement-images/')) {
+                                bucket = 'announcement-images';
+                                path = clean.replace(/^announcement-images\//, '');
+                            } else if (clean.startsWith('message-attachments/')) {
+                                bucket = 'message-attachments';
+                                path = clean.replace(/^message-attachments\//, '');
+                            }
+
+                            const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+                            return data?.publicUrl || clean;
+                        };
+
+                        const isImageExt = (url: string, name: string) => {
+                            const lowerUrl = (url || '').toLowerCase();
+                            const lowerName = (name || '').toLowerCase();
+                            
+                            // Exclude document extensions
+                            const docExts = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.zip', '.rar', '.csv'];
+                            if (docExts.some(ext => lowerUrl.includes(ext) || lowerName.endsWith(ext))) {
+                                return false;
+                            }
+
+                            const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', 'image', 'photo', 'img', 'picture', 'pic'];
+                            return imageExts.some(ext => lowerUrl.includes(ext) || lowerName.includes(ext));
+                        };
+
+                        // 1. From assignment.file_url / file_name (handles single string, arrays, or JSON arrays)
+                        if (assignment.file_url) {
+                            const parseAllUrls = (raw: any): { url: string; fileName: string }[] => {
+                                const list: { url: string; fileName: string }[] = [];
+                                let targets: any[] = [];
+                                if (Array.isArray(raw)) {
+                                    targets = raw;
+                                } else if (typeof raw === 'string') {
+                                    let trimmed = raw.trim();
+                                    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+                                        trimmed = trimmed.slice(1, -1).trim();
+                                    }
+                                    if (trimmed.startsWith('[')) {
+                                        try {
+                                            const parsed = JSON.parse(trimmed);
+                                            if (Array.isArray(parsed)) targets = parsed;
+                                            else targets = [trimmed];
+                                        } catch (e) {
+                                            targets = [trimmed];
+                                        }
+                                    } else {
+                                        targets = [trimmed];
+                                    }
+                                } else if (raw) {
+                                    targets = [raw];
+                                }
+
+                                targets.forEach((t, i) => {
+                                    const res = resolveUrl(t);
+                                    if (res) {
+                                        let name = assignment.file_name || "Teacher Attachment";
+                                        if (Array.isArray(assignment.file_name)) {
+                                            name = assignment.file_name[i] || assignment.file_name[0] || name;
+                                        } else if (typeof assignment.file_name === 'string' && assignment.file_name.trim().startsWith('[')) {
+                                            try {
+                                                const parsedNames = JSON.parse(assignment.file_name.trim());
+                                                if (Array.isArray(parsedNames)) name = parsedNames[i] || parsedNames[0] || name;
+                                            } catch (e) {}
+                                        }
+                                        list.push({ url: res, fileName: String(name) });
+                                    }
+                                });
+                                return list;
+                            };
+
+                            const items = parseAllUrls(assignment.file_url);
+                            items.forEach(item => {
+                                if (!addedUrls.has(item.url)) {
+                                    addedUrls.add(item.url);
+                                    mediaList.push({
+                                        url: item.url,
+                                        fileName: item.fileName,
+                                        isImage: isImageExt(item.url, item.fileName)
+                                    });
+                                }
+                            });
+                        }
+
+                        // 2. Extract image & storage URLs embedded in instructions
+                        if (instructionsStr) {
+                            // Markdown image syntax
+                            const mdRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+)\)/gi;
+                            let match;
+                            while ((match = mdRegex.exec(instructionsStr)) !== null) {
+                                const matchedUrl = resolveUrl(match[1]);
+                                if (matchedUrl && !addedUrls.has(matchedUrl)) {
+                                    addedUrls.add(matchedUrl);
+                                    mediaList.push({ url: matchedUrl, fileName: "Instruction Picture", isImage: true });
+                                }
+                            }
+                            // Direct URLs with image extensions
+                            const urlRegex = /(https?:\/\/[^\s<>\"]+?\.(?:jpg|jpeg|png|gif|webp|bmp|svg)(?:\?[^\s<>\"]*)?)/gi;
+                            while ((match = urlRegex.exec(instructionsStr)) !== null) {
+                                const matchedUrl = match[1].trim();
+                                if (!addedUrls.has(matchedUrl)) {
+                                    addedUrls.add(matchedUrl);
+                                    mediaList.push({ url: matchedUrl, fileName: "Instruction Picture", isImage: true });
+                                }
+                            }
+                            // Supabase storage public URLs
+                            const storageRegex = /(https?:\/\/[^\s<>\"]+?\/storage\/v1\/object\/public\/[^\s<>\"]+)/gi;
+                            while ((match = storageRegex.exec(instructionsStr)) !== null) {
+                                const matchedUrl = match[1].trim();
+                                if (!addedUrls.has(matchedUrl)) {
+                                    addedUrls.add(matchedUrl);
+                                    mediaList.push({ url: matchedUrl, fileName: "Instruction Attachment", isImage: isImageExt(matchedUrl, '') });
+                                }
+                            }
+                        }
+
+                        // 3. Fallback: If instructions mention "pdf", "file", "attachment", or "picture", ensure card is rendered
+                        if (mediaList.length === 0 && instructionsStr) {
+                            const lowerInst = instructionsStr.toLowerCase();
+                            if (lowerInst.includes('pdf') || lowerInst.includes('file') || lowerInst.includes('attachment') || lowerInst.includes('picture') || lowerInst.includes('image') || lowerInst.includes('read')) {
+                                const isImg = lowerInst.includes('picture') || lowerInst.includes('image') || lowerInst.includes('photo');
+                                mediaList.push({
+                                    url: (assignment as any).file_url || "#",
+                                    fileName: lowerInst.includes('pdf') ? "Assignment_Instructions.pdf" : (isImg ? "Instruction_Picture.png" : "Attached_Reference_File"),
+                                    isImage: isImg
+                                });
+                            }
+                        }
+
+                        if (mediaList.length === 0) return null;
+
+                        return (
+                            <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', gap: 12 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155' }}>
+                                    {mediaList.some(m => m.isImage) ? '📷 Attached Picture / Material' : '📎 Attached Reference Material'}
+                                </Text>
+
+                                {mediaList.map((item, idx) => (
+                                    <View key={idx}>
+                                        {item.isImage ? (
+                                            <TouchableOpacity 
+                                                activeOpacity={0.9} 
+                                                onPress={async () => {
+                                                    try {
+                                                        await Linking.openURL(item.url);
+                                                    } catch (e) {
+                                                        Alert.alert("Error", "Could not open image.");
+                                                    }
+                                                }}
+                                                style={{
+                                                    borderRadius: 12,
+                                                    overflow: 'hidden',
+                                                    backgroundColor: '#F1F5F9',
+                                                    borderWidth: 1,
+                                                    borderColor: '#CBD5E1',
+                                                }}
+                                            >
+                                                <Image 
+                                                    source={{ uri: item.url }}
+                                                    style={{ width: '100%', height: 250, borderRadius: 12 }}
+                                                    resizeMode="contain"
+                                                />
+                                                <View style={{
+                                                    flexDirection: 'row',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    paddingHorizontal: 12,
+                                                    paddingVertical: 10,
+                                                    backgroundColor: '#F8FAFC',
+                                                    borderTopWidth: 1,
+                                                    borderTopColor: '#E2E8F0'
+                                                }}>
+                                                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E293B', flex: 1 }} numberOfLines={1}>
+                                                        {item.fileName}
+                                                    </Text>
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                                        <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>
+                                                            View Full
+                                                        </Text>
+                                                        <Ionicons name="open-outline" size={14} color={Colors.light.primary} />
+                                                    </View>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ) : (
+                                            <TouchableOpacity 
+                                                style={{
+                                                    flexDirection: 'row',
+                                                    alignItems: 'center',
+                                                    backgroundColor: '#EFF6FF',
+                                                    padding: 14,
+                                                    borderRadius: 12,
+                                                    borderWidth: 1.5,
+                                                    borderColor: '#93C5FD',
+                                                    marginTop: 6
+                                                }}
+                                                onPress={async () => {
+                                                    try {
+                                                        await Linking.openURL(item.url);
+                                                    } catch (e) {
+                                                        Alert.alert("Error", "Could not open attachment.");
+                                                    }
+                                                }}
+                                            >
+                                                <Ionicons name="document-text-outline" size={30} color={Colors.light.primary} />
+                                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B' }} numberOfLines={1}>
+                                                        {item.fileName}
+                                                    </Text>
+                                                    <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '600', marginTop: 2 }}>
+                                                        📄 Tap to Open / View File or PDF
+                                                    </Text>
+                                                </View>
+                                                <Ionicons name="open-outline" size={22} color={Colors.light.primary} />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                ))}
+                            </View>
+                        );
+                    })()}
+                </View>
 
                 {(assignment.status === "pending" || assignment.status === "late") && (
                     <View style={styles.submissionSection}>
-                        <Text style={styles.submissionTitle}>Submission</Text>
+                        <Text style={styles.submissionTitle}>
+                            {assignment.assessment_type === 'quiz' ? 'Quiz Assessment' : 'Your Submission'}
+                        </Text>
                         
+                        {(assignment.assessment_type === 'quiz' || parsedQuiz) ? (
+                            <View style={{ marginVertical: 12, alignItems: 'center', backgroundColor: '#F8FAFC', padding: 20, borderRadius: 16, borderWidth: 1.5, borderColor: '#E2E8F0' }}>
+                                <Ionicons name="clipboard-outline" size={42} color={Colors.light.primary} style={{ marginBottom: 8 }} />
+                                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#0F172A', textAlign: 'center' }}>
+                                    Ready to Take Quiz?
+                                </Text>
+                                <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 4, marginBottom: 16 }}>
+                                    Please review the instructions and reference materials above before starting.
+                                </Text>
+                                <TouchableOpacity 
+                                    style={{
+                                        backgroundColor: Colors.light.primary,
+                                        paddingVertical: 14,
+                                        paddingHorizontal: 28,
+                                        borderRadius: 12,
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        width: '100%',
+                                        justifyContent: 'center',
+                                        elevation: 3,
+                                        shadowColor: Colors.light.primary,
+                                        shadowOffset: { width: 0, height: 3 },
+                                        shadowOpacity: 0.25,
+                                        shadowRadius: 5
+                                    }}
+                                    onPress={() => setIsQuizStarted(true)}
+                                >
+                                    <Ionicons name="play-circle-outline" size={24} color="#FFFFFF" />
+                                    <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>
+                                        Start Quiz {parsedQuiz ? `(${parsedQuiz.questions.length} Items)` : ''}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            <View style={styles.responseBox}>
+                                <Text style={styles.inputLabel}>Answer / Response Text:</Text>
+                                <TextInput
+                                    style={styles.textInputResponse}
+                                    placeholder="Type your answer or response here..."
+                                    placeholderTextColor="#94A3B8"
+                                    multiline
+                                    numberOfLines={6}
+                                    value={responseText}
+                                    onChangeText={setResponseText}
+                                />
+                            </View>
+                        )}
+
+                        <Text style={styles.inputLabel}>Attachments (Optional):</Text>
                         <FileUploadComponent 
                             onPickFile={handleFileUpload} 
                             onRemoveFile={() => setPickedFile(null)}
@@ -306,59 +790,490 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                             style={{ marginBottom: 16 }} 
                         />
 
+                        {!pickedFile && (
+                            <View style={styles.attachmentButtonsRow}>
+                                <TouchableOpacity style={styles.attachBtn} onPress={() => handleImageUpload(false)}>
+                                    <Ionicons name="image-outline" size={16} color={Colors.light.primary} />
+                                    <Text style={styles.attachBtnText}>Upload Image</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.attachBtn} onPress={() => handleImageUpload(true)}>
+                                    <Ionicons name="camera-outline" size={16} color={Colors.light.primary} />
+                                    <Text style={styles.attachBtnText}>Take Photo</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
                         <Button 
-                            title={isSubmitting ? "Submitting..." : "Submit Assignment"} 
+                            title={isSubmitting ? "Submitting..." : "Submit"} 
                             onPress={handleSubmit} 
-                            disabled={isSubmitting || !pickedFile}
+                            disabled={isSubmitDisabled}
                         />
                     </View>
                 )}
                 
-                {(assignment.status === "submitted" || assignment.status === "graded") && (
-                    <View style={styles.submissionSection}>
-                        <Text style={styles.submissionTitle}>Submission Complete</Text>
-                        <View style={styles.submittedInfo}>
-                            <Ionicons name="checkmark-circle" size={48} color={Colors.light.primary} />
-                            <Text style={styles.submittedText}>Your work has been received.</Text>
+                {(["submitted", "graded", "returned"].includes(assignment.status)) && (() => {
+                    let submissionData: any = null;
+                    const responseText_ = assignment.submission?.response_text;
+                    if (typeof responseText_ === 'string' && responseText_.startsWith("DATA_JSON:")) {
+                        try {
+                            submissionData = JSON.parse(responseText_.substring(10));
+                        } catch (e) {
+                            console.error("Failed to parse DATA_JSON:", e);
+                        }
+                    }
+
+                    return (
+                        <View style={styles.submissionSection}>
+                            <Text style={styles.submissionTitle}>Submission Complete</Text>
+                            
+                            {submissionData ? (
+                                <View style={styles.resultsDashboardContainer}>
+                                    <View style={styles.scoreCard}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.scoreCardTitle}>Quiz Results</Text>
+                                            <Text style={styles.scoreCardText}>
+                                                You scored <Text style={{fontWeight: 'bold', color: Colors.light.primary}}>{submissionData.score}%</Text> ({submissionData.correctCount} of {submissionData.totalQuestions} correct)
+                                            </Text>
+                                        </View>
+                                        <View style={styles.scoreBadge}>
+                                            <Text style={styles.scoreBadgeText}>{submissionData.score}%</Text>
+                                        </View>
+                                    </View>
+                                    
+                                    <Text style={styles.reviewTitle}>Question Review</Text>
+                                    
+                                    {submissionData.questions && submissionData.questions.map((q: any) => {
+                                        const studentAns = submissionData.answers[q.questionNumber];
+                                        const isCorrect = studentAns === q.correctAnswer;
+                                        
+                                        return (
+                                            <View key={q.questionNumber} style={[
+                                                styles.reviewQuestionCard,
+                                                isCorrect ? styles.reviewQuestionCardCorrect : styles.reviewQuestionCardIncorrect
+                                            ]}>
+                                                <View style={styles.reviewQuestionHeader}>
+                                                    <Text style={styles.reviewQuestionText}>
+                                                        {q.questionNumber}. {q.questionText}
+                                                    </Text>
+                                                    <Ionicons 
+                                                        name={isCorrect ? "checkmark-circle" : "close-circle"} 
+                                                        size={24} 
+                                                        color={isCorrect ? "#16A34A" : "#DC2626"} 
+                                                    />
+                                                </View>
+                                                
+                                                <View style={styles.reviewOptionsContainer}>
+                                                    {q.options.map((opt: any) => {
+                                                        const isStudentSelect = studentAns === opt.label;
+                                                        const isCorrectAns = q.correctAnswer === opt.label;
+                                                        
+                                                        let optStyle = {};
+                                                        let textStyle = {};
+                                                        let circleStyle = {};
+                                                        let circleTextStyle = {};
+                                                        
+                                                        if (isStudentSelect) {
+                                                            if (isCorrect) {
+                                                                optStyle = styles.optStudentCorrect;
+                                                                textStyle = { color: "#166534", fontWeight: "600" };
+                                                                circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
+                                                                circleTextStyle = { color: "#15803D" };
+                                                            } else {
+                                                                optStyle = styles.optStudentIncorrect;
+                                                                textStyle = { color: "#991B1B", fontWeight: "600" };
+                                                                circleStyle = { backgroundColor: "#FEE2E2", borderColor: "#DC2626" };
+                                                                circleTextStyle = { color: "#B91C1C" };
+                                                            }
+                                                        } else if (isCorrectAns) {
+                                                            optStyle = styles.optCorrectTarget;
+                                                            textStyle = { color: "#166534", fontWeight: "600" };
+                                                            circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
+                                                            circleTextStyle = { color: "#15803D" };
+                                                        }
+                                                        
+                                                        return (
+                                                            <View
+                                                                key={opt.label}
+                                                                style={[styles.reviewOptionRow, optStyle]}
+                                                            >
+                                                                <View style={[styles.reviewOptionCircle, circleStyle]}>
+                                                                    <Text style={[styles.reviewOptionCircleText, circleTextStyle]}>
+                                                                        {opt.label}
+                                                                    </Text>
+                                                                </View>
+                                                                <Text style={[styles.reviewOptionText, textStyle]}>
+                                                                    {opt.text}
+                                                                </Text>
+                                                                {isStudentSelect && (
+                                                                    <Text style={[
+                                                                        styles.yourAnswerTag,
+                                                                        isCorrect ? { color: "#15803D" } : { color: "#B91C1C" }
+                                                                    ]}>
+                                                                        (Your Answer)
+                                                                    </Text>
+                                                                )}
+                                                                {!isCorrect && isCorrectAns && (
+                                                                    <Text style={{ color: "#15803D", fontSize: 11, fontWeight: "600", marginLeft: "auto" }}>
+                                                                        (Correct Answer)
+                                                                    </Text>
+                                                                )}
+                                                            </View>
+                                                        );
+                                                    })}
+                                                </View>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            ) : (
+                                <>
+                                    <View style={styles.submittedInfo}>
+                                        <Ionicons name="checkmark-circle" size={48} color={Colors.light.primary} />
+                                        <Text style={styles.submittedText}>Your work has been received.</Text>
+                                    </View>
+
+                                    {assignment.submission?.response_text && (
+                                        <View style={styles.feedbackContainer}>
+                                            <Text style={styles.feedbackTitle}>Your Answer / Response:</Text>
+                                            <Text style={styles.feedbackText}>{assignment.submission.response_text}</Text>
+                                        </View>
+                                    )}
+                                </>
+                            )}
+
+                            {assignment.submission?.grade !== null && assignment.submission?.grade !== undefined && (
+                                <View style={styles.feedbackContainer}>
+                                    <Text style={styles.feedbackTitle}>Grade: {String(assignment.submission.grade)}</Text>
+                                </View>
+                            )}
+                            {assignment.submission?.teacher_comment && (
+                                <View style={styles.feedbackContainer}>
+                                    <Text style={styles.feedbackTitle}>Teacher's Comment:</Text>
+                                    <Text style={styles.feedbackText}>{assignment.submission.teacher_comment}</Text>
+                                </View>
+                            )}
+
+                            {assignment.submission?.file_url && 
+                             assignment.submission.file_url !== "quiz-submission" && 
+                             assignment.submission.file_url !== "text-only-submission" && (
+                                <Button 
+                                    title="View My Work" 
+                                    onPress={handleViewSubmission} 
+                                    variant="secondary"
+                                    style={{ marginTop: 12 }}
+                                />
+                            )}
+                            {(!assignment.submission?.grade) && (
+                                <TouchableOpacity 
+                                    style={{ 
+                                        marginTop: 12, 
+                                        padding: 12, 
+                                        alignItems: 'center', 
+                                        backgroundColor: '#FEF2F2', 
+                                        borderRadius: 8, 
+                                        borderWidth: 1, 
+                                        borderColor: '#FCA5A5' 
+                                    }}
+                                    onPress={handleUndoSubmit}
+                                >
+                                    <Text style={{ color: '#DC2626', fontWeight: 'bold', fontSize: 16 }}>Undo Submit</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    );
+                })()}
+            </ScrollView>
+
+            {/* ══ DEDICATED QUIZ PLAYER POP-UP MODAL ══ */}
+            <Modal 
+                visible={isQuizStarted} 
+                animationType="slide" 
+                presentationStyle="fullScreen"
+                onRequestClose={() => {
+                    Alert.alert(
+                        "Exit Quiz?",
+                        "Are you sure you want to exit? Any unsubmitted answers will not be saved.",
+                        [
+                            { text: "Continue Quiz", style: "cancel" },
+                            { text: "Exit", style: "destructive", onPress: () => setIsQuizStarted(false) }
+                        ]
+                    );
+                }}
+            >
+                <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+                    {/* Quiz Modal Header */}
+                    <View style={{
+                        backgroundColor: Colors.light.primary,
+                        paddingTop: StatusBar.currentHeight ? StatusBar.currentHeight + 8 : 44,
+                        paddingBottom: 16,
+                        paddingHorizontal: 20,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.15,
+                        shadowRadius: 4,
+                        elevation: 4
+                    }}>
+                        <TouchableOpacity 
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }} 
+                            onPress={() => {
+                                Alert.alert(
+                                    "Exit Quiz?",
+                                    "Are you sure you want to exit? Any unsubmitted answers will not be saved.",
+                                    [
+                                        { text: "Continue Quiz", style: "cancel" },
+                                        { text: "Exit", style: "destructive", onPress: () => setIsQuizStarted(false) }
+                                    ]
+                                );
+                            }}
+                        >
+                            <Ionicons name="close" size={26} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 15 }}>Close</Text>
+                        </TouchableOpacity>
+
+                        <View style={{ alignItems: 'center', flex: 1, marginHorizontal: 12 }}>
+                            <Text style={{ color: '#FFFFFF', fontSize: 17, fontWeight: 'bold' }} numberOfLines={1}>
+                                {assignment.title || "Quiz"}
+                            </Text>
+                            <Text style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: 12 }}>
+                                {parsedQuiz ? `${parsedQuiz.questions.length} Question Items` : 'Quiz Assessment'}
+                            </Text>
                         </View>
 
-                        {assignment.submission?.grade !== null && assignment.submission?.grade !== undefined && (
-                            <View style={styles.feedbackContainer}>
-                                <Text style={styles.feedbackTitle}>Grade: {assignment.submission.grade}</Text>
-                            </View>
-                        )}
-                        {assignment.submission?.teacher_comment && (
-                            <View style={styles.feedbackContainer}>
-                                <Text style={styles.feedbackTitle}>Teacher's Comment:</Text>
-                                <Text style={styles.feedbackText}>{assignment.submission.teacher_comment}</Text>
+                        <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                            <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 13 }}>
+                                {assignment.subject || "Quiz"}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 120 }}>
+                        {/* Instruction Banner inside Quiz Player */}
+                        <View style={{
+                            backgroundColor: '#FFFFFF',
+                            padding: 16,
+                            borderRadius: 14,
+                            marginBottom: 16,
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0',
+                            borderLeftWidth: 5,
+                            borderLeftColor: Colors.light.primary
+                        }}>
+                            <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#1E293B', marginBottom: 4 }}>
+                                Instructions
+                            </Text>
+                            <Text style={{ fontSize: 13, color: '#475569', lineHeight: 20 }}>
+                                {instructionsStr || "Please read the questions provided below and select your answers."}
+                            </Text>
+                        </View>
+
+                        {/* Combined Teacher Questions Sheet (Image / Document) */}
+                        {(() => {
+                            let urlStr = Array.isArray(assignment.file_url) ? assignment.file_url[0] : assignment.file_url;
+                            if (!urlStr || typeof urlStr !== 'string') return null;
+                            let publicUrl = urlStr;
+                            if (!publicUrl.startsWith('http://') && !publicUrl.startsWith('https://')) {
+                                const cleanPath = publicUrl.replace(/^class-materials\//, '');
+                                const { data } = supabase.storage.from('class-materials').getPublicUrl(cleanPath);
+                                publicUrl = data?.publicUrl || publicUrl;
+                            }
+                            const isImg = urlStr.match(/\.(jpg|jpeg|png|webp)$/i) || publicUrl.match(/\.(jpg|jpeg|png|webp)$/i);
+
+                            return (
+                                <View style={{
+                                    marginBottom: 18,
+                                    borderRadius: 14,
+                                    overflow: 'hidden',
+                                    borderWidth: 1.5,
+                                    borderColor: '#93C5FD',
+                                    backgroundColor: '#FFFFFF',
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.08,
+                                    shadowRadius: 4,
+                                    elevation: 2
+                                }}>
+                                    <View style={{
+                                        backgroundColor: '#EFF6FF',
+                                        paddingHorizontal: 14,
+                                        paddingVertical: 10,
+                                        borderBottomWidth: 1,
+                                        borderBottomColor: '#BFDBFE',
+                                        flexDirection: 'row',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between'
+                                    }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                            <Ionicons name="document-text-outline" size={18} color={Colors.light.primary} />
+                                            <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#1E293B' }}>
+                                                Teacher's Quiz Question Sheet
+                                            </Text>
+                                        </View>
+                                        <TouchableOpacity 
+                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                                            onPress={async () => {
+                                                try { await Linking.openURL(publicUrl); } catch(e) {}
+                                            }}
+                                        >
+                                            <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>Open Full</Text>
+                                            <Ionicons name="open-outline" size={14} color={Colors.light.primary} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {isImg ? (
+                                        <Image 
+                                            source={{ uri: publicUrl }}
+                                            style={{ width: '100%', height: 350, backgroundColor: '#F8FAFC' }}
+                                            resizeMode="contain"
+                                        />
+                                    ) : (
+                                        <TouchableOpacity 
+                                            style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FAFAFA' }}
+                                            onPress={async () => {
+                                                try { await Linking.openURL(publicUrl); } catch(e) {}
+                                            }}
+                                        >
+                                            <Ionicons name="document-attach" size={32} color={Colors.light.primary} />
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0F172A' }}>
+                                                    {assignment.file_name || "Questions Document / PDF"}
+                                                </Text>
+                                                <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '600', marginTop: 2 }}>
+                                                    Tap to view teacher's question document
+                                                </Text>
+                                            </View>
+                                            <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            );
+                        })()}
+
+                        {/* Questions area */}
+                        {parsedQuiz && (
+                            <View style={styles.quizFormContainer}>
+                                {parsedQuiz.questions.map((q) => {
+                                    const selectedOpt = selectedAnswers[q.questionNumber];
+                                    return (
+                                        <View key={q.questionNumber} style={styles.quizQuestionCard}>
+                                            <Text style={styles.quizQuestionText}>
+                                                {q.questionNumber}. {q.questionText}
+                                            </Text>
+                                            <View style={styles.quizOptionsContainer}>
+                                                {q.options.map((opt) => {
+                                                    const isSelected = selectedOpt === opt.label;
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={opt.label}
+                                                            style={[
+                                                                styles.quizOptionButton,
+                                                                isSelected && styles.quizOptionButtonSelected
+                                                            ]}
+                                                            onPress={() => {
+                                                                setSelectedAnswers(prev => ({
+                                                                    ...prev,
+                                                                    [q.questionNumber]: opt.label
+                                                                }));
+                                                            }}
+                                                        >
+                                                            <View style={[
+                                                                styles.quizOptionLetterCircle,
+                                                                isSelected && styles.quizOptionLetterCircleSelected
+                                                            ]}>
+                                                                <Text style={[
+                                                                    styles.quizOptionLetterText,
+                                                                    isSelected && styles.quizOptionLetterTextSelected
+                                                                ]}>
+                                                                    {opt.label}
+                                                                </Text>
+                                                            </View>
+                                                            <Text style={[
+                                                                styles.quizOptionText,
+                                                                isSelected && styles.quizOptionTextSelected
+                                                            ]}>
+                                                                {opt.text}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </View>
+                                        </View>
+                                    );
+                                })}
                             </View>
                         )}
 
-                        <Button 
-                            title="View My Work" 
-                            onPress={handleViewSubmission} 
-                            variant="secondary"
-                            style={{ marginTop: 12 }}
+                        {/* Additional Answer Box & File Upload */}
+                        <View style={[styles.responseBox, { marginTop: parsedQuiz ? 16 : 0 }]}>
+                            <Text style={styles.inputLabel}>
+                                {parsedQuiz ? 'Additional Notes / Answers (Optional):' : 'Write your quiz answers here:'}
+                            </Text>
+                            <TextInput
+                                style={styles.textInputResponse}
+                                placeholder={parsedQuiz ? "Enter any additional explanations or notes..." : "Enter your quiz answers here..."}
+                                placeholderTextColor="#94A3B8"
+                                multiline
+                                numberOfLines={4}
+                                value={responseText}
+                                onChangeText={setResponseText}
+                            />
+                            
+                            <Text style={[styles.inputLabel, { marginTop: 14 }]}>Attachments (Optional):</Text>
+                            <FileUploadComponent 
+                                onPickFile={handleFileUpload} 
+                                onRemoveFile={() => setPickedFile(null)}
+                                fileName={pickedFile?.name}
+                                fileUri={pickedFile?.uri}
+                                fileType={pickedFile?.mimeType}
+                                style={{ marginBottom: 12 }} 
+                            />
+                            {!pickedFile && (
+                                <View style={styles.attachmentButtonsRow}>
+                                    <TouchableOpacity style={styles.attachBtn} onPress={() => handleImageUpload(false)}>
+                                        <Ionicons name="image-outline" size={16} color={Colors.light.primary} />
+                                        <Text style={styles.attachBtnText}>Upload Image</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={styles.attachBtn} onPress={() => handleImageUpload(true)}>
+                                        <Ionicons name="camera-outline" size={16} color={Colors.light.primary} />
+                                        <Text style={styles.attachBtnText}>Take Photo</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                    </ScrollView>
+
+                    {/* Bottom Floating Submit Button in Quiz Modal */}
+                    <View style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#FFFFFF',
+                        paddingHorizontal: 20,
+                        paddingVertical: 14,
+                        borderTopWidth: 1,
+                        borderTopColor: '#E2E8F0',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: -3 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 5,
+                        elevation: 8
+                    }}>
+                        <Button
+                            title={isSubmitting ? "Submitting Quiz..." : "Submit Quiz Answers"}
+                            onPress={async () => {
+                                await handleSubmit();
+                                setIsQuizStarted(false);
+                            }}
+                            disabled={isSubmitDisabled}
+                            loading={isSubmitting}
+                            style={{ backgroundColor: isSubmitDisabled ? '#CBD5E1' : Colors.light.primary }}
                         />
-                        {(!assignment.submission?.grade) && (
-                            <TouchableOpacity 
-                                style={{ 
-                                    marginTop: 12, 
-                                    padding: 12, 
-                                    alignItems: 'center', 
-                                    backgroundColor: '#FEF2F2', 
-                                    borderRadius: 8, 
-                                    borderWidth: 1, 
-                                    borderColor: '#FCA5A5' 
-                                }}
-                                onPress={handleUndoSubmit}
-                            >
-                                <Text style={{ color: '#DC2626', fontWeight: 'bold', fontSize: 16 }}>Undo Submit</Text>
-                            </TouchableOpacity>
-                        )}
                     </View>
-                )}
-            </ScrollView>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -400,11 +1315,14 @@ export default function AssignmentsScreen() {
         );
     }
 
-    // Map 'upcoming' tab to 'pending' status in data
-    const statusFilter = activeTab === "upcoming" ? "pending" : activeTab;
-    const filteredAssignments = assignments.filter((a) => a.status === statusFilter);
+    // Map tabs to statuses in data
+    const filteredAssignments = assignments.filter((a) => {
+        if (activeTab === "upcoming") return a.status === "pending";
+        if (activeTab === "submitted") return ["submitted", "graded", "returned"].includes(a.status);
+        return a.status === activeTab;
+    });
 
-    console.log(`[assignment UI] Global, Total: ${assignments.length}, Filtered (${statusFilter}): ${filteredAssignments.length}`);
+    console.log(`[assignment UI] Global, Total: ${assignments.length}, Filtered (${activeTab}): ${filteredAssignments.length}`);
 
     return (
         <View style={styles.container}>
@@ -639,5 +1557,257 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#475569",
         lineHeight: 20,
-    }
+    },
+    inputLabel: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: "#475569",
+        marginBottom: 6,
+        marginTop: 4,
+    },
+    responseBox: {
+        marginBottom: 16,
+    },
+    textInputResponse: {
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 14,
+        color: "#1E293B",
+        backgroundColor: "#F8FAFC",
+        textAlignVertical: "top",
+        minHeight: 120,
+    },
+    attachmentButtonsRow: {
+        flexDirection: "row",
+        gap: 10,
+        marginBottom: 16,
+    },
+    attachBtn: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#F0FAF5",
+        borderWidth: 1,
+        borderColor: Colors.light.primary,
+        borderRadius: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        gap: 6,
+    },
+    attachBtnText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: Colors.light.primary,
+    },
+    quizFormContainer: {
+        marginTop: 16,
+        marginBottom: 16,
+    },
+    quizQuestionCard: {
+        backgroundColor: "#FFFFFF",
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    quizQuestionText: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#1E293B",
+        marginBottom: 12,
+        lineHeight: 22,
+    },
+    quizOptionsContainer: {
+        gap: 10,
+    },
+    quizOptionButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 12,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        backgroundColor: "#F8FAFC",
+    },
+    quizOptionButtonSelected: {
+        borderColor: Colors.light.primary,
+        backgroundColor: Colors.light.primary + "08",
+    },
+    quizOptionLetterCircle: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: "#E2E8F0",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: 12,
+    },
+    quizOptionLetterCircleSelected: {
+        backgroundColor: Colors.light.primary,
+    },
+    quizOptionLetterText: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#475569",
+    },
+    quizOptionLetterTextSelected: {
+        color: "#FFFFFF",
+    },
+    quizOptionText: {
+        fontSize: 14,
+        color: "#475569",
+        flex: 1,
+    },
+    quizOptionTextSelected: {
+        color: Colors.light.primary,
+        fontWeight: "600",
+    },
+    resultsDashboardContainer: {
+        marginTop: 8,
+        marginBottom: 16,
+    },
+    scoreCard: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#F0FDF4",
+        borderWidth: 1,
+        borderColor: "#BBF7D0",
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 20,
+    },
+    scoreCardTitle: {
+        fontSize: 18,
+        fontWeight: "bold",
+        color: "#166534",
+    },
+    scoreCardText: {
+        fontSize: 14,
+        color: "#14532D",
+        marginTop: 4,
+    },
+    scoreBadge: {
+        backgroundColor: "#16A34A",
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginLeft: 12,
+    },
+    scoreBadgeText: {
+        color: "#FFFFFF",
+        fontWeight: "bold",
+        fontSize: 18,
+    },
+    reviewTitle: {
+        fontSize: 16,
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginBottom: 12,
+    },
+    reviewQuestionCard: {
+        backgroundColor: "#FFFFFF",
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+    },
+    reviewQuestionCardCorrect: {
+        borderColor: "#BBF7D0",
+    },
+    reviewQuestionCardIncorrect: {
+        borderColor: "#FCA5A5",
+    },
+    reviewQuestionHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 10,
+        marginBottom: 12,
+    },
+    reviewQuestionText: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: "#1E293B",
+        flex: 1,
+        lineHeight: 20,
+    },
+    reviewOptionsContainer: {
+        gap: 8,
+    },
+    reviewOptionRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 10,
+        borderRadius: 6,
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+    reviewOptionCircle: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: "#E2E8F0",
+        alignItems: "center",
+        justifyContent: "center",
+        marginRight: 10,
+        borderWidth: 1,
+        borderColor: "transparent",
+    },
+    reviewOptionCircleText: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: "#475569",
+    },
+    reviewOptionText: {
+        fontSize: 13,
+        color: "#475569",
+        flex: 1,
+    },
+    yourAnswerTag: {
+        fontSize: 11,
+        fontWeight: "600",
+        marginLeft: 8,
+    },
+    optStudentCorrect: {
+        backgroundColor: "#F0FDF4",
+        borderColor: "#86EFAC",
+    },
+    optStudentIncorrect: {
+        backgroundColor: "#FEF2F2",
+        borderColor: "#FCA5A5",
+    },
+    optCorrectTarget: {
+        backgroundColor: "#F0FDF4",
+        borderColor: "#86EFAC",
+    },
+    fileDownloadCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F8FAFC',
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        marginTop: 8,
+    },
+    fileNameText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    fileSizeText: {
+        fontSize: 12,
+        color: '#64748B',
+        marginTop: 2,
+    },
 });

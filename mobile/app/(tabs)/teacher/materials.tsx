@@ -13,8 +13,11 @@ export default function TeacherMaterialsScreen() {
     const { data: materials = [], isLoading } = useMaterialsQuery({ subjectId: undefined as any });
 
     const handleDownload = async (material: any) => {
-        const fileUrl = material.file_url;
-        if (!fileUrl) {
+        let fileUrl = material.file_url;
+        if (Array.isArray(fileUrl)) {
+            fileUrl = fileUrl[0];
+        }
+        if (!fileUrl || typeof fileUrl !== 'string') {
             Alert.alert("Error", "No file attached.");
             return;
         }
@@ -44,7 +47,9 @@ export default function TeacherMaterialsScreen() {
             }
         } catch (error) {
             console.error('Download error:', error);
-            Linking.openURL(material.file_url);
+            if (fileUrl && typeof fileUrl === 'string') {
+                Linking.openURL(fileUrl);
+            }
         }
     };
 

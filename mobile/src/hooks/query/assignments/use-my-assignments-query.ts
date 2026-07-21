@@ -9,14 +9,36 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
 
     useEffect(() => {
         const channelName = subjectId ? `assignments-rt-${subjectId}` : 'assignments-rt-global';
+
+        const invalidate = () => {
+            queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
+        };
+
         const channel = supabase
             .channel(channelName)
+            // Listen for new/updated assignments
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'assignments_activity' },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
-                }
+                invalidate
+            )
+            // Listen for grade changes (teacher grades a submission)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teacher_assessment_grades' },
+                invalidate
+            )
+            // Listen for submission status changes
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teacher_assessment_submissions' },
+                invalidate
+            )
+            // Listen for direct submission changes
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'submissions' },
+                invalidate
             )
             .subscribe();
 
