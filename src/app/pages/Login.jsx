@@ -169,6 +169,7 @@ function Login() {
           name: profile.first_name + " " + (profile.last_name || ""),
           email: profile.email,
           role: role,
+          avatar_url: profile.avatar_url || "",
           isFirstLogin: isFirstLogin
         };
 
@@ -363,6 +364,7 @@ function Login() {
         name: profile.first_name + " " + (profile.last_name || ""),
         email: profile.email,
         role: role,
+        avatar_url: profile.avatar_url || "",
         must_change_password: profile.must_change_password === true,
         isFirstLogin: isFirstLogin
       }));
