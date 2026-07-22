@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
@@ -247,8 +248,9 @@ const getAnnouncementAttachmentKind = (announcement) => {
 };
 
 export function ClassDetail() {
-  const navigate = useNavigate();
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { activeSchoolYear, activeQuarter } = useAcademic();
   const fileInputRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
 
@@ -2589,7 +2591,9 @@ export function ClassDetail() {
         deadline: dueDate || null,
         file_url: nextFileUrls.length > 0 ? JSON.stringify(nextFileUrls) : null,
         file_name: nextFileNames.length > 0 ? JSON.stringify(nextFileNames) : null,
-        file_path: nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null
+        file_path: nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null,
+        school_year: activeSchoolYear,
+        term: activeQuarter
       };
 
       console.log("[ClassDetail] FINAL VALIDATED PAYLOAD:", payload);

@@ -2,9 +2,9 @@ import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Users, UserCog, BookOpen, ClipboardList,
+  LayoutDashboard, Users, UserCog, BookOpen,
   Megaphone, Menu, X, LogOut, ChevronRight,
-  Calendar, MessageSquare, Mail, Sparkles
+  Calendar, MessageSquare, Settings
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
@@ -22,7 +22,7 @@ export function AdminSidebar({ adminName, onLogout }) {
     { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements" },
     { icon: MessageSquare,   label: "Messages",           path: "/admin/messages" },
     { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar" },
-    { icon: Sparkles,        label: "AI Assistant",       path: "/admin/ai-assistant", badge: "NEW" },
+    { icon: Settings,        label: "Academic Settings",  path: "/admin/academic-settings" },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -134,11 +134,9 @@ export function AdminSidebar({ adminName, onLogout }) {
         <div className="px-3 pb-4 flex-shrink-0 border-t border-gray-100 pt-2">
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 text-sm font-medium group"
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-red-600 hover:bg-red-50 transition-colors duration-150 text-sm font-medium"
           >
-            <div className="p-1 bg-gray-100 group-hover:bg-red-100 rounded-lg transition-colors flex-shrink-0">
-              <LogOut className="w-4 h-4 text-gray-400 group-hover:text-red-500" />
-            </div>
+            <LogOut className="w-4 h-4" />
             <span>Logout</span>
           </button>
         </div>
@@ -148,13 +146,11 @@ export function AdminSidebar({ adminName, onLogout }) {
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
         onConfirm={onLogout}
-        title="Logout Confirmation"
-        message="Are you sure you want to logout?"
-        confirmText="Logout"
+        title="Confirm Logout"
+        description="Are you sure you want to log out of your administrator account? Any unsaved work may be lost."
+        confirmText="Log Out"
         cancelText="Cancel"
       />
     </>
   );
 }
-
-export default AdminSidebar;

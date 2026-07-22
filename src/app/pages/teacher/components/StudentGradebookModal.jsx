@@ -1,5 +1,6 @@
-import { X, Calendar, FileText, CheckCircle, AlertCircle, Clock, MessageSquare } from "lucide-react";
-import React from "react";
+import { X, Calendar, FileText, CheckCircle, AlertCircle, Clock, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { computeDepEdStudentComputation, normalizeSubjectCategory } from "@/app/lib/depedGrading";
 
 export function StudentGradebookModal({
   student,
@@ -9,9 +10,23 @@ export function StudentGradebookModal({
   grades,        // assessmentGradesMap: { assessmentId: { studentId: gradeValue } }
   statusMap,     // assessmentStatusMap: { assessmentId: { studentId: status } }
   feedbackMap,   // assessmentFeedbackMap: { assessmentId: { studentId: feedbackText } }
-  studentOverallGrades
+  studentOverallGrades,
+  subjectCategory,
+  gradingSettingsByCategory
 }) {
-  if (!student) return null;
+  const [showComputation, setShowComputation] = useState(false);
+  const studentId = student?.id || "";
+  const studentName = student?.studentName || "";
+
+  const resolvedSubjectCategory = normalizeSubjectCategory(subjectCategory || studentOverallGrades?.subjectCategory || "", studentName);
+  const computation = useMemo(() => computeDepEdStudentComputation({
+    assessmentItems,
+    assessmentGradesMap: grades,
+    assessmentStatusMap: statusMap,
+    studentId,
+    subjectCategory: resolvedSubjectCategory,
+    gradingSettingsByCategory,
+  }), [assessmentItems, grades, gradingSettingsByCategory, resolvedSubjectCategory, studentId, statusMap]);
 
   // Separate activities into submitted/graded and missing
   const submittedActivities = [];
@@ -71,7 +86,16 @@ export function StudentGradebookModal({
   const assignmentAvg = calculateAverage("assignment");
   const seatworkAvg = calculateAverage("seatwork") || calculateAverage("activity");
 
-  const overallGrade = studentOverallGrades?.overallGrade || 0;
+  if (!student) return null;
+
+  const overallGrade = studentOverallGrades?.overallGrade || computation.finalGrade || 0;
+  const quarterRows = [1, 2, 3, 4].map((quarterNumber) => {
+    const summary = computation.quarters[`quarter${quarterNumber}`];
+    return {
+      quarterNumber,
+      summary,
+    };
+  });
 
   const getStatusStyle = (status) => {
     switch (status) {
@@ -108,23 +132,74 @@ export function StudentGradebookModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
               <p className="text-emerald-600 text-xs font-medium uppercase tracking-wider mb-1">Overall Grade</p>
               <div className="text-2xl font-bold text-emerald-900">{overallGrade}%</div>
             </div>
-            <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
-              <p className="text-violet-600 text-xs font-medium uppercase tracking-wider mb-1">Quizzes Avg</p>
-              <div className="text-2xl font-bold text-violet-900">{quizAvg}</div>
-            </div>
             <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-              <p className="text-blue-600 text-xs font-medium uppercase tracking-wider mb-1">Assignments Avg</p>
-              <div className="text-2xl font-bold text-blue-900">{assignmentAvg}</div>
+              <p className="text-blue-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 1</p>
+              <div className="text-2xl font-bold text-blue-900">{computation.quarters.quarter1.quarterlyGrade}%</div>
+            </div>
+            <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
+              <p className="text-violet-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 2</p>
+              <div className="text-2xl font-bold text-violet-900">{computation.quarters.quarter2.quarterlyGrade}%</div>
             </div>
             <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
-              <p className="text-orange-600 text-xs font-medium uppercase tracking-wider mb-1">Seatworks Avg</p>
-              <div className="text-2xl font-bold text-orange-900">{seatworkAvg}</div>
+              <p className="text-orange-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 3</p>
+              <div className="text-2xl font-bold text-orange-900">{computation.quarters.quarter3.quarterlyGrade}%</div>
             </div>
+            <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-100">
+              <p className="text-cyan-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 4</p>
+              <div className="text-2xl font-bold text-cyan-900">{computation.quarters.quarter4.quarterlyGrade}%</div>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+            <button
+              type="button"
+              onClick={() => setShowComputation((value) => !value)}
+              className="w-full flex items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <p className="text-sm font-semibold text-gray-900">View Grade Computation</p>
+                <p className="text-xs text-gray-500 mt-1">{resolvedSubjectCategory} • Written Works {computation.quarters.quarter1.weights.writtenWorksWeight}% / Performance Tasks {computation.quarters.quarter1.weights.performanceTasksWeight}%</p>
+              </div>
+              {showComputation ? <ChevronUp className="w-5 h-5 text-gray-500" /> : <ChevronDown className="w-5 h-5 text-gray-500" />}
+            </button>
+
+            {showComputation && (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-xs md:text-sm border-separate border-spacing-y-2">
+                  <thead>
+                    <tr className="text-left text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2">Quarter</th>
+                      <th className="px-3 py-2">Written Works</th>
+                      <th className="px-3 py-2">Performance Tasks</th>
+                      <th className="px-3 py-2">Initial Grade</th>
+                      <th className="px-3 py-2">Quarterly Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quarterRows.map(({ quarterNumber, summary }) => (
+                      <tr key={quarterNumber} className="bg-white rounded-xl shadow-sm border border-gray-200">
+                        <td className="px-3 py-3 font-semibold text-gray-900">Q{quarterNumber}</td>
+                        <td className="px-3 py-3 text-gray-700">
+                          <div className="font-medium">Raw {summary.writtenWorks.rawScore} / {summary.writtenWorks.highestScore}</div>
+                          <div className="text-gray-500">{summary.writtenWorks.percentageScore}% • Weighted {summary.writtenWorks.weightedScore}</div>
+                        </td>
+                        <td className="px-3 py-3 text-gray-700">
+                          <div className="font-medium">Raw {summary.performanceTasks.rawScore} / {summary.performanceTasks.highestScore}</div>
+                          <div className="text-gray-500">{summary.performanceTasks.percentageScore}% • Weighted {summary.performanceTasks.weightedScore}</div>
+                        </td>
+                        <td className="px-3 py-3 font-semibold text-gray-900">{summary.initialGrade}</td>
+                        <td className="px-3 py-3 font-semibold text-emerald-700">{summary.quarterlyGrade}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Missing Activities */}

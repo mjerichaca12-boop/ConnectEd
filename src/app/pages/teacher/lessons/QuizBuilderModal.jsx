@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { X, Plus, Trash2, Settings, ListOrdered, Shuffle, Clock, Award, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,6 +29,7 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
   const [questions, setQuestions] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [existingAttachments, setExistingAttachments] = useState([]);
+  const { activeSchoolYear, activeQuarter } = useAcademic();
 
   useEffect(() => {
     if (initialQuizId) {
@@ -216,12 +218,14 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
         available_from: quizDetails.available_from ? new Date(quizDetails.available_from).toISOString() : null,
         due_date: quizDetails.due_date ? new Date(quizDetails.due_date).toISOString() : null,
         allow_late_submission: quizDetails.allow_late_submission,
-        late_deadline: quizDetails.late_deadline ? new Date(quizDetails.late_deadline).toISOString() : null,
+        late_deadline: quizDetails.allow_late_submission && quizDetails.late_deadline ? new Date(quizDetails.late_deadline).toISOString() : null,
         show_score_immediately: quizDetails.show_score_immediately,
         show_correct_answers_after_submission: quizDetails.show_correct_answers_after_submission,
         total_points: totalPoints,
         attachment_url: finalAttachments.length > 0 ? JSON.stringify(finalAttachments) : null,
-        attachment_name: null
+        attachment_name: null,
+        school_year: activeSchoolYear,
+        term: activeQuarter
       };
 
       let finalQuizId = initialQuizId;

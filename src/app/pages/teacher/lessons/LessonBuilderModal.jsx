@@ -2,8 +2,10 @@ import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { X, Calendar } from "lucide-react";
 import { toast } from "sonner";
+import { useAcademic } from "@/app/context/AcademicContext";
 
 export function LessonBuilderModal({ subjectId, teacherId, initialLesson, onClose, onSuccess }) {
+  const { activeSchoolYear, activeQuarter } = useAcademic();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: initialLesson?.title || "",
@@ -46,6 +48,8 @@ export function LessonBuilderModal({ subjectId, teacherId, initialLesson, onClos
         if (error) throw error;
         toast.success("Lesson updated successfully");
       } else {
+        payload.school_year = activeSchoolYear;
+        payload.term = activeQuarter;
         const { error } = await supabase.from("lessons").insert(payload);
         if (error) throw error;
         toast.success("Lesson created successfully");

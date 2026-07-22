@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { X, Calendar, Clock, FileText, Upload, Link as LinkIcon, Settings, Target } from "lucide-react";
+import { useAcademic } from "@/app/context/AcademicContext";
+import { X, Calendar, Clock, FileText, Link as LinkIcon, Settings, Target, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 
@@ -16,12 +17,16 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
     due_date: "",
     due_time: "23:59",
     allow_late_submission: false,
-    max_file_size_mb: 50,
+    late_submission_deadline: "",
+    late_submission_deadline_time: "23:59",
     total_points: 100,
   });
 
+  const [validationErrors, setValidationErrors] = useState({});
+
   const [attachments, setAttachments] = useState([]);
   const [existingAttachments, setExistingAttachments] = useState([]);
+  const { activeSchoolYear, activeQuarter } = useAcademic();
 
   useEffect(() => {
     if (initialAssignmentId) {
@@ -56,6 +61,14 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         dTime = d.toISOString().split("T")[1].substring(0,5);
       }
 
+      let lateDate = "";
+      let lateTime = "23:59";
+      if (data.late_submission_deadline) {
+        const ld = new Date(data.late_submission_deadline);
+        lateDate = ld.toISOString().split("T")[0];
+        lateTime = ld.toISOString().split("T")[1].substring(0,5);
+      }
+
       setFormData({
         title: data.title,
         description: data.description || "",
@@ -64,7 +77,8 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         due_date: dDate,
         due_time: dTime,
         allow_late_submission: data.allow_late_submission,
-        max_file_size_mb: data.max_file_size_mb,
+        late_submission_deadline: lateDate,
+        late_submission_deadline_time: lateTime,
         total_points: data.total_points
       });
       
@@ -112,7 +126,33 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.title) return toast.error("Assignment title is required.");
+    const errors = {};
+
+    if (!formData.title) errors.title = "Title is required.";
+    if (!formData.due_date) errors.due_date = "Due Date is required.";
+    if (!formData.due_time) errors.due_time = "Due Time is required.";
+
+    if (formData.due_date && formData.due_time) {
+      const dueDateTime = new Date(`${formData.due_date}T${formData.due_time}`);
+      if (dueDateTime <= new Date()) {
+        errors.due_date = "Due Date must be in the future.";
+      }
+    }
+
+    if (formData.allow_late_submission && formData.late_submission_deadline) {
+      const lateDT = new Date(`${formData.late_submission_deadline}T${formData.late_submission_deadline_time || "23:59"}`);
+      const dueDT = new Date(`${formData.due_date}T${formData.due_time}`);
+      if (lateDT <= dueDT) {
+        errors.late_submission_deadline = "Late Submission Deadline must be after the Due Date.";
+      }
+    }
+
+    setValidationErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      const firstError = Object.values(errors)[0];
+      toast.error(firstError);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -139,9 +179,11 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
       }
 
       // Combine date and time
-      let finalDueDate = null;
-      if (formData.due_date) {
-        finalDueDate = new Date(`${formData.due_date}T${formData.due_time}`).toISOString();
+      const finalDueDate = new Date(`${formData.due_date}T${formData.due_time}`).toISOString();
+
+      let finalLateDeadline = null;
+      if (formData.allow_late_submission && formData.late_submission_deadline) {
+        finalLateDeadline = new Date(`${formData.late_submission_deadline}T${formData.late_submission_deadline_time || "23:59"}`).toISOString();
       }
 
       const payload = {
@@ -151,10 +193,12 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         assignment_type: formData.assignment_type,
         due_date: finalDueDate,
         allow_late_submission: formData.allow_late_submission,
-        max_file_size_mb: parseInt(formData.max_file_size_mb) || 50,
+        late_submission_deadline: finalLateDeadline,
         total_points: parseInt(formData.total_points) || 100,
         attachment_url: finalAttachments.length > 0 ? JSON.stringify(finalAttachments) : null,
-        attachment_name: null
+        attachment_name: null,
+        school_year: activeSchoolYear,
+        term: activeQuarter
       };
 
       if (initialAssignmentId) {
@@ -224,7 +268,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
             {/* General Information */}
             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Title *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Title <span className="text-red-500 font-bold">*</span></label>
                 <input
                   type="text"
                   name="title"
@@ -258,7 +302,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
                   onChange={handleFileChange}
                   className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
-                <p className="text-xs text-gray-500 mt-1">Students can download these files when viewing the assignment. Max 50MB per file.</p>
+                <p className="text-xs text-gray-500 mt-1">Students can download these files when viewing the assignment.</p>
                 
                 {(existingAttachments.length > 0 || attachments.length > 0) && (
                   <div className="mt-3 space-y-2">
@@ -334,53 +378,44 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
                   />
                 </div>
 
-                {formData.assignment_type === "File Upload" && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                      <Upload className="w-4 h-4 text-gray-400" /> Max File Size (MB)
-                    </label>
-                    <input
-                      type="number"
-                      name="max_file_size_mb"
-                      value={formData.max_file_size_mb}
-                      onChange={handleChange}
-                      min="1"
-                      max="100"
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    />
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-gray-400" /> Due Date (Optional)
+                    <Calendar className="w-4 h-4 text-gray-400" /> Due Date <span className="text-red-500 font-bold">*</span>
                   </label>
                   <input
                     type="date"
                     name="due_date"
                     value={formData.due_date}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    onChange={(e) => { handleChange(e); setValidationErrors(prev => ({ ...prev, due_date: undefined })); }}
+                    required
+                    className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${validationErrors.due_date ? 'border-red-400 bg-red-50/50' : 'border-gray-200'}`}
                   />
+                  {validationErrors.due_date && (
+                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{validationErrors.due_date}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-gray-400" /> Due Time
+                    <Clock className="w-4 h-4 text-gray-400" /> Due Time <span className="text-red-500 font-bold">*</span>
                   </label>
                   <input
                     type="time"
                     name="due_time"
                     value={formData.due_time}
-                    onChange={handleChange}
-                    disabled={!formData.due_date}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50"
+                    onChange={(e) => { handleChange(e); setValidationErrors(prev => ({ ...prev, due_time: undefined })); }}
+                    required
+                    className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all ${validationErrors.due_time ? 'border-red-400 bg-red-50/50' : 'border-gray-200'}`}
                   />
+                  {validationErrors.due_time && (
+                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{validationErrors.due_time}</p>
+                  )}
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-3">
                 <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
                   <input
                     type="checkbox"
@@ -394,6 +429,39 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
                     <span className="block text-xs text-gray-500">Students can submit after the due date (marked as late)</span>
                   </div>
                 </label>
+
+                {formData.allow_late_submission && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pl-8 pt-1 pb-1 border-l-2 border-blue-200 ml-2">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-orange-400" /> Late Deadline Date
+                      </label>
+                      <input
+                        type="date"
+                        name="late_submission_deadline"
+                        value={formData.late_submission_deadline}
+                        onChange={(e) => { handleChange(e); setValidationErrors(prev => ({ ...prev, late_submission_deadline: undefined })); }}
+                        className={`w-full px-4 py-2.5 bg-gray-50 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all ${validationErrors.late_submission_deadline ? 'border-red-400 bg-red-50/50' : 'border-gray-200'}`}
+                      />
+                      {validationErrors.late_submission_deadline && (
+                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{validationErrors.late_submission_deadline}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-orange-400" /> Late Deadline Time
+                      </label>
+                      <input
+                        type="time"
+                        name="late_submission_deadline_time"
+                        value={formData.late_submission_deadline_time}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 md:col-span-2 -mt-2">If set, students can submit until this deadline. Leave empty to allow indefinite late submissions.</p>
+                  </div>
+                )}
               </div>
 
             </div>

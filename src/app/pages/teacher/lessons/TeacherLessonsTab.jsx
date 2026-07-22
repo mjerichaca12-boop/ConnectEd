@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { LessonBuilderModal } from "./LessonBuilderModal";
 import { DeleteConfirmationModal } from "@/app/components/ui/DeleteConfirmationModal";
 import { LessonDetailView } from "./LessonDetailView";
+import { useAcademic } from "@/app/context/AcademicContext";
+import { CustomSelect } from "@/app/components/CustomSelect";
 
 export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
   const [lessons, setLessons] = useState([]);
@@ -14,17 +16,18 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [activeTab, setActiveTab] = useState("Active");
   const [lessonToDelete, setLessonToDelete] = useState(null);
+  const { activeSchoolYear, activeQuarter, viewMode, setViewMode } = useAcademic();
 
   useEffect(() => {
-    if (subjectId && teacherId) {
+    if (subjectId && teacherId && activeSchoolYear) {
       loadLessons();
     }
-  }, [subjectId, teacherId, activeTab]);
+  }, [subjectId, teacherId, activeTab, activeSchoolYear, activeQuarter, viewMode]);
 
   const loadLessons = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("lessons")
         .select(`
           *,
@@ -33,9 +36,17 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
         `)
         .eq("subject_id", subjectId)
         .eq("teacher_id", teacherId)
+        .eq("school_year", activeSchoolYear)
         .in("status", activeTab === "Active" ? ["Draft", "Published"] : ["Archived"])
+        .order("term", { ascending: false })
         .order("week_number", { ascending: true })
         .order("created_at", { ascending: false });
+
+      if (viewMode === "current") {
+        query = query.eq("term", activeQuarter);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setLessons(data || []);
@@ -99,6 +110,82 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
     );
   }
 
+  const renderLessonCard = (lesson, isReadOnly = false) => (
+    <div 
+      key={lesson.id} 
+      onClick={() => setSelectedLesson(lesson)}
+      className="bg-white border border-gray-200 rounded-xl p-5 hover:border-green-300 transition-colors cursor-pointer group shadow-sm flex justify-between items-center"
+    >
+      <div className="flex gap-4 items-start">
+        <div className="w-12 h-12 bg-gray-50 rounded-lg border border-gray-100 flex flex-col items-center justify-center flex-shrink-0">
+          <span className="text-xs text-gray-500 font-medium">Week</span>
+          <span className="text-lg font-bold text-green-700">{lesson.week_number || "-"}</span>
+        </div>
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <h3 className="font-bold text-gray-900 text-lg group-hover:text-green-700 transition-colors">{lesson.title}</h3>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+              lesson.status === 'Published' ? 'bg-green-100 text-green-800' :
+              lesson.status === 'Draft' ? 'bg-amber-100 text-amber-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              {lesson.status}
+            </span>
+            {isReadOnly && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
+                Read Only
+              </span>
+            )}
+          </div>
+          {lesson.topic && <p className="text-sm text-gray-600 mb-3">{lesson.topic}</p>}
+          <div className="flex items-center gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-1.5"><FileText className="w-4 h-4" /> {lesson.lesson_materials?.length || 0} Materials</div>
+            <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {lesson.lesson_activities?.length || 0} Activities</div>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        {!isReadOnly && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLessonToEdit(lesson);
+                setShowBuilderModal(true);
+              }}
+              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Edit Lesson"
+            >
+              <Edit className="w-5 h-5" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleArchiveToggle(lesson);
+              }}
+              className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+              title={activeTab === "Active" ? "Archive Lesson" : "Restore Lesson"}
+            >
+              {activeTab === "Active" ? <Archive className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setLessonToDelete(lesson);
+              }}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete Lesson"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+          </>
+        )}
+        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-green-600 transition-colors ml-1" />
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -118,20 +205,32 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
         </button>
       </div>
 
-      <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
-        <button
-          onClick={() => setActiveTab("Active")}
-          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === "Active" ? "bg-green-100 text-green-700" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}
-        >
-          Active Lessons
-        </button>
-        <button
-          onClick={() => setActiveTab("Archived")}
-          className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${activeTab === "Archived" ? "bg-gray-800 text-white" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}
-        >
-          <FolderArchive className="w-4 h-4" />
-          Archived
-        </button>
+      <div className="flex items-center justify-between gap-2 mb-6 border-b border-gray-100 pb-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab("Active")}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${activeTab === "Active" ? "bg-green-100 text-green-700" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}
+          >
+            Active Lessons
+          </button>
+          <button
+            onClick={() => setActiveTab("Archived")}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${activeTab === "Archived" ? "bg-gray-800 text-white" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"}`}
+          >
+            <FolderArchive className="w-4 h-4" />
+            Archived
+          </button>
+        </div>
+        <div className="w-64">
+          <CustomSelect
+            value={viewMode}
+            onChange={(val) => setViewMode(val)}
+            options={[
+              { label: "Current Quarter Only", value: "current" },
+              { label: "All Quarters (History)", value: "all" }
+            ]}
+          />
+        </div>
       </div>
 
       {isLoading ? (
@@ -163,73 +262,21 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          {lessons.map(lesson => (
-            <div 
-              key={lesson.id} 
-              onClick={() => setSelectedLesson(lesson)}
-              className="bg-white border border-gray-200 rounded-xl p-5 hover:border-green-300 transition-colors cursor-pointer group shadow-sm flex justify-between items-center"
-            >
-              <div className="flex gap-4 items-start">
-                <div className="w-12 h-12 bg-gray-50 rounded-lg border border-gray-100 flex flex-col items-center justify-center flex-shrink-0">
-                  <span className="text-xs text-gray-500 font-medium">Week</span>
-                  <span className="text-lg font-bold text-green-700">{lesson.week_number || "-"}</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-3 mb-1">
-                    <h3 className="font-bold text-gray-900 text-lg group-hover:text-green-700 transition-colors">{lesson.title}</h3>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                      lesson.status === 'Published' ? 'bg-green-100 text-green-800' :
-                      lesson.status === 'Draft' ? 'bg-amber-100 text-amber-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {lesson.status}
-                    </span>
-                  </div>
-                  {lesson.topic && <p className="text-sm text-gray-600 mb-3">{lesson.topic}</p>}
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <div className="flex items-center gap-1.5"><FileText className="w-4 h-4" /> {lesson.lesson_materials?.length || 0} Materials</div>
-                    <div className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> {lesson.lesson_activities?.length || 0} Activities</div>
-                  </div>
+        <div className="space-y-8">
+          {viewMode === "all" ? (
+            Array.from(new Set(lessons.map(l => l.term))).map(term => (
+              <div key={term}>
+                <h3 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b">{term || "Unassigned"}</h3>
+                <div className="space-y-4">
+                  {lessons.filter(l => l.term === term).map(lesson => renderLessonCard(lesson, term !== activeQuarter))}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLessonToEdit(lesson);
-                    setShowBuilderModal(true);
-                  }}
-                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Edit Lesson"
-                >
-                  <Edit className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleArchiveToggle(lesson);
-                  }}
-                  className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                  title={activeTab === "Active" ? "Archive Lesson" : "Restore Lesson"}
-                >
-                  {activeTab === "Active" ? <Archive className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLessonToDelete(lesson);
-                  }}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Delete Lesson"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-                <div className="w-px h-6 bg-gray-200 mx-1"></div>
-                <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-green-600 transition-colors ml-1" />
-              </div>
+            ))
+          ) : (
+            <div className="space-y-4">
+              {lessons.map(lesson => renderLessonCard(lesson, false))}
             </div>
-          ))}
+          )}
         </div>
       )}
 

@@ -45,6 +45,7 @@ export function AdminDashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState("");
+  const [academicSettings, setAcademicSettings] = useState({ schoolYear: "Loading...", quarter: "Loading..." });
 
   const normalizeRecentActivity = (source) => {
     const seenKeys = new Set();
@@ -327,6 +328,15 @@ export function AdminDashboard() {
       return;
     }
 
+    const fetchAcademicSettings = async () => {
+      const { data, error } = await supabase.from("academic_settings").select("*").eq("id", 1).single();
+      if (!error && data) {
+        setAcademicSettings({ schoolYear: data.current_school_year, quarter: data.current_quarter });
+      } else {
+        setAcademicSettings({ schoolYear: "2026-2027", quarter: "1st Quarter" });
+      }
+    };
+
     const initializeDashboard = async () => {
       try {
         setAdminName(user.name);
@@ -334,7 +344,7 @@ export function AdminDashboard() {
         setActivityLoading(true);
         setStatsError("");
         setActivityError("");
-        await Promise.all([fetchDashboardCounts(), fetchSubjectOptions(), fetchTeacherOptions()]);
+        await Promise.all([fetchDashboardCounts(), fetchSubjectOptions(), fetchTeacherOptions(), fetchAcademicSettings()]);
         await fetchRecentActivity();
       } catch (error) {
         if (isMounted) {
@@ -571,13 +581,29 @@ export function AdminDashboard() {
             </div>
             {/* Subtle glow */}
             <div className="absolute inset-0 bg-gradient-to-r from-green-50 via-blue-50/30 to-red-50/30 pointer-events-none" />
-            <div className="relative pl-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
+            <div className="relative pl-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
+                </div>
+                <h1 className="text-3xl font-bold mb-1 text-gray-900">{JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {adminName}!</h1>
+                <p className="text-gray-600">ConnectEd system overview and management center</p>
               </div>
-              <h1 className="text-3xl font-bold mb-1 text-gray-900">{JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {adminName}!</h1>
-              <p className="text-gray-600">ConnectEd system overview and management center</p>
+              <div className="flex items-center gap-4 bg-white/50 backdrop-blur border border-green-100 p-4 rounded-xl shadow-sm">
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Academic Year</p>
+                  <p className="text-sm font-bold text-gray-900">{academicSettings.schoolYear}</p>
+                </div>
+                <div className="w-px h-8 bg-green-200"></div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Current Quarter</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                    <p className="text-sm font-bold text-green-700">{academicSettings.quarter}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -700,15 +726,6 @@ export function AdminDashboard() {
             </div>
           </div>
         </div>
-        
-        {/* Floating AI Assistant Button */}
-        <button 
-          onClick={() => navigate("/admin/ai-assistant")}
-          className="fixed bottom-6 right-6 z-50 bg-green-600 hover:bg-green-700 text-white rounded-2xl px-4 py-3 flex items-center gap-2 shadow-lg shadow-green-600/20 transition-all"
-        >
-          <Sparkles className="w-5 h-5" />
-          Ask AI Assistant
-        </button>
       </main>
     </div>
   );

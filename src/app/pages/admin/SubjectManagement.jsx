@@ -7,6 +7,7 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
+import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
 import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus } from "lucide-react";
@@ -19,10 +20,11 @@ const emptyForm = {
   teacher: "",
   capacity: "",
   grade_level: "",
-  section: ""
+  section: "",
+  subject_category: DEPED_SUBJECT_CATEGORIES[0]
 };
 
-const subjectSelectColumns = "id, code, name, description, credits, teacher_id, capacity, enrolled, grade_level, section, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, credits, teacher_id, capacity, enrolled, grade_level, section, subject_category, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -116,7 +118,8 @@ function SubjectManagement() {
       const t = String(subjectRow.teacher_id || "").trim();
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
     })(),
-    grade_level: String(subjectRow.grade_level || "").trim()
+    grade_level: String(subjectRow.grade_level || "").trim(),
+    subject_category: normalizeSubjectCategory(subjectRow.subject_category || "", subjectRow.name || subjectRow.code || "")
   });
 
   const buildSubjectDedupKey = (subjectRow) => {
@@ -404,6 +407,11 @@ function SubjectManagement() {
       errors.grade_level = "Grade level is required";
     }
 
+    const subjectCategory = normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || "");
+    if (!DEPED_SUBJECT_CATEGORIES.includes(subjectCategory)) {
+      errors.subject_category = "Subject category is required";
+    }
+
     if (Object.keys(errors).length > 0) {
       setErrors(errors);
       return false;
@@ -458,7 +466,8 @@ function SubjectManagement() {
     })(),
     capacity: Number(normalizePositiveInteger(String(formData.capacity || ""))),
     grade_level: (formData.grade_level || "").trim(),
-    section: (formData.section || "").trim() || null
+    section: (formData.section || "").trim() || null,
+    subject_category: normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || "")
   });
 
   const handleAddSubject = async (event) => {
@@ -573,7 +582,8 @@ function SubjectManagement() {
       teacher: String(subject.teacher_id || ""),
       capacity: String(subject.capacity || ""),
       grade_level: String(subject.grade_level || ""),
-      section: String(subject.section || "")
+        section: String(subject.section || ""),
+        subject_category: normalizeSubjectCategory(subject.subject_category || "", subject.name || subject.code || "")
     });
     setShowEditModal(true);
   };
@@ -1089,6 +1099,17 @@ function SubjectManagement() {
                     <textarea rows={3} placeholder="Brief description of the subject" value={subjectFormData.description} onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject Category</label>
+                    <CustomSelect
+                      value={subjectFormData.subject_category}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, subject_category: value })}
+                      options={DEPED_SUBJECT_CATEGORIES.map((category) => ({ value: category, label: category }))}
+                      placeholder="Select category"
+                      className="w-full"
+                    />
+                    {formErrors.subject_category && <p className="text-red-500 text-sm mt-1">{formErrors.subject_category}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
                     <CustomSelect
                       value={subjectFormData.grade_level}
@@ -1162,6 +1183,17 @@ function SubjectManagement() {
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
                     <textarea rows={3} value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject Category</label>
+                    <CustomSelect
+                      value={editFormData.subject_category}
+                      onChange={(value) => setEditFormData({ ...editFormData, subject_category: value })}
+                      options={DEPED_SUBJECT_CATEGORIES.map((category) => ({ value: category, label: category }))}
+                      placeholder="Select category"
+                      className="w-full"
+                    />
+                    {editFormErrors.subject_category && <p className="text-red-500 text-sm mt-1">{editFormErrors.subject_category}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
@@ -1239,6 +1271,10 @@ function SubjectManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Grade Level</label>
                     <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.grade_level || "No grade assigned"}</p></div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Subject Category</label>
+                    <div className="flex items-center gap-2"><Award className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.subject_category || normalizeSubjectCategory("", selectedSubject.name || selectedSubject.code || "")}</p></div>
                   </div>
                 </div>
                 <div className="space-y-4">

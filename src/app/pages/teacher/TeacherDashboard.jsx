@@ -11,6 +11,7 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { TeacherTasksAndDeadlines } from "@/app/components/TeacherTasksAndDeadlines";
 import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   normalizeAudience,
@@ -46,6 +47,7 @@ export function TeacherDashboard() {
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
   const [draftLessonsCount, setDraftLessonsCount] = useState(0);
   const [publishedLessonsCount, setPublishedLessonsCount] = useState(0);
+  const { activeSchoolYear, activeQuarter } = useAcademic();
   const totalClasses = assignedSubjects.length;
 
   const getAnnouncementTableName = async () => {
@@ -211,7 +213,9 @@ export function TeacherDashboard() {
     const { count, error } = await supabase
       .from("teacher_student_grades")
       .select("id", { count: "exact", head: true })
-      .eq("teacher_id", id);
+      .eq("teacher_id", id)
+      .eq("school_year", activeSchoolYear)
+      .eq("term", activeQuarter);
 
     if (error) {
       console.error("Error fetching grades encoded total:", error);
@@ -227,7 +231,9 @@ export function TeacherDashboard() {
     const { data, error } = await supabase
       .from("lessons")
       .select("status")
-      .eq("teacher_id", id);
+      .eq("teacher_id", id)
+      .eq("school_year", activeSchoolYear)
+      .eq("term", activeQuarter);
     if (!error && data) {
       setDraftLessonsCount(data.filter(l => l.status === "Draft").length);
       setPublishedLessonsCount(data.filter(l => l.status === "Published").length);
@@ -244,6 +250,8 @@ export function TeacherDashboard() {
       .from("teacher_student_grades")
       .select("id, student_id, subject_id, overall_grade, updated_at")
       .eq("teacher_id", id)
+      .eq("school_year", activeSchoolYear)
+      .eq("term", activeQuarter)
       .order("updated_at", { ascending: false })
       .limit(5);
 
@@ -309,6 +317,7 @@ export function TeacherDashboard() {
   };
 
   useEffect(() => {
+
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
     const user = JSON.parse(userData);
@@ -347,13 +356,15 @@ export function TeacherDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!teacherId) return;
-    fetchTeacherSubjects(teacherId);
-    fetchTeacherStudentTotal(teacherId);
-    fetchGradesEncodedTotal(teacherId);
-    fetchRecentGrades(teacherId);
-    fetchLessonsCount(teacherId);
-  }, [teacherId]);
+    if (teacherId && activeSchoolYear && activeQuarter) {
+      loadAnnouncements();
+      fetchTeacherSubjects(teacherId);
+      fetchTeacherStudentTotal(teacherId);
+      fetchGradesEncodedTotal(teacherId);
+      fetchLessonsCount(teacherId);
+      fetchRecentGrades(teacherId);
+    }
+  }, [teacherId, activeSchoolYear, activeQuarter]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;
@@ -535,8 +546,8 @@ export function TeacherDashboard() {
           <div className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4">
               <div className="flex flex-col items-end gap-1">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY 2026-2027</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">1st Quarter</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY {activeSchoolYear}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">{activeQuarter}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 mb-1">
@@ -572,10 +583,10 @@ export function TeacherDashboard() {
             })}
           </div>
 
-          {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Main Grid ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+          {/* — Main Grid — */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* Left Ã¢â‚¬â€ Main Content */}
+            {/* Left — Main Content */}
             <div className="lg:col-span-2 flex flex-col gap-6">
 
               {/* Top row: Tasks & Grades */}
@@ -597,7 +608,7 @@ export function TeacherDashboard() {
                         <div className="w-12 h-12 bg-green-50 border border-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                           <TrendingUp className="w-6 h-6 text-green-500" />
                         </div>
-                        <p className="text-gray-700 font-medium">No grades recorded yet</p>
+                        <p className="text-gray-500 font-medium">SY {activeSchoolYear} • {activeQuarter}</p>
                       </div>
                     ) : (
                       <div className="space-y-3 w-full">

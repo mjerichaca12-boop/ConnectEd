@@ -191,6 +191,23 @@ export const streamMessage = async ({
   onDone,
   onError,
 }) => {
+  try {
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser);
+      if (parsedUser?.role !== "teacher") {
+        onError?.(new Error("Unauthorized: Role must be a teacher to use the AI Assistant."));
+        return;
+      }
+    } else {
+      onError?.(new Error("Unauthorized: No active session."));
+      return;
+    }
+  } catch (e) {
+    onError?.(new Error("Unauthorized access checking failed."));
+    return;
+  }
+
   if (!groq) {
     onError?.(new Error("Groq API key not configured. Add VITE_GROQ_API_KEY to .env"));
     return;

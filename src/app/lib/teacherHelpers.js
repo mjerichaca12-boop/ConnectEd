@@ -480,9 +480,16 @@ export const createDefaultGradeRecord = () => ({
   term2Grade: 0,
   term3Grade: 0,
   term4Grade: 0,
+  quarter1Grade: 0,
+  quarter2Grade: 0,
+  quarter3Grade: 0,
+  quarter4Grade: 0,
   quizAverage: 0,
   activityGrade: 0,
   assignmentGrade: 0,
+  examGrade: 0,
+  overallGrade: 0,
+  gradeComputation: null,
 });
 
 /**

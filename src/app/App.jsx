@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
 import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
+import { AcademicProvider } from "./context/AcademicContext";
 import { supabase } from "./lib/supabaseClient";
 import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
@@ -28,11 +29,11 @@ import { TeacherManagement } from "./pages/admin/TeacherManagement";
 import { SubjectManagement } from "./pages/admin/SubjectManagement";
 import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminCalendar } from "./pages/admin/AdminCalendar";
+import AdminAcademicSettings from "./pages/admin/AdminAcademicSettings";
 import { Reports } from "./pages/admin/Reports";
 import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
 import { AdminMessages } from "./pages/admin/AdminMessages";
-import { AIAdminAssistant } from "./pages/admin/AIAdminAssistant";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminNotifications } from "./pages/admin/AdminNotifications";
@@ -210,6 +211,7 @@ function ScrollToTop() {
 
 export default function App() {
   return (
+    <AcademicProvider>
     <ActivityProvider>
       <UnreadMessagesProvider>
       <Router>
@@ -258,11 +260,11 @@ export default function App() {
         <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
         <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
+        <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
         <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
-        <Route path="/admin/ai-assistant" element={<AdminRouteGuard><AIAdminAssistant /></AdminRouteGuard>} />
         <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
 
         {/* Teacher AI */}
@@ -271,5 +273,6 @@ export default function App() {
       </Router>
           </UnreadMessagesProvider>
     </ActivityProvider>
+    </AcademicProvider>
   );
 }
