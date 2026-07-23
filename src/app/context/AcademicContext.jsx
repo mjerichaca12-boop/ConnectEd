@@ -15,6 +15,28 @@ export const AcademicProvider = ({ children }) => {
 
   useEffect(() => {
     fetchAcademicSettings();
+
+    const channel = supabase
+      .channel('academic_settings_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'academic_settings'
+        },
+        (payload) => {
+          if (payload.new) {
+            setActiveSchoolYear(payload.new.current_school_year);
+            setActiveQuarter(payload.new.current_quarter);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchAcademicSettings = async () => {
@@ -24,7 +46,7 @@ export const AcademicProvider = ({ children }) => {
         .from("academic_settings")
         .select("*")
         .eq("id", 1)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       if (data) {

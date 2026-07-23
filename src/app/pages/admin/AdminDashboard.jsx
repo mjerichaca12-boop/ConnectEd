@@ -329,7 +329,7 @@ export function AdminDashboard() {
     }
 
     const fetchAcademicSettings = async () => {
-      const { data, error } = await supabase.from("academic_settings").select("*").eq("id", 1).single();
+      const { data, error } = await supabase.from("academic_settings").select("*").eq("id", 1).maybeSingle();
       if (!error && data) {
         setAcademicSettings({ schoolYear: data.current_school_year, quarter: data.current_quarter });
       } else {
@@ -414,6 +414,17 @@ export function AdminDashboard() {
           .subscribe()
       : null;
 
+    const academicChannel = supabase
+      ? supabase
+          .channel("admin-dashboard-academic")
+          .on("postgres_changes", { event: "*", schema: "public", table: "academic_settings" }, (payload) => {
+            if (payload.new) {
+              setAcademicSettings({ schoolYear: payload.new.current_school_year, quarter: payload.new.current_quarter });
+            }
+          })
+          .subscribe()
+      : null;
+
     return () => {
       isMounted = false;
       if (profilesChannel) {
@@ -421,6 +432,9 @@ export function AdminDashboard() {
       }
       if (subjectChannel) {
         supabase.removeChannel(subjectChannel);
+      }
+      if (academicChannel) {
+        supabase.removeChannel(academicChannel);
       }
     };
   }, [navigate]);

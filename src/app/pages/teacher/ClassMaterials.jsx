@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
@@ -101,7 +101,15 @@ function ClassMaterials() {
     }
   };
 
-  const fetchMaterials = async (resolvedTeacherId) => {
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const fetchMaterials = useCallback(async (resolvedTeacherId) => {
     if (!supabase) {
       setMaterials([]);
       return;
@@ -136,9 +144,11 @@ function ClassMaterials() {
 
       if (error && (error.code === 'PGRST116' || error.status === 400)) {
         console.warn("class_materials table not accessible, showing empty state:", error);
-        setMaterials([]);
-        setMaterialError("");
-        setLoadingMaterials(false);
+        if (mountedRef.current) {
+          setMaterials([]);
+          setMaterialError("");
+          setLoadingMaterials(false);
+        }
         return;
       }
 
@@ -160,21 +170,30 @@ function ClassMaterials() {
 
       if (error) {
         console.error("Failed to fetch class materials:", error);
-        setMaterials([]);
-        setMaterialError("Unable to load class materials.");
-        setLoadingMaterials(false);
+        if (mountedRef.current) {
+          setMaterials([]);
+          setMaterialError("Unable to load class materials.");
+          setLoadingMaterials(false);
+        }
         return;
       }
 
-      setMaterials((data ?? []).map((row) => normalizeMaterialRow(row)));
-      setLoadingMaterials(false);
+      if (mountedRef.current) {
+        setMaterials((data ?? []).map((row) => normalizeMaterialRow(row)));
+        setMaterialError("");
+      }
     } catch (err) {
-      console.error("Unexpected error in fetchMaterials:", err);
-      setMaterials([]);
-      setMaterialError("Unexpected error loading materials.");
-      setLoadingMaterials(false);
+      console.error("Error fetching class materials:", err);
+      if (mountedRef.current) {
+        setMaterials([]);
+        setMaterialError("An unexpected error occurred while loading materials.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoadingMaterials(false);
+      }
     }
-  };
+  }, [materialColumns, activeSchoolYear, activeQuarter, viewMode]);
 
   const resolveMaterialColumns = async () => {
     if (!supabase) {
@@ -301,7 +320,7 @@ function ClassMaterials() {
     if (teacherId) {
       fetchMaterials(teacherId);
     }
-  }, [activeSchoolYear, activeQuarter, viewMode, teacherId]);
+  }, [fetchMaterials, teacherId]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;

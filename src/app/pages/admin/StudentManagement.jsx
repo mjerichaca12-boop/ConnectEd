@@ -210,11 +210,11 @@ function StudentManagement() {
     switch (field) {
       case "first_name":
         if (!trimmedValue) return "First name is required";
-        if (!/^[A-Za-z]+$/.test(trimmedValue)) return "First name must contain letters only";
+        if (!/^[A-Za-z\s.\-]+$/.test(trimmedValue)) return "First name must contain letters only";
         return "";
       case "last_name":
         if (!trimmedValue) return "Last name is required";
-        if (!/^[A-Za-z]+$/.test(trimmedValue)) return "Last name must contain letters only";
+        if (!/^[A-Za-z\s.\-]+$/.test(trimmedValue)) return "Last name must contain letters only";
         return "";
       case "email":
         if (!trimmedValue) return "Email is required";
@@ -248,6 +248,9 @@ function StudentManagement() {
       if (field === "year_level") {
         nextFormData.section = ""; // Automatically clear the selected Section if the Grade Level changes.
       }
+      if (field === "lrn") {
+        nextFormData.email = `${nextValue.toLowerCase()}@students.connected`;
+      }
       const fieldError = validateAddField(field, nextValue, nextFormData);
 
       setFormErrors((currentErrors) => {
@@ -257,6 +260,15 @@ function StudentManagement() {
           nextErrors[field] = fieldError;
         } else {
           delete nextErrors[field];
+        }
+
+        if (field === "lrn") {
+          const emailError = validateAddField("email", nextFormData.email, nextFormData);
+          if (emailError) {
+            nextErrors.email = emailError;
+          } else {
+            delete nextErrors.email;
+          }
         }
 
         return nextErrors;
@@ -343,10 +355,33 @@ function StudentManagement() {
     setIsSubmitting(true);
 
     try {
-      const newStudentId = generateUUID();
+      const email = studentFormData.email || `${studentFormData.lrn}@students.connected`;
+      const tempPassword = studentFormData.password || generateUUID().slice(0, 8);
+      
+      let userId = generateUUID();
+      
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: email,
+        password: tempPassword,
+        email_confirm: true
+      });
+      
+      if (authError) {
+         if (authError.message?.includes("already exists") || authError.status === 422) {
+            const { data: retryList } = await supabaseAdmin.auth.admin.listUsers();
+            const retryUser = retryList?.users?.find(u => u.email === email);
+            if (!retryUser) throw new Error("Email exists but user not found in fallback query.");
+            userId = retryUser.id;
+         } else {
+            throw authError;
+         }
+      } else if (authData?.user) {
+         userId = authData.user.id;
+      }
+
       const { data, error } = await db
         .from("profiles")
-        .insert({ id: newStudentId, ...buildPayload(studentFormData) })
+        .insert({ id: userId, ...buildPayload(studentFormData) })
         .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
         .single();
 
@@ -921,7 +956,20 @@ function StudentManagement() {
         password: resetSettings.tempPassword
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        if (authError.message?.includes("User not found") || authError.status === 404) {
+          // Fallback: If auth user was never created (due to past bugs), create it now linking the same ID
+          const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+             id: selectedStudent.id,
+             email: selectedStudent.email || `${selectedStudent.lrn}@students.connected`,
+             password: resetSettings.tempPassword,
+             email_confirm: true
+          });
+          if (createError) throw createError;
+        } else {
+          throw authError;
+        }
+      }
 
       const { error: profileError } = await db.from("profiles").update({
         must_change_password: resetSettings.forceChange,
@@ -1256,13 +1304,13 @@ function StudentManagement() {
           </div>
         </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               {activeTab === "Profiles" ? (
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-left w-12">
+                    <th className="px-6 py-5 text-left w-12">
                       <button
                         onClick={() => toggleAllStudents(filteredStudents.map(s => s.id))}
                         className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
@@ -1270,16 +1318,16 @@ function StudentManagement() {
                         {selectedStudentIds.size > 0 && selectedStudentIds.size === filteredStudents.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
                       </button>
                     </th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Full Name</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">LRN</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Year Level</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Email</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">LRN</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-gray-100">
                   {(() => {
                     const grouped = {};
                     filteredStudents.forEach(student => {
@@ -1313,8 +1361,8 @@ function StudentManagement() {
                         );
                         groupStudents.forEach((student) => {
                           rows.push(
-                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
-                              <td className="px-6 py-4 text-left">
+                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                              <td className="px-6 py-5 text-left align-middle">
                                 <button
                                   onClick={() => toggleStudentSelection(student.id)}
                                   className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
@@ -1322,51 +1370,50 @@ function StudentManagement() {
                                   {selectedStudentIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
                                 </button>
                               </td>
-                              <td className="px-6 py-4">
-                                <p className="font-semibold text-gray-900">{getFullName(student)}</p>
-                                <p className="text-xs text-gray-500 mt-0.5">Student profile</p>
+                              <td className="px-6 py-5 align-middle">
+                                <p className="font-semibold text-gray-900 truncate">{getFullName(student)}</p>
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-6 py-5 align-middle">
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <Mail className="w-3.5 h-3.5 text-gray-500" />
-                                  {student.email}
+                                  <Mail className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <div className="truncate max-w-[200px]">{student.email}</div>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                                 <div className="flex items-center gap-2">
-                                  <Hash className="w-3.5 h-3.5 text-gray-500" />
-                                  {student.lrn || "-"}
+                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <span className="truncate">{student.lrn || "-"}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-6 py-5 align-middle">
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <Hash className="w-3.5 h-3.5 text-gray-500" />
-                                  {student.year_level || "-"}
+                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <span className="truncate">{student.year_level || "-"}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
+                              <td className="px-6 py-5 align-middle">
+                                <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
                                   student.status === "Disabled"
-                                    ? "bg-red-50 text-red-400 border-red-200"
+                                    ? "bg-red-50 text-red-500 border-red-200"
                                     : "bg-green-50 text-green-600 border-green-200"
                                 }`}>
                                   {student.status || "Active"}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">{formatDate(student.created_at)}</td>
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
+                              <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">{formatDate(student.created_at)}</td>
+                              <td className="px-6 py-5 text-right align-middle">
+                                <div className="flex items-center justify-end gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
                                     <Eye className="w-4 h-4 text-gray-600" />
                                   </button>
                                   <button onClick={() => handleEditStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
-                                    <Edit className="w-4 h-4 text-blue-400" />
+                                    <Edit className="w-4 h-4 text-blue-500" />
                                   </button>
                                   <button onClick={() => handlePromptResetPassword(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Reset Password">
                                     <Key className="w-4 h-4 text-amber-500" />
                                   </button>
                                   <button onClick={() => handlePromptDeleteStudent(student)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                                    <Trash2 className="w-4 h-4 text-red-400" />
+                                    <Trash2 className="w-4 h-4 text-red-500" />
                                   </button>
                                 </div>
                               </td>
@@ -1380,10 +1427,10 @@ function StudentManagement() {
                 </tbody>
               </table>
               ) : (
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider w-12">
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
                       <button 
                         onClick={() => {
                           if (selectedMasterlistIds.size === filteredMasterlist.filter(m => !m.account_created).length) {
@@ -1392,19 +1439,19 @@ function StudentManagement() {
                             setSelectedMasterlistIds(new Set(filteredMasterlist.filter(m => !m.account_created).map(m => m.id)));
                           }
                         }}
-                        className="text-gray-500 hover:text-blue-600"
+                        className="text-gray-500 hover:text-blue-600 transition-colors"
                       >
                         {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.filter(m => !m.account_created).length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
                       </button>
                     </th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Full Name</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">LRN</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Year Level</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Section</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">LRN</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Section</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-gray-100">
                   {(() => {
                     const grouped = {};
                     filteredMasterlist.forEach(student => {
@@ -1438,8 +1485,8 @@ function StudentManagement() {
                         );
                         groupStudents.forEach((student) => {
                           rows.push(
-                            <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-6 py-4">
+                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedMasterlistIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                              <td className="px-6 py-5 align-middle">
                                 <button
                                   disabled={student.account_created}
                                   onClick={() => {
@@ -1448,31 +1495,42 @@ function StudentManagement() {
                                     else newSet.add(student.id);
                                     setSelectedMasterlistIds(newSet);
                                   }}
-                                  className={`text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500`}
+                                  className="text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors"
                                 >
                                   {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
                                 </button>
                               </td>
-                              <td className="px-6 py-4">
-                                <p className="font-semibold text-gray-900">{[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ")}</p>
+                              <td className="px-6 py-5 align-middle">
+                                <p className="font-semibold text-gray-900 truncate">{[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ")}</p>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
-                                {student.lrn || "-"}
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.lrn || "-"}</span>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
-                                {student.year_level || "-"}
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.year_level || "-"}</span>
                               </td>
-                              <td className="px-6 py-4 text-sm text-gray-600">
-                                {student.section || "-"}
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.section || "-"}</span>
                               </td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
-                                  student.account_created
-                                    ? "bg-green-50 text-green-600 border-green-200"
-                                    : "bg-gray-50 text-gray-500 border-gray-200"
-                                }`}>
-                                  {student.account_created ? "Created" : "Pending"}
-                                </span>
+                              <td className="px-6 py-5 text-right align-middle">
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                    student.account_created
+                                      ? "bg-green-50 text-green-600 border-green-200"
+                                      : "bg-gray-50 text-gray-500 border-gray-200"
+                                  }`}>
+                                    {student.account_created ? "Created" : "Pending"}
+                                  </span>
+                                  {!student.account_created && (
+                                    <button
+                                      onClick={() => handlePromoteMasterlist([student.id])}
+                                      disabled={isPromotingMasterlist}
+                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors opacity-100 lg:opacity-0 group-hover:opacity-100 shadow-sm"
+                                    >
+                                      Enroll
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -1529,7 +1587,7 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={studentFormData.email} onChange={(e) => handleAddStudentFieldChange("email", e.target.value)} placeholder="student@example.com" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    <input type="email" value={studentFormData.email} readOnly placeholder="Auto-generated from LRN" className={`w-full px-4 py-3 border rounded-lg focus:outline-none bg-gray-100 text-gray-500 cursor-not-allowed ${formErrors.email ? "border-red-500" : "border-gray-300"}`} />
                     {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
                   </div>
                   <div>
@@ -1636,14 +1694,15 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })} placeholder="student@example.com" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="email" value={editFormData.email} readOnly placeholder="Auto-generated from LRN" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none bg-gray-100 text-gray-500 cursor-not-allowed" />
                     {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
                     <input type="text" value={editFormData.lrn} onChange={(e) => {
                       const nextValue = normalizeLrn(e.target.value);
-                      setEditFormData({ ...editFormData, lrn: nextValue });
+                      const autoEmail = `${nextValue.toLowerCase()}@students.connected`;
+                      setEditFormData({ ...editFormData, lrn: nextValue, email: autoEmail });
                       setEditFormErrors((currentErrors) => {
                         const nextErrors = { ...currentErrors };
                         const fieldError = validateAddField("lrn", nextValue);
@@ -1652,6 +1711,13 @@ function StudentManagement() {
                           nextErrors.lrn = fieldError;
                         } else {
                           delete nextErrors.lrn;
+                        }
+                        
+                        const emailError = validateAddField("email", autoEmail);
+                        if (emailError) {
+                          nextErrors.email = emailError;
+                        } else {
+                          delete nextErrors.email;
                         }
 
                         return nextErrors;

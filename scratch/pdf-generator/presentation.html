@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectED: System Implementation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #0f4c81;
+            --secondary-blue: #2a81c7;
+            --light-blue: #e6f0fa;
+            --white: #ffffff;
+            --text-dark: #1a202c;
+            --text-light: #4a5568;
+            --border-color: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-dark);
+            margin: 0;
+            padding: 0;
+            background-color: var(--white);
+            line-height: 1.4;
+        }
+
+        .page {
+            width: 8.5in;
+            height: 11in;
+            padding: 0.8in;
+            margin: 0 auto;
+            box-sizing: border-box;
+            page-break-after: always;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 1.2rem;
+            border-bottom: 2px solid var(--primary-blue);
+            padding-bottom: 0.8rem;
+        }
+
+        .header h1 {
+            color: var(--primary-blue);
+            font-size: 2rem;
+            margin: 0 0 0.3rem 0;
+            font-weight: 800;
+        }
+
+        .header p {
+            color: var(--secondary-blue);
+            font-size: 1rem;
+            margin: 0;
+            font-weight: 500;
+        }
+
+        h2 {
+            color: var(--primary-blue);
+            font-size: 1.5rem;
+            border-bottom: 2px solid var(--light-blue);
+            padding-bottom: 0.3rem;
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        h3 {
+            color: var(--secondary-blue);
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .category-box {
+            background-color: var(--light-blue);
+            border-left: 4px solid var(--primary-blue);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 6px 6px 0;
+            page-break-inside: avoid;
+        }
+
+        .category-box h4 {
+            margin: 0 0 0.3rem 0;
+            color: var(--primary-blue);
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .category-box p {
+            margin: 0;
+            color: var(--text-light);
+            font-size: 0.85rem;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.2rem;
+        }
+
+        /* Flowchart Styles */
+        .flowchart {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 1rem 0;
+        }
+
+        .flow-node {
+            background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
+            color: var(--white);
+            padding: 0.8rem 1rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-align: center;
+            width: 260px;
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+
+        .flow-node.admin { background: linear-gradient(135deg, #2c3e50, #34495e); }
+        .flow-node.teacher { background: linear-gradient(135deg, #0f4c81, #2a81c7); }
+        .flow-node.system { background: linear-gradient(135deg, #16a085, #1abc9c); }
+
+        .flow-arrow {
+            color: var(--primary-blue);
+            font-size: 1.2rem;
+            margin: 0.4rem 0;
+        }
+
+        /* Tables for Roles */
+        .feature-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+            page-break-inside: avoid;
+            font-size: 0.85rem;
+        }
+
+        .feature-table th {
+            background-color: var(--primary-blue);
+            color: var(--white);
+            padding: 0.75rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .feature-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-dark);
+        }
+
+        .feature-table tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        .feature-table i {
+            color: var(--secondary-blue);
+            margin-right: 0.5rem;
+        }
+
+        .page-number {
+            position: absolute;
+            bottom: 0.4in;
+            right: 0.8in;
+            color: var(--text-light);
+            font-size: 0.85rem;
+        }
+        
+        .footer-logo {
+            position: absolute;
+            bottom: 0.4in;
+            left: 0.8in;
+            color: var(--primary-blue);
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+
+        .cover-page {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            text-align: center;
+            background: linear-gradient(135deg, var(--white) 0%, var(--light-blue) 100%);
+        }
+
+        .cover-title {
+            font-size: 3rem;
+            color: var(--primary-blue);
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        .cover-subtitle {
+            font-size: 1.5rem;
+            color: var(--secondary-blue);
+            margin-bottom: 2rem;
+        }
+
+        .cover-badge {
+            background-color: var(--primary-blue);
+            color: var(--white);
+            padding: 0.5rem 1.5rem;
+            border-radius: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        /* Reset box sizing */
+        * { box-sizing: border-box; }
+    </style>
+</head>
+<body>
+
+    <!-- Cover Page -->
+    <div class="page cover-page">
+        <div class="cover-badge">System Implementation Document</div>
+        <h1 class="cover-title"><i class="fas fa-graduation-cap"></i> ConnectED</h1>
+        <p class="cover-subtitle">Academic Portal for Public Junior High Schools</p>
+        <p style="color: var(--text-light); margin-top: auto; padding-bottom: 2rem; font-size: 0.9rem;">Generated based on actual source code implementation</p>
+    </div>
+
+    <!-- Page 1: Core Features -->
+    <div class="page">
+        <div class="header">
+            <h1>ConnectED</h1>
+            <p>System Implementation Analysis</p>
+        </div>
+
+        <h2><i class="fas fa-star"></i> 1. Core Features</h2>
+        <p style="font-size: 0.95rem; margin-bottom: 1.2rem;">The following features represent the actual implemented capabilities within the ConnectED system architecture.</p>
+
+        <div class="grid-2">
+            <div class="category-box">
+                <h4><i class="fas fa-users-cog"></i> User Management</h4>
+                <p>Complete management of student and teacher accounts, including access controls, profile updates, and secure authentication flows.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-school"></i> Academic Management</h4>
+                <p>Configuration of the academic structure, allowing administrators to manage the active School Year, Quarters, and Subjects.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-chalkboard-teacher"></i> Class & Lesson Management</h4>
+                <p>Teachers can manage their assigned classes, view student rosters, and organize detailed lesson structures.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-book-open"></i> Learning Materials</h4>
+                <p>A centralized repository for uploading, sharing, and organizing digital class materials for students.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-chart-line"></i> Grade Management</h4>
+                <p>Tools for teachers to record, manage, and calculate student grades across various assessment types.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-bullhorn"></i> Communication</h4>
+                <p>Integrated messaging system and global/class-specific announcements to facilitate seamless communication.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-robot"></i> AI Teaching Assistant</h4>
+                <p>An integrated Artificial Intelligence tool designed to assist teachers in generating quizzes and content.</p>
+            </div>
+
+            <div class="category-box">
+                <h4><i class="fas fa-chart-pie"></i> Reports & Analytics</h4>
+                <p>Dashboard statistics and reporting tools providing insights into system usage and academic metrics.</p>
+            </div>
+        </div>
+
+        <div class="footer-logo">ConnectED System Architecture</div>
+        <div class="page-number">Page 1</div>
+    </div>
+
+    <!-- Page 2: Workflow -->
+    <div class="page">
+        <div class="header">
+            <h1>ConnectED</h1>
+            <p>System Implementation Analysis</p>
+        </div>
+
+        <h2><i class="fas fa-project-diagram"></i> 2. Flow of the System</h2>
+        
+        <div class="grid-2">
+            <div>
+                <h3>Administrator Workflow</h3>
+                <div class="flowchart" style="transform: scale(0.9); transform-origin: top center;">
+                    <div class="flow-node admin">Admin Login</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node admin">Admin Dashboard</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node admin">Manage Academic Settings<br><small>(School Year & Quarter)</small></div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node admin">Manage Subjects</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node admin">Manage Teachers & Students</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node admin">System Configuration & Reports</div>
+                </div>
+            </div>
+
+            <div>
+                <h3>Teacher Workflow</h3>
+                <div class="flowchart" style="transform: scale(0.9); transform-origin: top center;">
+                    <div class="flow-node teacher">Teacher Login</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node teacher">Teacher Dashboard</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node teacher">Select Assigned Class</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node teacher">Manage Lessons & Materials</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node teacher">Consult AI Assistant</div>
+                    <i class="fas fa-arrow-down flow-arrow"></i>
+                    <div class="flow-node teacher">Assess & Manage Grades</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer-logo">ConnectED System Architecture</div>
+        <div class="page-number">Page 2</div>
+    </div>
+
+    <!-- Page 3: Role Features -->
+    <div class="page">
+        <div class="header">
+            <h1>ConnectED</h1>
+            <p>System Implementation Analysis</p>
+        </div>
+
+        <h2><i class="fas fa-user-shield"></i> 3. Features per Role</h2>
+
+        <h3>Administrator Access</h3>
+        <table class="feature-table">
+            <tr>
+                <th style="width: 25%">Module</th>
+                <th>Implemented Functionality</th>
+            </tr>
+            <tr>
+                <td><strong>Dashboard</strong></td>
+                <td><i class="fas fa-check-circle"></i>View high-level system statistics, active users, and academic overview.</td>
+            </tr>
+            <tr>
+                <td><strong>Student Management</strong></td>
+                <td><i class="fas fa-check-circle"></i>Add, edit, view, and manage student accounts and masterlists.</td>
+            </tr>
+            <tr>
+                <td><strong>Teacher Management</strong></td>
+                <td><i class="fas fa-check-circle"></i>Register teachers, manage assignments, and update teacher profiles.</td>
+            </tr>
+            <tr>
+                <td><strong>Subject Management</strong></td>
+                <td><i class="fas fa-check-circle"></i>Define and manage the curriculum subjects for the school year.</td>
+            </tr>
+            <tr>
+                <td><strong>Announcements</strong></td>
+                <td><i class="fas fa-check-circle"></i>Create and broadcast system-wide announcements to all users.</td>
+            </tr>
+            <tr>
+                <td><strong>Calendar</strong></td>
+                <td><i class="fas fa-check-circle"></i>Manage the academic calendar and significant school events.</td>
+            </tr>
+            <tr>
+                <td><strong>Academic Settings</strong></td>
+                <td><i class="fas fa-check-circle"></i>Configure active School Years and grading Quarters.</td>
+            </tr>
+            <tr>
+                <td><strong>Reports</strong></td>
+                <td><i class="fas fa-check-circle"></i>Generate administrative and academic reports based on system data.</td>
+            </tr>
+            <tr>
+                <td><strong>System Settings</strong></td>
+                <td><i class="fas fa-check-circle"></i>Manage core platform configurations and security parameters.</td>
+            </tr>
+            <tr>
+                <td><strong>Communications</strong></td>
+                <td><i class="fas fa-check-circle"></i>Access internal messaging and system notifications.</td>
+            </tr>
+        </table>
+
+        <div class="footer-logo">ConnectED System Architecture</div>
+        <div class="page-number">Page 3</div>
+    </div>
+
+    <!-- Page 4: Teacher Features -->
+    <div class="page">
+        <div class="header">
+            <h1>ConnectED</h1>
+            <p>System Implementation Analysis</p>
+        </div>
+
+        <h3>Teacher Access</h3>
+        <table class="feature-table">
+            <tr>
+                <th style="width: 25%">Module</th>
+                <th>Implemented Functionality</th>
+            </tr>
+            <tr>
+                <td><strong>Dashboard</strong></td>
+                <td><i class="fas fa-check-circle"></i>View assigned classes, upcoming tasks, and recent activities.</td>
+            </tr>
+            <tr>
+                <td><strong>Classes & Lessons</strong></td>
+                <td><i class="fas fa-check-circle"></i>View class rosters and structure lessons within specific subjects.</td>
+            </tr>
+            <tr>
+                <td><strong>Class Materials</strong></td>
+                <td><i class="fas fa-check-circle"></i>Upload, organize, and distribute digital learning resources to students.</td>
+            </tr>
+            <tr>
+                <td><strong>Grades Management</strong></td>
+                <td><i class="fas fa-check-circle"></i>Input, calculate, and manage student grades across different assessments.</td>
+            </tr>
+            <tr>
+                <td><strong>AI Assistant</strong></td>
+                <td><i class="fas fa-check-circle"></i>Utilize embedded AI tools to generate quizzes, lesson ideas, and materials.</td>
+            </tr>
+            <tr>
+                <td><strong>Announcements</strong></td>
+                <td><i class="fas fa-check-circle"></i>Post announcements specific to assigned classes and view broadcasts.</td>
+            </tr>
+            <tr>
+                <td><strong>Communications</strong></td>
+                <td><i class="fas fa-check-circle"></i>Send and receive direct messages to/from students and administration.</td>
+            </tr>
+            <tr>
+                <td><strong>Notifications</strong></td>
+                <td><i class="fas fa-check-circle"></i>Receive alerts for important academic updates and system events.</td>
+            </tr>
+            <tr>
+                <td><strong>Profile</strong></td>
+                <td><i class="fas fa-check-circle"></i>Manage personal information, password, and account settings.</td>
+            </tr>
+        </table>
+
+        <div style="margin-top: 2rem; text-align: center; color: var(--text-light); font-style: italic; font-size: 0.9rem;">
+            <p>End of Document</p>
+        </div>
+
+        <div class="footer-logo">ConnectED System Architecture</div>
+        <div class="page-number">Page 4</div>
+    </div>
+</body>
+</html>

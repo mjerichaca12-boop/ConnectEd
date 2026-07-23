@@ -10,7 +10,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus } from "lucide-react";
+import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square } from "lucide-react";
 
 const emptyForm = {
   code: "",
@@ -56,6 +56,9 @@ function SubjectManagement() {
   const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState("");
   const [subjectTable, setSubjectTable] = useState("subjects");
   const [errorMessage, setErrorMessage] = useState("");
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   useEffect(() => {
     if (showAddModal || showViewModal || showEditModal || showDeleteConfirm || showEnrollModal) {
@@ -660,6 +663,64 @@ function SubjectManagement() {
     }
   };
 
+  const handleToggleSubjectSelection = (subjectId) => {
+    const newSelection = new Set(selectedSubjectIds);
+    if (newSelection.has(subjectId)) {
+      newSelection.delete(subjectId);
+    } else {
+      newSelection.add(subjectId);
+    }
+    setSelectedSubjectIds(newSelection);
+  };
+
+  const handleSelectAllSubjects = () => {
+    if (filteredSubjects.length > 0 && selectedSubjectIds.size === filteredSubjects.length) {
+      setSelectedSubjectIds(new Set());
+    } else {
+      setSelectedSubjectIds(new Set(filteredSubjects.map((s) => s.id)));
+    }
+  };
+
+  const handleBulkDeleteSubjects = async () => {
+    if (selectedSubjectIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setErrorMessage("");
+    try {
+      const idsToDelete = Array.from(selectedSubjectIds);
+      const tableName = await getSubjectTableName();
+      
+      const results = await Promise.allSettled(
+        idsToDelete.map(async (id) => {
+          const { error } = await supabase.from(tableName).delete().eq("id", id);
+          if (error) throw error;
+        })
+      );
+
+      let successCount = 0;
+      results.forEach(result => {
+        if (result.status === "fulfilled") successCount++;
+      });
+
+      setShowBulkDeleteConfirm(false);
+      setSelectedSubjectIds(new Set());
+      setSubjects((current) => current.filter((item) => !selectedSubjectIds.has(item.id)));
+      await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
+
+      if (successCount === idsToDelete.length) {
+        toast.success(`Successfully deleted ${successCount} subject(s).`);
+      } else if (successCount > 0) {
+        toast.warning(`Deleted ${successCount} out of ${idsToDelete.length} subjects. Some subjects might be referenced by other records.`);
+      } else {
+        toast.error("Failed to delete any subjects. They might be referenced by other records.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred during bulk deletion.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handleDeleteSubject = (subject) => {
     setSubjectToDelete(subject);
     setShowDeleteConfirm(true);
@@ -969,10 +1030,12 @@ function SubjectManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Subject Management</h1>
                 <p className="text-gray-600">{subjects.length} subjects available</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
-                <Plus className="w-5 h-5" />
-                Add Subject
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                  <Plus className="w-5 h-5" />
+                  Add Subject
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1010,11 +1073,34 @@ function SubjectManagement() {
                   className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
                 />
               </div>
+              {selectedSubjectIds.size > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  disabled={isBulkDeleting}
+                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
+                </button>
+              )}
               <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 mb-4 mt-2 px-4 py-2 bg-white rounded-lg border border-gray-200 shadow-sm w-fit">
+            <button
+              onClick={handleSelectAllSubjects}
+              className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+              id="selectAllSubjects"
+            >
+              {filteredSubjects.length > 0 && selectedSubjectIds.size === filteredSubjects.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+            </button>
+            <label htmlFor="selectAllSubjects" className="text-sm font-medium text-gray-700 cursor-pointer select-none" onClick={handleSelectAllSubjects}>
+              Select All Subjects
+            </label>
           </div>
 
           {filteredSubjects.length === 0 ? (
@@ -1028,9 +1114,17 @@ function SubjectManagement() {
                 <div key={subject.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-colors overflow-hidden">
                   <div className="bg-gradient-to-r from-green-500/10 to-teal-500/10 p-4 border-b border-gray-100">
                     <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm text-green-600 font-medium">{subject.code}</p>
-                        <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleToggleSubjectSelection(subject.id)}
+                          className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                        >
+                          {selectedSubjectIds.has(subject.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                        </button>
+                        <div>
+                          <p className="text-sm text-green-600 font-medium">{subject.code}</p>
+                          <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
+                        </div>
                       </div>
                       <div className="px-3 py-1 bg-gray-50 border border-gray-200 rounded-full">
                         <p className="text-sm font-medium text-gray-700">{subject.credits} Credits</p>
@@ -1312,6 +1406,16 @@ function SubjectManagement() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDeleteSubjects}
+        title="Delete Selected Subjects"
+        description={`Are you sure you want to delete ${selectedSubjectIds.size} selected subject(s)? This action cannot be undone.`}
+        confirmText={isBulkDeleting ? "Deleting..." : "Delete All Selected"}
+        variant="danger"
+      />
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}

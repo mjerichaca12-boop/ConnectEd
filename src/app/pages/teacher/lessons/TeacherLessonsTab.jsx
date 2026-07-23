@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { Plus, BookOpen, Clock, ChevronRight, ArrowLeft, FileText, CheckCircle, Video, Image as ImageIcon, Archive, Trash2, Edit, RefreshCw, FolderArchive } from "lucide-react";
 import { toast } from "sonner";
@@ -18,13 +18,18 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
   const [lessonToDelete, setLessonToDelete] = useState(null);
   const { activeSchoolYear, activeQuarter, viewMode, setViewMode } = useAcademic();
 
-  useEffect(() => {
-    if (subjectId && teacherId && activeSchoolYear) {
-      loadLessons();
-    }
-  }, [subjectId, teacherId, activeTab, activeSchoolYear, activeQuarter, viewMode]);
+  const mountedRef = useRef(true);
 
-  const loadLessons = async () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadLessons = useCallback(async () => {
+    if (!subjectId || !teacherId || !activeSchoolYear) return;
+    
     setIsLoading(true);
     try {
       let query = supabase
@@ -49,14 +54,18 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
       const { data, error } = await query;
 
       if (error) throw error;
-      setLessons(data || []);
+      if (mountedRef.current) setLessons(data || []);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to load lessons.");
+      if (mountedRef.current) toast.error("Failed to load lessons.");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
-  };
+  }, [subjectId, teacherId, activeSchoolYear, activeTab, viewMode, activeQuarter]);
+
+  useEffect(() => {
+    loadLessons();
+  }, [loadLessons]);
 
   const handleLessonSaved = () => {
     loadLessons();

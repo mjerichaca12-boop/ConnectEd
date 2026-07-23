@@ -265,6 +265,7 @@ function GradesManagement() {
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
+  const [isSwitchingTerm, setIsSwitchingTerm] = useState(false);
   const [teacherId, setTeacherId] = useState("");
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState("");
@@ -279,14 +280,15 @@ function GradesManagement() {
   const gradingSettingsRef = useRef(DEPED_DEFAULT_GRADE_SETTINGS);
   const [activeView, setActiveView] = useState("all"); // "all" | "passed" | "failed"
   const [activeTerm, setActiveTerm] = useState("all"); // "all" | "term1" | "term2" | "term3" | "term4"
+  const hasInitializedTerm = useRef(false);
   const { activeSchoolYear, activeQuarter, viewMode, setViewMode } = useAcademic();
   const [academicSettings, setAcademicSettings] = useState({ schoolYear: "2026-2027", quarter: "1st Quarter" });
 
   useEffect(() => {
     setAcademicSettings({ schoolYear: activeSchoolYear, quarter: activeQuarter });
     
-    // Auto-select term based on activeQuarter
-    if (activeQuarter) {
+    // Auto-select term based on activeQuarter ONLY once
+    if (activeQuarter && !hasInitializedTerm.current) {
       const quarterMap = {
         "1st Quarter": "term1",
         "2nd Quarter": "term2",
@@ -294,8 +296,7 @@ function GradesManagement() {
         "4th Quarter": "term4"
       };
       setActiveTerm(quarterMap[activeQuarter] || "all");
-    } else {
-      setActiveTerm("all");
+      hasInitializedTerm.current = true;
     }
   }, [activeSchoolYear, activeQuarter]);
 
@@ -468,10 +469,16 @@ function GradesManagement() {
     if (lessonIds.length > 0) {
       // 3. Try to fetch LMS assignments + their lesson_activities category
       try {
-        const { data, error } = await supabase
+        let asgQuery = supabase
           .from("assignments")
           .select("*")
           .in("lesson_id", lessonIds);
+        
+        if (quarter) {
+          asgQuery = asgQuery.eq("term", quarter);
+        }
+        
+        const { data, error } = await asgQuery;
         
         if (!error && data && data.length > 0) {
           // Fetch lesson_activities to determine activity_type (Assignment vs Assessment/Seatwork)
@@ -519,10 +526,16 @@ function GradesManagement() {
 
       // 4. Try to fetch LMS quizzes
       try {
-        const { data, error } = await supabase
+        let quizQuery = supabase
           .from("quizzes")
           .select("*")
           .in("lesson_id", lessonIds);
+          
+        if (quarter) {
+          quizQuery = quizQuery.eq("term", quarter);
+        }
+        
+        const { data, error } = await quizQuery;
         
         if (!error && data) {
           data.forEach(row => {
@@ -568,16 +581,6 @@ function GradesManagement() {
       };
     });
 
-    setAssessmentItems(assessmentsWithNames);
-    setExpandedAssessments((prev) => {
-      const next = { ...prev };
-      assessmentsWithNames.forEach((assessment) => {
-        if (typeof next[assessment.id] === "undefined") {
-          next[assessment.id] = true;
-        }
-      });
-      return next;
-    });
     return assessmentsWithNames;
   }, []);
 
@@ -761,7 +764,7 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ fetch students + grades ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const fetchStudentsForClass = useCallback(async (currentTeacherId, classId) => {
-    if (!supabase || !currentTeacherId || !classId) { setStudentGrades([]); return []; }
+    if (!supabase || !currentTeacherId || !classId) { return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const currentClass = classes.find((item) => item.id === classId) || null;
     const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
@@ -772,10 +775,10 @@ function GradesManagement() {
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId);
 
-    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); setStudentGrades([]); return []; }
+    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const studentIds = [...new Set((assignments ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
-    if (studentIds.length === 0) { setStudentGrades([]); return []; }
+    if (studentIds.length === 0) { return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
@@ -783,7 +786,7 @@ function GradesManagement() {
       .eq("role", "student")
       .in("id", studentIds);
 
-    if (studentError) { console.error("Failed to load students:", studentError); setStudentGrades([]); return []; }
+    if (studentError) { console.error("Failed to load students:", studentError); return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const { data: gradeRows } = await supabase
       .from("teacher_student_grades")
@@ -849,12 +852,7 @@ function GradesManagement() {
       return { ...current, overallGrade, remarks: computation.remarks || getGradeRemarks(overallGrade) };
     });
 
-    setGradesCache((prev) => ({
-      ...prev,
-      [classId]: { ...(prev[classId] || {}), ...persistedGradeMap },
-    }));
-    setStudentGrades(mapped);
-    return studentIds;
+    return { studentIds, mapped, persistedGradeMap };
   }, []);
 
   /* ΓöÇΓöÇΓöÇ init ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
@@ -925,7 +923,8 @@ function GradesManagement() {
     let isMounted = true;
 
     const loadData = async () => {
-      const studentIds = await fetchStudentsForClass(teacherId, selectedClass);
+      setIsSwitchingTerm(true);
+      const { studentIds, mapped, persistedGradeMap } = await fetchStudentsForClass(teacherId, selectedClass);
       if (!isMounted) return;
 
       const termMap = {
@@ -938,6 +937,23 @@ function GradesManagement() {
 
       const assessments = await fetchAssessmentsForClass(teacherId, selectedClass, activeSchoolYear, targetQuarter);
       if (!isMounted) return;
+
+      // Set everything together to avoid race conditions and UI flashing
+      setGradesCache((prev) => ({
+        ...prev,
+        [selectedClass]: { ...(prev[selectedClass] || {}), ...persistedGradeMap },
+      }));
+      setStudentGrades(mapped);
+      setAssessmentItems(assessments);
+      setExpandedAssessments((prev) => {
+        const next = { ...prev };
+        assessments.forEach((assessment) => {
+          if (typeof next[assessment.id] === "undefined") {
+            next[assessment.id] = true;
+          }
+        });
+        return next;
+      });
 
       if (requestedContext.assessmentId) {
         const hasTarget = assessments.some((item) => item.id === requestedContext.assessmentId);
@@ -954,6 +970,10 @@ function GradesManagement() {
       }
 
       await fetchAssessmentSubmissions(teacherId, selectedClass, assessments, studentIds);
+      
+      if (isMounted) {
+        setIsSwitchingTerm(false);
+      }
     };
 
     loadData();

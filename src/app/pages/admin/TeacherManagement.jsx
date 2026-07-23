@@ -27,7 +27,9 @@ import {
   CalendarDays,
   Users,
   Sparkles,
-  Key
+  Key,
+  CheckSquare,
+  Square
 } from "lucide-react";
 
 const db = supabaseAdmin || supabase;
@@ -108,6 +110,9 @@ function TeacherManagement() {
   const [assignFormErrors, setAssignFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -124,7 +129,7 @@ function TeacherManagement() {
     };
   }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm, showResetPasswordModal]);
 
-  const isLettersOnly = (value) => /^[A-Za-z]+$/.test(value);
+  const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
   const composeTeacherName = (formData) => [formData.first_name, formData.middle_name, formData.last_name].map((value) => value.trim()).filter(Boolean).join(" ");
   const formatTeacherFullName = (teacher) => {
@@ -792,6 +797,96 @@ function TeacherManagement() {
     setShowEditModal(true);
   };
 
+  const handleToggleTeacherSelection = (teacherId) => {
+    const newSelection = new Set(selectedTeacherIds);
+    if (newSelection.has(teacherId)) {
+      newSelection.delete(teacherId);
+    } else {
+      newSelection.add(teacherId);
+    }
+    setSelectedTeacherIds(newSelection);
+  };
+
+  const handleSelectAllTeachers = () => {
+    if (filteredTeachers.length > 0 && selectedTeacherIds.size === filteredTeachers.length) {
+      setSelectedTeacherIds(new Set());
+    } else {
+      setSelectedTeacherIds(new Set(filteredTeachers.map((t) => t.id)));
+    }
+  };
+
+  const handleBulkDeleteTeachers = async () => {
+    if (selectedTeacherIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedTeacherIds);
+      
+      const results = await Promise.allSettled(
+        idsToDelete.map(async (id) => {
+          // Find the teacher object to get their subjects
+          const teacher = teachers.find(t => t.id === id);
+          if (teacher) {
+            const subjectIdsToRelease = normalizeSubjects(teacher.subjects);
+            if (subjectIdsToRelease.length > 0) {
+              await db.from("subjects").update({ teacher_id: null }).in("id", subjectIdsToRelease);
+            }
+          }
+
+          const cleanupTables = [
+            { name: "notifications", col: "user_id" },
+            { name: "password_reset_logs", col: "user_id" },
+            { name: "conversation_participants", col: "profile_id" },
+            { name: "conversation_reads", col: "user_id" },
+            { name: "messages", col: "sender_id" },
+            { name: "teacher_student_grades", col: "teacher_id" },
+            { name: "teacher_assessment_submissions", col: "teacher_id" },
+            { name: "teacher_assessment_grades", col: "teacher_id" },
+            { name: "lessons", col: "teacher_id" },
+            { name: "student_masterlist_history", col: "updated_by" }
+          ];
+
+          for (const table of cleanupTables) {
+            await db.from(table.name).delete().eq(table.col, id);
+          }
+
+          const { error: profileError } = await db.from("profiles").delete().eq("id", id);
+          if (profileError) throw profileError;
+
+          try {
+             await supabaseAdmin.auth.admin.deleteUser(id);
+          } catch (e) {
+             console.warn("Non-fatal: Failed to delete auth user", e);
+          }
+        })
+      );
+
+      let successCount = 0;
+      results.forEach(result => {
+        if (result.status === "fulfilled") successCount++;
+        else console.error("Failed to delete a teacher:", result.reason);
+      });
+
+      setShowBulkDeleteConfirm(false);
+      setSelectedTeacherIds(new Set());
+      await fetchTeachers();
+      await fetchSubjects();
+
+      if (successCount === idsToDelete.length) {
+        toast.success(`Successfully deleted ${successCount} teacher(s).`);
+      } else if (successCount > 0) {
+        toast.warning(`Deleted ${successCount} out of ${idsToDelete.length} teachers.`);
+      } else {
+        toast.error("Failed to delete any teachers.");
+      }
+
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred during bulk deletion.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
   const handlePromptDeleteTeacher = (teacher) => {
     setTeacherToDelete(teacher);
     setShowDeleteConfirm(true);
@@ -1356,10 +1451,12 @@ function TeacherManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-blue-600">Teacher Management</h1>
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
-              <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
-                <UserPlus className="w-5 h-5" />
-                Add Teacher
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                  <UserPlus className="w-5 h-5" />
+                  Add Teacher
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1415,6 +1512,16 @@ function TeacherManagement() {
                   className="min-w-[160px]"
                 />
               </div>
+              {selectedTeacherIds.size > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  disabled={isBulkDeleting}
+                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedTeacherIds.size})`}
+                </button>
+              )}
               <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
@@ -1422,88 +1529,143 @@ function TeacherManagement() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {/* Teacher Table */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Teacher</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Subjects</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Assigned Grade Level</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
+                  <tr className="border-b border-gray-200">
+                    <th className="px-6 py-5 text-left w-1/4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleSelectAllTeachers}
+                          className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                        >
+                          {filteredTeachers.length > 0 && selectedTeacherIds.size === filteredTeachers.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                        </button>
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Full Name</span>
+                      </div>
+                    </th>
+                    <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Contact Details</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Subjects</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Grade Level</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
-                  {filteredTeachers.map((teacher) => (
-                    <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
-                      {(() => {
-                        const assignments = getTeacherAssignments(teacher);
-                        return (
-                          <>
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900 whitespace-nowrap">{getTeacherName(teacher)}</p>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {teacher.email || "-"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {assignments.length > 0 ? (
-                            assignments.map((item, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-green-50 text-green-600 rounded-md text-xs font-medium border border-green-200">
-                                {item.subjectLabel}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-gray-500 text-sm">No assignments yet.</span>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredTeachers.map((teacher) => {
+                    const assignments = getTeacherAssignments(teacher);
+                    
+                    // Helper to render badges with +More functionality
+                    const renderBadges = (items, type) => {
+                      if (!items || items.length === 0) {
+                        return <span className="text-gray-400 text-sm italic">None</span>;
+                      }
+                      
+                      const isSubject = type === 'subject';
+                      // Use a Set to extract unique labels for Grade Levels, but map for Subjects
+                      let uniqueLabels = [];
+                      if (isSubject) {
+                        uniqueLabels = items.map(item => item.subjectLabel);
+                      } else {
+                        uniqueLabels = [...new Set(items.map(item => item.classLabel))];
+                      }
+                      
+                      // Filter out empty labels and deduplicate
+                      const finalLabels = [...new Set(uniqueLabels.filter(Boolean))];
+                      
+                      if (finalLabels.length === 0) return <span className="text-gray-400 text-sm italic">None</span>;
+
+                      const limit = 2;
+                      const bgClass = isSubject ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' : 'bg-indigo-50 text-indigo-700 border-indigo-200/60';
+                      
+                      // Using a details/summary approach for an inline expand/collapse without complex state
+                      const displayedLabels = finalLabels.slice(0, limit);
+                      const hiddenLabels = finalLabels.slice(limit);
+                      const hiddenCount = hiddenLabels.length;
+                      
+                      return (
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {displayedLabels.map((label, idx) => (
+                            <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border shadow-sm ${bgClass}`}>
+                              {label}
+                            </span>
+                          ))}
+                          {hiddenCount > 0 && (
+                            <details className="relative group/badge">
+                              <summary className="list-none px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 text-gray-600 shadow-sm">
+                                +{hiddenCount} More
+                              </summary>
+                              <div className="absolute z-10 left-0 mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-xl flex flex-col gap-1.5 min-w-[120px] max-w-[200px] max-h-[200px] overflow-y-auto">
+                                <div className="text-xs font-bold text-gray-500 uppercase mb-1 px-1">{isSubject ? 'All Subjects' : 'All Classes'}</div>
+                                {finalLabels.map((label, idx) => (
+                                  <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border ${bgClass}`}>
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            </details>
                           )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {assignments.length > 0 ? (
-                            assignments.map((item, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-300 rounded-md text-xs font-medium border border-blue-200">
-                                {item.classLabel}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-gray-500 text-sm">No assignments yet.</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${isTeacherActive(teacher.status) ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-400 border-red-200"}`}>
-                          {normalizeTeacherStatus(teacher.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {formatDate(teacher.created_at)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
-                            <Eye className="w-4 h-4 text-gray-600" />
-                          </button>
-                          <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
-                            <Edit className="w-4 h-4 text-blue-400" />
-                          </button>
-                          <button onClick={() => handlePromptResetPassword(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Reset Password">
-                            <Key className="w-4 h-4 text-amber-500" />
-                          </button>
-                          <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </button>
-                        </div>
-                      </td>
-                          </>
-                        );
-                      })()}
-                    </tr>
-                  ))}
+                      );
+                    };
+
+                    return (
+                      <tr key={teacher.id} className="hover:bg-gray-50 transition-colors group">
+                        <td className="px-6 py-5 whitespace-nowrap align-middle">
+                            <div className="flex items-center gap-4">
+                              <button
+                                onClick={() => handleToggleTeacherSelection(teacher.id)}
+                                className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                              >
+                                {selectedTeacherIds.has(teacher.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                              </button>
+                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shadow-sm shrink-0">
+                                {getTeacherName(teacher).charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-gray-900 truncate">{getTeacherName(teacher)}</div>
+                              </div>
+                            </div>
+                        </td>
+                        <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                          <div className="truncate max-w-[200px]">{teacher.email || "-"}</div>
+                        </td>
+                        <td className="px-6 py-5 align-middle">
+                          {renderBadges(assignments, 'subject')}
+                        </td>
+                        <td className="px-6 py-5 align-middle">
+                          {renderBadges(assignments, 'class')}
+                        </td>
+                        <td className="px-6 py-5 align-middle">
+                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${isTeacherActive(teacher.status) ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-500 border-red-200"}`}>
+                            {normalizeTeacherStatus(teacher.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
+                          {formatDate(teacher.created_at)}
+                        </td>
+                        <td className="px-6 py-5 text-right align-middle">
+                          <div className="flex items-center justify-end gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
+                              <Eye className="w-4 h-4 text-gray-600" />
+                            </button>
+                            <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
+                              <Edit className="w-4 h-4 text-blue-500" />
+                            </button>
+                            <button onClick={() => handlePromptResetPassword(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Reset Password">
+                              <Key className="w-4 h-4 text-amber-500" />
+                            </button>
+                            <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1922,6 +2084,17 @@ function TeacherManagement() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDeleteTeachers}
+        title="Delete Selected Teachers"
+        message={`Are you sure you want to permanently delete ${selectedTeacherIds.size} selected teacher(s)? This action cannot be undone.`}
+        confirmText={isBulkDeleting ? "Deleting..." : "Delete All Selected"}
+        cancelText="Cancel"
+        type="danger"
+      />
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}

@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck, Calendar, Clock, AlertCircle, CheckCircle, ChevronRight, FileText } from 'lucide-react';
 import { supabase } from '@/app/lib/supabaseClient';
+import { useAcademic } from "@/app/context/AcademicContext";
 
 export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
+  const { activeSchoolYear, activeQuarter, viewMode } = useAcademic();
   const navigate = useNavigate();
   const [assessments, setAssessments] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -21,11 +23,18 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
       const subjectIds = assignedSubjects.map(s => s.id);
       
       // 1. Fetch lessons for these subjects (only Published ones are considered 'active' classes)
-      const { data: lessonsData, error: lessonsError } = await supabase
+      let lessonsQuery = supabase
         .from('lessons')
         .select('id, subject_id, status')
         .in('subject_id', subjectIds)
-        .eq('status', 'Published');
+        .eq('status', 'Published')
+        .eq('school_year', activeSchoolYear);
+
+      if (viewMode === "current") {
+        lessonsQuery = lessonsQuery.eq('term', activeQuarter);
+      }
+
+      const { data: lessonsData, error: lessonsError } = await lessonsQuery;
       
       const lessonIds = (lessonsData || []).map(l => String(l.id));
 
@@ -102,7 +111,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
 
   useEffect(() => {
     fetchData();
-  }, [teacherId, assignedSubjects]);
+  }, [teacherId, assignedSubjects, activeSchoolYear, activeQuarter, viewMode]);
 
   // Real-time Subscriptions
   useEffect(() => {
