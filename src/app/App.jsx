@@ -30,7 +30,7 @@ import { SubjectManagement } from "./pages/admin/SubjectManagement";
 import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
 import { AdminCalendar } from "./pages/admin/AdminCalendar";
 import AdminAcademicSettings from "./pages/admin/AdminAcademicSettings";
-import { Reports } from "./pages/admin/Reports";
+
 import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
 import { AdminMessages } from "./pages/admin/AdminMessages";
@@ -272,7 +272,7 @@ export default function App() {
         <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
         <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
         <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
-        <Route path="/admin/reports" element={<AdminRouteGuard><Reports /></AdminRouteGuard>} />
+
         <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
         <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />

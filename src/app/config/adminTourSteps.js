@@ -41,13 +41,7 @@ export const ADMIN_TOUR_STEPS = [
     description: "Publish school-wide announcements visible to all teachers and students.",
     placement: "right",
   },
-  {
-    id: "reports",
-    targetSelector: '[data-tour="nav-reports"]',
-    title: "Reports",
-    description: "Generate administrative reports and monitor academic performance metrics.",
-    placement: "right",
-  },
+
   {
     id: "messages",
     targetSelector: '[data-tour="nav-messages"]',

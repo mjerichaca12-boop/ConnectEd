@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, X, Sparkles, CheckCircle2, Command } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Sparkles, CheckCircle2, Command, Loader2 } from "lucide-react";
 import { useTour } from "../../context/TourContext";
 
 export function TourSpotlightOverlay() {
   const {
     isTourActive,
+    isPreparingTour,
     currentStep,
     currentStepIndex,
     totalSteps,
@@ -64,22 +65,39 @@ export function TourSpotlightOverlay() {
         height: rect.height,
       });
 
-      // Scroll target into view if outside viewport or if large table target
+      // Scroll target into view if outside viewport, if table, or if insufficient popover clearance
       if (currentStep.targetSelector !== '[data-tour="sidebar"]') {
-        const isTable = rect.height > 150 && rect.width > (window.innerWidth || 1000) * 0.5;
-        const isInViewport =
-          rect.top >= 20 &&
-          rect.left >= 20 &&
-          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) - 20 &&
-          rect.right <= (window.innerWidth || document.documentElement.clientWidth) - 20;
+        const vHeight = window.innerHeight || document.documentElement.clientHeight;
+        const vWidth = window.innerWidth || document.documentElement.clientWidth;
+        const isTable = rect.height > 150 && rect.width > vWidth * 0.5;
 
-        if (!isInViewport || isTable) {
+        const isVisibleInViewport =
+          rect.top >= 20 &&
+          rect.bottom <= vHeight - 20 &&
+          rect.left >= 20 &&
+          rect.right <= vWidth - 20;
+
+        const prefPlacement = currentStep.placement || "bottom";
+        const cardMinHeight = 260;
+        const hasEnoughSpaceBelow = vHeight - rect.bottom >= cardMinHeight;
+        const hasEnoughSpaceAbove = rect.top >= cardMinHeight;
+
+        let needsScroll = !isVisibleInViewport || isTable;
+        if (prefPlacement === "bottom" && !hasEnoughSpaceBelow) {
+          needsScroll = true;
+        } else if (prefPlacement === "top" && !hasEnoughSpaceAbove) {
+          needsScroll = true;
+        }
+
+        if (needsScroll) {
           el.scrollIntoView({
             behavior: "smooth",
-            block: isTable ? "end" : "center",
+            block: "center",
             inline: "nearest",
           });
-          setTimeout(() => {
+
+          let scrollFrames = 0;
+          const pollScrollRect = () => {
             const updatedRect = el.getBoundingClientRect();
             setTargetRect({
               top: updatedRect.top,
@@ -87,7 +105,12 @@ export function TourSpotlightOverlay() {
               width: updatedRect.width,
               height: updatedRect.height,
             });
-          }, 180);
+            scrollFrames++;
+            if (scrollFrames < 15) {
+              requestAnimationFrame(pollScrollRect);
+            }
+          };
+          requestAnimationFrame(pollScrollRect);
         }
       }
     } else {
@@ -99,9 +122,31 @@ export function TourSpotlightOverlay() {
   useEffect(() => {
     updateTargetRect();
 
-    const timer1 = setTimeout(updateTargetRect, 50);
-    const timer2 = setTimeout(updateTargetRect, 150);
-    const timer3 = setTimeout(() => setForceUpdate((n) => n + 1), 250);
+    let resizeObserver = null;
+    let mutationObserver = null;
+
+    if (isTourActive && currentStep?.targetSelector) {
+      let el = document.querySelector(currentStep.targetSelector);
+      if (!el && currentStep.fallbackTargetSelector) {
+        el = document.querySelector(currentStep.fallbackTargetSelector);
+      }
+
+      if (el) {
+        try {
+          resizeObserver = new ResizeObserver(() => {
+            requestAnimationFrame(updateTargetRect);
+          });
+          resizeObserver.observe(el);
+        } catch {
+          // Ignore
+        }
+      }
+
+      mutationObserver = new MutationObserver(() => {
+        requestAnimationFrame(updateTargetRect);
+      });
+      mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    }
 
     const handleResizeOrScroll = () => {
       updateTargetRect();
@@ -111,14 +156,13 @@ export function TourSpotlightOverlay() {
     window.addEventListener("scroll", handleResizeOrScroll, true);
 
     return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (mutationObserver) mutationObserver.disconnect();
       window.removeEventListener("resize", handleResizeOrScroll);
       window.removeEventListener("scroll", handleResizeOrScroll, true);
       clearActiveHighlights();
     };
-  }, [updateTargetRect, currentStepIndex, clearActiveHighlights]);
+  }, [updateTargetRect, currentStepIndex, isTourActive, currentStep, clearActiveHighlights]);
 
   // Clean up highlights when tour deactivates
   useEffect(() => {
@@ -289,8 +333,22 @@ export function TourSpotlightOverlay() {
       } else {
         const spaceBelow = vHeight - tBottom;
         const spaceAbove = tTop;
+        const spaceLeft = tLeft;
+        const spaceRight = vWidth - tRight;
 
-        if (spaceBelow >= cardHeight || spaceBelow >= spaceAbove) {
+        if (spaceLeft >= cardWidth + 16) {
+          chosenPos = {
+            dir: "left",
+            top: centeredTopForSide,
+            left: tLeft - cardWidth,
+          };
+        } else if (spaceRight >= cardWidth + 16) {
+          chosenPos = {
+            dir: "right",
+            top: centeredTopForSide,
+            left: tRight,
+          };
+        } else if (spaceBelow >= cardHeight || spaceBelow >= spaceAbove) {
           chosenPos = {
             dir: "bottom",
             top: Math.min(tBottom, vHeight - cardHeight - 10),
@@ -390,6 +448,17 @@ export function TourSpotlightOverlay() {
     }
     return null;
   };
+  if (isPreparingTour) {
+    return createPortal(
+      <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1001] bg-gray-900/90 text-white backdrop-blur-md px-5 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center gap-3 animate-in fade-in zoom-in-95 font-sans pointer-events-none">
+        <Loader2 className="w-4 h-4 text-green-400 animate-spin connected-tour-spinner" />
+        <span className="text-xs font-bold tracking-wide">Preparing tour... Waiting for page data</span>
+      </div>,
+      document.body
+    );
+  }
+
+  if (!isTourActive || !currentStep) return null;
 
   const portalContent = (
     <div
@@ -437,8 +506,13 @@ export function TourSpotlightOverlay() {
             </div>
 
             <button
-              onClick={skipTour}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                skipTour();
+              }}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 cursor-pointer"
               title="Skip tour (Esc)"
             >
               <X className="w-4 h-4" />
@@ -478,8 +552,13 @@ export function TourSpotlightOverlay() {
           {/* Footer Actions */}
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <button
-              onClick={skipTour}
-              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors"
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                skipTour();
+              }}
+              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer"
             >
               Skip Tour
             </button>

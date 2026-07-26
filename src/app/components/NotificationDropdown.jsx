@@ -517,6 +517,7 @@ function NotificationDropdown({
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        data-tour="dashboard-notifications"
         type="button"
         onClick={handleToggleOpen}
         className="relative p-2 hover:bg-green-50 rounded-xl transition-colors cursor-pointer"
@@ -588,7 +589,7 @@ function NotificationDropdown({
                   </button>
                 )}
                 {(user?.role === "admin" 
-                  ? ["all", "messages", "users", "system", "reports"] 
+                  ? ["all", "messages", "users", "system"] 
                   : ["all", "assignments", "messages", "grades", "system"]
                 ).map((cat) => (
                   <button

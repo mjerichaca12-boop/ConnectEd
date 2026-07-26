@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserCog, BookOpen,
   Megaphone, Menu, X, LogOut, ChevronRight,
-  Calendar, MessageSquare, Settings, HelpCircle, FileText
+  Calendar, MessageSquare, Settings, HelpCircle
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
@@ -20,7 +20,6 @@ export function AdminSidebar({ adminName, onLogout }) {
     { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers",          tourId: "nav-teachers" },
     { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects",          tourId: "nav-subjects" },
     { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements",      tourId: "nav-announcements" },
-    { icon: FileText,        label: "Reports",            path: "/admin/reports",           tourId: "nav-reports" },
     { icon: MessageSquare,   label: "Messages",           path: "/admin/messages",          tourId: "nav-messages" },
     { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar",          tourId: "nav-calendar" },
     { icon: Settings,        label: "Academic Settings",  path: "/admin/academic-settings",  tourId: "nav-academic-settings" },

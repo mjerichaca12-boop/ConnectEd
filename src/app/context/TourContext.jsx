@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { ADMIN_TOUR_STEPS } from "../config/adminTourSteps";
 
 const TourContext = createContext(null);
@@ -10,10 +10,14 @@ export function TourProvider({ children }) {
   const [tourSteps] = useState(ADMIN_TOUR_STEPS);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTourActive, setIsTourActive] = useState(false);
+  const [isPreparingTour, setIsPreparingTour] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [hasCompleted, setHasCompleted] = useState(() => {
     return localStorage.getItem(TOUR_COMPLETED_KEY) === "true";
   });
+
+  const observerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   // Automatically check on mount if admin needs first-time login welcome screen
   useEffect(() => {
@@ -26,7 +30,6 @@ export function TourProvider({ children }) {
           const completed = localStorage.getItem(TOUR_COMPLETED_KEY) === "true";
           const skipped = localStorage.getItem(TOUR_SKIPPED_KEY) === "true";
 
-          // Show welcome screen ONLY on first login when tour has never been completed or skipped
           if (!completed && !skipped) {
             setIsWelcomeOpen(true);
           }
@@ -40,84 +43,164 @@ export function TourProvider({ children }) {
     return () => clearTimeout(timer);
   }, []);
 
+  // Cancel & stop all pending readiness observers
+  const cancelReadinessObserver = useCallback(() => {
+    cancelledRef.current = true;
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+  }, []);
+
+  // Page Data & Target Readiness Observer
+  const waitForPageAndTargetReady = useCallback((stepIndex, onReady) => {
+    cancelReadinessObserver();
+    cancelledRef.current = false;
+
+    const targetStep = ADMIN_TOUR_STEPS[stepIndex] || ADMIN_TOUR_STEPS[0];
+    const targetSelector = targetStep?.targetSelector;
+
+    let attempts = 0;
+    let lastRectStr = "";
+    let stableCount = 0;
+
+    const checkStabilityAndActivate = () => {
+      if (cancelledRef.current) return;
+
+      if (!targetSelector) {
+        if (cancelledRef.current) return;
+        setIsPreparingTour(false);
+        setCurrentStepIndex(stepIndex);
+        setIsTourActive(true);
+        if (onReady) onReady();
+        return;
+      }
+
+      const isPageDataLoading = !!document.querySelector(".animate-bounce, .animate-spin:not(.connected-tour-spinner), [data-loading='true']");
+
+      let el = document.querySelector(targetSelector);
+      if (el && el.isConnected) {
+        const rect = el.getBoundingClientRect();
+        const hasSize = rect.width > 0 && rect.height > 0;
+        const currentRectStr = `${Math.round(rect.top)},${Math.round(rect.left)},${Math.round(rect.width)},${Math.round(rect.height)}`;
+
+        if (hasSize && !isPageDataLoading && currentRectStr === lastRectStr) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+        }
+        lastRectStr = currentRectStr;
+
+        if (stableCount >= 2 || (hasSize && attempts > 15)) {
+          if (cancelledRef.current) return;
+          setIsPreparingTour(false);
+          setCurrentStepIndex(stepIndex);
+          setIsTourActive(true);
+          if (onReady) onReady();
+          return;
+        }
+      }
+
+      attempts++;
+      if (attempts < 60 && !cancelledRef.current) {
+        requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
+      } else if (!cancelledRef.current) {
+        setIsPreparingTour(false);
+        setCurrentStepIndex(stepIndex);
+        setIsTourActive(true);
+        if (onReady) onReady();
+      }
+    };
+
+    setIsPreparingTour(true);
+    setIsTourActive(false);
+
+    const observer = new MutationObserver(() => {
+      if (!cancelledRef.current) {
+        checkStabilityAndActivate();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    observerRef.current = observer;
+
+    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 50));
+  }, [cancelReadinessObserver]);
+
   const resetWelcomeState = useCallback(() => {
+    cancelReadinessObserver();
     localStorage.removeItem(TOUR_SKIPPED_KEY);
     localStorage.removeItem(TOUR_COMPLETED_KEY);
     setHasCompleted(false);
     setIsWelcomeOpen(true);
-  }, []);
+  }, [cancelReadinessObserver]);
 
   const startTour = useCallback(() => {
     setIsWelcomeOpen(false);
-    setCurrentStepIndex(0);
-    setIsTourActive(true);
-  }, []);
+    waitForPageAndTargetReady(0);
+  }, [waitForPageAndTargetReady]);
 
   const skipWelcome = useCallback(() => {
+    cancelReadinessObserver();
     setIsWelcomeOpen(false);
     localStorage.setItem(TOUR_SKIPPED_KEY, "true");
-  }, []);
+  }, [cancelReadinessObserver]);
 
   const nextStep = useCallback(() => {
     setCurrentStepIndex((prev) => {
-      if (prev < tourSteps.length - 1) {
-        return prev + 1;
+      const nextIdx = prev + 1;
+      if (nextIdx < ADMIN_TOUR_STEPS.length) {
+        waitForPageAndTargetReady(nextIdx);
+        return nextIdx;
       }
+      cancelReadinessObserver();
       setIsTourActive(false);
+      setIsPreparingTour(false);
       localStorage.setItem(TOUR_COMPLETED_KEY, "true");
       setHasCompleted(true);
       return prev;
     });
-  }, [tourSteps.length]);
+  }, [waitForPageAndTargetReady, cancelReadinessObserver]);
 
   const prevStep = useCallback(() => {
-    setCurrentStepIndex((prev) => Math.max(0, prev - 1));
-  }, []);
+    setCurrentStepIndex((prev) => {
+      const prevIdx = Math.max(0, prev - 1);
+      waitForPageAndTargetReady(prevIdx);
+      return prevIdx;
+    });
+  }, [waitForPageAndTargetReady]);
 
   const skipTour = useCallback(() => {
+    cancelReadinessObserver();
     setIsTourActive(false);
+    setIsPreparingTour(false);
     localStorage.setItem(TOUR_SKIPPED_KEY, "true");
-  }, []);
+  }, [cancelReadinessObserver]);
 
   const finishTour = useCallback(() => {
+    cancelReadinessObserver();
     setIsTourActive(false);
+    setIsPreparingTour(false);
     localStorage.setItem(TOUR_COMPLETED_KEY, "true");
     setHasCompleted(true);
-  }, []);
+  }, [cancelReadinessObserver]);
 
-  // Restart Tour: Jumps directly into Step 1 (Sidebar Navigation), skipping welcome screen
-  const restartTour = useCallback((navigate) => {
-    // 1. Never show welcome screen on restart
-    setIsWelcomeOpen(false);
+  // Restart Tour
+  const restartTour = useCallback(
+    (navigate) => {
+      cancelReadinessObserver();
+      setIsWelcomeOpen(false);
+      localStorage.removeItem(TOUR_SKIPPED_KEY);
+      localStorage.removeItem(TOUR_COMPLETED_KEY);
+      setHasCompleted(false);
 
-    // 2. Reset completion/skip flags
-    localStorage.removeItem(TOUR_SKIPPED_KEY);
-    localStorage.removeItem(TOUR_COMPLETED_KEY);
-    setHasCompleted(false);
-
-    // 3. Navigate to dashboard if navigate helper is passed
-    if (navigate) {
-      navigate("/admin/dashboard");
-    }
-
-    // 4. Wait until the sidebar DOM element is rendered and ready before activating Step 1
-    const checkAndStart = (attempts = 0) => {
-      const sidebarEl = document.querySelector('[data-tour="sidebar"]');
-      if (sidebarEl && sidebarEl.getBoundingClientRect().width > 0) {
-        setCurrentStepIndex(0);
-        setIsTourActive(true);
-      } else if (attempts < 20) {
-        setTimeout(() => checkAndStart(attempts + 1), 50);
-      } else {
-        setCurrentStepIndex(0);
-        setIsTourActive(true);
+      if (navigate) {
+        navigate("/admin/dashboard");
       }
-    };
 
-    setTimeout(() => {
-      checkAndStart();
-    }, 50);
-  }, []);
+      waitForPageAndTargetReady(0);
+    },
+    [waitForPageAndTargetReady, cancelReadinessObserver]
+  );
 
   const currentStep = tourSteps[currentStepIndex] || null;
   const isFinalStep = currentStepIndex === tourSteps.length - 1;
@@ -128,6 +211,7 @@ export function TourProvider({ children }) {
     currentStep,
     totalSteps: tourSteps.length,
     isTourActive,
+    isPreparingTour,
     isWelcomeOpen,
     isFinalStep,
     hasCompleted,

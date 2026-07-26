@@ -152,14 +152,7 @@ export const adminNotifications: NotificationItem[] = [
     isRead: false,
     timestamp: '5 hours ago'
   },
-  {
-    id: 'admin-7',
-    title: 'New Report Available',
-    message: 'Monthly academic performance report is ready.',
-    path: '/admin/reports',
-    isRead: false,
-    timestamp: '1 day ago'
-  },
+
   {
     id: 'admin-8',
     title: 'System Settings Changed',

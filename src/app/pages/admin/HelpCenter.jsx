@@ -7,11 +7,11 @@ import { useTour } from "@/app/context/TourContext";
 import { useModuleTour } from "@/app/context/ModuleTourContext";
 import {
   HelpCircle,
+  LayoutDashboard,
   PlayCircle,
   BookOpen,
   MessageSquare,
   Mail,
-  Phone,
   ChevronDown,
   ChevronUp,
   Sparkles,
@@ -78,10 +78,7 @@ export function HelpCenter() {
       question: "How do I publish school announcements?",
       answer: "Open Announcements from the sidebar. Create a new announcement, set its title and visibility, and broadcast it to teachers, students, or all users.",
     },
-    {
-      question: "How do I generate administrative reports?",
-      answer: "Click Reports in the sidebar to view, generate, and export academic statistics, faculty rosters, and student enrollment summary reports.",
-    },
+
     {
       question: "How do I restart the Administrator Guided Tour?",
       answer: "You can click the 'Restart Admin Tour' button at the top of this Help Center page to re-run the 12-step guided tour through all sidebar modules.",
@@ -89,6 +86,12 @@ export function HelpCenter() {
   ];
 
   const userGuides = [
+    {
+      moduleId: "dashboard",
+      icon: LayoutDashboard,
+      title: "Dashboard Overview",
+      description: "Monitor real-time school KPIs, student & teacher counts, system activity logs, and pending password resets.",
+    },
     {
       moduleId: "students",
       icon: Users,
@@ -113,12 +116,7 @@ export function HelpCenter() {
       title: "Announcements & Broadcasts",
       description: "Publish school-wide updates and official notices visible to teachers and students.",
     },
-    {
-      moduleId: "reports",
-      icon: FileText,
-      title: "Reports & Analytics",
-      description: "Generate administrative reports and monitor academic performance metrics.",
-    },
+
     {
       moduleId: "calendar",
       icon: Calendar,
@@ -337,24 +335,14 @@ export function HelpCenter() {
               If you require technical assistance or system maintenance support, reach out to the ConnectED Technical Operations team:
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
+            <div className="pt-2">
+              <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100 max-w-md">
                 <div className="p-2.5 bg-green-100 text-green-700 rounded-xl">
                   <Mail className="w-5 h-5" />
                 </div>
                 <div>
                   <p className="text-xs text-gray-400 font-medium">Email Support</p>
                   <p className="text-sm font-bold text-gray-900">support@connected.deped.gov.ph</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
-                  <Phone className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 font-medium">Hotline Support</p>
-                  <p className="text-sm font-bold text-gray-900">+63 (02) 8888-2666</p>
                 </div>
               </div>
             </div>

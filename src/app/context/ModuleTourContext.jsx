@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { MODULE_TOURS } from "../config/tours";
 
 const ModuleTourContext = createContext(null);
@@ -9,9 +9,13 @@ export function ModuleTourProvider({ children }) {
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTourActive, setIsTourActive] = useState(false);
+  const [isPreparingTour, setIsPreparingTour] = useState(false);
   const [isFinishOpen, setIsFinishOpen] = useState(false);
   const [isResumeOpen, setIsResumeOpen] = useState(false);
   const [pendingModuleId, setPendingModuleId] = useState(null);
+
+  const observerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   // Load progress data from localStorage
   const [progressData, setProgressData] = useState(() => {
@@ -56,40 +60,101 @@ export function ModuleTourProvider({ children }) {
     [progressData]
   );
 
-  // Helper: Poll DOM readiness before activating tour step
-  const waitForTargetAndActivate = useCallback((stepIndex, moduleId) => {
+  // Cancel & stop all pending readiness observers
+  const cancelReadinessObserver = useCallback(() => {
+    cancelledRef.current = true;
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+  }, []);
+
+  // Robust Page & DOM Target Readiness Observer Engine
+  const waitForPageAndTargetReady = useCallback((stepIndex, moduleId, onReady) => {
     const config = MODULE_TOURS[moduleId];
     if (!config) return;
 
+    cancelReadinessObserver();
+    cancelledRef.current = false;
+
     const targetStep = config.steps[stepIndex] || config.steps[0];
     const targetSelector = targetStep?.targetSelector;
+    const fallbackSelector = targetStep?.fallbackTargetSelector;
 
-    const check = (attempts = 0) => {
+    let attempts = 0;
+    let lastRectStr = "";
+    let stableCount = 0;
+
+    const checkStabilityAndActivate = () => {
+      // If user skipped or exited, abort observer completely
+      if (cancelledRef.current) return;
+
+      // 1. If step has no target, activate immediately
       if (!targetSelector) {
+        if (cancelledRef.current) return;
+        setIsPreparingTour(false);
         setCurrentStepIndex(stepIndex);
         setIsTourActive(true);
+        if (onReady) onReady();
         return;
       }
 
+      // 2. Check if page data is still loading (active spinners / bouncing loader dots)
+      const isPageDataLoading = !!document.querySelector(".animate-bounce, .animate-spin:not(.connected-tour-spinner), [data-loading='true']");
+
       let el = document.querySelector(targetSelector);
-      if (!el && targetStep.fallbackTargetSelector) {
-        el = document.querySelector(targetStep.fallbackTargetSelector);
+      if (!el && fallbackSelector) {
+        el = document.querySelector(fallbackSelector);
       }
 
-      if (el && el.getBoundingClientRect().width > 0) {
+      if (el && el.isConnected) {
+        const rect = el.getBoundingClientRect();
+        const hasSize = rect.width > 0 && rect.height > 0;
+        const currentRectStr = `${Math.round(rect.top)},${Math.round(rect.left)},${Math.round(rect.width)},${Math.round(rect.height)}`;
+
+        if (hasSize && !isPageDataLoading && currentRectStr === lastRectStr) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+        }
+        lastRectStr = currentRectStr;
+
+        if (stableCount >= 2 || (hasSize && attempts > 15)) {
+          if (cancelledRef.current) return;
+          setIsPreparingTour(false);
+          setCurrentStepIndex(stepIndex);
+          setIsTourActive(true);
+          if (onReady) onReady();
+          return;
+        }
+      }
+
+      attempts++;
+      if (attempts < 60 && !cancelledRef.current) {
+        requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
+      } else if (!cancelledRef.current) {
+        // Safe timeout fallback
+        setIsPreparingTour(false);
         setCurrentStepIndex(stepIndex);
         setIsTourActive(true);
-      } else if (attempts < 20) {
-        setTimeout(() => check(attempts + 1), 50);
-      } else {
-        // Fallback activate
-        setCurrentStepIndex(stepIndex);
-        setIsTourActive(true);
+        if (onReady) onReady();
       }
     };
 
-    setTimeout(() => check(), 50);
-  }, []);
+    setIsPreparingTour(true);
+    setIsTourActive(false);
+
+    // Use MutationObserver for instant DOM addition detection
+    const observer = new MutationObserver(() => {
+      if (!cancelledRef.current) {
+        checkStabilityAndActivate();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    observerRef.current = observer;
+
+    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 50));
+  }, [cancelReadinessObserver]);
 
   // Start tour from Step 1
   const startModuleTour = useCallback(
@@ -107,12 +172,12 @@ export function ModuleTourProvider({ children }) {
         navigate(config.route);
       }
 
-      waitForTargetAndActivate(0, moduleId);
+      waitForPageAndTargetReady(0, moduleId);
     },
-    [updateModuleProgress, waitForTargetAndActivate]
+    [updateModuleProgress, waitForPageAndTargetReady]
   );
 
-  // Handle clicking card in Help Center: triggers Resume modal if in_progress, else starts from 0
+  // Handle clicking card in Help Center
   const handleModuleCardClick = useCallback(
     (moduleId, navigate) => {
       const progress = getModuleProgress(moduleId);
@@ -120,7 +185,6 @@ export function ModuleTourProvider({ children }) {
       if (!config) return;
 
       if (progress.status === "in_progress" && progress.lastStepIndex > 0) {
-        // Prompt user to continue or restart
         setPendingModuleId(moduleId);
         if (navigate && window.location.pathname !== config.route) {
           navigate(config.route);
@@ -133,7 +197,7 @@ export function ModuleTourProvider({ children }) {
     [getModuleProgress, startModuleTour]
   );
 
-  // Resume tour at previous saved step
+  // Resume tour at saved step
   const resumeTour = useCallback(
     (navigate) => {
       const targetId = pendingModuleId || activeModuleId;
@@ -150,9 +214,9 @@ export function ModuleTourProvider({ children }) {
         navigate(config.route);
       }
 
-      waitForTargetAndActivate(targetStep, targetId);
+      waitForPageAndTargetReady(targetStep, targetId);
     },
-    [pendingModuleId, activeModuleId, getModuleProgress, waitForTargetAndActivate]
+    [pendingModuleId, activeModuleId, getModuleProgress, waitForPageAndTargetReady]
   );
 
   // Next Step handler
@@ -168,10 +232,13 @@ export function ModuleTourProvider({ children }) {
           status: "in_progress",
           lastStepIndex: nextIdx,
         });
+
+        waitForPageAndTargetReady(nextIdx, activeModuleId);
         return nextIdx;
       } else {
-        // Reached final step
+        cancelReadinessObserver();
         setIsTourActive(false);
+        setIsPreparingTour(false);
         updateModuleProgress(activeModuleId, {
           status: "completed",
           lastStepIndex: config.steps.length - 1,
@@ -180,15 +247,21 @@ export function ModuleTourProvider({ children }) {
         return prev;
       }
     });
-  }, [activeModuleId, updateModuleProgress]);
+  }, [activeModuleId, updateModuleProgress, waitForPageAndTargetReady, cancelReadinessObserver]);
 
   // Previous Step handler
   const prevStep = useCallback(() => {
-    setCurrentStepIndex((prev) => Math.max(0, prev - 1));
-  }, []);
+    if (!activeModuleId) return;
+    setCurrentStepIndex((prev) => {
+      const prevIdx = Math.max(0, prev - 1);
+      waitForPageAndTargetReady(prevIdx, activeModuleId);
+      return prevIdx;
+    });
+  }, [activeModuleId, waitForPageAndTargetReady]);
 
-  // Skip tour
+  // Skip tour - 100% Guaranteed Immediate Cancellation
   const skipTour = useCallback(() => {
+    cancelReadinessObserver();
     if (activeModuleId) {
       updateModuleProgress(activeModuleId, {
         status: "in_progress",
@@ -196,14 +269,16 @@ export function ModuleTourProvider({ children }) {
       });
     }
     setIsTourActive(false);
-  }, [activeModuleId, currentStepIndex, updateModuleProgress]);
+    setIsPreparingTour(false);
+  }, [activeModuleId, currentStepIndex, updateModuleProgress, cancelReadinessObserver]);
 
-  // Restart tour from step 1
+  // Restart tour
   const restartModuleTour = useCallback(
     (moduleId, navigate) => {
       const targetId = moduleId || pendingModuleId || activeModuleId;
       if (!targetId) return;
 
+      cancelReadinessObserver();
       setIsResumeOpen(false);
       setIsFinishOpen(false);
       setIsTourActive(false);
@@ -211,13 +286,16 @@ export function ModuleTourProvider({ children }) {
 
       startModuleTour(targetId, navigate);
     },
-    [pendingModuleId, activeModuleId, startModuleTour]
+    [pendingModuleId, activeModuleId, startModuleTour, cancelReadinessObserver]
   );
 
   // Close finish dialog
   const closeFinishModal = useCallback(() => {
+    cancelReadinessObserver();
     setIsFinishOpen(false);
-  }, []);
+    setIsTourActive(false);
+    setIsPreparingTour(false);
+  }, [cancelReadinessObserver]);
 
   const activeConfig = activeModuleId ? MODULE_TOURS[activeModuleId] : null;
   const currentStep = activeConfig ? activeConfig.steps[currentStepIndex] || null : null;
@@ -231,6 +309,7 @@ export function ModuleTourProvider({ children }) {
     currentStep,
     totalSteps: activeConfig ? activeConfig.steps.length : 0,
     isTourActive,
+    isPreparingTour,
     isFinishOpen,
     isResumeOpen,
     isFinalStep,

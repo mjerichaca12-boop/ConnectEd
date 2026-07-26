@@ -669,7 +669,7 @@ export function AdminDashboard() {
                   </p>
                 </div>
 
-                <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-amber-300 transition-colors cursor-pointer" onClick={() => navigate("/admin/password-resets")}>
+                <div data-tour="dashboard-resets-stat" className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-amber-300 transition-colors cursor-pointer" onClick={() => navigate("/admin/password-resets")}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
                       <Key className="w-6 h-6 text-amber-500" />
@@ -688,7 +688,7 @@ export function AdminDashboard() {
               </div>
 
               {/* Recent Activity */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div data-tour="dashboard-activity" className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-100 bg-gray-50">
                   <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-green-500" />
