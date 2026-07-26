@@ -586,7 +586,7 @@ export function AdminDashboard() {
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Welcome Section */}
-          <div className="relative rounded-2xl p-8 shadow-sm overflow-hidden bg-white border border-gray-200">
+          <div data-tour="dashboard-overview" className="relative rounded-2xl p-8 shadow-sm overflow-hidden bg-white border border-gray-200">
             {/* Tri-color left accent */}
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
@@ -632,7 +632,7 @@ export function AdminDashboard() {
               )}
 
               {/* Primary Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div data-tour="dashboard-stats" className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-blue-300 transition-colors">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">

@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Users, UserCog, BookOpen,
   Megaphone, Menu, X, LogOut, ChevronRight,
-  Calendar, MessageSquare, Settings
+  Calendar, MessageSquare, Settings, HelpCircle, FileText
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
@@ -15,14 +15,16 @@ export function AdminSidebar({ adminName, onLogout }) {
   const location = useLocation();
 
   const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard",          path: "/admin/dashboard" },
-    { icon: Users,           label: "Student Management", path: "/admin/students" },
-    { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers" },
-    { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects" },
-    { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements" },
-    { icon: MessageSquare,   label: "Messages",           path: "/admin/messages" },
-    { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar" },
-    { icon: Settings,        label: "Academic Settings",  path: "/admin/academic-settings" },
+    { icon: LayoutDashboard, label: "Dashboard",          path: "/admin/dashboard",         tourId: "nav-dashboard" },
+    { icon: Users,           label: "Student Management", path: "/admin/students",          tourId: "nav-students" },
+    { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers",          tourId: "nav-teachers" },
+    { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects",          tourId: "nav-subjects" },
+    { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements",      tourId: "nav-announcements" },
+    { icon: FileText,        label: "Reports",            path: "/admin/reports",           tourId: "nav-reports" },
+    { icon: MessageSquare,   label: "Messages",           path: "/admin/messages",          tourId: "nav-messages" },
+    { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar",          tourId: "nav-calendar" },
+    { icon: Settings,        label: "Academic Settings",  path: "/admin/academic-settings",  tourId: "nav-academic-settings" },
+    { icon: HelpCircle,      label: "Help Center",        path: "/admin/help-center",       tourId: "nav-help-center" },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -47,6 +49,7 @@ export function AdminSidebar({ adminName, onLogout }) {
       )}
 
       <aside
+        data-tour="sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200
           flex flex-col h-screen overflow-hidden
           transform transition-transform duration-300 ease-in-out
@@ -97,6 +100,7 @@ export function AdminSidebar({ adminName, onLogout }) {
               <Link
                 key={item.path}
                 to={item.path}
+                data-tour={item.tourId}
                 onClick={() => setIsMobileOpen(false)}
                 className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 text-sm font-medium group
                   ${active

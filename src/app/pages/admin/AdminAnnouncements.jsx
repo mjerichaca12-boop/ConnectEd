@@ -1557,7 +1557,7 @@ function AdminAnnouncements() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="announcements-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -1570,6 +1570,7 @@ function AdminAnnouncements() {
                 <p className="text-gray-600">{announcements.length} published announcements</p>
               </div>
               <button
+                data-tour="announcements-create-btn"
                 type="button"
                 onClick={() => {
                   handleOpenCreateModal();
@@ -1589,7 +1590,7 @@ function AdminAnnouncements() {
             </div>
           )}
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div data-tour="announcements-search" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
@@ -1602,7 +1603,7 @@ function AdminAnnouncements() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div data-tour="announcements-list" className="space-y-4">
             {filteredAnnouncements.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
                 <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-4" />

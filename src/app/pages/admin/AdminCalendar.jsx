@@ -546,7 +546,7 @@ export function AdminCalendar() {
 
       <main className="flex-1 h-full overflow-hidden flex flex-col relative z-10 lg:pl-64">
         {/* Top Bar */}
-        <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
+        <div data-tour="calendar-header" className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -580,6 +580,7 @@ export function AdminCalendar() {
                   School Events & Holidays
                 </h3>
                 <button
+                  data-tour="calendar-add-btn"
                   onClick={handleOpenEventModal}
                   className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2 text-sm shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer shadow-sm"
                 >
@@ -600,7 +601,7 @@ export function AdminCalendar() {
                   </div>
                 )}
 
-                <div className="space-y-4">
+                <div data-tour="calendar-grid" className="space-y-4">
                   {eventsLoading ? (
                     <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-xl border border-gray-100">
                       Loading events...

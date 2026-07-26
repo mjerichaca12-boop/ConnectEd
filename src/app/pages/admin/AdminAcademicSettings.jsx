@@ -162,7 +162,7 @@ export default function AdminAcademicSettings() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="settings-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -187,7 +187,7 @@ export default function AdminAcademicSettings() {
             <div className="p-6 md:p-8 space-y-8">
               
               {/* School Year Section */}
-              <div>
+              <div data-tour="settings-school-year">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               School Year
             </h2>
@@ -212,7 +212,7 @@ export default function AdminAcademicSettings() {
           <hr className="border-gray-200" />
 
           {/* Current Quarter Section */}
-          <div>
+          <div data-tour="settings-sections-config">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Current Quarter
             </h2>

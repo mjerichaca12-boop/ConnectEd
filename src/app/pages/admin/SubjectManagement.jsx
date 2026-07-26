@@ -16,7 +16,6 @@ const emptyForm = {
   code: "",
   name: "",
   description: "",
-  credits: "",
   teacher: "",
   capacity: "",
   grade_level: "",
@@ -24,7 +23,7 @@ const emptyForm = {
   subject_category: DEPED_SUBJECT_CATEGORIES[0]
 };
 
-const subjectSelectColumns = "id, code, name, description, credits, teacher_id, capacity, enrolled, grade_level, section, subject_category, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, teacher_id, capacity, enrolled, grade_level, section, subject_category, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -59,6 +58,13 @@ function SubjectManagement() {
   const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const getCapacityStatus = (enrolled, capacity) => {
+    if (!capacity || capacity === 0) return { label: "Available", color: "text-green-600", dot: "bg-green-500", bar: "bg-green-500", raw: "Available" };
+    const percentage = enrolled / capacity;
+    if (percentage >= 1) return { label: "Full", color: "text-red-600", dot: "bg-red-500", bar: "bg-red-500", raw: "Full" };
+    if (percentage >= 0.9) return { label: "Nearly Full", color: "text-amber-500", dot: "bg-amber-500", bar: "bg-amber-500", raw: "Nearly Full" };
+    return { label: "Available", color: "text-green-600", dot: "bg-green-500", bar: "bg-green-500", raw: "Available" };
+  };
 
   useEffect(() => {
     if (showAddModal || showViewModal || showEditModal || showDeleteConfirm || showEnrollModal) {
@@ -113,7 +119,6 @@ function SubjectManagement() {
 
   const formatSubject = (subjectRow) => ({
     ...subjectRow,
-    credits: Number(subjectRow.credits ?? 0),
     capacity: Number(subjectRow.capacity ?? 0),
     enrolled: Number(subjectRow.enrolled ?? 0),
     section: String(subjectRow.section || "").trim(),
@@ -170,7 +175,22 @@ function SubjectManagement() {
       throw new Error(error.message);
     }
 
-    const normalizedSubjects = (data ?? []).map(formatSubject);
+    // Dynamically calculate enrollment counts
+    const { data: enrollmentData, error: enrollmentError } = await supabase
+      .from("teacher_student_assignments")
+      .select("subject_id");
+    
+    let enrollmentCounts = {};
+    if (!enrollmentError && enrollmentData) {
+      enrollmentData.forEach(row => {
+        enrollmentCounts[row.subject_id] = (enrollmentCounts[row.subject_id] || 0) + 1;
+      });
+    }
+
+    const normalizedSubjects = (data ?? []).map(subjectRow => ({
+      ...formatSubject(subjectRow),
+      enrolled: enrollmentCounts[subjectRow.id] || 0
+    }));
     const seen = new Set();
     const dedupedSubjects = normalizedSubjects.filter((subjectRow) => {
       const key = buildSubjectDedupKey(subjectRow);
@@ -200,15 +220,27 @@ function SubjectManagement() {
       return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
     };
 
-    // Get subject to find its assigned teacher (if any)
-    const { data: subjectRow } = await supabase.from("subjects").select("id, teacher_id").eq("id", subjectId).maybeSingle();
+    const normalizeSection = (value) =>
+      String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+
+    // Get subject details including grade_level and section
+    const { data: subjectRow } = await supabase
+      .from("subjects")
+      .select("id, teacher_id, grade_level, section")
+      .eq("id", subjectId)
+      .maybeSingle();
+
     const tIdRaw = String(subjectRow?.teacher_id || "").trim();
     const teacherId = (!tIdRaw || tIdRaw.toLowerCase() === "null" || tIdRaw.toLowerCase() === "undefined") ? null : tIdRaw;
+    const subjectGradeRaw = String(subjectRow?.grade_level || "").trim();
+    const subjectSectionRaw = String(subjectRow?.section || "").trim();
+    const subjectGrade = normalizeGradeLevel(subjectGradeRaw);
+    const subjectSection = normalizeSection(subjectSectionRaw);
 
-    // Get all students (include possible grade columns)
+    // Get all students (include grade and section columns)
     const { data: allStudents, error: studentsError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, role, year_level")
+      .select("id, first_name, middle_name, last_name, email, role, year_level, section")
       .eq("role", "student")
       .order("first_name", { ascending: true });
 
@@ -230,8 +262,8 @@ function SubjectManagement() {
       (enrolledAssignments ?? []).map((assignment) => assignment.student_id)
     );
 
-    // Filter out already enrolled students
-    const available = (allStudents ?? [])
+    // Filter out already enrolled students and map to display objects
+    let available = (allStudents ?? [])
       .filter((student) => !enrolledStudentIds.has(student.id))
       .map((student) => ({
         id: student.id,
@@ -240,24 +272,22 @@ function SubjectManagement() {
           .join(" ")
           .trim() || student.email || "Unknown",
         email: student.email || "",
-        grade_level: String(student?.year_level || "").trim()
+        grade_level: String(student?.year_level || "").trim(),
+        section: String(student?.section || "").trim()
       }));
 
-    // If a teacher is assigned, filter available students to match the teacher's grade level
-    if (teacherId) {
-      try {
-        const { data: teacherRow } = await supabase.from("profiles").select("id, year_level").eq("id", teacherId).maybeSingle();
-        const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
-        const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
+    // Filter by subject's grade level (strict) — only show matching grade students
+    if (subjectGrade) {
+      available = available.filter(
+        (s) => normalizeGradeLevel(s.grade_level) === subjectGrade
+      );
+    }
 
-        if (teacherGrade) {
-          const filteredByGrade = available.filter((s) => normalizeGradeLevel(s.grade_level) === teacherGrade);
-          setAvailableStudents(filteredByGrade);
-          return;
-        }
-      } catch (err) {
-        console.warn("[SubjectManagement] Unable to resolve teacher grade", err);
-      }
+    // Filter by subject's section (strict) — only show matching section students
+    if (subjectSection) {
+      available = available.filter(
+        (s) => normalizeSection(s.section) === subjectSection
+      );
     }
 
     setAvailableStudents(available);
@@ -769,19 +799,29 @@ function SubjectManagement() {
         return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
       };
 
-      // If teacher is set, validate selected students match teacher's grade level
-      if (currentTeacherId) {
-        const { data: teacherRow } = await supabase.from("profiles").select("id, year_level").eq("id", currentTeacherId).maybeSingle();
-        const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
-        const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
+      const normalizeSection = (value) =>
+        String(value || "").trim().toLowerCase().replace(/\s+/g, "");
 
-        if (teacherGrade) {
-          const selectedIds = Array.from(selectedStudents);
-          const { data: selectedRows, error: selErr } = await supabase.from("profiles").select("id, year_level").in("id", selectedIds);
-          if (selErr) throw selErr;
-          const mismatches = (selectedRows ?? []).filter((r) => normalizeGradeLevel(String(r?.year_level || "")) !== teacherGrade);
-          if (mismatches.length > 0) {
-            setErrorMessage("One or more selected students do not match the teacher's grade level. Please select students that match the teacher's grade.");
+      // Validate selected students against subject's grade_level and section
+      const subjectGrade = normalizeGradeLevel(subject.grade_level || "");
+      const subjectSection = normalizeSection(subject.section || "");
+
+      if (subjectGrade || subjectSection) {
+        const selectedIds = Array.from(selectedStudents);
+        const { data: selectedRows, error: selErr } = await supabase
+          .from("profiles")
+          .select("id, year_level, section")
+          .in("id", selectedIds);
+        if (selErr) throw selErr;
+
+        for (const r of selectedRows ?? []) {
+          if (subjectGrade && normalizeGradeLevel(String(r?.year_level || "")) !== subjectGrade) {
+            setErrorMessage("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
+            setEnrollmentLoading(false);
+            return;
+          }
+          if (subjectSection && normalizeSection(String(r?.section || "")) !== subjectSection) {
+            setErrorMessage("This student belongs to a different section.");
             setEnrollmentLoading(false);
             return;
           }
@@ -799,7 +839,7 @@ function SubjectManagement() {
       const newEnrollmentCount = (currentEnrollment ?? 0) + selectedStudents.size;
       
       // Check capacity
-      if (newEnrollmentCount > subject.capacity) {
+      if (subject.capacity > 0 && newEnrollmentCount > subject.capacity) {
         setErrorMessage(
           `Cannot enroll ${selectedStudents.size} students. Subject capacity is ${subject.capacity} and ${currentEnrollment ?? 0} are already enrolled. ` +
           `Only ${subject.capacity - (currentEnrollment ?? 0)} more students can be added.`
@@ -866,6 +906,17 @@ function SubjectManagement() {
       newSelection.delete(studentId);
     } else {
       newSelection.add(studentId);
+    }
+    setSelectedStudents(newSelection);
+  };
+
+  const handleSelectAllStudents = (filteredStudents) => {
+    const allSelected = filteredStudents.length > 0 && filteredStudents.every((s) => selectedStudents.has(s.id));
+    const newSelection = new Set(selectedStudents);
+    if (allSelected) {
+      filteredStudents.forEach((s) => newSelection.delete(s.id));
+    } else {
+      filteredStudents.forEach((s) => newSelection.add(s.id));
     }
     setSelectedStudents(newSelection);
   };
@@ -1018,7 +1069,7 @@ function SubjectManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="subjects-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -1031,7 +1082,7 @@ function SubjectManagement() {
                 <p className="text-gray-600">{subjects.length} subjects available</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                <button data-tour="subjects-add-btn" onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
                   <Plus className="w-5 h-5" />
                   Add Subject
                 </button>
@@ -1046,14 +1097,10 @@ function SubjectManagement() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
               <p className="text-3xl font-bold text-gray-900">{subjects.length}</p>
-            </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-500 text-sm mb-1">Total Credits</p>
-              <p className="text-3xl font-bold text-green-600">{subjects.reduce((sum, s) => sum + Number(s.credits || 0), 0)}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Enrolled</p>
@@ -1061,9 +1108,9 @@ function SubjectManagement() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div data-tour="subjects-list" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
+              <div data-tour="subjects-search" className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
@@ -1126,9 +1173,6 @@ function SubjectManagement() {
                           <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
                         </div>
                       </div>
-                      <div className="px-3 py-1 bg-gray-50 border border-gray-200 rounded-full">
-                        <p className="text-sm font-medium text-gray-700">{subject.credits} Credits</p>
-                      </div>
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
@@ -1139,15 +1183,21 @@ function SubjectManagement() {
                     </div>
                       <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-100">
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Enrollment</p>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-xs text-gray-500">Enrollment</p>
+                          <div className={`flex items-center gap-1.5 ml-2`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${getCapacityStatus(subject.enrolled, subject.capacity).dot}`}></span>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${getCapacityStatus(subject.enrolled, subject.capacity).color}`}>{getCapacityStatus(subject.enrolled, subject.capacity).label}</p>
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-green-600">{subject.enrolled}/{subject.capacity}</p>
+                          <p className={`text-sm font-medium ${getCapacityStatus(subject.enrolled, subject.capacity).color}`}>{subject.enrolled}/{subject.capacity}</p>
                           <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-green-500" style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
+                            <div className={`h-full ${getCapacityStatus(subject.enrolled, subject.capacity).bar}`} style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div data-tour="subjects-actions" className="flex items-center gap-1.5">
                         <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-600" /></button>
                         <button onClick={() => handleOpenEnrollModal(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Enroll Students"><UserPlus className="w-4 h-4 text-blue-600" /></button>
                         <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-green-600" /></button>
@@ -1177,11 +1227,6 @@ function SubjectManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Code</label>
                     <input type="text" placeholder="e.g., CS101" value={subjectFormData.code} onChange={(e) => setSubjectFormData({ ...subjectFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.code && <p className="text-red-500 text-sm mt-1">{formErrors.code}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" placeholder="e.g., 3" value={subjectFormData.credits} onChange={(e) => setSubjectFormData({ ...subjectFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.credits && <p className="text-red-500 text-sm mt-1">{formErrors.credits}</p>}
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
@@ -1264,11 +1309,6 @@ function SubjectManagement() {
                     <input type="text" value={editFormData.code} onChange={(e) => setEditFormData({ ...editFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.code && <p className="text-red-500 text-sm mt-1">{editFormErrors.code}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" value={editFormData.credits} onChange={(e) => setEditFormData({ ...editFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {editFormErrors.credits && <p className="text-red-500 text-sm mt-1">{editFormErrors.credits}</p>}
-                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
                     <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
@@ -1348,12 +1388,6 @@ function SubjectManagement() {
                     <p className="text-sm text-green-600 font-medium mb-1">{selectedSubject.code}</p>
                     <h4 className="text-2xl font-bold text-gray-900">{selectedSubject.name}</h4>
                   </div>
-                  <div className="px-4 py-2 bg-white rounded-full">
-                    <div className="flex items-center gap-2">
-                      <Award className="w-5 h-5 text-green-600" />
-                      <span className="font-semibold text-gray-900">{selectedSubject.credits} Credits</span>
-                    </div>
-                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1389,11 +1423,18 @@ function SubjectManagement() {
                   <label className="block text-sm font-medium text-gray-500 mb-2">Enrollment Progress</label>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Available Slots</span>
-                      <span className="font-medium text-gray-900">{selectedSubject.capacity - selectedSubject.enrolled} / {selectedSubject.capacity}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-600">Available Slots:</span>
+                        <span className="font-medium text-gray-900">{Math.max(0, selectedSubject.capacity - selectedSubject.enrolled)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).dot}`}></span>
+                        <span className={`font-bold ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).color}`}>{getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).label}</span>
+                        <span className="text-gray-500 ml-1">({selectedSubject.enrolled} / {selectedSubject.capacity})</span>
+                      </div>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-gradient-to-r from-green-600 to-teal-600 h-3 rounded-full transition-all" style={{ width: `${selectedSubject.capacity > 0 ? selectedSubject.enrolled / selectedSubject.capacity * 100 : 0}%` }} />
+                      <div className={`h-3 rounded-full transition-all ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).bar}`} style={{ width: `${selectedSubject.capacity > 0 ? (selectedSubject.enrolled / selectedSubject.capacity) * 100 : 0}%` }} />
                     </div>
                   </div>
                 </div>
@@ -1486,67 +1527,88 @@ function SubjectManagement() {
                     </div>
                   </div>
 
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700">Available Students</label>
-                      <span className="text-sm text-gray-500">{selectedStudents.size} selected</span>
-                    </div>
-                    
-                    <div className="border border-gray-200 rounded-lg divide-y max-h-96 overflow-y-auto">
-                      {availableStudents
-                        .filter((student) => {
-                          const search = enrollmentSearchQuery.toLowerCase();
-                          return (
-                            student.name.toLowerCase().includes(search) ||
-                            student.email.toLowerCase().includes(search)
-                          );
-                        })
-                        .length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          {availableStudents.length === 0 
-                            ? "All students are already enrolled in this subject."
-                            : "No students match your search."}
-                        </div>
-                      ) : (
-                        availableStudents
-                          .filter((student) => {
-                            const search = enrollmentSearchQuery.toLowerCase();
-                            return (
-                              student.name.toLowerCase().includes(search) ||
-                              student.email.toLowerCase().includes(search)
-                            );
-                          })
-                          .map((student) => (
-                            <label
-                              key={student.id}
-                              className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                            >
+                  {(() => {
+                    const filteredList = availableStudents.filter((student) => {
+                      const search = enrollmentSearchQuery.toLowerCase();
+                      return (
+                        student.name.toLowerCase().includes(search) ||
+                        student.email.toLowerCase().includes(search)
+                      );
+                    });
+                    const allFilteredSelected = filteredList.length > 0 && filteredList.every((s) => selectedStudents.has(s.id));
+
+                    return (
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {filteredList.length > 0 && (
                               <input
                                 type="checkbox"
-                                checked={selectedStudents.has(student.id)}
-                                onChange={() => handleToggleStudentSelection(student.id)}
+                                id="selectAllEnrollmentStudents"
+                                checked={allFilteredSelected}
+                                onChange={() => handleSelectAllStudents(filteredList)}
                                 className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
                               />
-                              <div className="flex-1">
-                                <p className="font-medium text-gray-900">{student.name}</p>
-                                <p className="text-sm text-gray-500">{student.email}</p>
-                              </div>
+                            )}
+                            <label htmlFor="selectAllEnrollmentStudents" className="block text-sm font-medium text-gray-700 cursor-pointer">
+                              Available Students ({filteredList.length})
                             </label>
-                          ))
-                      )}
-                    </div>
-                  </div>
+                          </div>
+                          <span className="text-sm text-gray-500">{selectedStudents.size} selected</span>
+                        </div>
+                        
+                        <div className="border border-gray-200 rounded-lg divide-y max-h-96 overflow-y-auto">
+                          {filteredList.length === 0 ? (
+                            <div className="p-4 text-center text-gray-500">
+                              {availableStudents.length === 0 
+                                ? "All eligible students are already enrolled in this subject."
+                                : "No students match your search."}
+                            </div>
+                          ) : (
+                            filteredList.map((student) => (
+                              <label
+                                key={student.id}
+                                className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudents.has(student.id)}
+                                  onChange={() => handleToggleStudentSelection(student.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                                />
+                                <div className="flex-1">
+                                  <p className="font-medium text-gray-900">{student.name}</p>
+                                  <p className="text-sm text-gray-500">{student.email}</p>
+                                </div>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 mb-4">
-                    <p className="font-medium mb-1">Enrollment Status</p>
-                    <p>
-                      Current: {selectedSubjectForEnroll.enrolled}/{selectedSubjectForEnroll.capacity} students
-                      {selectedStudents.size > 0 && (
-                        <span className="ml-2">
-                          → After enrollment: {selectedSubjectForEnroll.enrolled + selectedStudents.size}/{selectedSubjectForEnroll.capacity}
-                        </span>
-                      )}
-                    </p>
+                  <div className={`border rounded-lg p-3 text-sm mb-4 ${selectedSubjectForEnroll.capacity > 0 && selectedSubjectForEnroll.enrolled + selectedStudents.size > selectedSubjectForEnroll.capacity ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-medium">Enrollment Status</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).dot}`}></span>
+                        <p className={`font-bold ${getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).color}`}>{getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).label}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p>
+                        Current: {selectedSubjectForEnroll.enrolled}/{selectedSubjectForEnroll.capacity} students
+                        {selectedStudents.size > 0 && (
+                          <span className="ml-2 font-semibold">
+                            → After enrollment: {selectedSubjectForEnroll.enrolled + selectedStudents.size}/{selectedSubjectForEnroll.capacity}
+                          </span>
+                        )}
+                      </p>
+                      <p>
+                        Available Slots: {Math.max(0, selectedSubjectForEnroll.capacity - (selectedSubjectForEnroll.enrolled + selectedStudents.size))}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex justify-end gap-3 pt-5 border-t border-gray-100">

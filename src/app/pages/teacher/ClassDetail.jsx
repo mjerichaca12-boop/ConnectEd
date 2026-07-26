@@ -416,6 +416,9 @@ export function ClassDetail() {
     return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
   };
 
+  const normalizeSection = (value) =>
+    String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+
   const dedupeStudentsById = (rows) => {
     const seen = new Set();
     return (rows ?? []).filter((student) => {
@@ -465,6 +468,7 @@ export function ClassDetail() {
       lrn: String(student?.lrn || student?.student_number || "").trim(),
       year_level: String(yearLevel || "").trim(),
       grade_level: String(student?.grade_level || yearLevel || "").trim(),
+      section: String(student?.section || "").trim(),
       phone: String(student?.phone || student?.contact_number || "").trim(),
       status: String(student?.status || "Active").trim()
     };
@@ -1630,7 +1634,22 @@ export function ClassDetail() {
       return;
     }
 
+    // Grade Level and Section Parity Validation
+    const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+    const classSectionNorm = normalizeSection(classData?.section);
 
+    for (const student of selectedStudents) {
+      const studentGradeNorm = normalizeGradeLevel(student.grade_level || student.year_level);
+      const studentSectionNorm = normalizeSection(student.section);
+      if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
+        setStuError("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
+        return;
+      }
+      if (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm) {
+        setStuError("This student belongs to a different section.");
+        return;
+      }
+    }
 
     setIsStudentSubmitting(true);
     setStuError("");
@@ -1679,6 +1698,23 @@ export function ClassDetail() {
 
     const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
     if (selectedStudents.length === 0) return;
+
+    // Grade Level and Section Parity Validation
+    const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+    const classSectionNorm = normalizeSection(classData?.section);
+
+    for (const student of selectedStudents) {
+      const studentGradeNorm = normalizeGradeLevel(student.year_level || student.grade_level);
+      const studentSectionNorm = normalizeSection(student.section);
+      if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
+        setStuError("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
+        return;
+      }
+      if (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm) {
+        setStuError("This student belongs to a different section.");
+        return;
+      }
+    }
 
     setIsStudentSubmitting(true);
     setStuError("");
@@ -1754,6 +1790,8 @@ export function ClassDetail() {
         
         const records = [];
         const errors = [];
+        const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+        const classSectionNorm = normalizeSection(classData?.section);
         
         for (let i = 1; i < rows.length; i++) {
           const cols = rows[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
@@ -1763,13 +1801,33 @@ export function ClassDetail() {
               errors.push(`Row ${i+1}: Invalid LRN`);
               continue;
             }
+
+            const rowYearLevel = yearLevelIdx !== -1 ? cols[yearLevelIdx] : null;
+            const rowSection = sectionIdx !== -1 ? cols[sectionIdx] : null;
+
+            if (classGradeNorm && rowYearLevel) {
+              const rowGradeNorm = normalizeGradeLevel(rowYearLevel);
+              if (rowGradeNorm && rowGradeNorm !== classGradeNorm) {
+                errors.push(`Row ${i+1}: Grade Level mismatch (${rowYearLevel})`);
+                continue;
+              }
+            }
+
+            if (classSectionNorm && rowSection) {
+              const rowSecNorm = normalizeSection(rowSection);
+              if (rowSecNorm && rowSecNorm !== classSectionNorm) {
+                errors.push(`Row ${i+1}: Section mismatch (${rowSection})`);
+                continue;
+              }
+            }
+
             records.push({
                lrn,
                first_name: cols[firstNameIdx],
                last_name: cols[lastNameIdx],
                middle_name: middleNameIdx !== -1 ? cols[middleNameIdx] : null,
-               year_level: yearLevelIdx !== -1 ? cols[yearLevelIdx] : null,
-               section: sectionIdx !== -1 ? cols[sectionIdx] : null,
+               year_level: rowYearLevel,
+               section: rowSection,
             });
           } else {
              errors.push(`Row ${i+1}: Missing LRN`);
@@ -3412,19 +3470,31 @@ export function ClassDetail() {
   );
   const classGradeValue = getClassGradeValue(classData);
   const classGradeNormalized = normalizeGradeLevel(classGradeValue);
+  const classSectionNormalized = normalizeSection(classData?.section);
 
   const filteredAvailableStudents = availableStudents
     .filter((student) => !assignedStudents.some((assigned) => String(assigned.id) === String(student.id)))
     .filter((student) => {
+      const yearLevelRaw = student.grade_level || student.year_level || "";
+      const studentGradeNorm = normalizeGradeLevel(yearLevelRaw);
+      const studentSectionNorm = normalizeSection(student.section || "");
+
+      // Grade Level validation
+      if (classGradeNormalized && studentGradeNorm && studentGradeNorm !== classGradeNormalized) {
+        return false;
+      }
+      // Section validation
+      if (classSectionNormalized && studentSectionNorm && studentSectionNorm !== classSectionNormalized) {
+        return false;
+      }
+
       const name = normalizeSearchText(getStudentFullName(student));
       const lrn = normalizeSearchText(student.lrn || "");
-      const yearLevelRaw = student.grade_level || student.year_level || "";
       const yearLevel = normalizeSearchText(yearLevelRaw);
       const yearLevelCompact = yearLevel.replace(/\s+/g, "");
       const query = normalizeSearchText(studentPickerQuery);
       const queryCompact = query.replace(/\s+/g, "");
       const queryGradeNormalized = normalizeGradeLevel(query);
-      const studentGradeNormalized = normalizeGradeLevel(yearLevelRaw);
 
       const matchesQuery =
         !query ||
@@ -3432,7 +3502,7 @@ export function ClassDetail() {
         lrn.includes(query) ||
         yearLevel.includes(query) ||
         yearLevelCompact.includes(queryCompact) ||
-        (queryGradeNormalized && studentGradeNormalized === queryGradeNormalized);
+        (queryGradeNormalized && studentGradeNorm === queryGradeNormalized);
 
       return matchesQuery;
     });

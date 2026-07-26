@@ -996,8 +996,9 @@ function GradesManagement() {
     const classItem = classes.find((item) => item.id === selectedClass) || null;
     const subjectCategory = normalizeSubjectCategory(classItem?.subjectCategory || "", classItem?.name || classItem?.code || "");
 
-    setStudentGrades((prev) =>
-      prev.map((student) => {
+    setStudentGrades((prev) => {
+      let isDifferent = false;
+      const nextGrades = prev.map((student) => {
         const computation = computeDepEdStudentComputation({
           assessmentItems,
           assessmentGradesMap,
@@ -1006,6 +1007,13 @@ function GradesManagement() {
           subjectCategory,
           gradingSettingsByCategory,
         });
+
+        // Compute per-category averages (Quiz, Activity, Assignment, Exam)
+        const categoryAverages = calculateStudentAssessmentAverages(
+          student.id,
+          assessmentGradesMap,
+          assessmentItems
+        );
 
         const next = {
           ...student,
@@ -1016,14 +1024,38 @@ function GradesManagement() {
           gradeComputation: computation,
           overallGrade: computation.finalGrade,
           remarks: computation.remarks,
+          // Per-category averages shown in the grade table columns
+          quizAverage: categoryAverages.quizAverage,
+          activityGrade: categoryAverages.activityGrade,
+          assignmentGrade: categoryAverages.assignmentGrade,
+          examGrade: categoryAverages.examGrade,
         };
 
-        return next;
-      })
-    );
+        if (
+          student.quarter1Grade !== next.quarter1Grade ||
+          student.quarter2Grade !== next.quarter2Grade ||
+          student.quarter3Grade !== next.quarter3Grade ||
+          student.quarter4Grade !== next.quarter4Grade ||
+          student.overallGrade !== next.overallGrade ||
+          student.quizAverage !== next.quizAverage ||
+          student.activityGrade !== next.activityGrade ||
+          student.assignmentGrade !== next.assignmentGrade ||
+          student.examGrade !== next.examGrade
+        ) {
+          isDifferent = true;
+        }
 
-    setHasUnsavedChanges(true);
-  }, [assessmentGradesMap, assessmentItems, gradingSettingsByCategory, selectedClass, classes]);
+        return next;
+      });
+
+      if (isDifferent) {
+        // Trigger a separate state update for unsaved changes to avoid side-effects inside setter
+        setTimeout(() => setHasUnsavedChanges(true), 0);
+        return nextGrades;
+      }
+      return prev;
+    });
+  }, [assessmentGradesMap, assessmentStatusMap, assessmentItems, gradingSettingsByCategory, selectedClass, classes, studentGrades.length]);
 
   // Real-time subscription: update submissions map when students submit
   useEffect(() => {
@@ -1948,14 +1980,14 @@ function GradesManagement() {
                         const studentSubmissions = assessmentItems.filter(a => assessmentSubmissionsMap[a.id]?.[student.id]);
                         const completionRate = assessmentItems.length > 0 ? Math.round((studentSubmissions.length / assessmentItems.length) * 100) : 0;
                         const quarterOne = student.gradeComputation?.quarters?.quarter1 || null;
-                        const quarterOnePerformanceTasks = quarterOne?.performanceTasks || null;
                         const fallbackWrittenWorks = quarterOne?.writtenWorks?.percentageScore ?? 0;
                         const fallbackPerformanceTasks = quarterOne?.performanceTasks?.percentageScore ?? 0;
                         const fallbackInitialGrade = quarterOne?.initialGrade ?? 0;
                         const fallbackQuarterlyGrade = quarterOne?.quarterlyGrade ?? student.overallGrade ?? 0;
-                        const activityDisplay = quarterOnePerformanceTasks?.itemCount > 0
-                          ? (student.activityGrade ?? fallbackPerformanceTasks)
-                          : "Not yet graded";
+                        // Use computed activityGrade if available, fall back to DepEd performanceTasks percentageScore
+                        const activityDisplay = (student.activityGrade != null && student.activityGrade > 0)
+                          ? student.activityGrade
+                          : (fallbackPerformanceTasks > 0 ? fallbackPerformanceTasks : "Not yet graded");
                         let lastActivityDate = null;
                         studentSubmissions.forEach(a => {
                           const sub = assessmentSubmissionsMap[a.id]?.[student.id];

@@ -35,8 +35,15 @@ import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
 import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
-import { NotificationsPage } from "./pages/NotificationsPage";
 import { AdminNotifications } from "./pages/admin/AdminNotifications";
+import { HelpCenter } from "./pages/admin/HelpCenter";
+import { TourProvider } from "./context/TourContext";
+import { WelcomeTourModal } from "./components/tour/WelcomeTourModal";
+import { TourSpotlightOverlay } from "./components/tour/TourSpotlightOverlay";
+import { ModuleTourProvider } from "./context/ModuleTourContext";
+import { ModuleTourOverlay } from "./components/tour/ModuleTourOverlay";
+import { ModuleTourFinishModal } from "./components/tour/ModuleTourFinishModal";
+import { ResumeTourModal } from "./components/tour/ResumeTourModal";
 import { Smartphone, Monitor, ShieldAlert } from "lucide-react";
 
 const isMobileDevice = () => window.innerWidth < 1024;
@@ -45,28 +52,25 @@ function DeviceRestricted({ role, allowed }) {
   const Icon = allowed === "Desktop" ? Monitor : Smartphone;
   
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
-      <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mb-6">
-        <ShieldAlert className="w-10 h-10 text-red-600" />
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="max-w-md space-y-4">
+        <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mx-auto text-red-400">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold">Access Restricted</h2>
+        <p className="text-gray-400 text-sm">
+          The {role} Portal is optimized for {allowed} view. Please switch to a {allowed.toLowerCase()} device to continue.
+        </p>
+        <button
+          onClick={() => {
+            localStorage.removeItem("currentUser");
+            window.location.href = "/login";
+          }}
+          className="mt-6 inline-block text-green-400 font-semibold hover:underline text-sm"
+        >
+          Back to Login
+        </button>
       </div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Restricted Access</h1>
-      <p className="text-gray-600 max-w-md mb-8">
-        The <span className="font-semibold">{role} Portal</span> is only accessible via <span className="font-semibold text-green-600">{allowed}</span> devices. 
-        Please switch to a {allowed.toLowerCase()} to continue.
-      </p>
-      <div className="flex flex-col items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-        <Icon className="w-12 h-12 text-gray-400" />
-        <p className="text-sm font-medium text-gray-500 italic">Expected Device: {allowed}</p>
-      </div>
-      <button 
-        onClick={() => {
-          localStorage.removeItem("currentUser");
-          window.location.href = "/login";
-        }}
-        className="mt-10 text-green-600 font-semibold hover:underline"
-      >
-        Back to Login
-      </button>
     </div>
   );
 }
@@ -214,9 +218,16 @@ export default function App() {
     <AcademicProvider>
     <ActivityProvider>
       <UnreadMessagesProvider>
+      <TourProvider>
+      <ModuleTourProvider>
       <Router>
         <ScrollToTop />
         <Toaster position="top-right" richColors />
+        <WelcomeTourModal />
+        <TourSpotlightOverlay />
+        <ModuleTourOverlay />
+        <ModuleTourFinishModal />
+        <ResumeTourModal />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/landing" element={<LandingPage />} />
@@ -266,11 +277,14 @@ export default function App() {
         <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
         <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
         <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
+        <Route path="/admin/help-center" element={<AdminRouteGuard><HelpCenter /></AdminRouteGuard>} />
 
         {/* Teacher AI */}
         <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
       </Routes>
       </Router>
+      </ModuleTourProvider>
+      </TourProvider>
           </UnreadMessagesProvider>
     </ActivityProvider>
     </AcademicProvider>

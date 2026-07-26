@@ -29,6 +29,7 @@ import {
   Sparkles,
   Key,
   CheckSquare,
+  MinusSquare,
   Square
 } from "lucide-react";
 
@@ -808,11 +809,14 @@ function TeacherManagement() {
   };
 
   const handleSelectAllTeachers = () => {
-    if (filteredTeachers.length > 0 && selectedTeacherIds.size === filteredTeachers.length) {
-      setSelectedTeacherIds(new Set());
+    const allSelected = filteredTeachers.length > 0 && filteredTeachers.every((t) => selectedTeacherIds.has(t.id));
+    const newSelection = new Set(selectedTeacherIds);
+    if (allSelected) {
+      filteredTeachers.forEach((t) => newSelection.delete(t.id));
     } else {
-      setSelectedTeacherIds(new Set(filteredTeachers.map((t) => t.id)));
+      filteredTeachers.forEach((t) => newSelection.add(t.id));
     }
+    setSelectedTeacherIds(newSelection);
   };
 
   const handleBulkDeleteTeachers = async () => {
@@ -1439,7 +1443,7 @@ function TeacherManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="teachers-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -1452,7 +1456,7 @@ function TeacherManagement() {
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                <button onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Teacher
                 </button>
@@ -1488,7 +1492,7 @@ function TeacherManagement() {
 
           <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
+              <div data-tour="teachers-search" className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
@@ -1530,20 +1534,34 @@ function TeacherManagement() {
           </div>
 
           {/* Teacher Table */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <div data-tour="teachers-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr className="border-b border-gray-200">
                     <th className="px-6 py-5 text-left w-1/4">
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleSelectAllTeachers}
-                          className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
-                        >
-                          {filteredTeachers.length > 0 && selectedTeacherIds.size === filteredTeachers.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                        </button>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Full Name</span>
+                        {(() => {
+                          const allFilteredSelected = filteredTeachers.length > 0 && filteredTeachers.every((t) => selectedTeacherIds.has(t.id));
+                          const someFilteredSelected = filteredTeachers.some((t) => selectedTeacherIds.has(t.id)) && !allFilteredSelected;
+                          return (
+                            <button
+                              type="button"
+                              onClick={handleSelectAllTeachers}
+                              className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                              title="Select All Teachers"
+                            >
+                              {allFilteredSelected ? (
+                                <CheckSquare className="w-5 h-5 text-blue-600" />
+                              ) : someFilteredSelected ? (
+                                <MinusSquare className="w-5 h-5 text-blue-600" />
+                              ) : (
+                                <Square className="w-5 h-5 text-gray-400" />
+                              )}
+                            </button>
+                          );
+                        })()}
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">FULL NAME</span>
                       </div>
                     </th>
                     <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Contact Details</th>
@@ -1647,12 +1665,12 @@ function TeacherManagement() {
                         <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
                           {formatDate(teacher.created_at)}
                         </td>
-                        <td className="px-6 py-5 text-right align-middle">
-                          <div className="flex items-center justify-end gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <td data-tour="teachers-actions" className="px-6 py-5 text-right align-middle">
+                          <div className="flex items-center justify-end gap-1.5 transition-opacity">
                             <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
                               <Eye className="w-4 h-4 text-gray-600" />
                             </button>
-                            <button onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
+                            <button data-tour="teachers-assignments-btn" onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
                               <Edit className="w-4 h-4 text-blue-500" />
                             </button>
                             <button onClick={() => handlePromptResetPassword(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Reset Password">
@@ -2006,7 +2024,6 @@ function TeacherManagement() {
                 </div>
                 <div>
                   <h4 className="text-2xl font-bold text-gray-900 whitespace-nowrap">{getTeacherName(selectedTeacher)}</h4>
-                  <p className="text-gray-600">{selectedTeacher.id}</p>
                   <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium mt-2 ${isTeacherActive(selectedTeacher.status) ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                     {normalizeTeacherStatus(selectedTeacher.status)}
                   </span>

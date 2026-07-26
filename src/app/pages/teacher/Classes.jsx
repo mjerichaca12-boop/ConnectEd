@@ -9,7 +9,6 @@ import {
   Search,
   Plus,
   X,
-  Clock,
   MapPin,
   ChevronRight,
   GraduationCap,
@@ -358,12 +357,6 @@ function Classes() {
                     )}
                   </div>
                   <div className="p-6 space-y-3">
-                    {classItem.schedule && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Clock className="w-4 h-4 text-green-600 flex-shrink-0" />
-                        {classItem.schedule}
-                      </div>
-                    )}
                     {classItem.room && (
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />

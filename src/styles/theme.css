@@ -249,6 +249,48 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  /* Guided Tour Layering & Spotlight System */
+  .connected-tour-sidebar-elevated {
+    z-index: 940 !important;
+  }
+
+  aside.tour-active-target,
+  aside.connected-tour-target-active {
+    position: fixed !important;
+    z-index: 950 !important;
+    box-shadow: 4px 0 0 0 #22c55e, 0 0 40px rgba(34, 197, 94, 0.6) !important;
+    border-radius: 0 !important;
+  }
+
+  .tour-active-target,
+  .connected-tour-target-active {
+    position: relative !important;
+    z-index: 950 !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  tr.tour-active-target,
+  tr.connected-tour-target-active,
+  .tour-active-target td,
+  .tour-active-target th,
+  .connected-tour-target-active td,
+  .connected-tour-target-active th {
+    background-color: #ffffff !important;
+    color: #111827 !important;
+  }
+
+  .tour-active-target div,
+  .tour-active-target button,
+  .tour-active-target span,
+  .tour-active-target svg,
+  .connected-tour-target-active div,
+  .connected-tour-target-active button,
+  .connected-tour-target-active span,
+  .connected-tour-target-active svg {
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;

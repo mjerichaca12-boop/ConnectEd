@@ -1121,7 +1121,7 @@ function StudentManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="students-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -1135,11 +1135,11 @@ function StudentManagement() {
               </div>
               <div className="flex items-center gap-3">
                 <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                <button onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
                   {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                   {isImporting ? "Importing..." : "Import Masterlist"}
                 </button>
-                <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
+                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Student
                 </button>
@@ -1178,6 +1178,7 @@ function StudentManagement() {
               Enrolled Students
             </button>
             <button
+              data-tour="students-masterlist-tab"
               onClick={() => setActiveTab("Masterlist")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Masterlist"
@@ -1189,7 +1190,7 @@ function StudentManagement() {
             </button>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div data-tour="students-filters" className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col gap-4">
               <div className="flex flex-col md:flex-row gap-4 items-center">
                 {activeTab === "Profiles" && (
@@ -1256,11 +1257,11 @@ function StudentManagement() {
               </div>
 
               <div className="flex flex-col md:flex-row gap-4 items-center">
-                <div className="flex-1 relative w-full">
+                <div data-tour="students-search" className="flex-1 relative w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                   <input type="text" placeholder="Search by name, email, or LRN..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
                 </div>
-                <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
+                <button data-tour="students-export-btn" onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
                   <Download className="w-4 h-4" />
                   Export
                 </button>
@@ -1304,7 +1305,7 @@ function StudentManagement() {
           </div>
         </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+          <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               {activeTab === "Profiles" ? (
               <table className="w-full text-left border-collapse min-w-[1000px]">
@@ -1324,7 +1325,7 @@ function StudentManagement() {
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                    <th data-tour="students-actions" className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1338,6 +1339,7 @@ function StudentManagement() {
                       grouped[year][section].push(student);
                     });
                     const rows = [];
+                    let firstStudentRowFound = false;
                     Object.keys(grouped).sort((a, b) => {
                       const numA = parseInt(a.replace(/\D/g, '')) || 0;
                       const numB = parseInt(b.replace(/\D/g, '')) || 0;
@@ -1360,8 +1362,14 @@ function StudentManagement() {
                           </tr>
                         );
                         groupStudents.forEach((student) => {
+                          const isFirstRow = !firstStudentRowFound;
+                          if (isFirstRow) firstStudentRowFound = true;
                           rows.push(
-                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                            <tr
+                              key={student.id}
+                              data-tour={isFirstRow ? "students-row" : undefined}
+                              className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}
+                            >
                               <td className="px-6 py-5 text-left align-middle">
                                 <button
                                   onClick={() => toggleStudentSelection(student.id)}
@@ -1392,17 +1400,23 @@ function StudentManagement() {
                                 </div>
                               </td>
                               <td className="px-6 py-5 align-middle">
-                                <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
-                                  student.status === "Disabled"
-                                    ? "bg-red-50 text-red-500 border-red-200"
-                                    : "bg-green-50 text-green-600 border-green-200"
-                                }`}>
+                                <span
+                                  data-tour={isFirstRow ? "students-status-badge" : undefined}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                    student.status === "Disabled"
+                                      ? "bg-red-50 text-red-500 border-red-200"
+                                      : "bg-green-50 text-green-600 border-green-200"
+                                  }`}
+                                >
                                   {student.status || "Active"}
                                 </span>
                               </td>
                               <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">{formatDate(student.created_at)}</td>
-                              <td className="px-6 py-5 text-right align-middle">
-                                <div className="flex items-center justify-end gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                              <td
+                                data-tour={isFirstRow ? "students-actions" : undefined}
+                                className="px-6 py-5 text-right align-middle"
+                              >
+                                <div className="flex items-center justify-end gap-1.5 transition-opacity">
                                   <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
                                     <Eye className="w-4 h-4 text-gray-600" />
                                   </button>
@@ -1525,7 +1539,7 @@ function StudentManagement() {
                                     <button
                                       onClick={() => handlePromoteMasterlist([student.id])}
                                       disabled={isPromotingMasterlist}
-                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors opacity-100 lg:opacity-0 group-hover:opacity-100 shadow-sm"
+                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm"
                                     >
                                       Enroll
                                     </button>

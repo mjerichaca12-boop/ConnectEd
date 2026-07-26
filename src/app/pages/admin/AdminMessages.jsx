@@ -1002,7 +1002,7 @@ export function AdminMessages() {
 
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
+          <div data-tour="messages-header" className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white/15 rounded-xl">
@@ -1017,6 +1017,7 @@ export function AdminMessages() {
                 </div>
               </div>
               <button
+                data-tour="messages-compose-btn"
                 onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
               >
@@ -1029,7 +1030,7 @@ export function AdminMessages() {
           {/* Main chat layout */}
           <div className="flex-1 min-h-0 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* ══ Left: Conversations List ══ */}
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
+            <div data-tour="messages-threads-list" className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
 
               {/* Search + New */}
               <div className="p-3 border-b border-gray-100 flex gap-2">
