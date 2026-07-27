@@ -22,6 +22,7 @@ import {
   matchesTeacherAudience,
   formatAnnouncementDate,
 } from "@/app/lib/teacherHelpers";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 
 const colorMap = {
   emerald: { icon: "text-green-600", bg: "bg-green-50", hover: "hover:border-green-200 hover:shadow-md" },
@@ -31,6 +32,7 @@ const colorMap = {
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
   const [teacherFirstName, setTeacherFirstName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
@@ -543,7 +545,7 @@ export function TeacherDashboard() {
         <div className="flex-1 p-6 space-y-6">
 
           {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
+          <div data-tour="teacher-dashboard-header" className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4">
               <div className="flex flex-col items-end gap-1">
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY {activeSchoolYear}</span>
@@ -561,13 +563,13 @@ export function TeacherDashboard() {
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div data-tour="teacher-kpis" className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
-              { icon: BookOpen,    label: "Total Classes",   value: totalClasses,  color: "emerald" },
-              { icon: Users,       label: "Total Students",  value: totalStudents,   color: "blue" },
-              { icon: BookOpen,    label: "Published Lessons", value: publishedLessonsCount, color: "emerald" },
-              { icon: BookOpen,    label: "Draft Lessons",   value: draftLessonsCount, color: "red" },
-              { icon: GraduationCap, label: "Grades Encoded", value: gradesEncodedTotal, color: "emerald" },
+              { icon: BookOpen,    label: "Total Classes",   value: isDemoMode ? mockData.kpis.totalClasses : totalClasses,  color: "emerald" },
+              { icon: Users,       label: "Total Students",  value: isDemoMode ? mockData.kpis.totalStudents : totalStudents,   color: "blue" },
+              { icon: BookOpen,    label: "Published Lessons", value: isDemoMode ? mockData.kpis.publishedLessons : publishedLessonsCount, color: "emerald" },
+              { icon: BookOpen,    label: "Draft Lessons",   value: isDemoMode ? mockData.kpis.draftLessons : draftLessonsCount, color: "red" },
+              { icon: GraduationCap, label: "Grades Encoded", value: isDemoMode ? mockData.kpis.gradesEncodedTotal : gradesEncodedTotal, color: "emerald" },
             ].map((stat) => {
               const Icon = stat.icon;
               const c = colorMap[stat.color];
@@ -592,10 +594,12 @@ export function TeacherDashboard() {
               {/* Top row: Tasks & Grades */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 {/* Tasks & Deadlines */}
-                <TeacherTasksAndDeadlines teacherId={teacherId} assignedSubjects={assignedSubjects} />
+                <div data-tour="teacher-tasks">
+                  <TeacherTasksAndDeadlines teacherId={teacherId} assignedSubjects={assignedSubjects} />
+                </div>
 
                 {/* Recent Grades */}
-                <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                <div data-tour="teacher-recent-grades" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                   <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <h3 className="text-gray-900 font-bold flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-green-500" />
@@ -603,7 +607,12 @@ export function TeacherDashboard() {
                     </h3>
                   </div>
                   <div className="p-6">
-                    {recentGrades.length === 0 ? (
+                    {(isDemoMode ? [
+                      { id: "demo-rg-1", studentName: "Juan Dela Cruz", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 91 },
+                      { id: "demo-rg-2", studentName: "Maria Santos", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 96 },
+                      { id: "demo-rg-3", studentName: "John Reyes", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), grade: 87 },
+                      { id: "demo-rg-4", studentName: "Angelica Gonzales", subject: "General Science 8", dateRecorded: new Date().toISOString(), grade: 94 },
+                    ] : recentGrades).length === 0 ? (
                       <div className="text-center py-6">
                         <div className="w-12 h-12 bg-green-50 border border-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                           <TrendingUp className="w-6 h-6 text-green-500" />
@@ -612,7 +621,12 @@ export function TeacherDashboard() {
                       </div>
                     ) : (
                       <div className="space-y-3 w-full">
-                        {recentGrades.map((grade) => (
+                        {(isDemoMode ? [
+                          { id: "demo-rg-1", studentName: "Juan Dela Cruz", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 91 },
+                          { id: "demo-rg-2", studentName: "Maria Santos", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 96 },
+                          { id: "demo-rg-3", studentName: "John Reyes", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), grade: 87 },
+                          { id: "demo-rg-4", studentName: "Angelica Gonzales", subject: "General Science 8", dateRecorded: new Date().toISOString(), grade: 94 },
+                        ] : recentGrades).map((grade) => (
                           <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
                             <div>
                               <p className="text-gray-900 text-sm font-bold">{grade.studentName}</p>
@@ -629,7 +643,7 @@ export function TeacherDashboard() {
 
               {/* School Announcements — full width */}
 
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+              <div data-tour="teacher-announcements" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-gray-900 font-bold flex items-center gap-2">
                     <Megaphone className="w-5 h-5 text-green-500" />
@@ -644,11 +658,11 @@ export function TeacherDashboard() {
                     </div>
                   )}
 
-                  {visibleAnnouncements.length === 0 ? (
+                  {(isDemoMode ? mockData.announcements : visibleAnnouncements).length === 0 ? (
                     <div className="text-center py-6 text-gray-500">No teacher announcements yet</div>
                   ) : (
                     <div className="space-y-3">
-                      {visibleAnnouncements.map((announcement) => (
+                      {(isDemoMode ? mockData.announcements : visibleAnnouncements).map((announcement) => (
                         <button
                           key={announcement.id}
                           type="button"
@@ -685,7 +699,7 @@ export function TeacherDashboard() {
             {/* Right Column */}
             <div className="space-y-6">
               {/* Calendar */}
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+              <div data-tour="teacher-calendar" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                 <DashboardCalendar viewerRole="teacher" />
               </div>
             </div>

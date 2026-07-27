@@ -1,6 +1,7 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { Play, RotateCcw, HelpCircle, X } from "lucide-react";
+import { Play, RotateCcw, HelpCircle } from "lucide-react";
 import { useModuleTour } from "../../context/ModuleTourContext";
 
 export function ResumeTourModal() {
@@ -21,8 +22,8 @@ export function ResumeTourModal() {
     resumeTour(navigate);
   };
 
-  return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200 font-sans">
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100/80 overflow-hidden">
         {/* DepEd tri-color top accent bar */}
         <div className="flex h-1.5 flex-shrink-0">
@@ -45,22 +46,25 @@ export function ResumeTourModal() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
+              type="button"
               onClick={handleRestart}
-              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center justify-center gap-1.5"
+              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
-              <span>Restart Tour</span>
+              <span>Start Fresh</span>
             </button>
             <button
+              type="button"
               onClick={handleContinue}
-              className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center justify-center gap-1.5"
+              className="w-full sm:w-auto px-5 py-2.5 bg-amber-500 text-white font-semibold rounded-xl hover:bg-amber-600 active:scale-[0.98] shadow-md shadow-amber-500/20 transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Play className="w-4 h-4 fill-white" />
-              <span>Continue Tour</span>
+              <span>Resume Tour</span>
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

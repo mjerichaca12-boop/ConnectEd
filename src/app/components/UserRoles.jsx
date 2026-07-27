@@ -18,8 +18,6 @@ const roles = [
     title: "Teacher",
     subtitle: "Manage your classes, grades, and student interactions on the web.",
     features: ["Create & manage class sections", "Upload materials & assignments", "Record student grades", "Post class announcements", "Message students directly"],
-    cta: "/request-access",
-    ctaLabel: "Sign up as a Teacher",
     mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: MessageSquare, label: "Student Messaging" }],
   },
   {

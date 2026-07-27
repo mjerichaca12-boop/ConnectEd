@@ -24,6 +24,7 @@ import {
 } from "@/app/lib/teacherHelpers";
 import { streamMessage } from "@/app/lib/groqClient";
 import { parseDocument } from "@/app/lib/documentParser";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 import {
   ArrowLeft,
   Users,
@@ -250,6 +251,7 @@ const getAnnouncementAttachmentKind = (announcement) => {
 export function ClassDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
   const { activeSchoolYear, activeQuarter } = useAcademic();
   const fileInputRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
@@ -258,6 +260,17 @@ export function ClassDetail() {
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("lessons");
+
+  useEffect(() => {
+    const handleSwitchTab = (e) => {
+      const tab = e.detail?.tab;
+      if (tab) {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener("tour-switch-tab", handleSwitchTab);
+    return () => window.removeEventListener("tour-switch-tab", handleSwitchTab);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Quiz AI state
@@ -530,7 +543,7 @@ export function ClassDetail() {
   };
 
   const loadAssignedStudents = async (teacherId, subjectId) => {
-    if (!supabase || !teacherId || !subjectId) {
+    if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) {
       syncStudentsIntoClassData([]);
       return;
     }
@@ -597,7 +610,7 @@ export function ClassDetail() {
   };
 
   const fetchDashboardMetrics = async (teacherId, subjectId) => {
-    if (!supabase || !teacherId || !subjectId) return;
+    if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) return;
     try {
       // 1. Fetch lessons count
       const { data: lessons, error: lessonsError } = await supabase
@@ -1095,6 +1108,11 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
+    if (isDemoMode || String(id).startsWith("demo-")) {
+      setAnnouncements(MOCK_ANNOUNCEMENTS);
+      return;
+    }
+
     if (!supabase || !cleanTeacherId) {
       setAnnouncements([]);
       return;
@@ -1182,7 +1200,7 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
-    if (!supabase || !cleanTeacherId || !cleanClassId) {
+    if (!supabase || !cleanTeacherId || !cleanClassId || String(cleanClassId).startsWith("demo-")) {
       setAssignments([]);
       return;
     }
@@ -1294,7 +1312,7 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
-    if (!supabase || !cleanTeacherId) {
+    if (!supabase || !cleanTeacherId || String(id).startsWith("demo-")) {
       setMaterials([]);
       return;
     }
@@ -1384,12 +1402,50 @@ export function ClassDetail() {
       const saved = localStorage.getItem("teacher_classes");
       let foundClass = null;
       if (saved) {
-        const all = JSON.parse(saved);
-        const found = all.find((c) => c.id === id);
-        foundClass = found || null;
-        if (isMounted) {
-          setClassData(found || null);
+        try {
+          const all = JSON.parse(saved);
+          const found = all.find((c) => String(c.id) === String(id));
+          foundClass = found || all[0] || null;
+        } catch {
+          foundClass = null;
         }
+      }
+
+      if (!foundClass && supabase) {
+        try {
+          let { data: subData } = await supabase.from("subjects").select("*").eq("id", id).maybeSingle();
+          if (!subData && String(id).startsWith("demo-")) {
+            const demoMatch = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
+            foundClass = demoMatch;
+          } else {
+            if (!subData) {
+              const { data: firstSub } = await supabase.from("subjects").select("*").limit(1).maybeSingle();
+              subData = firstSub;
+            }
+            if (subData) {
+              foundClass = {
+                id: String(subData.id),
+                code: String(subData.code || ""),
+                name: String(subData.name || "Untitled Class"),
+                section: String(subData.section || "Section"),
+                schedule: String(subData.schedule || ""),
+                room: "",
+                semester: "Current School Year",
+                studentCount: Number(subData.enrolled || 0),
+                gradeLevel: String(subData.grade_level || subData.year_level || "")
+              };
+            }
+          }
+        } catch (err) {
+          console.warn("[ClassDetail] Fallback subject fetch error:", err);
+          if (String(id).startsWith("demo-") || isDemoMode) {
+            foundClass = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
+          }
+        }
+      }
+
+      if (isMounted) {
+        setClassData(foundClass || null);
       }
 
       const resolvedTeacherId = await resolveTeacherProfileId(user.email);
@@ -3462,10 +3518,51 @@ export function ClassDetail() {
     setPendingDeleteAnnouncement(null);
   };
 
-  const filteredStudents = assignedStudents.filter(
+  const MOCK_ANNOUNCEMENTS = [
+    {
+      id: "demo-ann-1",
+      title: "📢 Quarter 1 Periodic Examination Schedule & Review Materials",
+      content: "Please be reminded that our Quarter 1 Examination for Grade 10 Araling Panlipunan will be held on Thursday, August 15. Make sure to review Module 1 (Kontemporaryong Isyu) and Module 2 (Suliraning Pangkapaligiran). Practice quiz items have been uploaded under the Lessons tab.",
+      isPinned: true,
+      pinned: true,
+      createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+      datePosted: new Date(Date.now() - 3600000 * 24).toISOString(),
+      authorName: "Teacher Maria Santos",
+      category: "Exam Notice",
+      status: "Active",
+    },
+    {
+      id: "demo-ann-2",
+      title: "🌱 Group Project Submission: Environmental Action Plan Poster",
+      content: "Reminder for all section groups: Submit your printed infographic or digital poster for the DepEd Climate Change Awareness Campaign by Friday at 5:00 PM. Late submissions will receive a 5-point deduction per day.",
+      isPinned: false,
+      pinned: false,
+      createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
+      datePosted: new Date(Date.now() - 3600000 * 72).toISOString(),
+      authorName: "Teacher Maria Santos",
+      category: "Project Reminder",
+      status: "Active",
+    },
+  ];
+
+  const MOCK_STUDENTS = [
+    { id: "s1", studentId: "109876543210", name: "Juan Dela Cruz", yearLevel: "Grade 10", email: "juan.delacruz@deped.gov.ph", phone: "0917-123-4567", status: "Active" },
+    { id: "s2", studentId: "109876543211", name: "Maria Clara Santos", yearLevel: "Grade 10", email: "maria.santos@deped.gov.ph", phone: "0918-234-5678", status: "Active" },
+    { id: "s3", studentId: "109876543212", name: "John Mark Reyes", yearLevel: "Grade 10", email: "john.reyes@deped.gov.ph", phone: "0919-345-6789", status: "Active" },
+  ];
+
+  const activeStudentsList = (isDemoMode || String(id).startsWith("demo-"))
+    ? MOCK_STUDENTS
+    : assignedStudents;
+
+  const activeAnnouncementsList = (isDemoMode || String(id).startsWith("demo-")) && announcements.length === 0
+    ? MOCK_ANNOUNCEMENTS
+    : announcements;
+
+  const filteredStudents = activeStudentsList.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.studentId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.studentId || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(s.yearLevel || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
   const classGradeValue = getClassGradeValue(classData);
@@ -3620,10 +3717,31 @@ export function ClassDetail() {
       },
       onError: (err) => {
         console.error("Quiz AI Error:", err);
-        setQuizMessages([...updatedMessages, { role: "assistant", content: "ΓÜá∩╕Å Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
+        setQuizMessages([...updatedMessages, { role: "assistant", content: "⚠️ Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
         setIsQuizStreaming(false);
       }
     });
+  };
+
+
+
+
+
+  const displayMetrics = (isDemoMode || String(id).startsWith("demo-")) ? {
+    totalLessons: 5,
+    publishedLessons: 5,
+    activitiesCount: 2,
+    seatworksCount: 2,
+    assignmentsCount: 2,
+    quizzesCount: 4,
+    materialsCount: 4,
+    studentCount: 42,
+    announcementsCount: 4,
+  } : {
+    ...metrics,
+    studentCount: assignedStudents.length,
+    materialsCount: metrics.materialsCount + materials.length,
+    announcementsCount: announcements.length,
   };
 
   return (
@@ -3664,7 +3782,7 @@ export function ClassDetail() {
             Back to Classes
           </button>
 
-          <div className="rounded-2xl bg-green-600 p-6 text-white shadow-sm border border-green-500/30">
+          <div data-tour="teacher-class-banner" className="rounded-2xl bg-green-600 p-6 text-white shadow-sm border border-green-500/30">
             <div className="flex items-start gap-3 mb-5">
               <div className="w-11 h-11 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center flex-shrink-0">
                 <BookOpen className="w-6 h-6" />
@@ -3694,7 +3812,7 @@ export function ClassDetail() {
                       </div>
                       Students
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{assignedStudents.length}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.studentCount}</p>
                   </div>
 
                   <div 
@@ -3707,7 +3825,7 @@ export function ClassDetail() {
                       </div>
                       Lessons
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.totalLessons}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.totalLessons}</p>
                   </div>
 
                   <div 
@@ -3720,7 +3838,7 @@ export function ClassDetail() {
                       </div>
                       Materials
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.materialsCount + materials.length}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.materialsCount}</p>
                   </div>
 
                   <div 
@@ -3733,7 +3851,7 @@ export function ClassDetail() {
                       </div>
                       Announcements
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{announcements.length}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.announcementsCount}</p>
                   </div>
                 </div>
               </div>
@@ -3749,7 +3867,7 @@ export function ClassDetail() {
                       </div>
                       Seatworks
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.seatworksCount}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.seatworksCount}</p>
                   </div>
 
                   <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
@@ -3759,7 +3877,7 @@ export function ClassDetail() {
                       </div>
                       Assignments
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.assignmentsCount}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.assignmentsCount}</p>
                   </div>
 
                   <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
@@ -3769,7 +3887,7 @@ export function ClassDetail() {
                       </div>
                       Quizzes
                     </div>
-                    <p className="text-3xl font-bold mt-2 text-white">{metrics.quizzesCount}</p>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.quizzesCount}</p>
                   </div>
                 </div>
               </div>
@@ -3779,10 +3897,11 @@ export function ClassDetail() {
           {/* Tabs + Content */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Tab Nav */}
-            <div className="flex border-b border-gray-100 overflow-x-auto no-scrollbar">
+            <div data-tour="teacher-class-tabs" className="flex border-b border-gray-100 overflow-x-auto no-scrollbar">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
+                  data-tour-tab={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors whitespace-nowrap rounded-t-lg ${activeTab === tab.id
                       ? "bg-gray-100 text-green-600"
@@ -3796,13 +3915,13 @@ export function ClassDetail() {
             </div>
 
             <div className="p-6">
-              {/* ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ STUDENTS TAB ├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼├â╞Æ├é┬ó├â┬ó├óΓÇÜ┬¼├é┬¥├â┬ó├óΓé¼┼í├é┬¼ */}
+              {/* STUDENTS TAB */}
               {activeTab === "students" && (
-                <div>
+                <div data-tour="class-detail-students-list">
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">{assignedStudents.length} students enrolled</p>
+                      <p className="text-sm text-gray-500 mt-0.5">{activeStudentsList.length} students enrolled</p>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
                       <div className="relative flex-1 md:w-64">
@@ -3887,16 +4006,19 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* ╠ü╠ü LESSONS TAB ╠ü╠ü */}
+              {/* LESSONS TAB */}
               {activeTab === "lessons" && (
-                <TeacherLessonsTab 
-                  subjectId={id} 
-                  teacherId={teacherProfileId} 
-                  onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
-                />
+                <div data-tour="class-detail-lessons-content">
+                  <TeacherLessonsTab 
+                    subjectId={id} 
+                    teacherId={teacherProfileId} 
+                    onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
+                  />
+                </div>
               )}
+              {/* ANNOUNCEMENTS TAB */}
               {activeTab === "announcements" && (
-                <div>
+                <div data-tour="class-detail-announcements-content">
                   <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">Class Announcements</h3>
@@ -3938,16 +4060,16 @@ export function ClassDetail() {
 
                     <div className="flex items-center gap-4 text-xs font-medium text-gray-500 self-end sm:self-auto">
                       <div className="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-3 py-1 rounded-full">
-                        <span className="font-bold">{announcements.filter(a => a.isPinned && a.status !== "Archived").length}</span> Pinned
+                        <span className="font-bold">{activeAnnouncementsList.filter(a => (a.isPinned || a.pinned) && a.status !== "Archived").length}</span> Pinned
                       </div>
                       <div className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
-                        <span className="font-bold">{announcements.length}</span> Total
+                        <span className="font-bold">{activeAnnouncementsList.length}</span> Total
                       </div>
                     </div>
                   </div>
 
                   {(() => {
-                    const filteredList = announcements.filter((ann) => {
+                    const filteredList = activeAnnouncementsList.filter((ann) => {
                       if (activeAnnouncementTab === "Archived") {
                         return ann.status === "Archived";
                       }

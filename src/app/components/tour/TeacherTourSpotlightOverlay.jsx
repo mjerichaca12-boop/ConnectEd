@@ -13,10 +13,11 @@ import {
   Lightbulb,
   AlertTriangle,
 } from "lucide-react";
-import { useTour } from "../../context/TourContext";
+import { useTeacherTour } from "../../context/TeacherTourContext";
 import { useModuleTour } from "../../context/ModuleTourContext";
+import { useTour } from "../../context/TourContext";
 
-export function TourSpotlightOverlay() {
+export function TeacherTourSpotlightOverlay() {
   const navigate = useNavigate();
   const {
     isTourActive,
@@ -29,11 +30,14 @@ export function TourSpotlightOverlay() {
     prevStep,
     skipTour,
     finishTour,
-  } = useTour();
+  } = useTeacherTour();
 
+  // Access other tour contexts for a universal exit
   const { skipTour: skipModuleTour, finishTour: finishModuleTour } = useModuleTour();
+  const { skipTour: skipAdminTour, finishTour: finishAdminTour } = useTour();
 
   // Unified exit handler for all active tours
+  // Clear previous highlighted targets & sidebar elevation
   const clearActiveHighlights = useCallback(() => {
     document.querySelectorAll(".tour-active-target, .connected-tour-target-active").forEach((el) => {
       el.classList.remove("tour-active-target", "connected-tour-target-active");
@@ -48,13 +52,17 @@ export function TourSpotlightOverlay() {
       e.preventDefault();
       e.stopPropagation();
     }
+    // Gracefully exit each possible tour
     try { skipTour?.(); } catch {}
     try { finishTour?.(); } catch {}
     try { skipModuleTour?.(); } catch {}
     try { finishModuleTour?.(); } catch {}
+    try { skipAdminTour?.(); } catch {}
+    try { finishAdminTour?.(); } catch {}
+    // Clean up any remaining highlights
     clearActiveHighlights();
     setTargetRect(null);
-  }, [skipTour, finishTour, skipModuleTour, finishModuleTour, clearActiveHighlights]);
+  }, [skipTour, finishTour, skipModuleTour, finishModuleTour, skipAdminTour, finishAdminTour, clearActiveHighlights]);
 
   const [targetRect, setTargetRect] = useState(null);
   const [activeDirection, setActiveDirection] = useState("right");
@@ -76,9 +84,12 @@ export function TourSpotlightOverlay() {
     }
 
     if (el) {
-      const sidebarEl = document.querySelector('[data-tour="sidebar"]');
-      if (sidebarEl && (sidebarEl === el || sidebarEl.contains(el))) {
-        sidebarEl.classList.add("connected-tour-sidebar-elevated");
+      if (
+        currentStep.targetSelector === '[data-tour="teacher-sidebar"]' ||
+        currentStep.targetSelector?.includes("teacher-")
+      ) {
+        const sidebarParent = el.closest("aside") || el;
+        sidebarParent?.classList.add("connected-tour-sidebar-elevated");
       }
 
       el.classList.add("tour-active-target", "connected-tour-target-active");
@@ -95,7 +106,7 @@ export function TourSpotlightOverlay() {
         borderRadius: computedRadius,
       });
 
-      if (currentStep.targetSelector !== '[data-tour="sidebar"]') {
+      if (currentStep.targetSelector !== '[data-tour="teacher-sidebar"]') {
         const vHeight = window.innerHeight || document.documentElement.clientHeight;
         const vWidth = window.innerWidth || document.documentElement.clientWidth;
         const isTable = rect.height > 150 && rect.width > vWidth * 0.5;
@@ -150,7 +161,42 @@ export function TourSpotlightOverlay() {
     }
   }, [isTourActive, currentStep, clearActiveHighlights]);
 
-  // Layout Shift & Resize Observers
+  // Scroll main container & auto-switch Class Detail tabs on step change
+  useEffect(() => {
+    if (!isTourActive || !currentStep) return;
+
+    const stepId = currentStep.id || "";
+    if (stepId === "class-detail-students" || stepId === "class-detail-students-list") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "students" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    } else if (stepId === "class-detail-lessons") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "lessons" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    } else if (stepId === "class-detail-announcements") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "announcements" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    }
+
+    const isTopStep = [
+      "teacher-dashboard-header",
+      "teacher-classes-search",
+      "class-detail-banner",
+      "teacher-grades-class-select",
+    ].includes(stepId);
+
+    if (isTopStep) {
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      const mainEl = document.querySelector("main");
+      if (mainEl) {
+        mainEl.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      }
+    }
+  }, [isTourActive, currentStep?.id]);
+
+  // Layout Shift Observers
   useEffect(() => {
     updateTargetRect();
 
@@ -169,7 +215,9 @@ export function TourSpotlightOverlay() {
             requestAnimationFrame(updateTargetRect);
           });
           resizeObserver.observe(el);
-        } catch {}
+        } catch {
+          // Ignore
+        }
       }
 
       mutationObserver = new MutationObserver(() => {
@@ -193,6 +241,27 @@ export function TourSpotlightOverlay() {
       clearActiveHighlights();
     };
   }, [updateTargetRect, currentStepIndex, isTourActive, currentStep, clearActiveHighlights]);
+
+  // Handle direct click on interactive view class button on page
+  useEffect(() => {
+    if (!isTourActive || !currentStep) return;
+
+    if (currentStep.actionToRoute === "auto-first-class" || currentStep.id === "teacher-classes-view-btn" || currentStep.id === "classes-view-btn") {
+      const handleDirectClassClick = (e) => {
+        const targetBtn = e.target.closest('[data-tour="teacher-classes-view-btn"]');
+        if (targetBtn) {
+          const classId = targetBtn.getAttribute("data-class-id") || "1";
+          e.preventDefault();
+          e.stopPropagation();
+          navigate(`/teacher/class/${classId}`);
+          nextStep(navigate);
+        }
+      };
+
+      document.addEventListener("click", handleDirectClassClick, true);
+      return () => document.removeEventListener("click", handleDirectClassClick, true);
+    }
+  }, [isTourActive, currentStep, navigate, nextStep]);
 
   // Keyboard navigation listeners
   useEffect(() => {
@@ -419,7 +488,7 @@ export function TourSpotlightOverlay() {
       role="dialog"
       aria-modal="true"
       aria-label={currentStep.title}
-      aria-describedby="admin-tour-step-description"
+      aria-describedby="teacher-tour-step-description"
       className="connected-tour-portal-root font-sans"
     >
       {/* 1. Dark Backdrop Overlay / Spotlight Cutout Box (z-index: 960) */}
@@ -446,7 +515,7 @@ export function TourSpotlightOverlay() {
         style={getCardStyle()}
         className="z-[1000] w-full max-w-sm transition-all duration-300 ease-out relative"
       >
-        {/* Pointer Arrow Tooltip Tip */}
+        {/* Pointer Arrow Tooltip Tip (Outside overflow container so it's NEVER clipped!) */}
         {renderPointerArrow()}
 
         {/* Card Body Container */}
@@ -456,7 +525,7 @@ export function TourSpotlightOverlay() {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-green-50 text-green-700 border border-green-200/80 shadow-2xs">
                 <Sparkles className="w-3 h-3 text-green-600" />
-                Admin System Tour
+                Teacher Tour
               </span>
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-teal-50 text-teal-700 border border-teal-200/80 shadow-2xs">
                 Step {currentStepIndex + 1} of {totalSteps}
@@ -491,19 +560,19 @@ export function TourSpotlightOverlay() {
             ))}
           </div>
 
-          {/* Step Title & Description */}
+          {/* Title & Description */}
           <h3 className="text-lg font-bold text-gray-900 tracking-tight mb-2">
             {currentStep.title}
           </h3>
-          <p id="admin-tour-step-description" className="text-gray-600 text-xs leading-relaxed mb-4 whitespace-pre-line">
+          <p id="teacher-tour-step-description" className="text-gray-600 text-xs leading-relaxed mb-4 whitespace-pre-line">
             {currentStep.description}
           </p>
 
-          {/* Information Panel Badge */}
+          {/* Mini Information Panel Badge */}
           {renderMessageBadge()}
 
-          {/* Hotkey tip */}
-          <div className="flex items-center gap-1.5 mb-4 text-[10px] text-gray-400 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100">
+          {/* Hotkey Tip */}
+          <div className="flex items-center gap-1.5 mb-5 text-[10px] text-gray-400 bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100">
             <Command className="w-3 h-3 text-gray-400" />
             <span>Use <kbd className="px-1 bg-white rounded border border-gray-200 text-gray-600 font-mono">←</kbd> <kbd className="px-1 bg-white rounded border border-gray-200 text-gray-600 font-mono">→</kbd> to navigate, <kbd className="px-1 bg-white rounded border border-gray-200 text-gray-600 font-mono">Esc</kbd> to exit</span>
           </div>
@@ -513,15 +582,17 @@ export function TourSpotlightOverlay() {
             <button
               type="button"
               onClick={(e) => {
-                handleExitAllTours(e);
+                e.preventDefault();
+                e.stopPropagation();
+                skipTour();
               }}
               className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer"
             >
-              Exit Tour
+              Skip Tour
             </button>
 
             <div className="flex items-center gap-2">
-              {currentStepIndex > 0 && (
+              {currentStepIndex > 0 && !isFinalStep && (
                 <button
                   type="button"
                   onClick={() => prevStep(navigate)}
@@ -532,18 +603,25 @@ export function TourSpotlightOverlay() {
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => (isFinalStep ? finishTour() : nextStep(navigate))}
-                className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer"
-              >
-                <span>{currentStep.finishButtonText || (isFinalStep ? "Finish" : "Next")}</span>
-                {isFinalStep ? (
-                  <CheckCircle2 className="w-4 h-4 ml-0.5" />
-                ) : (
+              {isFinalStep && !currentStep.actionButtonText ? (
+                <button
+                  type="button"
+                  onClick={finishTour}
+                  className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Finish</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => nextStep(navigate)}
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <span>{currentStep.actionButtonText || "Next"}</span>
                   <ChevronRight className="w-4 h-4" />
-                )}
-              </button>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 // Use service role client if available to bypass RLS issues for reliable messaging
 const db = supabaseAdmin || supabase;
 import {
@@ -119,7 +120,126 @@ const getConversationDetailLine = (conv) => {
   return parts.join(" · ") || conv.participantRole || "Student";
 };
 
+const MOCK_DEMO_CONVERSATIONS = [
+  {
+    id: "demo-conv-1",
+    participantId: "demo-stu-1",
+    participantName: "Juan Dela Cruz",
+    participantRole: "Student • Grade 10 - Ruby",
+    classCode: "AP10",
+    section: "Grade 10 - Ruby",
+    lastMessage: "Good day Teacher, I have submitted my Written Work 1 file on the portal.",
+    lastMessageTime: new Date(Date.now() - 5 * 60000).toISOString(),
+    isRead: true,
+    isGroup: false,
+    messages: [
+      {
+        id: "msg-1",
+        from: "student",
+        senderName: "Juan Dela Cruz",
+        text: "Good day Teacher! I wanted to check if you received my submission for Written Work 1.",
+        time: new Date(Date.now() - 30 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+      {
+        id: "msg-2",
+        from: "teacher",
+        senderName: "You",
+        text: "Hello Juan! Yes, I received your file. Excellent work on the essay structure!",
+        time: new Date(Date.now() - 15 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+      {
+        id: "msg-3",
+        from: "student",
+        senderName: "Juan Dela Cruz",
+        text: "Thank you so much Teacher! Will prepare for our upcoming Quiz 1 on Friday.",
+        time: new Date(Date.now() - 5 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+    ],
+  },
+  {
+    id: "demo-conv-2",
+    participantId: "demo-group-1",
+    participantName: "Grade 10 - Ruby Class Group",
+    participantRole: "Class Group • 42 members",
+    classCode: "AP10",
+    section: "Grade 10 - Ruby",
+    isGroup: true,
+    participantIds: ["demo-stu-1", "demo-stu-2", "demo-stu-3"],
+    lastMessage: "Teacher: Reminder for all students to bring graphing paper tomorrow.",
+    lastMessageTime: new Date(Date.now() - 60 * 60000).toISOString(),
+    isRead: false,
+    messages: [
+      {
+        id: "msg-g1",
+        from: "student",
+        senderName: "Maria Santos",
+        text: "Good afternoon everyone! Reminder regarding our Araling Panlipunan group project.",
+        time: new Date(Date.now() - 120 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+      {
+        id: "msg-g2",
+        from: "teacher",
+        senderName: "You",
+        text: "Reminder for all Grade 10 Ruby students to bring graphing paper tomorrow for our lesson.",
+        time: new Date(Date.now() - 60 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+    ],
+  },
+  {
+    id: "demo-conv-3",
+    participantId: "demo-stu-2",
+    participantName: "Maria Santos",
+    participantRole: "Student • Grade 10 - Ruby",
+    classCode: "AP10",
+    section: "Grade 10 - Ruby",
+    lastMessage: "Thank you Teacher, see you in class tomorrow!",
+    lastMessageTime: new Date(Date.now() - 180 * 60000).toISOString(),
+    isRead: true,
+    isGroup: false,
+    messages: [
+      {
+        id: "msg-m1",
+        from: "student",
+        senderName: "Maria Santos",
+        text: "Good morning Teacher, may I ask for the coverage of our 1st Quarter Examination?",
+        time: new Date(Date.now() - 200 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+      {
+        id: "msg-m2",
+        from: "teacher",
+        senderName: "You",
+        text: "Hi Maria! It covers Chapters 1 through 4. Review your seatworks and lecture notes.",
+        time: new Date(Date.now() - 190 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+      {
+        id: "msg-m3",
+        from: "student",
+        senderName: "Maria Santos",
+        text: "Thank you Teacher, see you in class tomorrow!",
+        time: new Date(Date.now() - 180 * 60000).toISOString(),
+        status: "sent",
+        isRead: true,
+      },
+    ],
+  },
+];
+
 function TeacherMessages() {
+  const { isDemoMode } = useTourPreview();
   const { unreadConversations, markAsRead } = useUnreadMessages();
   const getUnreadCount = (conv) => unreadConversations[conv.isGroup ? `group_${conv.id}` : `dm_${conv.id}`] || 0;
   const navigate = useNavigate();
@@ -138,7 +258,16 @@ function TeacherMessages() {
   const [pageError, setPageError] = useState("");
 
   const [conversations, setConversations] = useState([]);
+  const activeConversationsList = isDemoMode && conversations.length === 0 ? MOCK_DEMO_CONVERSATIONS : conversations;
   const [selectedConvId, setSelectedConvId] = useState(null);
+
+  useEffect(() => {
+    if (isDemoMode && (!selectedConvId || !activeConversationsList.some(c => c.id === selectedConvId))) {
+      if (activeConversationsList[0]?.id) {
+        setSelectedConvId(activeConversationsList[0].id);
+      }
+    }
+  }, [isDemoMode, activeConversationsList, selectedConvId]);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState([]);
@@ -571,7 +700,7 @@ function TeacherMessages() {
     navigate("/login");
   };
 
-  const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
+  const selectedConv = activeConversationsList.find((c) => c.id === selectedConvId) || activeConversationsList[0] || null;
   const activeMessagesLength = selectedConv?.messages?.length || 0;
 
   useEffect(() => {
@@ -600,7 +729,7 @@ function TeacherMessages() {
     return filtered;
   };
 
-  const filteredConvs = applyFilter(conversations);
+  const filteredConvs = applyFilter(activeConversationsList);
 
   const closeNewMessageModal = () => {
     setShowNewModal(false);
@@ -1000,16 +1129,16 @@ function TeacherMessages() {
     return [r.name, r.email, r.role].some((v) => String(v || "").toLowerCase().includes(term));
   });
 
-  const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
+  const totalUnread = activeConversationsList.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
   const filterCounts = {
-    all: conversations.length,
-    unread: conversations.filter((c) => (getUnreadCount(c) || 0) > 0).length,
-    read: conversations.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet).length,
-    mentions: conversations.filter((c) =>
+    all: activeConversationsList.length,
+    unread: activeConversationsList.filter((c) => (getUnreadCount(c) || 0) > 0).length,
+    read: activeConversationsList.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet).length,
+    mentions: activeConversationsList.filter((c) =>
       (c.messages || []).some((m) => m.from !== "teacher" && m.text?.includes(`@${teacherName}`))
     ).length,
-    videomeet: conversations.filter((c) => c.isVideoMeet === true).length,
+    videomeet: activeConversationsList.filter((c) => c.isVideoMeet === true).length,
   };
 
   if (loading) return <LoadingScreen message="Loading messages..." />;
@@ -1034,19 +1163,20 @@ function TeacherMessages() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
-          <div className="bg-green-600 rounded-2xl p-5 text-white shadow-sm flex-shrink-0">
+          <div data-tour="teacher-messages-header" className="bg-green-600 rounded-2xl p-5 text-white shadow-sm flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <MessageSquare className="w-7 h-7 opacity-80" />
                 <div>
                   <h1 className="text-xl font-bold">Messages</h1>
                   <p className="text-emerald-100 text-sm">
-                    {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+                    {activeConversationsList.length} conversation{activeConversationsList.length !== 1 ? "s" : ""}
                     {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
                 </div>
               </div>
               <button
+                data-tour="teacher-messages-new-btn"
                 onClick={() => { setShowNewModal(true); setRecipientSearch(""); setRecipientResults([]); }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
               >
@@ -1064,7 +1194,7 @@ function TeacherMessages() {
           )}
 
           <div className="flex-1 min-h-0 overflow-hidden bg-white rounded-2xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
+            <div data-tour="teacher-messages-list" className="lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden">
               <div className="p-3 border-b border-gray-100 flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -1161,7 +1291,7 @@ function TeacherMessages() {
               </div>
             </div>
 
-            <div className="lg:col-span-2 flex flex-col min-h-0 h-full overflow-hidden">
+            <div data-tour="teacher-messages-thread" className="lg:col-span-2 flex flex-col min-h-0 h-full overflow-hidden">
               {selectedConv ? (
                 <>
                   <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3 flex-shrink-0">

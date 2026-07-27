@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck, Calendar, Clock, AlertCircle, CheckCircle, ChevronRight, FileText } from 'lucide-react';
 import { supabase } from '@/app/lib/supabaseClient';
 import { useAcademic } from "@/app/context/AcademicContext";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 
 export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
   const { activeSchoolYear, activeQuarter, viewMode } = useAcademic();
+  const { isDemoMode } = useTourPreview();
   const navigate = useNavigate();
   const [assessments, setAssessments] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -253,6 +255,63 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     );
   }
 
+  const MOCK_TASKS = [
+    {
+      id: "demo-t1",
+      title: "Modyul 1: Seatwork 2 - Pagsusuri sa Kontemporaryong Isyu",
+      className: "AP10 - Grade 10 Ruby",
+      course_id: "demo-class-1",
+      assessment_type: "assignment",
+      deadline: new Date().toISOString(),
+      gradedCount: 38,
+      submissionCount: 42,
+      computedStatus: "Needs Grading",
+      statusColor: "bg-purple-50 text-purple-700 border-purple-200",
+    },
+    {
+      id: "demo-t2",
+      title: "Mathematics 7 Week 3 Practice Quiz",
+      className: "MATH7 - Grade 7 Emerald",
+      course_id: "demo-class-2",
+      assessment_type: "quiz",
+      deadline: new Date().toISOString(),
+      gradedCount: 30,
+      submissionCount: 38,
+      computedStatus: "Due Today",
+      statusColor: "bg-orange-50 text-orange-700 border-orange-200",
+    },
+    {
+      id: "demo-t3",
+      title: "Science 8 Laboratory Experiment Report 1",
+      className: "SCI8 - Grade 8 Diamond",
+      course_id: "demo-class-3",
+      assessment_type: "assignment",
+      deadline: new Date(Date.now() + 86400000 * 2).toISOString(),
+      gradedCount: 10,
+      submissionCount: 40,
+      computedStatus: "Upcoming",
+      statusColor: "bg-blue-50 text-blue-700 border-blue-200",
+    },
+    {
+      id: "demo-t4",
+      title: "English 9 Essay: Literary Analysis",
+      className: "ENG9 - Grade 9 Sapphire",
+      course_id: "demo-class-4",
+      assessment_type: "assignment",
+      deadline: new Date().toISOString(),
+      gradedCount: 32,
+      submissionCount: 36,
+      computedStatus: "Needs Grading",
+      statusColor: "bg-purple-50 text-purple-700 border-purple-200",
+    },
+  ];
+
+  const activeMetrics = isDemoMode
+    ? { activeTotal: 4, dueToday: 1, upcoming: 1, needsGrading: 2 }
+    : metrics;
+
+  const activeTaskList = isDemoMode ? MOCK_TASKS : taskList;
+
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col">
       <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -272,19 +331,19 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
         {/* Metrics Row */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
-            <p className="text-2xl font-bold text-gray-900">{metrics.activeTotal}</p>
+            <p className="text-2xl font-bold text-gray-900">{activeMetrics.activeTotal}</p>
             <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mt-1">Total Tasks</p>
           </div>
           <div className="bg-orange-50 rounded-xl p-4 text-center border border-orange-100">
-            <p className="text-2xl font-bold text-orange-700">{metrics.dueToday}</p>
+            <p className="text-2xl font-bold text-orange-700">{activeMetrics.dueToday}</p>
             <p className="text-xs text-orange-600 font-medium uppercase tracking-wider mt-1">Due Today</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-4 text-center border border-blue-100">
-            <p className="text-2xl font-bold text-blue-700">{metrics.upcoming}</p>
+            <p className="text-2xl font-bold text-blue-700">{activeMetrics.upcoming}</p>
             <p className="text-xs text-blue-600 font-medium uppercase tracking-wider mt-1">Upcoming (7d)</p>
           </div>
           <div className="bg-purple-50 rounded-xl p-4 text-center border border-purple-100">
-            <p className="text-2xl font-bold text-purple-700">{metrics.needsGrading}</p>
+            <p className="text-2xl font-bold text-purple-700">{activeMetrics.needsGrading}</p>
             <p className="text-xs text-purple-600 font-medium uppercase tracking-wider mt-1">Needs Grading</p>
           </div>
         </div>
@@ -295,7 +354,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
             Most Relevant Tasks
           </h4>
           
-          {taskList.length === 0 ? (
+          {activeTaskList.length === 0 ? (
             <div className="text-center py-8 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-xl">
               <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <CheckCircle className="w-6 h-6 text-gray-400" />
@@ -304,45 +363,45 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
               <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[320px] overflow-y-auto overflow-x-hidden p-3 pr-2 rounded-xl bg-gray-50/80 border border-gray-100 shadow-inner custom-scrollbar">
-              {taskList.map(task => (
-                <div 
+            <div className="space-y-2.5 max-h-[340px] overflow-y-auto p-2.5 rounded-xl bg-gray-50/80 border border-gray-100 shadow-inner custom-scrollbar">
+              {activeTaskList.map((task) => (
+                <div
                   key={task.id}
                   onClick={() => navigate(`/teacher/class/${task.course_id}`)}
-                  className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 cursor-pointer transition-all gap-3 shadow-sm hover:shadow min-w-0"
+                  className="group flex flex-col p-3 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 hover:border-gray-200 cursor-pointer transition-all gap-2 shadow-2xs hover:shadow-xs min-w-0 overflow-hidden"
                 >
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 border border-blue-100 text-blue-600 group-hover:bg-blue-100 transition-colors">
-                      <FileText className="w-5 h-5" />
+                  {/* Top Row: Icon + Title & Class Name */}
+                  <div className="flex items-center gap-2.5 min-w-0 w-full">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 border border-blue-100 text-blue-600 group-hover:bg-blue-100 transition-colors">
+                      <FileText className="w-4 h-4" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h5 className="font-bold text-gray-900 text-sm leading-tight group-hover:text-blue-600 transition-colors truncate break-all" title={task.title}>
+                      <h5 className="font-bold text-gray-900 text-xs leading-snug group-hover:text-blue-600 transition-colors truncate" title={task.title}>
                         {task.title}
                       </h5>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs text-gray-500">
-                        <span className="font-medium text-gray-700 truncate max-w-[140px]">{task.className}</span>
-                        <span>&bull;</span>
-                        <span className="capitalize shrink-0">{task.assessment_type}</span>
-                        {task.deadline && (
-                          <>
-                            <span>&bull;</span>
-                            <span className="flex items-center gap-1 shrink-0">
-                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                              {new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </span>
-                          </>
-                        )}
-                      </div>
+                      <p className="text-[11px] font-medium text-gray-500 truncate mt-0.5">
+                        {task.className}
+                      </p>
                     </div>
                   </div>
-                  
-                  <div className="flex items-center gap-2 shrink-0 sm:justify-end">
-                    <span className="text-xs font-semibold text-gray-900 bg-gray-100 px-2.5 py-1 rounded-md whitespace-nowrap shrink-0">
-                      {task.gradedCount} / {task.submissionCount} Graded
-                    </span>
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-md border ${task.statusColor} whitespace-nowrap shrink-0`}>
-                      {task.computedStatus}
-                    </span>
+
+                  {/* Bottom Row: Metadata Badges & Status */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-gray-100/80 text-[11px] text-gray-500">
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span className="truncate">{task.deadline ? new Date(task.deadline).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'No due date'}</span>
+                      <span className="text-gray-300">•</span>
+                      <span className="capitalize shrink-0">{task.assessment_type}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                      <span className="text-[10px] font-semibold text-gray-700 bg-gray-100 px-2 py-0.5 rounded-md whitespace-nowrap">
+                        {task.gradedCount}/{task.submissionCount} Graded
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${task.statusColor} whitespace-nowrap`}>
+                        {task.computedStatus}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}

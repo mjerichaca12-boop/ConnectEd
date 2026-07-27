@@ -35,6 +35,7 @@ import { SystemSettings } from "./pages/admin/SystemSettings";
 import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
 import { AdminMessages } from "./pages/admin/AdminMessages";
 import { AIAssistant } from "./pages/teacher/AIAssistant";
+import { TeacherHelpCenter } from "./pages/teacher/TeacherHelpCenter";
 import { AdminNotifications } from "./pages/admin/AdminNotifications";
 import { HelpCenter } from "./pages/admin/HelpCenter";
 import { TourProvider } from "./context/TourContext";
@@ -44,6 +45,10 @@ import { ModuleTourProvider } from "./context/ModuleTourContext";
 import { ModuleTourOverlay } from "./components/tour/ModuleTourOverlay";
 import { ModuleTourFinishModal } from "./components/tour/ModuleTourFinishModal";
 import { ResumeTourModal } from "./components/tour/ResumeTourModal";
+import { TeacherTourProvider } from "./context/TeacherTourContext";
+import { TeacherWelcomeModal } from "./components/tour/TeacherWelcomeModal";
+import { TeacherTourSpotlightOverlay } from "./components/tour/TeacherTourSpotlightOverlay";
+import { TourDemoModeBanner } from "./components/tour/TourDemoModeBanner";
 import { Smartphone, Monitor, ShieldAlert } from "lucide-react";
 
 const isMobileDevice = () => window.innerWidth < 1024;
@@ -219,15 +224,19 @@ export default function App() {
     <ActivityProvider>
       <UnreadMessagesProvider>
       <TourProvider>
+      <TeacherTourProvider>
       <ModuleTourProvider>
       <Router>
         <ScrollToTop />
         <Toaster position="top-right" richColors />
         <WelcomeTourModal />
+        <TeacherWelcomeModal />
         <TourSpotlightOverlay />
+        <TeacherTourSpotlightOverlay />
         <ModuleTourOverlay />
         <ModuleTourFinishModal />
         <ResumeTourModal />
+        <TourDemoModeBanner />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/landing" element={<LandingPage />} />
@@ -263,6 +272,7 @@ export default function App() {
         <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
         <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
         <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
+        <Route path="/teacher/help-center" element={<TeacherRouteGuard><TeacherHelpCenter /></TeacherRouteGuard>} />
 
         {/* Admin Routes */}
         <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
@@ -284,6 +294,7 @@ export default function App() {
       </Routes>
       </Router>
       </ModuleTourProvider>
+      </TeacherTourProvider>
       </TourProvider>
           </UnreadMessagesProvider>
     </ActivityProvider>

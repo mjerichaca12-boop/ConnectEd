@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check } from "lucide-react";
 
-function CustomSelect({ value, onChange, options, placeholder, label, icon, className = "" }) {
+function CustomSelect({ value, onChange, options, placeholder, label, icon, className = "", forceOpen = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const selectedOption = options.find((opt) => String(opt.value) === String(value));
+  const showDropdown = isOpen || forceOpen;
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -37,7 +38,7 @@ function CustomSelect({ value, onChange, options, placeholder, label, icon, clas
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`w-full rounded-xl border px-4 py-3 text-left transition-all duration-200 flex items-center justify-between gap-4 shadow-sm ${
-          isOpen 
+          showDropdown 
             ? "bg-white border-green-500 ring-2 ring-green-500/10 shadow-md" 
             : selectedOption
               ? "bg-green-50/80 border-green-200/80 hover:border-green-300"
@@ -47,7 +48,7 @@ function CustomSelect({ value, onChange, options, placeholder, label, icon, clas
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {icon && (
             <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-green-100 bg-green-50 text-green-600 transition-colors ${
-              isOpen ? "bg-green-100 text-green-700" : ""
+              showDropdown ? "bg-green-100 text-green-700" : ""
             }`}>
               {icon}
             </span>
@@ -60,12 +61,12 @@ function CustomSelect({ value, onChange, options, placeholder, label, icon, clas
         </div>
         <ChevronDown
           className={`w-5 h-5 flex-shrink-0 text-gray-400 transition-all duration-200 ${
-            isOpen ? "rotate-180 text-green-600" : ""
+            showDropdown ? "rotate-180 text-green-600" : ""
           }`}
         />
       </button>
 
-      {isOpen && (
+      {showDropdown && (
         <div className="absolute z-50 w-full mt-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="max-h-60 overflow-y-auto scrollbar-hide">
             {options.map((option, index) => {

@@ -1,10 +1,10 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Compass, X, ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
-import { useTour } from "../../context/TourContext";
+import { Sparkles, Compass, X, ArrowRight, CheckCircle2, BookOpen } from "lucide-react";
+import { useTeacherTour } from "../../context/TeacherTourContext";
 
-export function WelcomeTourModal() {
-  const { isWelcomeOpen, startTour, skipWelcome } = useTour();
+export function TeacherWelcomeModal() {
+  const { isWelcomeOpen, startTour, skipWelcome } = useTeacherTour();
 
   if (!isWelcomeOpen) return null;
 
@@ -18,7 +18,7 @@ export function WelcomeTourModal() {
           <div className="flex-1 bg-red-500" />
         </div>
 
-        {/* Close icon (skips welcome) */}
+        {/* Close icon */}
         <button
           type="button"
           onClick={skipWelcome}
@@ -32,13 +32,13 @@ export function WelcomeTourModal() {
           {/* Header Badge */}
           <div className="flex items-center justify-center mb-6">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">
-              <ShieldCheck className="w-4 h-4 text-green-600" />
-              <span>Official Admin Onboarding</span>
+              <BookOpen className="w-4 h-4 text-green-600" />
+              <span>Official Teacher Portal Onboarding</span>
             </div>
           </div>
 
           {/* Icon Badge */}
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 via-teal-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/20 mb-6 transform hover:scale-105 transition-transform duration-200">
+          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 via-teal-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/20 mb-6 transform hover:scale-105 transition-transform duration-200">
             <Compass className="w-8 h-8 text-white" />
           </div>
 
@@ -48,28 +48,28 @@ export function WelcomeTourModal() {
               Welcome to Connect<span className="text-green-600">ED</span>!
             </h2>
             <p className="text-gray-500 text-xs font-medium mt-1">
-              ConnectED Academic Administrator Portal
+              ConnectED Academic Teacher Portal
             </p>
           </div>
 
           {/* Description */}
           <p className="text-gray-600 text-xs leading-relaxed text-center mb-6 max-w-md mx-auto">
-            Welcome to the ConnectED Academic Portal. This short guided tour will help you understand the main features available to administrators.
+            Welcome to your teaching workspace. Take a short guided tour to learn how to manage classes, record DepEd transmuted grades, message students, and generate AI lesson plans.
           </p>
 
           {/* Highlights */}
           <div className="space-y-2.5 bg-gray-50/80 rounded-2xl p-4 border border-gray-100 mb-8">
             <div className="flex items-center gap-2.5 text-xs text-gray-700 font-medium">
               <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-              <span>Explore every sidebar module step-by-step</span>
+              <span>Explore class rosters, subjects, and gradebook encoding</span>
             </div>
             <div className="flex items-center gap-2.5 text-xs text-gray-700 font-medium">
               <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-              <span>Learn user, subject, and report administration in under 2 minutes</span>
+              <span>Learn direct student messaging and AI lesson generation</span>
             </div>
             <div className="flex items-center gap-2.5 text-xs text-gray-700 font-medium">
               <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-              <span>Restart the tour anytime from the Help Center</span>
+              <span>Restart the tour anytime from your profile page</span>
             </div>
           </div>
 
@@ -80,12 +80,12 @@ export function WelcomeTourModal() {
               onClick={skipWelcome}
               className="w-full sm:w-auto px-6 py-3 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs cursor-pointer"
             >
-              Skip
+              Skip Tour
             </button>
             <button
               type="button"
               onClick={startTour}
-              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-green-600 via-teal-600 to-blue-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-blue-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-green-600 via-teal-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-emerald-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               <Sparkles className="w-4 h-4" />
               <span>Start Tour</span>

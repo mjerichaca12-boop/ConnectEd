@@ -9,6 +9,9 @@ import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { StudentGradebookModal } from "./components/StudentGradebookModal";
 import { useAcademic } from "@/app/context/AcademicContext";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { useModuleTour } from "@/app/context/ModuleTourContext";
+import { useTeacherTour } from "@/app/context/TeacherTourContext";
 import * as LucideIcons from "lucide-react";
 import {
   createDefaultGradeRecord,
@@ -259,15 +262,193 @@ const normalizeSubmission = (row) => ({
 });
 
 /* ΓöÇΓöÇΓöÇ component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+const MOCK_DEMO_STUDENTS = [
+  {
+    id: "demo-stu-1",
+    studentName: "Juan Dela Cruz",
+    studentId: "108234910012",
+    quarter1Grade: 88,
+    quarter2Grade: 91,
+    quarter3Grade: 90,
+    quarter4Grade: 93,
+    overallGrade: 91,
+    quizAverage: 92,
+    activityGrade: 89,
+    assignmentGrade: 90,
+    examGrade: 91,
+    remarks: "Passed (Promoted)",
+  },
+  {
+    id: "demo-stu-2",
+    studentName: "Maria Santos",
+    studentId: "108234910013",
+    quarter1Grade: 94,
+    quarter2Grade: 96,
+    quarter3Grade: 95,
+    quarter4Grade: 97,
+    overallGrade: 96,
+    quizAverage: 96,
+    activityGrade: 95,
+    assignmentGrade: 96,
+    examGrade: 96,
+    remarks: "Passed (With Honors)",
+  },
+  {
+    id: "demo-stu-3",
+    studentName: "John Reyes",
+    studentId: "108234910014",
+    quarter1Grade: 84,
+    quarter2Grade: 86,
+    quarter3Grade: 88,
+    quarter4Grade: 89,
+    overallGrade: 87,
+    quizAverage: 86,
+    activityGrade: 85,
+    assignmentGrade: 88,
+    examGrade: 87,
+    remarks: "Passed",
+  },
+  {
+    id: "demo-stu-4",
+    studentName: "Angelica Gonzales",
+    studentId: "108234910015",
+    quarter1Grade: 92,
+    quarter2Grade: 93,
+    quarter3Grade: 94,
+    quarter4Grade: 95,
+    overallGrade: 94,
+    quizAverage: 94,
+    activityGrade: 93,
+    assignmentGrade: 94,
+    examGrade: 95,
+    remarks: "Passed (With Honors)",
+  },
+  {
+    id: "demo-stu-5",
+    studentName: "Carlos Mendoza",
+    studentId: "108234910016",
+    quarter1Grade: 76,
+    quarter2Grade: 78,
+    quarter3Grade: 80,
+    quarter4Grade: 82,
+    overallGrade: 79,
+    quizAverage: 78,
+    activityGrade: 80,
+    assignmentGrade: 77,
+    examGrade: 81,
+    remarks: "Passed",
+  },
+];
+
+const MOCK_DEMO_ASSESSMENTS = [
+  {
+    id: "demo-asg-1",
+    title: "Written Work 1 - Pag-aaral ng mga Kontinente",
+    displayName: "Written Work 1 - Pag-aaral ng mga Kontinente",
+    type: "assignment",
+    designation: "Assignment",
+    totalPoints: 30,
+    maxScore: 30,
+    dueDate: "2026-08-15",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-quiz-1",
+    title: "Quiz 1 - Kasaysayan at Lipunan",
+    displayName: "Quiz 1 - Kasaysayan at Lipunan",
+    type: "quiz",
+    designation: "Quiz",
+    totalPoints: 20,
+    maxScore: 20,
+    dueDate: "2026-08-20",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-act-1",
+    title: "Performance Task - Environmental Action Plan Poster",
+    displayName: "Performance Task - Environmental Action Plan Poster",
+    type: "activity",
+    designation: "Activity",
+    totalPoints: 50,
+    maxScore: 50,
+    dueDate: "2026-08-28",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-exam-1",
+    title: "1st Periodical Examination - AP10",
+    displayName: "1st Periodical Examination - AP10",
+    type: "exam",
+    designation: "Exam",
+    totalPoints: 100,
+    maxScore: 100,
+    dueDate: "2026-09-10",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+];
+
+const MOCK_DEMO_GRADES_MAP = {
+  "demo-asg-1": {
+    "demo-stu-1": 27,
+    "demo-stu-2": 29,
+    "demo-stu-3": 25,
+    "demo-stu-4": 28,
+    "demo-stu-5": 23,
+  },
+  "demo-quiz-1": {
+    "demo-stu-1": 18,
+    "demo-stu-2": 20,
+    "demo-stu-3": 16,
+    "demo-stu-4": 19,
+    "demo-stu-5": 14,
+  },
+  "demo-act-1": {
+    "demo-stu-1": 45,
+    "demo-stu-2": 48,
+    "demo-stu-3": 42,
+    "demo-stu-4": 47,
+    "demo-stu-5": 38,
+  },
+  "demo-exam-1": {
+    "demo-stu-1": 91,
+    "demo-stu-2": 96,
+    "demo-stu-3": 87,
+    "demo-stu-4": 95,
+    "demo-stu-5": 81,
+  },
+};
+
+const MOCK_DEMO_STATUS_MAP = {
+  "demo-asg-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-quiz-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-act-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-exam-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+};
+
 function GradesManagement() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isDemoMode, mockData } = useTourPreview();
+
+  let moduleTour = null;
+  let teacherTour = null;
+  try { moduleTour = useModuleTour(); } catch {}
+  try { teacherTour = useTeacherTour(); } catch {}
+
+  const activeStepId = moduleTour?.currentStep?.id || teacherTour?.currentStep?.id || "";
+  const isClassSelectStepActive = activeStepId === "grades-class-select" || activeStepId === "teacher-grades-class-select";
+
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
   const [isSwitchingTerm, setIsSwitchingTerm] = useState(false);
   const [teacherId, setTeacherId] = useState("");
   const [classes, setClasses] = useState([]);
+  const activeClassesList = isDemoMode ? mockData.classes : classes;
   const [selectedClass, setSelectedClass] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -416,6 +597,9 @@ function GradesManagement() {
   }, []);
 
   const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId, schoolYear, quarter) => {
+    if (isDemoMode || String(classId).startsWith("demo-")) {
+      return MOCK_DEMO_ASSESSMENTS;
+    }
     if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
 
     const allAssessments = [];
@@ -585,6 +769,11 @@ function GradesManagement() {
   }, []);
 
   const fetchAssessmentGrades = useCallback(async (currentTeacherId, classId, assessments, studentIds) => {
+    if (isDemoMode || String(classId).startsWith("demo-")) {
+      setAssessmentGradesMap(MOCK_DEMO_GRADES_MAP);
+      setAssessmentStatusMap(MOCK_DEMO_STATUS_MAP);
+      return;
+    }
     if (!supabase || !currentTeacherId || !classId || assessments.length === 0 || studentIds.length === 0) {
       setAssessmentGradesMap({});
       setAssessmentStatusMap({});
@@ -764,9 +953,16 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ fetch students + grades ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const fetchStudentsForClass = useCallback(async (currentTeacherId, classId) => {
+    if (isDemoMode || String(classId).startsWith("demo-")) {
+      return {
+        studentIds: MOCK_DEMO_STUDENTS.map((s) => s.id),
+        mapped: MOCK_DEMO_STUDENTS,
+        persistedGradeMap: {},
+      };
+    }
     if (!supabase || !currentTeacherId || !classId) { return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
-    const currentClass = classes.find((item) => item.id === classId) || null;
+    const currentClass = activeClassesList.find((item) => item.id === classId) || null;
     const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
 
     const { data: assignments, error: assignmentError } = await supabase
@@ -913,7 +1109,26 @@ function GradesManagement() {
   }, [assessmentItems, selectedAssessmentId, focusedAssessmentId]);
 
   useEffect(() => {
-    if (!teacherId || !selectedClass) {
+    if ((isDemoMode || activeClassesList.length > 0) && (!selectedClass || !activeClassesList.some(c => c.id === selectedClass))) {
+      if (activeClassesList[0]?.id) {
+        setSelectedClass(activeClassesList[0].id);
+      }
+    }
+  }, [isDemoMode, activeClassesList, selectedClass]);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      if (assessmentItems.length > 0 && !selectedAssessmentId) {
+        setSelectedAssessmentId(assessmentItems[0].id);
+      }
+      if (!selectedStudentId) {
+        setSelectedStudentId("demo-stu-1");
+      }
+    }
+  }, [isDemoMode, assessmentItems, selectedAssessmentId, selectedStudentId]);
+
+  useEffect(() => {
+    if ((!teacherId && !isDemoMode) || !selectedClass) {
       setStudentGrades([]);
       setAssessmentItems([]);
       setAssessmentGradesMap({});
@@ -993,7 +1208,7 @@ function GradesManagement() {
   useEffect(() => {
     if (studentGrades.length === 0 || !selectedClass) return;
 
-    const classItem = classes.find((item) => item.id === selectedClass) || null;
+    const classItem = activeClassesList.find((item) => item.id === selectedClass) || null;
     const subjectCategory = normalizeSubjectCategory(classItem?.subjectCategory || "", classItem?.name || classItem?.code || "");
 
     setStudentGrades((prev) => {
@@ -1640,7 +1855,7 @@ function GradesManagement() {
     if (!selectedClass || studentGrades.length === 0 || !teacherId || !supabase) return;
     try {
       setSaving(true);
-      const currentClass = classes.find((item) => item.id === selectedClass) || null;
+      const currentClass = activeClassesList.find((item) => item.id === selectedClass) || null;
       const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
 
       const gradesPayload = studentGrades.map((student) => ({
@@ -1686,10 +1901,10 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ derived ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const selectedClassName = useMemo(() => {
-    const classItem = classes.find((item) => item.id === selectedClass);
+    const classItem = activeClassesList.find((item) => item.id === selectedClass);
     if (!classItem) return "";
     return `${classItem.code} - ${classItem.name} (${classItem.section})`;
-  }, [classes, selectedClass]);
+  }, [activeClassesList, selectedClass]);
 
   const filteredByView = useMemo(() => {
     let base = studentGrades;
@@ -1783,7 +1998,7 @@ function GradesManagement() {
 
         <div className="p-6 space-y-6">
           {/* Hero */}
-          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
+          <div data-tour="teacher-grades-header" className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
@@ -1804,24 +2019,25 @@ function GradesManagement() {
           {/* Filters */}
           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div data-tour="teacher-grades-class-select">
                 <label className="block text-sm font-bold text-green-700 mb-3 uppercase tracking-widest flex items-center gap-2">
                   <Filter className="w-4 h-4" />
                   Select Subject / Section
                 </label>
-                {classes.length === 0 ? (
+                {activeClassesList.length === 0 ? (
                   <div className="w-full h-12 px-4 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm flex items-center">No classes available</div>
                 ) : (
                   <CustomSelect
-                    value={selectedClass}
+                    value={selectedClass || activeClassesList[0]?.id}
                     onChange={(value) => { setSelectedClass(value); setHasUnsavedChanges(false); setActiveView("all"); }}
                     placeholder="Select a class"
                     className="w-full [&>button]:h-12 [&>button]:py-0"
-                    options={classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))}
+                    options={activeClassesList.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))}
+                    forceOpen={isClassSelectStepActive}
                   />
                 )}
               </div>
-              <div>
+              <div data-tour="teacher-grades-search">
                 <label className="block text-xs font-medium text-green-600 mb-2 uppercase tracking-wider">
                   <Search className="w-3.5 h-3.5 inline mr-1.5" />
                   Search Student
@@ -1840,7 +2056,7 @@ function GradesManagement() {
           {/* Grade Table */}
           {selectedClass && (
             <>
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div data-tour="teacher-grades-table" className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Table header row */}
               <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -1848,7 +2064,7 @@ function GradesManagement() {
                   <p className="text-xs text-gray-600 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap">
+                <div data-tour="teacher-grades-filters" className="flex items-center gap-3 flex-wrap">
                   {/* Quarter tabs */}
                   <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
                     {[
@@ -2133,7 +2349,7 @@ function GradesManagement() {
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-gray-100">
+              <div data-tour="teacher-grades-seatworks-header" className="p-5 border-b border-gray-100">
                 <h3 className="text-base font-semibold text-green-900">Activity-Based Performance Evaluation</h3>
                 <p className="text-xs text-gray-600 mt-0.5">
                   Review student submissions and assign grades across all activities.
@@ -2149,7 +2365,7 @@ function GradesManagement() {
                 <div className="p-4">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     {/* Left: Assessment List */}
-                    <div className="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
+                    <div data-tour="teacher-grades-seatworks-eval" className="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200">
                         <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Seatworks</p>
                       </div>
@@ -2295,7 +2511,7 @@ function GradesManagement() {
 
                       {/* Submission & Grade Section (only when student selected) */}
                       {selectedAssessment && selectedStudentId && (
-                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                        <div data-tour="teacher-grades-submission-detail" className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                           <div className="px-4 py-3 border-b border-gray-100">
                             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Submission & Grade</p>
                           </div>
@@ -2493,7 +2709,7 @@ function GradesManagement() {
           grades={assessmentGradesMap}
           statusMap={assessmentStatusMap}
           feedbackMap={assessmentFeedbackMap}
-            subjectCategory={classes.find((item) => item.id === selectedClass)?.subjectCategory || DEPED_SUBJECT_CATEGORIES[0]}
+            subjectCategory={activeClassesList.find((item) => item.id === selectedClass)?.subjectCategory || DEPED_SUBJECT_CATEGORIES[0]}
             gradingSettingsByCategory={gradingSettingsByCategory}
           studentOverallGrades={studentGrades.find((student) => student.id === selectedStudentForModal.id) || gradesCache?.[selectedClass]?.[selectedStudentForModal.id]}
           onClose={() => setSelectedStudentForModal(null)}

@@ -28,8 +28,52 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
   }, []);
 
   const loadLessons = useCallback(async () => {
-    if (!subjectId || !teacherId || !activeSchoolYear) return;
+    if (!subjectId || !activeSchoolYear) return;
+
+    if (String(subjectId).startsWith("demo-")) {
+      if (mountedRef.current) {
+        setLessons([
+          {
+            id: "demo-l1",
+            title: "Modyul 1: Kontemporaryong Isyu at Hamong Panlipunan",
+            description: "Pagsusuri sa kahalagahan ng pag-aaral ng mga kontemporaryong isyu sa lipunan at pamayanan.",
+            status: "Published",
+            week_number: 1,
+            term: "1st Quarter",
+            created_at: new Date().toISOString(),
+            lesson_materials: [{ id: "m1" }, { id: "m2" }],
+            lesson_activities: [{ id: "a1" }, { id: "a2" }],
+          },
+          {
+            id: "demo-l2",
+            title: "Modyul 2: Mga Suliraning Pangkapaligiran sa Pilipinas",
+            description: "Pagtalakay sa solid waste management, pagkasira ng likas na yaman, at climate change.",
+            status: "Published",
+            week_number: 2,
+            term: "1st Quarter",
+            created_at: new Date().toISOString(),
+            lesson_materials: [{ id: "m3" }],
+            lesson_activities: [{ id: "a3" }],
+          },
+          {
+            id: "demo-l3",
+            title: "Modyul 3: Paghahanda sa Kalamidad at Disaster Risk Management",
+            description: "Mga hakbang sa pagbuo ng Community-Based Disaster Risk Reduction and Management Plan.",
+            status: "Draft",
+            week_number: 3,
+            term: "1st Quarter",
+            created_at: new Date().toISOString(),
+            lesson_materials: [{ id: "m4" }],
+            lesson_activities: [{ id: "a4" }],
+          },
+        ]);
+        setIsLoading(false);
+      }
+      return;
+    }
     
+    if (!teacherId) return;
+
     setIsLoading(true);
     try {
       let query = supabase

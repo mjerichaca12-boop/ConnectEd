@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
-import { ADMIN_TOUR_STEPS } from "../config/adminTourSteps";
+import { TEACHER_TOUR_STEPS } from "../config/teacherTourSteps";
 
-const TourContext = createContext(null);
+const TeacherTourContext = createContext(null);
 
-const TOUR_COMPLETED_KEY = "connected_admin_tour_completed";
-const TOUR_SKIPPED_KEY = "connected_admin_tour_skipped";
+const TOUR_COMPLETED_KEY = "connected_teacher_tour_completed";
+const TOUR_SKIPPED_KEY = "connected_teacher_tour_skipped";
 
-export function TourProvider({ children }) {
-  const [tourSteps] = useState(ADMIN_TOUR_STEPS);
+export function TeacherTourProvider({ children }) {
+  const [tourSteps] = useState(TEACHER_TOUR_STEPS);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTourActive, setIsTourActive] = useState(false);
   const [isPreparingTour, setIsPreparingTour] = useState(false);
@@ -19,14 +19,14 @@ export function TourProvider({ children }) {
   const observerRef = useRef(null);
   const cancelledRef = useRef(false);
 
-  // Automatically check on mount if admin needs first-time login welcome screen
+  // Automatically check on mount if teacher needs first-time login welcome screen
   useEffect(() => {
     const checkWelcomeEligibility = () => {
       const rawUser = localStorage.getItem("currentUser");
       if (!rawUser) return;
       try {
         const user = JSON.parse(rawUser);
-        if (user?.role === "admin" || user?.role === "administrator") {
+        if (user?.role === "teacher") {
           const completed = localStorage.getItem(TOUR_COMPLETED_KEY) === "true";
           const skipped = localStorage.getItem(TOUR_SKIPPED_KEY) === "true";
 
@@ -63,8 +63,9 @@ export function TourProvider({ children }) {
     cancelReadinessObserver();
     cancelledRef.current = false;
 
-    const targetStep = ADMIN_TOUR_STEPS[stepIndex] || ADMIN_TOUR_STEPS[0];
+    const targetStep = TEACHER_TOUR_STEPS[stepIndex] || TEACHER_TOUR_STEPS[0];
     const targetSelector = targetStep?.targetSelector;
+    const fallbackSelector = targetStep?.fallbackTargetSelector;
 
     let attempts = 0;
     let lastRectStr = "";
@@ -82,9 +83,13 @@ export function TourProvider({ children }) {
         return;
       }
 
-      const isPageDataLoading = !!document.querySelector(".animate-bounce, .animate-spin:not(.connected-tour-spinner), [data-loading='true']");
+      const isPageDataLoading = !!document.querySelector(".animate-bounce:not(.connected-tour-spinner), [data-loading='true']");
 
       let el = document.querySelector(targetSelector);
+      if (!el && fallbackSelector) {
+        el = document.querySelector(fallbackSelector);
+      }
+
       if (el && el.isConnected) {
         const rect = el.getBoundingClientRect();
         const hasSize = rect.width > 0 && rect.height > 0;
@@ -108,7 +113,7 @@ export function TourProvider({ children }) {
       }
 
       attempts++;
-      if (attempts < 60 && !cancelledRef.current) {
+      if (attempts < 200 && !cancelledRef.current) {
         requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
       } else if (!cancelledRef.current) {
         setIsPreparingTour(false);
@@ -129,7 +134,7 @@ export function TourProvider({ children }) {
     observer.observe(document.body, { childList: true, subtree: true });
     observerRef.current = observer;
 
-    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 50));
+    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 100));
   }, [cancelReadinessObserver]);
 
   const resetWelcomeState = useCallback(() => {
@@ -154,15 +159,43 @@ export function TourProvider({ children }) {
   const nextStep = useCallback((navigate) => {
     setCurrentStepIndex((prev) => {
       const nextIdx = prev + 1;
-      const currentStepObj = ADMIN_TOUR_STEPS[prev];
+      const currentStepObj = TEACHER_TOUR_STEPS[prev];
+
       if (currentStepObj?.actionToRoute && navigate) {
-        navigate(currentStepObj.actionToRoute);
-      }
-      if (nextIdx < ADMIN_TOUR_STEPS.length) {
-        const nextStepObj = ADMIN_TOUR_STEPS[nextIdx];
-        if (nextStepObj?.actionToRoute && navigate && !currentStepObj?.actionToRoute) {
-          navigate(nextStepObj.actionToRoute);
+        if (currentStepObj.actionToRoute === "auto-first-class") {
+          let classId = "";
+          const btn = document.querySelector('[data-tour="teacher-classes-view-btn"]');
+          if (btn) {
+            classId = btn.getAttribute("data-class-id") || "";
+          }
+          if (!classId) {
+            try {
+              const saved = localStorage.getItem("teacher_classes");
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.length > 0 && parsed[0]?.id) {
+                  classId = String(parsed[0].id);
+                }
+              }
+            } catch {
+              // Ignore parse error
+            }
+          }
+          if (!classId) classId = "1";
+
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate(`/teacher/class/${classId}`);
+        } else if (typeof currentStepObj.actionToRoute === "string" && window.location.pathname !== currentStepObj.actionToRoute) {
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate(currentStepObj.actionToRoute);
         }
+      }
+
+      if (nextIdx < TEACHER_TOUR_STEPS.length) {
         waitForPageAndTargetReady(nextIdx);
         return nextIdx;
       }
@@ -178,10 +211,51 @@ export function TourProvider({ children }) {
   const prevStep = useCallback((navigate) => {
     setCurrentStepIndex((prev) => {
       const prevIdx = Math.max(0, prev - 1);
-      const targetStepObj = ADMIN_TOUR_STEPS[prevIdx];
+      const targetStepObj = TEACHER_TOUR_STEPS[prevIdx];
+
       if (targetStepObj?.actionToRoute && navigate) {
-        navigate(targetStepObj.actionToRoute);
+        if (targetStepObj.actionToRoute === "auto-first-class") {
+          let classId = "";
+          const btn = document.querySelector('[data-tour="teacher-classes-view-btn"]');
+          if (btn) classId = btn.getAttribute("data-class-id") || "";
+          if (!classId) {
+            try {
+              const saved = localStorage.getItem("teacher_classes");
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                if (parsed.length > 0 && parsed[0]?.id) classId = String(parsed[0].id);
+              }
+            } catch {
+              // Ignore
+            }
+          }
+          if (!classId) classId = "1";
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate(`/teacher/class/${classId}`);
+        } else if (typeof targetStepObj.actionToRoute === "string" && window.location.pathname !== targetStepObj.actionToRoute) {
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate(targetStepObj.actionToRoute);
+        }
+      } else if (targetStepObj?.id === "teacher-dashboard-header" || targetStepObj?.id === "teacher-kpis" || targetStepObj?.id === "teacher-tasks" || targetStepObj?.id === "teacher-recent-grades" || targetStepObj?.id === "teacher-announcements" || targetStepObj?.id === "teacher-calendar") {
+        if (navigate && window.location.pathname !== "/teacher/dashboard") {
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate("/teacher/dashboard");
+        }
+      } else if (targetStepObj?.id === "teacher-classes-search" || targetStepObj?.id === "teacher-classes-grid" || targetStepObj?.id === "teacher-classes-view-btn") {
+        if (navigate && window.location.pathname !== "/teacher/classes") {
+          window.scrollTo(0, 0);
+          const mainEl = document.querySelector("main");
+          if (mainEl) mainEl.scrollTo(0, 0);
+          navigate("/teacher/classes");
+        }
       }
+
       waitForPageAndTargetReady(prevIdx);
       return prevIdx;
     });
@@ -214,7 +288,7 @@ export function TourProvider({ children }) {
       setHasCompleted(false);
 
       if (navigate) {
-        navigate("/admin/dashboard");
+        navigate("/teacher/dashboard");
       }
 
       waitForPageAndTargetReady(0);
@@ -245,13 +319,13 @@ export function TourProvider({ children }) {
     restartTour,
   };
 
-  return <TourContext.Provider value={value}>{children}</TourContext.Provider>;
+  return <TeacherTourContext.Provider value={value}>{children}</TeacherTourContext.Provider>;
 }
 
-export function useTour() {
-  const context = useContext(TourContext);
+export function useTeacherTour() {
+  const context = useContext(TeacherTourContext);
   if (!context) {
-    throw new Error("useTour must be used within a TourProvider");
+    throw new Error("useTeacherTour must be used within a TeacherTourProvider");
   }
   return context;
 }

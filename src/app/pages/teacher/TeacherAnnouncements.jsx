@@ -8,6 +8,7 @@ import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { parseStoredFileList } from "@/app/lib/teacherHelpers";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 import {
   Megaphone,
   Plus,
@@ -195,7 +196,54 @@ const sortAnnouncements = (items) =>
     return String(left?.id ?? "").localeCompare(String(right?.id ?? ""));
   });
 
+const MOCK_DEMO_ANNOUNCEMENTS = [
+  {
+    id: "demo-ann-1",
+    title: "📢 1st Quarter Periodical Examination Schedule",
+    content: "Please be guided accordingly on the official schedule for the 1st Periodical Examinations in Araling Panlipunan 10. Review your seatworks, lecture notes, and chapter summaries.",
+    targetAudience: "School-wide",
+    audienceType: "school",
+    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    attachments: [
+      { fileName: "AP10_Exam_Reviewer_Q1.pdf", fileUrl: "#", kind: "document" }
+    ]
+  },
+  {
+    id: "demo-ann-2",
+    title: "📝 Written Work 1: Kontemporaryong Isyu Reflection",
+    content: "Reminder for Grade 10 Ruby students to submit your reflection papers on local economic and environmental issues before 5:00 PM on Friday.",
+    targetAudience: "Grade 10 - Ruby",
+    audienceType: "student",
+    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    attachments: []
+  }
+];
+
+const MOCK_DEMO_ASSIGNMENTS = [
+  {
+    id: "demo-asg-1",
+    title: "Performance Task 1: Environmental Action Plan Poster",
+    description: "Create an infographic poster promoting disaster risk reduction and community preparedness.",
+    subject: "Araling Panlipunan 10",
+    dueDate: new Date(Date.now() + 5 * 86400000).toISOString(),
+    totalPoints: 100,
+    attachments: [{ fileName: "Rubric_Action_Plan.pdf" }]
+  }
+];
+
+const MOCK_DEMO_FILES = [
+  {
+    id: "demo-file-1",
+    fileName: "Araling_Panlipunan_10_Module1.pdf",
+    description: "Official DepEd Learning Module 1 - Mga Isyung Pangkapaligiran at Pang-ekonomiya",
+    subject: "Araling Panlipunan 10",
+    fileSize: "3.2 MB",
+    uploadDate: new Date(Date.now() - 3 * 86400000).toISOString()
+  }
+];
+
 function TeacherAnnouncements() {
+  const { isDemoMode } = useTourPreview();
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
@@ -456,16 +504,17 @@ function TeacherAnnouncements() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-gradient-to-r from-green-600 to-teal-600 rounded-2xl p-8 text-gray-900 shadow-lg">
+          <div data-tour="teacher-announcements-header" className="bg-gradient-to-r from-green-600 to-teal-600 rounded-2xl p-8 text-gray-900 shadow-lg">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold mb-2">Manage Content</h1>
                 <p className="text-green-50">Create and share announcements, assignments, and files</p>
               </div>
               <button
-    onClick={() => setShowCreateModal(true)}
-    className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 rounded-lg hover:bg-green-50 transition-colors font-medium shadow-sm"
-  >
+                data-tour="teacher-announcements-create-btn"
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 rounded-lg hover:bg-green-50 transition-colors font-medium shadow-sm"
+              >
                 <Plus className="w-5 h-5" />
                 {activeTab === "announcements" && "New Announcement"}
                 {activeTab === "assignments" && "New Assignment"}
@@ -478,7 +527,7 @@ function TeacherAnnouncements() {
     /* Tabs */
   }
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="flex border-b border-gray-200">
+            <div data-tour="teacher-announcements-tabs" className="flex border-b border-gray-200">
               {["announcements", "assignments", "files"].map((tab) => <button
     key={tab}
     onClick={() => setActiveTab(tab)}
@@ -490,113 +539,147 @@ function TeacherAnnouncements() {
                     {tab === "files" && <Upload className="w-5 h-5" />}
                     <span className="capitalize">{tab}</span>
                     <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                      {tab === "announcements" ? filteredAnnouncements.length : tab === "assignments" ? assignments.length : files.length}
+                      {tab === "announcements"
+                        ? ((isDemoMode || filteredAnnouncements.length === 0) ? MOCK_DEMO_ANNOUNCEMENTS.length : filteredAnnouncements.length)
+                        : tab === "assignments"
+                          ? ((isDemoMode || assignments.length === 0) ? MOCK_DEMO_ASSIGNMENTS.length : assignments.length)
+                          : ((isDemoMode || files.length === 0) ? MOCK_DEMO_FILES.length : files.length)}
                     </span>
                   </div>
                 </button>)}
             </div>
 
-            <div className="p-6">
-              {
-    /* Announcements Tab */
-  }
-              {activeTab === "announcements" && <div className="space-y-4">
-                  {filteredAnnouncements.length === 0 ? <div className="text-center py-12">
-                      <Megaphone className="w-12 h-12 text-gray-700 mx-auto mb-3" />
-                      <p className="text-gray-500">No announcements yet</p>
-                      <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first announcement</button>
-                    </div> : filteredAnnouncements.map((announcement) => <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                      {console.log("Announcement data:", announcement)}
-                      {announcement.imageUrl || announcement.fileUrl ? <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                          <img src={announcement.imageUrl || announcement.fileUrl} alt={announcement.title || "announcement"} className="h-56 w-full object-cover" />
-                        </div> : null}
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
-                        </div>
+            <div data-tour="teacher-announcements-list" className="p-6">
+              {/* Announcements Tab */}
+              {activeTab === "announcements" && (() => {
+                const activeAnnouncements = (isDemoMode || filteredAnnouncements.length === 0) ? MOCK_DEMO_ANNOUNCEMENTS : filteredAnnouncements;
+                return (
+                  <div className="space-y-4">
+                    {activeAnnouncements.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Megaphone className="w-12 h-12 text-gray-700 mx-auto mb-3" />
+                        <p className="text-gray-500">No announcements yet</p>
+                        <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first announcement</button>
                       </div>
-                      <p className="text-gray-700 mb-4">{announcement.content}</p>
-                      <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
-                        <span>{announcement.targetAudience}</span>
-                        {announcement.subject ? (
-                          <span className="flex items-center gap-1">
-                            <BookOpen className="w-4 h-4" />
-                            {announcement.subject}
-                          </span>
-                        ) : null}
-                        <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
-                      </div>
-
-                      {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
-                        <div className="mt-4 grid gap-3">
-                          {announcement.attachments.map((attachment, index) => (
-                            <AnnouncementAttachmentPreview
-                              key={`${announcement.id}-attachment-${index}`}
-                              attachment={attachment}
-                              index={index}
-                              announcementId={announcement.id}
-                              variant="dark"
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>)}
-                </div>}
-
-              {
-    /* Assignments Tab */
-  }
-              {activeTab === "assignments" && <div className="space-y-4">
-                  {assignments.length === 0 ? <div className="text-center py-12">
-                      <FileText className="w-12 h-12 text-gray-700 mx-auto mb-3" />
-                      <p className="text-gray-500">No assignments yet</p>
-                      <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first assignment</button>
-                    </div> : assignments.map((assignment) => <div key={assignment.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">{assignment.title}</h3>
-                      <p className="text-gray-700 mb-4">{assignment.description}</p>
-                      <div className="flex items-center gap-6 text-sm text-gray-600 mb-3">
-                        <div className="flex items-center gap-2"><BookOpen className="w-4 h-4" /><span>{assignment.subject}</span></div>
-                        <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span></div>
-                        <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{assignment.totalPoints} points</span></div>
-                      </div>
-                      {assignment.attachments && assignment.attachments.length > 0 && <div className="flex items-center gap-2 text-sm">
-                          <Paperclip className="w-4 h-4 text-green-600" />
-                          <span className="text-green-600">{assignment.attachments.length} attachment(s)</span>
-                        </div>}
-                    </div>)}
-                </div>}
-
-              {
-    /* Files Tab */
-  }
-              {activeTab === "files" && <div className="space-y-4">
-                  {files.length === 0 ? <div className="text-center py-12">
-                      <Upload className="w-12 h-12 text-gray-700 mx-auto mb-3" />
-                      <p className="text-gray-500">No files uploaded yet</p>
-                      <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Upload your first file</button>
-                    </div> : files.map((file) => <div key={file.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-start gap-4 flex-1">
-                          <div className="p-3 bg-green-50 rounded-lg">
-                            <FileText className="w-5 h-5 text-green-600" />
+                    ) : (
+                      activeAnnouncements.map((announcement) => (
+                        <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                          {announcement.imageUrl || announcement.fileUrl ? (
+                            <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                              <img src={announcement.imageUrl || announcement.fileUrl} alt={announcement.title || "announcement"} className="h-56 w-full object-cover" />
+                            </div>
+                          ) : null}
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-gray-900 mb-1">{file.fileName}</h3>
-                            <p className="text-gray-600 text-sm mb-3">{file.description}</p>
-                            <div className="flex items-center gap-4 text-sm text-gray-600">
-                              <span>{file.subject}</span>
-                              <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {file.fileSize}</span>
-                              <span>ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ {new Date(file.uploadDate).toLocaleDateString()}</span>
+                          <p className="text-gray-700 mb-4">{announcement.content}</p>
+                          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                            <span>{announcement.targetAudience}</span>
+                            {announcement.subject ? (
+                              <span className="flex items-center gap-1">
+                                <BookOpen className="w-4 h-4" />
+                                {announcement.subject}
+                              </span>
+                            ) : null}
+                            <span>{new Date(announcement.createdAt).toLocaleDateString()}</span>
+                          </div>
+
+                          {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
+                            <div className="mt-4 grid gap-3">
+                              {announcement.attachments.map((attachment, index) => (
+                                <AnnouncementAttachmentPreview
+                                  key={`${announcement.id}-attachment-${index}`}
+                                  attachment={attachment}
+                                  index={index}
+                                  announcementId={announcement.id}
+                                  variant="dark"
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Assignments Tab */}
+              {activeTab === "assignments" && (() => {
+                const activeAssignments = (isDemoMode || assignments.length === 0) ? MOCK_DEMO_ASSIGNMENTS : assignments;
+                return (
+                  <div className="space-y-4">
+                    {activeAssignments.length === 0 ? (
+                      <div className="text-center py-12">
+                        <FileText className="w-12 h-12 text-gray-700 mx-auto mb-3" />
+                        <p className="text-gray-500">No assignments yet</p>
+                        <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Create your first assignment</button>
+                      </div>
+                    ) : (
+                      activeAssignments.map((assignment) => (
+                        <div key={assignment.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                          <h3 className="text-lg font-semibold text-gray-900 mb-1">{assignment.title}</h3>
+                          <p className="text-gray-700 mb-4">{assignment.description}</p>
+                          <div className="flex items-center gap-6 text-sm text-gray-600 mb-3">
+                            <div className="flex items-center gap-2"><BookOpen className="w-4 h-4" /><span>{assignment.subject}</span></div>
+                            <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span></div>
+                            <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{assignment.totalPoints} points</span></div>
+                          </div>
+                          {assignment.attachments && assignment.attachments.length > 0 && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <Paperclip className="w-4 h-4 text-green-600" />
+                              <span className="text-green-600">{assignment.attachments.length} attachment(s)</span>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Files Tab */}
+              {activeTab === "files" && (() => {
+                const activeFiles = (isDemoMode || files.length === 0) ? MOCK_DEMO_FILES : files;
+                return (
+                  <div className="space-y-4">
+                    {activeFiles.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Upload className="w-12 h-12 text-gray-700 mx-auto mb-3" />
+                        <p className="text-gray-500">No files uploaded yet</p>
+                        <button onClick={() => setShowCreateModal(true)} className="mt-4 text-green-600 hover:text-green-700 font-medium">Upload your first file</button>
+                      </div>
+                    ) : (
+                      activeFiles.map((file) => (
+                        <div key={file.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-4 flex-1">
+                              <div className="p-3 bg-green-50 rounded-lg">
+                                <FileText className="w-5 h-5 text-green-600" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-1">{file.fileName}</h3>
+                                <p className="text-gray-600 text-sm mb-3">{file.description}</p>
+                                <div className="flex items-center gap-4 text-sm text-gray-600">
+                                  <span>{file.subject}</span>
+                                  <span>• {file.fileSize}</span>
+                                  <span>• {new Date(file.uploadDate).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"><Download className="w-5 h-5" /></button>
+                              <button onClick={() => handleDeleteFile(file.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"><Download className="w-5 h-5" /></button>
-                          <button onClick={() => handleDeleteFile(file.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>
-                        </div>
-                      </div>
-                    </div>)}
-                </div>}
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

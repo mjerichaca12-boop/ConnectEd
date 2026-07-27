@@ -15,9 +15,11 @@ import {
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { isColumnMissingError, resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 
 function Classes() {
   const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -236,10 +238,12 @@ function Classes() {
     navigate("/login");
   };
 
-  const filteredClasses = classes.filter((classItem) =>
-    classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    classItem.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    classItem.section.toLowerCase().includes(searchQuery.toLowerCase())
+  const activeClassesList = isDemoMode ? mockData.classes : classes;
+
+  const filteredClasses = activeClassesList.filter((classItem) =>
+    String(classItem.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(classItem.code || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(classItem.section || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleSubmitCreateClass = () => {
@@ -287,7 +291,7 @@ function Classes() {
 
         <div className="p-6 space-y-6">
           {/* Header */}
-          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+          <div data-tour="teacher-classes-header" className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
             <div
               className="absolute inset-0 opacity-10"
               style={{
@@ -306,7 +310,7 @@ function Classes() {
           </div>
 
           {/* Search */}
-          <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div data-tour="teacher-classes-search" className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
@@ -334,7 +338,7 @@ function Classes() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div data-tour="teacher-classes-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredClasses.map((classItem) => (
                 <div
                   key={classItem.id}
@@ -367,7 +371,16 @@ function Classes() {
                       <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
                       {classItem.studentCount} students enrolled
                     </div>
-                    <button className="w-full mt-2 px-4 py-3 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-500/20 transition-colors font-medium flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      data-tour="teacher-classes-view-btn"
+                      data-class-id={classItem.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/teacher/class/${classItem.id}`);
+                      }}
+                      className="w-full mt-2 px-4 py-3 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-500/20 transition-colors font-medium flex items-center justify-center gap-2 cursor-pointer"
+                    >
                       View Class
                       <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                     </button>

@@ -3,29 +3,29 @@ import { MODULE_TOURS } from "../config/tours";
 
 const ModuleTourContext = createContext(null);
 
-const PROGRESS_STORAGE_KEY = "connected_module_tours_progress";
+const PROGRESS_STORAGE_KEY = "connected_module_tour_progress";
 
 export function ModuleTourProvider({ children }) {
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTourActive, setIsTourActive] = useState(false);
   const [isPreparingTour, setIsPreparingTour] = useState(false);
-  const [isFinishOpen, setIsFinishOpen] = useState(false);
   const [isResumeOpen, setIsResumeOpen] = useState(false);
   const [pendingModuleId, setPendingModuleId] = useState(null);
+  const [isFinishOpen, setIsFinishOpen] = useState(false);
 
-  const observerRef = useRef(null);
-  const cancelledRef = useRef(false);
-
-  // Load progress data from localStorage
+  // Store learning progress for all modules
   const [progressData, setProgressData] = useState(() => {
     try {
-      const raw = localStorage.getItem(PROGRESS_STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
+      const saved = localStorage.getItem(PROGRESS_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
     }
   });
+
+  const observerRef = useRef(null);
+  const cancelledRef = useRef(false);
 
   // Save progress data to localStorage helper
   const updateModuleProgress = useCallback((moduleId, updates) => {
@@ -67,6 +67,12 @@ export function ModuleTourProvider({ children }) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
+    document.querySelectorAll(".tour-active-target, .connected-tour-target-active").forEach((el) => {
+      el.classList.remove("tour-active-target", "connected-tour-target-active");
+    });
+    document.querySelectorAll(".connected-tour-sidebar-elevated").forEach((el) => {
+      el.classList.remove("connected-tour-sidebar-elevated");
+    });
   }, []);
 
   // Robust Page & DOM Target Readiness Observer Engine
@@ -86,10 +92,8 @@ export function ModuleTourProvider({ children }) {
     let stableCount = 0;
 
     const checkStabilityAndActivate = () => {
-      // If user skipped or exited, abort observer completely
       if (cancelledRef.current) return;
 
-      // 1. If step has no target, activate immediately
       if (!targetSelector) {
         if (cancelledRef.current) return;
         setIsPreparingTour(false);
@@ -99,8 +103,7 @@ export function ModuleTourProvider({ children }) {
         return;
       }
 
-      // 2. Check if page data is still loading (active spinners / bouncing loader dots)
-      const isPageDataLoading = !!document.querySelector(".animate-bounce, .animate-spin:not(.connected-tour-spinner), [data-loading='true']");
+      const isPageDataLoading = !!document.querySelector(".animate-bounce:not(.connected-tour-spinner), [data-loading='true']");
 
       let el = document.querySelector(targetSelector);
       if (!el && fallbackSelector) {
@@ -130,10 +133,9 @@ export function ModuleTourProvider({ children }) {
       }
 
       attempts++;
-      if (attempts < 60 && !cancelledRef.current) {
+      if (attempts < 200 && !cancelledRef.current) {
         requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
       } else if (!cancelledRef.current) {
-        // Safe timeout fallback
         setIsPreparingTour(false);
         setCurrentStepIndex(stepIndex);
         setIsTourActive(true);
@@ -144,7 +146,6 @@ export function ModuleTourProvider({ children }) {
     setIsPreparingTour(true);
     setIsTourActive(false);
 
-    // Use MutationObserver for instant DOM addition detection
     const observer = new MutationObserver(() => {
       if (!cancelledRef.current) {
         checkStabilityAndActivate();
@@ -153,20 +154,41 @@ export function ModuleTourProvider({ children }) {
     observer.observe(document.body, { childList: true, subtree: true });
     observerRef.current = observer;
 
-    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 50));
+    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 100));
   }, [cancelReadinessObserver]);
 
-  // Start tour from Step 1
+  // Handle clicking a module card in HelpCenter
+  const handleModuleCardClick = useCallback(
+    (moduleId, navigate) => {
+      const config = MODULE_TOURS[moduleId];
+      if (!config) return;
+
+      const progress = getModuleProgress(moduleId);
+
+      if (progress.status === "in_progress") {
+        setPendingModuleId(moduleId);
+        setIsResumeOpen(true);
+      } else {
+        restartModuleTour(moduleId, navigate);
+      }
+    },
+    [getModuleProgress]
+  );
+
+  // Start tour from step 0
   const startModuleTour = useCallback(
     (moduleId, navigate) => {
       const config = MODULE_TOURS[moduleId];
       if (!config) return;
 
-      setIsFinishOpen(false);
-      setIsResumeOpen(false);
       setActiveModuleId(moduleId);
+      setIsResumeOpen(false);
+      setIsFinishOpen(false);
 
-      updateModuleProgress(moduleId, { status: "in_progress", lastStepIndex: 0 });
+      updateModuleProgress(moduleId, {
+        status: "in_progress",
+        lastStepIndex: 0,
+      });
 
       if (navigate && window.location.pathname !== config.route) {
         navigate(config.route);
@@ -177,24 +199,29 @@ export function ModuleTourProvider({ children }) {
     [updateModuleProgress, waitForPageAndTargetReady]
   );
 
-  // Handle clicking card in Help Center
-  const handleModuleCardClick = useCallback(
+  // Restart tour from step 0
+  const restartModuleTour = useCallback(
     (moduleId, navigate) => {
-      const progress = getModuleProgress(moduleId);
       const config = MODULE_TOURS[moduleId];
       if (!config) return;
 
-      if (progress.status === "in_progress" && progress.lastStepIndex > 0) {
-        setPendingModuleId(moduleId);
-        if (navigate && window.location.pathname !== config.route) {
-          navigate(config.route);
-        }
-        setIsResumeOpen(true);
-      } else {
-        startModuleTour(moduleId, navigate);
+      cancelReadinessObserver();
+      setActiveModuleId(moduleId);
+      setIsResumeOpen(false);
+      setIsFinishOpen(false);
+
+      updateModuleProgress(moduleId, {
+        status: "in_progress",
+        lastStepIndex: 0,
+      });
+
+      if (navigate && window.location.pathname !== config.route) {
+        navigate(config.route);
       }
+
+      waitForPageAndTargetReady(0, moduleId);
     },
-    [getModuleProgress, startModuleTour]
+    [updateModuleProgress, waitForPageAndTargetReady, cancelReadinessObserver]
   );
 
   // Resume tour at saved step
@@ -220,13 +247,39 @@ export function ModuleTourProvider({ children }) {
   );
 
   // Next Step handler
-  const nextStep = useCallback(() => {
+  const nextStep = useCallback((navigate) => {
     if (!activeModuleId) return;
     const config = MODULE_TOURS[activeModuleId];
     if (!config) return;
 
     setCurrentStepIndex((prev) => {
       const nextIdx = prev + 1;
+      const currentStepObj = config.steps[prev];
+
+      if (currentStepObj?.actionToRoute === "auto-first-class" && navigate) {
+        let classId = "";
+        const btn = document.querySelector('[data-tour="teacher-classes-view-btn"]');
+        if (btn) {
+          classId = btn.getAttribute("data-class-id") || "";
+        }
+        if (!classId) {
+          try {
+            const saved = localStorage.getItem("teacher_classes");
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (parsed.length > 0 && parsed[0]?.id) {
+                classId = String(parsed[0].id);
+              }
+            }
+          } catch {
+            // Ignore parse error
+          }
+        }
+        if (!classId) classId = "1";
+
+        navigate(`/teacher/class/${classId}`);
+      }
+
       if (nextIdx < config.steps.length) {
         updateModuleProgress(activeModuleId, {
           status: "in_progress",
@@ -250,77 +303,86 @@ export function ModuleTourProvider({ children }) {
   }, [activeModuleId, updateModuleProgress, waitForPageAndTargetReady, cancelReadinessObserver]);
 
   // Previous Step handler
-  const prevStep = useCallback(() => {
+  const prevStep = useCallback((navigate) => {
     if (!activeModuleId) return;
+    const config = MODULE_TOURS[activeModuleId];
+    if (!config) return;
+
     setCurrentStepIndex((prev) => {
       const prevIdx = Math.max(0, prev - 1);
+      const targetStepObj = config.steps[prevIdx];
+
+      if (targetStepObj?.id === "teacher-classes-view-btn" || targetStepObj?.id === "classes-view-btn" || targetStepObj?.targetSelector?.includes("teacher-classes")) {
+        if (navigate && window.location.pathname.includes("/teacher/class/")) {
+          navigate("/teacher/classes");
+        }
+      }
+
       waitForPageAndTargetReady(prevIdx, activeModuleId);
       return prevIdx;
     });
   }, [activeModuleId, waitForPageAndTargetReady]);
 
-  // Skip tour - 100% Guaranteed Immediate Cancellation
-  const skipTour = useCallback(() => {
+  // Exit / Skip tour handler
+  const skipModuleTour = useCallback(() => {
     cancelReadinessObserver();
     if (activeModuleId) {
       updateModuleProgress(activeModuleId, {
-        status: "in_progress",
-        lastStepIndex: currentStepIndex,
+        status: "not_started",
+        lastStepIndex: 0,
       });
     }
     setIsTourActive(false);
     setIsPreparingTour(false);
-  }, [activeModuleId, currentStepIndex, updateModuleProgress, cancelReadinessObserver]);
+    setActiveModuleId(null);
+    setCurrentStepIndex(0);
+  }, [cancelReadinessObserver, activeModuleId, updateModuleProgress]);
 
-  // Restart tour
-  const restartModuleTour = useCallback(
-    (moduleId, navigate) => {
-      const targetId = moduleId || pendingModuleId || activeModuleId;
-      if (!targetId) return;
+  const closeResumeModal = useCallback(() => {
+    setIsResumeOpen(false);
+    setPendingModuleId(null);
+  }, []);
 
-      cancelReadinessObserver();
-      setIsResumeOpen(false);
-      setIsFinishOpen(false);
-      setIsTourActive(false);
-      setCurrentStepIndex(0);
-
-      startModuleTour(targetId, navigate);
-    },
-    [pendingModuleId, activeModuleId, startModuleTour, cancelReadinessObserver]
-  );
-
-  // Close finish dialog
   const closeFinishModal = useCallback(() => {
-    cancelReadinessObserver();
     setIsFinishOpen(false);
-    setIsTourActive(false);
-    setIsPreparingTour(false);
-  }, [cancelReadinessObserver]);
+  }, []);
 
   const activeConfig = activeModuleId ? MODULE_TOURS[activeModuleId] : null;
   const currentStep = activeConfig ? activeConfig.steps[currentStepIndex] || null : null;
   const isFinalStep = activeConfig ? currentStepIndex === activeConfig.steps.length - 1 : false;
 
+  const resetModuleProgress = useCallback((moduleId) => {
+    updateModuleProgress(moduleId, {
+      status: "not_started",
+      lastStepIndex: 0,
+    });
+  }, [updateModuleProgress]);
+
   const value = {
     activeModuleId,
-    pendingModuleId,
     activeConfig,
     currentStepIndex,
     currentStep,
     totalSteps: activeConfig ? activeConfig.steps.length : 0,
     isTourActive,
     isPreparingTour,
-    isFinishOpen,
+    isWelcomeOpen: isResumeOpen, // backward compat alias
     isResumeOpen,
+    isFinishOpen,
+    pendingModuleId,
     isFinalStep,
+    progressData,
     getModuleProgress,
+    handleModuleCardClick,
     startModuleTour,
     restartModuleTour,
-    handleModuleCardClick,
     resumeTour,
     nextStep,
     prevStep,
-    skipTour,
+    skipModuleTour,
+    skipTour: skipModuleTour,
+    resetModuleProgress,
+    closeResumeModal,
     closeFinishModal,
   };
 

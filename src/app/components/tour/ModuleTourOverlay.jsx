@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -16,6 +17,7 @@ import {
 import { useModuleTour } from "../../context/ModuleTourContext";
 
 export function ModuleTourOverlay() {
+  const navigate = useNavigate();
   const {
     isTourActive,
     isPreparingTour,
@@ -26,7 +28,8 @@ export function ModuleTourOverlay() {
     isFinalStep,
     nextStep,
     prevStep,
-    skipTour,
+    skipModuleTour,
+    skipTour = skipModuleTour,
   } = useModuleTour();
 
   const [targetRect, setTargetRect] = useState(null);
@@ -69,12 +72,16 @@ export function ModuleTourOverlay() {
       // Elevate active target element to z-index: 950
       el.classList.add("tour-active-target", "connected-tour-target-active");
 
+      const compStyle = window.getComputedStyle(el);
+      const computedRadius = compStyle.borderRadius || "16px";
+
       const rect = el.getBoundingClientRect();
       setTargetRect({
         top: rect.top,
         left: rect.left,
         width: rect.width,
         height: rect.height,
+        borderRadius: computedRadius,
       });
 
       // Scroll target into view if outside viewport, if table, or if insufficient popover clearance
@@ -102,20 +109,23 @@ export function ModuleTourOverlay() {
         }
 
         if (needsScroll) {
+          const scrollBlock = prefPlacement.startsWith("top") ? "end" : "start";
           el.scrollIntoView({
             behavior: "smooth",
-            block: "center",
+            block: scrollBlock,
             inline: "nearest",
           });
 
           let scrollFrames = 0;
           const pollScrollRect = () => {
             const updatedRect = el.getBoundingClientRect();
+            const latestCompStyle = window.getComputedStyle(el);
             setTargetRect({
               top: updatedRect.top,
               left: updatedRect.left,
               width: updatedRect.width,
               height: updatedRect.height,
+              borderRadius: latestCompStyle.borderRadius || "16px",
             });
             scrollFrames++;
             if (scrollFrames < 15) {
@@ -129,6 +139,26 @@ export function ModuleTourOverlay() {
       setTargetRect(null);
     }
   }, [isTourActive, currentStep, clearActiveHighlights]);
+
+  // Auto-switch Class Detail tabs on step change
+  useEffect(() => {
+    if (!isTourActive || !currentStep) return;
+
+    const stepId = currentStep.id || "";
+    if (stepId === "class-detail-students" || stepId === "class-detail-students-list") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "students" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    } else if (stepId === "class-detail-lessons") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "lessons" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    } else if (stepId === "class-detail-announcements") {
+      window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "announcements" } }));
+      setTimeout(() => updateTargetRect(), 60);
+      setTimeout(() => updateTargetRect(), 180);
+    }
+  }, [isTourActive, currentStep?.id]);
 
   // Handle step changes, window resize, scroll, and DOM readiness retries
   useEffect(() => {
@@ -183,6 +213,27 @@ export function ModuleTourOverlay() {
     }
   }, [isTourActive, clearActiveHighlights]);
 
+  // Handle direct click on interactive view class button on page
+  useEffect(() => {
+    if (!isTourActive || !currentStep) return;
+
+    if (currentStep.actionToRoute === "auto-first-class" || currentStep.id === "teacher-classes-view-btn" || currentStep.id === "classes-view-btn") {
+      const handleDirectClassClick = (e) => {
+        const targetBtn = e.target.closest('[data-tour="teacher-classes-view-btn"]');
+        if (targetBtn) {
+          const classId = targetBtn.getAttribute("data-class-id") || "1";
+          e.preventDefault();
+          e.stopPropagation();
+          navigate(`/teacher/class/${classId}`);
+          nextStep(navigate);
+        }
+      };
+
+      document.addEventListener("click", handleDirectClassClick, true);
+      return () => document.removeEventListener("click", handleDirectClassClick, true);
+    }
+  }, [isTourActive, currentStep, navigate, nextStep]);
+
   // Keyboard navigation & accessibility focus trap
   useEffect(() => {
     if (!isTourActive) return;
@@ -193,16 +244,16 @@ export function ModuleTourOverlay() {
         skipTour();
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        nextStep();
+        nextStep(navigate);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        prevStep();
+        prevStep(navigate);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isTourActive, nextStep, prevStep, skipTour]);
+  }, [isTourActive, nextStep, prevStep, skipTour, navigate]);
 
   if (!isTourActive || !currentStep) return null;
 
@@ -327,10 +378,30 @@ export function ModuleTourOverlay() {
         top: Math.max(16, tTop - cardHeight),
         left: centeredLeftForVertical,
       },
+      "top-left": {
+        dir: "top",
+        top: Math.max(16, tTop - cardHeight),
+        left: Math.max(16, targetRect.left + 32),
+      },
       bottom: {
         dir: "bottom",
         top: tBottom,
         left: centeredLeftForVertical,
+      },
+      "bottom-left": {
+        dir: "bottom",
+        top: tBottom,
+        left: Math.max(16, targetRect.left + 32),
+      },
+      "bottom-right": {
+        dir: "bottom",
+        top: tBottom,
+        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
+      },
+      "top-right": {
+        dir: "top",
+        top: Math.max(16, tTop - cardHeight),
+        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
       },
       right: {
         dir: "right",
@@ -347,16 +418,16 @@ export function ModuleTourOverlay() {
     // Direction fallback sequence
     const order = isWideTableTarget ? ["top", "bottom"] : [preferred];
     if (!isWideTableTarget) {
-      if (preferred === "bottom") order.push("top", "right", "left");
-      else if (preferred === "top") order.push("bottom", "right", "left");
-      else if (preferred === "right") order.push("bottom", "top", "left");
-      else if (preferred === "left") order.push("bottom", "top", "right");
+      if (preferred.startsWith("bottom")) order.push("bottom", "bottom-right", "bottom-left", "top", "right", "left");
+      else if (preferred.startsWith("top")) order.push("top", "top-right", "top-left", "bottom", "right", "left");
+      else if (preferred === "right") order.push("right", "bottom", "top", "left");
+      else if (preferred === "left") order.push("left", "bottom", "top", "right");
     }
 
     let chosenPos = null;
 
     for (const dir of order) {
-      if (!dir) continue;
+      if (!dir || !candidates[dir]) continue;
       const pos = candidates[dir];
       const fitsViewport =
         pos.top >= 10 &&
@@ -426,36 +497,23 @@ export function ModuleTourOverlay() {
     }
 
     // Determine exact arrow pointing direction based on actual target vs card center position
-    let actualArrowDir = chosenPos.dir;
-    const cardTop = chosenPos.top;
-    const cardLeft = chosenPos.left;
-    const cardCenterX = cardLeft + cardWidth / 2;
-    const cardCenterY = cardTop + cardHeight / 2;
-
-    if (Math.abs(targetCenterY - cardCenterY) > Math.abs(targetCenterX - cardCenterX)) {
-      // Target is vertically offset relative to card center
-      if (targetCenterY < cardTop + 20) {
-        actualArrowDir = "bottom"; // Target is above card -> Arrow on TOP edge of card pointing UP
-      } else if (targetCenterY > cardTop + cardHeight - 20) {
-        actualArrowDir = "top"; // Target is below card -> Arrow on BOTTOM edge of card pointing DOWN
-      }
-    } else {
-      // Target is horizontally offset relative to card center
-      if (targetCenterX < cardLeft + 20) {
-        actualArrowDir = "right"; // Target is to left of card -> Arrow on LEFT edge of card pointing LEFT
-      } else if (targetCenterX > cardLeft + cardWidth - 20) {
-        actualArrowDir = "left"; // Target is to right of card -> Arrow on RIGHT edge of card pointing RIGHT
-      }
-    }
+    const actualArrowDir = chosenPos.dir;
 
     // Compute dynamic pointer arrow position along card edge pointing 100% directly at target center
+    const finalTop = Math.max(16, Math.min(chosenPos.top, vHeight - cardHeight - 16));
+    const finalLeft = Math.max(16, Math.min(chosenPos.left, vWidth - cardWidth - 16));
+
     let calculatedArrowPx = 50;
     if (actualArrowDir === "left" || actualArrowDir === "right") {
-      const relY = targetCenterY - chosenPos.top;
+      const relY = targetCenterY - finalTop;
       calculatedArrowPx = Math.max(28, Math.min(relY, cardHeight - 28));
     } else {
-      const relX = targetCenterX - chosenPos.left;
-      calculatedArrowPx = Math.max(28, Math.min(relX, cardWidth - 28));
+      if (preferred === "bottom-left" || preferred === "top-left") {
+        calculatedArrowPx = 48;
+      } else {
+        const relX = targetCenterX - finalLeft;
+        calculatedArrowPx = Math.max(28, Math.min(relX, cardWidth - 28));
+      }
     }
 
     if (activeDirection !== actualArrowDir) {
@@ -466,44 +524,44 @@ export function ModuleTourOverlay() {
     }
 
     return {
-      top: `${Math.max(10, chosenPos.top)}px`,
-      left: `${Math.max(10, chosenPos.left)}px`,
+      top: `${finalTop}px`,
+      left: `${finalLeft}px`,
       position: "fixed",
     };
   };
 
   const progressPercent = Math.round(((currentStepIndex + 1) / totalSteps) * 100);
 
-  // Render dynamic callout arrow at z-index: 995 pointing 100% directly at target content center
+  // Render dynamic callout arrow at z-index: 1001 pointing 100% directly at target content center
   const renderPointerArrow = () => {
-    if (!currentStep.targetSelector || !targetRect) return null;
+    if (!currentStep?.targetSelector || !targetRect) return null;
 
     if (activeDirection === "right") {
       return (
         <div
           style={{ top: `${arrowOffsetPx}px` }}
-          className="absolute -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-l border-b border-gray-200/80 rotate-45 z-[995] shadow-2xs transition-all duration-150"
+          className="absolute -left-2 -translate-y-1/2 w-4 h-4 bg-white border-l border-b border-gray-200/90 rotate-45 z-[1001] shadow-xs pointer-events-none transition-all duration-200"
         />
       );
     } else if (activeDirection === "left") {
       return (
         <div
           style={{ top: `${arrowOffsetPx}px` }}
-          className="absolute -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-r border-t border-gray-200/80 rotate-45 z-[995] shadow-2xs transition-all duration-150"
+          className="absolute -right-2 -translate-y-1/2 w-4 h-4 bg-white border-r border-t border-gray-200/90 rotate-45 z-[1001] shadow-xs pointer-events-none transition-all duration-200"
         />
       );
     } else if (activeDirection === "bottom") {
       return (
         <div
           style={{ left: `${arrowOffsetPx}px` }}
-          className="absolute -top-1.5 -translate-x-1/2 w-3 h-3 bg-white border-t border-l border-gray-200/80 rotate-45 z-[995] shadow-2xs transition-all duration-150"
+          className="absolute -top-2 -translate-x-1/2 w-4 h-4 bg-white border-t border-l border-gray-200/90 rotate-45 z-[1001] shadow-xs pointer-events-none transition-all duration-200"
         />
       );
     } else if (activeDirection === "top") {
       return (
         <div
           style={{ left: `${arrowOffsetPx}px` }}
-          className="absolute -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white border-b border-r border-gray-200/80 rotate-45 z-[995] shadow-2xs transition-all duration-150"
+          className="absolute -bottom-2 -translate-x-1/2 w-4 h-4 bg-white border-b border-r border-gray-200/90 rotate-45 z-[1001] shadow-xs pointer-events-none transition-all duration-200"
         />
       );
     }
@@ -538,7 +596,7 @@ export function ModuleTourOverlay() {
             left: `${targetRect.left - 6}px`,
             width: `${targetRect.width + 12}px`,
             height: `${targetRect.height + 12}px`,
-            borderRadius: "12px",
+            borderRadius: `${(parseFloat(targetRect.borderRadius) || 16) + 6}px`,
             boxShadow:
               "0 0 0 9999px rgba(0, 0, 0, 0.65), 0 0 0 3px #22c55e, 0 0 25px rgba(34, 197, 94, 0.5)",
           }}
@@ -551,12 +609,13 @@ export function ModuleTourOverlay() {
       <div
         ref={cardRef}
         style={getCardStyle()}
-        className="z-[1000] w-full max-w-sm bg-white backdrop-blur-md rounded-3xl shadow-2xl border border-gray-100/80 transition-all duration-300 cubic-bezier(0.4, 0, 0.2, 1) animate-in zoom-in-95 relative"
+        className="z-[1000] w-full max-w-sm transition-all duration-300 ease-out relative"
       >
-        {/* Callout Pointer Arrow (z-index: 995) */}
+        {/* Callout Pointer Arrow (z-index: 1001) */}
         {renderPointerArrow()}
 
-        <div className="p-6">
+        {/* Card Body Container */}
+        <div className="bg-white/98 backdrop-blur-xl rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3),0_0_30px_rgba(34,197,94,0.15)] border border-gray-200/80 max-h-[calc(100vh-32px)] overflow-y-auto no-scrollbar p-6">
           {/* Top Header - Aligned Badges on Same Baseline */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -632,8 +691,9 @@ export function ModuleTourOverlay() {
             <div className="flex items-center gap-2">
               {currentStepIndex > 0 && (
                 <button
-                  onClick={prevStep}
-                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1"
+                  type="button"
+                  onClick={() => prevStep(navigate)}
+                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Previous
@@ -641,11 +701,16 @@ export function ModuleTourOverlay() {
               )}
 
               <button
-                onClick={nextStep}
-                className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1"
+                type="button"
+                onClick={() => nextStep(navigate)}
+                className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer"
               >
-                <span>{isFinalStep ? "Finish" : "Next"}</span>
-                {isFinalStep ? <CheckCircle2 className="w-4 h-4 ml-0.5" /> : <ChevronRight className="w-4 h-4" />}
+                <span>{currentStep.actionButtonText || (isFinalStep ? "Finish" : "Next")}</span>
+                {isFinalStep && !currentStep.actionButtonText ? (
+                  <CheckCircle2 className="w-4 h-4 ml-0.5" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
               </button>
             </div>
           </div>

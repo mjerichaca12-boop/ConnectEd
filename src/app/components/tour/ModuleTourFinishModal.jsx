@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { Award, CheckCircle2, RotateCcw, ArrowRight, X } from "lucide-react";
 import { useModuleTour } from "../../context/ModuleTourContext";
@@ -15,11 +16,23 @@ export function ModuleTourFinishModal() {
 
   const handleReturnToHelp = () => {
     closeFinishModal();
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      try {
+        const user = JSON.parse(rawUser);
+        if (user?.role === "teacher") {
+          navigate("/teacher/help-center");
+          return;
+        }
+      } catch {
+        // Ignore
+      }
+    }
     navigate("/admin/help-center");
   };
 
-  return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200 font-sans">
       <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-gray-100/80 overflow-hidden">
         {/* DepEd tri-color top accent bar */}
         <div className="flex h-1.5 flex-shrink-0">
@@ -29,8 +42,9 @@ export function ModuleTourFinishModal() {
         </div>
 
         <button
+          type="button"
           onClick={closeFinishModal}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors z-10"
+          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors z-10 cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -55,15 +69,17 @@ export function ModuleTourFinishModal() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
+              type="button"
               onClick={handleReplay}
-              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center justify-center gap-1.5"
+              className="w-full sm:w-auto px-5 py-2.5 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Replay Tour</span>
             </button>
             <button
+              type="button"
               onClick={handleReturnToHelp}
-              className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center justify-center gap-1.5"
+              className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span>Return to Help Center</span>
               <ArrowRight className="w-4 h-4" />
@@ -71,6 +87,7 @@ export function ModuleTourFinishModal() {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

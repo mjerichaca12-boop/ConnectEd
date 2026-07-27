@@ -7,8 +7,9 @@ import { supabase } from "@/app/lib/supabaseClient";
 import { buildSupabaseErrorMessage, isColumnMissingError, sanitizeFileName } from "@/app/lib/teacherHelpers";
 import {
   User, Mail, Phone, Edit3, Save, X, Eye, EyeOff, Lock, Upload,
-  Shield, BadgeCheck, Camera, CheckCircle, AlertTriangle, Key, Activity, Clock
+  Shield, BadgeCheck, Camera, CheckCircle, AlertTriangle, Key, Activity, Clock, Compass
 } from "lucide-react";
+import { useTeacherTour } from "@/app/context/TeacherTourContext";
 
 // Constants and helpers
 const STORAGE_BUCKET = "class-materials";
@@ -98,6 +99,7 @@ function InfoRow({ icon, label, value, children }) {
 
 function TeacherProfile() {
   const navigate = useNavigate();
+  const { restartTour } = useTeacherTour();
   const profileFileInputRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
@@ -391,7 +393,7 @@ function TeacherProfile() {
           )}
 
           {/* Profile Hero Card */}
-          <div className="relative rounded-3xl overflow-hidden shadow-sm border border-gray-200">
+          <div data-tour="teacher-profile-card" className="relative rounded-3xl overflow-hidden shadow-sm border border-gray-200">
             <div className="h-44 bg-gradient-to-r from-green-700 via-teal-700 to-cyan-800 relative">
               <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
             </div>
@@ -421,7 +423,7 @@ function TeacherProfile() {
           </div>
 
           {/* Section tabs */}
-          <div className="flex gap-2 bg-gray-100 rounded-2xl p-2 w-max border border-gray-200">
+          <div data-tour="teacher-profile-security-tab" className="flex gap-2 bg-gray-100 rounded-2xl p-2 w-max border border-gray-200">
             {[
               { key: "profile", label: "Personal Info", icon: <User className="w-4 h-4" /> },
               { key: "security", label: "Security", icon: <Shield className="w-4 h-4" /> },
@@ -438,7 +440,7 @@ function TeacherProfile() {
 
           {/* Personal Info Section */}
           {activeSection === "profile" && (
-            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
+            <div data-tour="teacher-profile-personal-info" className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="px-8 py-6 border-b border-gray-100 bg-gray-50/80">
                 <h3 className="text-xl font-extrabold text-gray-900 flex items-center gap-3">
                   <User className="w-6 h-6 text-green-600" />
@@ -449,7 +451,6 @@ function TeacherProfile() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                   {/* Left: Info Grid */}
                   <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                    <InfoRow icon={<User className="w-5 h-5 text-gray-500" />} label="Teacher ID" value={profile.teacherId} />
                     <InfoRow icon={<User className="w-5 h-5 text-gray-500" />} label="Full Name" value={profile.fullName} />
                     <InfoRow icon={<Mail className="w-5 h-5 text-gray-500" />} label="Email Address" value={profile.email} />
                     <InfoRow icon={<BadgeCheck className="w-5 h-5 text-gray-500" />} label="Role" value={profile.role} />
@@ -513,6 +514,25 @@ function TeacherProfile() {
                     </h3>
                   </div>
                   <div className="p-6 space-y-6">
+                    {/* Onboarding Tour Card */}
+                    <div className="p-4 rounded-2xl bg-green-50 border border-green-200/80 space-y-3">
+                      <div className="flex items-center gap-2.5 text-green-900 font-bold text-sm">
+                        <Compass className="w-5 h-5 text-green-600 shrink-0" />
+                        <span>Teacher Guided Onboarding</span>
+                      </div>
+                      <p className="text-xs text-green-800 leading-relaxed font-medium">
+                        Need a refresher on managing classes, recording grades, or using the AI assistant? Restart the interactive onboarding tour.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => restartTour(navigate)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                      >
+                        <Compass className="w-4 h-4" />
+                        <span>Restart Guided Tour</span>
+                      </button>
+                    </div>
+
                     <div className="flex items-start gap-4">
                       <div className="p-3 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 shrink-0">
                         <Shield className="w-5 h-5" />

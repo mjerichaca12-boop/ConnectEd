@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { supabase } from "@/app/lib/supabaseClient";
 import { parseDocument } from "@/app/lib/documentParser";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 
 const STORAGE_BUCKET = "class-materials";
 
@@ -1089,7 +1090,7 @@ export function AIAssistant() {
       <div className="flex-1 flex flex-col overflow-hidden lg:pl-64">
 
         {/* Top bar */}
-        <div className="bg-white/80 backdrop-blur-md border-b border-gray-150 sticky top-0 z-20 flex-shrink-0">
+        <div data-tour="teacher-ai-header" className="bg-white/80 backdrop-blur-md border-b border-gray-150 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
             <div>
               <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
@@ -1119,7 +1120,7 @@ export function AIAssistant() {
           <div className="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 select-scrollbar">
 
             {/* File Upload Zone */}
-            <div className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
+            <div data-tour="teacher-ai-upload-zone" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
               <FileUploadZone
                 uploadedFiles={uploadedFiles}
                 setUploadedFiles={setUploadedFiles}
@@ -1138,7 +1139,7 @@ export function AIAssistant() {
             )}
 
             {/* Quick Actions */}
-            <div className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
+            <div data-tour="teacher-ai-toolbar" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
               <AIToolbar
                 onActionClick={handleQuickActionClick}
                 settings={settings}
@@ -1149,7 +1150,7 @@ export function AIAssistant() {
           </div>
 
           {/* RIGHT PANEL — chat */}
-          <div className="flex-1 flex flex-col min-w-0 bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+          <div data-tour="teacher-ai-chat-workspace" className="flex-1 flex flex-col min-w-0 bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
             <AIChat
               messages={messages}
               setMessages={setMessages}

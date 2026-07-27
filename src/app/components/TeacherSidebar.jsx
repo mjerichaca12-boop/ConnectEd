@@ -2,8 +2,17 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import {
-  LayoutDashboard, BookOpen, ClipboardList,
-  MessageSquare, User, Menu, X, LogOut, ChevronRight, Sparkles
+  LayoutDashboard,
+  BookOpen,
+  ClipboardList,
+  MessageSquare,
+  User,
+  Menu,
+  X,
+  LogOut,
+  ChevronRight,
+  Sparkles,
+  HelpCircle,
 } from "lucide-react";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { supabase } from "../lib/supabaseClient";
@@ -42,12 +51,13 @@ export function TeacherSidebar({ teacherName, onLogout }) {
   };
 
   const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard",        path: "/teacher/dashboard" },
-    { icon: BookOpen,        label: "Classes",           path: "/teacher/classes" },
-    { icon: ClipboardList,   label: "Grades Management", path: "/teacher/grades" },
-    { icon: MessageSquare,   label: "Messages",          path: "/teacher/messages" },
-    { icon: User,            label: "Profile",           path: "/teacher/profile" },
-    { icon: Sparkles,        label: "AI Assistant",      path: "/teacher/ai-assistant", badge: "NEW" },
+    { icon: LayoutDashboard, label: "Dashboard",        path: "/teacher/dashboard",        tourSelector: "teacher-dashboard-link" },
+    { icon: BookOpen,        label: "Classes",           path: "/teacher/classes",          tourSelector: "teacher-classes-link" },
+    { icon: ClipboardList,   label: "Grades Management", path: "/teacher/grades",           tourSelector: "teacher-grades-link" },
+    { icon: MessageSquare,   label: "Messages",          path: "/teacher/messages",         tourSelector: "teacher-messages-link" },
+    { icon: User,            label: "Profile",           path: "/teacher/profile",          tourSelector: "teacher-profile-link" },
+    { icon: Sparkles,        label: "AI Assistant",      path: "/teacher/ai-assistant", badge: "NEW", tourSelector: "teacher-ai-assistant-link" },
+    { icon: HelpCircle,      label: "Help Center",       path: "/teacher/help-center",      tourSelector: "teacher-help-center-link" },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -71,6 +81,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
       )}
 
       <aside
+        data-tour="teacher-sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200
           flex flex-col h-screen overflow-hidden
           transform transition-transform duration-300 ease-in-out
@@ -125,6 +136,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
               <Link
                 key={item.path}
                 to={item.path}
+                data-tour={item.tourSelector}
                 onClick={() => setIsMobileOpen(false)}
                 className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 text-sm font-medium group
                   ${active
@@ -161,8 +173,10 @@ export function TeacherSidebar({ teacherName, onLogout }) {
         {/* Logout */}
         <div className="px-3 pb-4 flex-shrink-0 border-t border-gray-100 pt-2">
           <button
+            type="button"
+            data-tour="teacher-logout"
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 text-sm font-medium group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 text-sm font-medium group cursor-pointer"
           >
             <div className="p-1 bg-gray-100 group-hover:bg-red-100 rounded-lg transition-colors flex-shrink-0">
               <LogOut className="w-4 h-4 text-gray-400 group-hover:text-red-500" />

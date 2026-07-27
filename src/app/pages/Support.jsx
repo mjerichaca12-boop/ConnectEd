@@ -122,7 +122,7 @@ function Support() {
               We typically respond to support requests within <strong>24-48 hours</strong> during regular business days.
             </p>
             <p className="text-sm font-semibold text-gray-900">Direct Email:</p>
-            <a href="mailto:support@connected-school.edu" className="text-green-600 text-sm hover:underline">support@connected-school.edu</a>
+            <a href="mailto:support@connected.deped.gov.ph" className="text-green-600 text-sm font-bold hover:underline">support@connected.deped.gov.ph</a>
           </div>
         </div>
 
