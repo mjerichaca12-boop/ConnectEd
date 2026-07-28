@@ -90,6 +90,19 @@ if (!globalThis.supabaseClientInstance) {
       }
     });
 
+    // Patch removeChannel to prevent "WebSocket is closed before the connection is established" error
+    // which happens during fast unmounts (like React StrictMode or quick navigation)
+    const originalRemoveChannel = globalThis.supabaseClientInstance.removeChannel;
+    globalThis.supabaseClientInstance.removeChannel = function(channel) {
+      setTimeout(() => {
+        try {
+          originalRemoveChannel.call(this, channel);
+        } catch (e) {
+          // ignore
+        }
+      }, 500);
+    };
+
   } else {
     globalThis.supabaseClientInstance = null;
   }
