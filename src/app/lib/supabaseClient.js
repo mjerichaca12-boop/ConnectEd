@@ -4,7 +4,7 @@ const BUILD_SOURCE = "root";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
 const SUPABASE_AUTH_STORAGE_KEY = "connected-supabase-auth-token";
 const APP_URL = String(import.meta.env.VITE_APP_URL || "").trim();
 
@@ -35,7 +35,7 @@ console.log(`[ConnectEd] build source: ${BUILD_SOURCE}`);
 console.log("🔍 Supabase Config Debug:");
 console.log("  VITE_SUPABASE_URL:", supabaseUrl ? `${supabaseUrl.substring(0, 20)}...` : "MISSING");
 console.log("  VITE_SUPABASE_ANON_KEY:", supabaseAnonKey ? `${supabaseAnonKey.substring(0, 10)}...` : "MISSING");
-console.log("  VITE_SUPABASE_SERVICE_ROLE_KEY:", supabaseServiceRoleKey ? "SET" : "MISSING");
+
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
@@ -95,42 +95,4 @@ if (!globalThis.supabaseClientInstance) {
   }
 }
 
-if (!globalThis.supabaseAdminClientInstance) {
-  if (supabaseUrl && supabaseServiceRoleKey && supabaseUrl.startsWith('https://')) {
-    console.log("🔗 Creating Supabase admin client (global singleton)");
-    globalThis.supabaseAdminClientInstance = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false
-      }
-    });
-  } else {
-    console.warn(
-      "⚠️ Supabase admin client not initialized. " +
-      "VITE_SUPABASE_SERVICE_ROLE_KEY is", 
-      supabaseServiceRoleKey ? "SET" : "MISSING"
-    );
-    // Create a null proxy that logs errors when admin operations are attempted
-    globalThis.supabaseAdminClientInstance = {
-      auth: {
-        admin: {
-          createUser: async () => {
-            throw new Error(
-              "Admin operations not available: VITE_SUPABASE_SERVICE_ROLE_KEY not configured. " +
-              "Teacher registration via admin requires the service role key in environment variables."
-            );
-          },
-          deleteUser: async () => {
-            throw new Error(
-              "Admin operations not available: VITE_SUPABASE_SERVICE_ROLE_KEY not configured."
-            );
-          }
-        }
-      },
-      from: () => ({ select: () => Promise.reject(new Error("Admin client not configured")) })
-    };
-  }
-}
-
 export const supabase = globalThis.supabaseClientInstance;
-export const supabaseAdmin = globalThis.supabaseAdminClientInstance;

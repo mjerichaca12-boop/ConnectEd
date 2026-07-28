@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { useNavigate } from "react-router-dom";
 import { 
   X, 
@@ -13,7 +14,7 @@ import {
   Check
 } from "lucide-react";
 
-const db = () => supabaseAdmin || supabase;
+const db = () => supabase;
 
 const isValidUuid = (value) =>
   typeof value === "string" &&

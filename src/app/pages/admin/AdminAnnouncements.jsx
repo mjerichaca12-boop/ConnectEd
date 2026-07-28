@@ -6,7 +6,8 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
 import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
@@ -361,7 +362,7 @@ function AdminAnnouncements() {
     const uploaded = [];
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
 
     try {
       for (const file of files) {
@@ -750,7 +751,7 @@ function AdminAnnouncements() {
 
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
     const { error } = await client.from(attachmentTableName).insert(payload);
 
     if (error) {
@@ -770,7 +771,7 @@ function AdminAnnouncements() {
 
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
     const { data, error } = await client
       .from("announcement_attachments")
@@ -931,7 +932,7 @@ function AdminAnnouncements() {
     const attemptErrors = [];
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
 
     for (let attemptIndex = 0; attemptIndex < payloads.length; attemptIndex += 1) {
       const payload = payloads[attemptIndex];
@@ -1419,7 +1420,7 @@ function AdminAnnouncements() {
       const uniqueFilePaths = [...new Set(oldFilePaths)];
       const user = getCurrentUser();
       const isAdmin = user?.role === "admin";
-      const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+      const client = supabase;
 
       if (uniqueFilePaths.length > 0) {
         await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uniqueFilePaths).catch(() => {

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Lock, User, ShieldAlert, Monitor, Smartphone } from "lucide-react";
-import { getAuthRedirectUrl, supabase, supabaseAdmin } from "../lib/supabaseClient";
+import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import {
   STATIC_ADMIN_EMAIL,
   getStaticAdminSessionUser,
@@ -71,7 +72,7 @@ function Login() {
     };
 
     // Use admin client to bypass RLS during profile creation
-    const client = supabaseAdmin || supabase;
+    const client = supabase;
     const { data, error } = await client
       .from("profiles")
       .insert(payload)

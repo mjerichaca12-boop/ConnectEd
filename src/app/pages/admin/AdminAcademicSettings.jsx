@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
 import { Save, AlertTriangle, Calendar } from "lucide-react";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 
 export default function AdminAcademicSettings() {
   const navigate = useNavigate();

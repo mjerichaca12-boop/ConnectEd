@@ -1,0 +1,121 @@
+import { createClient } from "@supabase/supabase-js";
+
+const getSupabaseAdmin = () => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase admin credentials are not configured.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+};
+
+const getSupabaseAnon = () => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("Supabase anon credentials are not configured.");
+  }
+
+  return createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+};
+
+const readJsonBody = async (req) => {
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+
+  if (typeof req.body === "string" && req.body.trim()) {
+    return JSON.parse(req.body);
+  }
+
+  return {};
+};
+
+const verifyAdmin = async (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) throw new Error("Missing Authorization header");
+  
+  const token = authHeader.replace("Bearer ", "");
+  if (!token) throw new Error("Missing token");
+  
+  const supabaseAnon = getSupabaseAnon();
+  const { data: { user }, error: userError } = await supabaseAnon.auth.getUser(token);
+  if (userError || !user) throw new Error("Unauthorized");
+  
+  const supabaseAdmin = getSupabaseAdmin();
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+    
+  if (profileError || profile?.role !== "admin") {
+    throw new Error("Forbidden: Admin access required");
+  }
+};
+
+export default async function handler(req, res) {
+  try {
+    await verifyAdmin(req);
+  } catch (error) {
+    return res.status(401).json({ error: error.message });
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
+
+  try {
+    if (req.method === "GET") {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers();
+      if (error) throw error;
+      return res.status(200).json(data);
+    } 
+    
+    else if (req.method === "POST") {
+      const body = await readJsonBody(req);
+      const { email, password, email_confirm } = body;
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: email_confirm ?? true
+      });
+      if (error) throw error;
+      return res.status(200).json(data);
+    } 
+    
+    else if (req.method === "PUT") {
+      const body = await readJsonBody(req);
+      const { id, password } = body;
+      if (!id || !password) return res.status(400).json({ error: "Missing id or password" });
+      
+      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(id, { password });
+      if (error) throw error;
+      return res.status(200).json(data);
+    } 
+    
+    else if (req.method === "DELETE") {
+      const { id } = req.query || {};
+      if (!id) return res.status(400).json({ error: "Missing user id" });
+      
+      const { data, error } = await supabaseAdmin.auth.admin.deleteUser(id);
+      if (error) throw error;
+      return res.status(200).json(data);
+    }
+    
+    else {
+      res.setHeader("Allow", ["GET", "POST", "PUT", "DELETE"]);
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+  } catch (error) {
+    console.error("[api/admin/users]", error);
+    // Suppress status 422 errors because they are handled differently on the frontend
+    const status = error.status || 500;
+    return res.status(status).json({ error: error.message || "Internal Server Error" });
+  }
+}

@@ -7,10 +7,11 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key } from "lucide-react";
-const db = supabaseAdmin || supabase;
+const db = supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -360,7 +361,7 @@ function StudentManagement() {
       
       let userId = generateUUID();
       
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      const { data: authData, error: authError } = await adminApi.createUser({
         email: email,
         password: tempPassword,
         email_confirm: true
@@ -368,7 +369,7 @@ function StudentManagement() {
       
       if (authError) {
          if (authError.message?.includes("already exists") || authError.status === 422) {
-            const { data: retryList } = await supabaseAdmin.auth.admin.listUsers();
+            const { data: retryList } = await adminApi.listUsers();
             const retryUser = retryList?.users?.find(u => u.email === email);
             if (!retryUser) throw new Error("Email exists but user not found in fallback query.");
             userId = retryUser.id;
@@ -602,14 +603,14 @@ function StudentManagement() {
         let userId = null;
 
         // 1. Pre-check if auth user already exists to prevent duplicate creation spam
-        const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+        const { data: listData } = await adminApi.listUsers();
         const existingUser = listData?.users?.find(u => u.email === email);
 
         if (existingUser) {
            userId = existingUser.id;
         } else {
            // 2. Create auth user if not found
-           const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+           const { data: authData, error: authError } = await adminApi.createUser({
              email,
              password: tempPassword,
              email_confirm: true
@@ -618,7 +619,7 @@ function StudentManagement() {
            if (authError) {
               // 3. Graceful fallback if 422 email_exists happens due to race condition
               if (authError.message?.includes("already exists") || authError.status === 422) {
-                 const { data: retryList } = await supabaseAdmin.auth.admin.listUsers();
+                 const { data: retryList } = await adminApi.listUsers();
                  const retryUser = retryList?.users?.find(u => u.email === email);
                  if (!retryUser) throw new Error("email_exists 422 returned, but user not found in fallback query.");
                  userId = retryUser.id;
@@ -793,7 +794,7 @@ function StudentManagement() {
       }
 
       try {
-        await supabaseAdmin.auth.admin.deleteUser(studentId);
+        await adminApi.deleteUser(studentId);
       } catch (e) {
         console.error("Non-fatal: Failed to delete auth user", e);
       }
@@ -863,7 +864,7 @@ function StudentManagement() {
 
           // 3. Fully delete the user from Auth
           try {
-             await supabaseAdmin.auth.admin.deleteUser(id);
+             await adminApi.deleteUser(id);
           } catch (e) {
              console.error("Non-fatal: Failed to delete auth user", e);
           }
@@ -952,14 +953,14 @@ function StudentManagement() {
     setErrorMessage("");
 
     try {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(selectedStudent.id, {
+      const { error: authError } = await adminApi.updateUserById(selectedStudent.id, {
         password: resetSettings.tempPassword
       });
 
       if (authError) {
         if (authError.message?.includes("User not found") || authError.status === 404) {
           // Fallback: If auth user was never created (due to past bugs), create it now linking the same ID
-          const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+          const { error: createError } = await adminApi.createUser({
              id: selectedStudent.id,
              email: selectedStudent.email || `${selectedStudent.lrn}@students.connected`,
              password: resetSettings.tempPassword,

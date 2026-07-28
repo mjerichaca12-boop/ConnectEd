@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 import { useActivity } from "../../lib/ActivityContext";
 import {
   Users,

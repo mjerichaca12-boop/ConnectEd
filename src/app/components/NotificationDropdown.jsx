@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, X, MessageSquare, FileSpreadsheet, BookOpen, Calendar, AlertCircle, Trash2, CheckCircle2 } from "lucide-react";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 
-const db = () => supabaseAdmin || supabase;
+const db = () => supabase;
 
 const isValidUuid = (value) =>
   typeof value === "string" &&
@@ -154,11 +155,7 @@ function NotificationDropdown({
   const navigate = useNavigate();
 
   useEffect(() => {
-    try {
-      audioRef.current = new Audio("/sounds/notify.mp3");
-    } catch {
-      audioRef.current = null;
-    }
+    audioRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -293,11 +290,6 @@ function NotificationDropdown({
               const merged = dedupeNotifications([item, ...(prev || [])]);
               localStorage.setItem(getStorageKey(user), JSON.stringify(merged));
               onNotificationsChange?.(merged);
-              try {
-                if (audioRef.current) {
-                  audioRef.current.play().catch(() => {});
-                }
-              } catch {}
               return merged;
             });
           }

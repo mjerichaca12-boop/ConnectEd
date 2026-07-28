@@ -5,10 +5,11 @@ import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
 // Use service role client if available to bypass RLS issues for reliable messaging
-const db = supabaseAdmin || supabase;
+const db = supabase;
 import {
   Search,
   Send,

@@ -6,10 +6,11 @@ import { DashboardCalendar } from "../../components/DashboardCalendar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 
 export function AdminCalendar() {
   const navigate = useNavigate();

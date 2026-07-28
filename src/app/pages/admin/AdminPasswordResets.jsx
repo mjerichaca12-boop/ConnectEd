@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AdminSidebar } from "../../components/AdminSidebar";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { useActivity } from "../../lib/ActivityContext";
@@ -8,7 +9,7 @@ import { Key, ShieldAlert, CheckCircle2, Loader2, X, AlertTriangle, User, Trash2
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 
 const generateTempPassword = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -87,12 +88,12 @@ export const AdminPasswordResets = () => {
 
     setIsSubmitting(true);
     try {
-      if (!supabaseAdmin) {
+      if (false) {
         throw new Error("Missing Supabase Admin privileges. Check VITE_SUPABASE_SERVICE_ROLE_KEY.");
       }
 
       // 1. Update user password via Admin Auth API
-      const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+      const { error: updateAuthError } = await adminApi.updateUserById(
         selectedRequest.user_id,
         { password: tempPassword }
       );

@@ -7,7 +7,8 @@ import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import {
   Search,
@@ -33,7 +34,7 @@ import {
   Square
 } from "lucide-react";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -857,7 +858,7 @@ function TeacherManagement() {
           if (profileError) throw profileError;
 
           try {
-             await supabaseAdmin.auth.admin.deleteUser(id);
+             await adminApi.deleteUser(id);
           } catch (e) {
              console.warn("Non-fatal: Failed to delete auth user", e);
           }
@@ -1251,7 +1252,7 @@ function TeacherManagement() {
     setErrorMessage("");
 
     try {
-      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(selectedTeacher.id, {
+      const { error: authError } = await adminApi.updateUserById(selectedTeacher.id, {
         password: resetSettings.tempPassword
       });
 

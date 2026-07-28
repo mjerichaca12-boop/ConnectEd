@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { CustomSelect } from "./CustomSelect";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { Settings, Plus, Edit2, Trash2, X, Loader2, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 
 export function SectionDropdown({ gradeLevel, value, onChange, error, disabled, className = "" }) {
   const [sections, setSections] = useState([]);

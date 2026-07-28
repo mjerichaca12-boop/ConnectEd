@@ -5,9 +5,10 @@ import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { adminNotifications } from "@/app/components/NotificationDefault";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
-const db = supabaseAdmin || supabase;
+const db = supabase;
 import {
   Search,
   Send,
