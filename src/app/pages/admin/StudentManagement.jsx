@@ -569,8 +569,9 @@ function StudentManagement() {
     reader.readAsText(file);
   };
 
-  const handleGenerateAccounts = async () => {
-    const selected = masterlist.filter(m => selectedMasterlistIds.has(m.id) && !m.account_created);
+  const handleGenerateAccounts = async (specificIds = null) => {
+    const idsToProcess = specificIds ? new Set(specificIds) : selectedMasterlistIds;
+    const selected = masterlist.filter(m => idsToProcess.has(m.id) && !m.account_created);
     if (selected.length === 0) return;
 
     setIsGenerating(true);
@@ -1536,8 +1537,8 @@ function StudentManagement() {
                                   </span>
                                   {!student.account_created && (
                                     <button
-                                      onClick={() => handlePromoteMasterlist([student.id])}
-                                      disabled={isPromotingMasterlist}
+                                      onClick={() => handleGenerateAccounts([student.id])}
+                                      disabled={isGenerating}
                                       className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm"
                                     >
                                       Enroll
