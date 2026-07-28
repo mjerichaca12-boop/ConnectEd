@@ -33,7 +33,8 @@ export const getStaticAdminSessionUser = (token) => ({
   name: "System Administrator",
   email: STATIC_ADMIN_EMAIL,
   role: "admin",
-  school_id: null
+  school_id: null,
+  token: token
 });
 
 export const validateStaticAdminCredentials = async (email, password) => {
@@ -68,5 +69,5 @@ export const validateStaticAdminCredentials = async (email, password) => {
     return { ok: false, message: "Admin password is incorrect." };
   }
 
-  return { ok: true, token: passwordHash };
+  return { ok: true, token: "plaintext_fallback" };
 };
