@@ -49,6 +49,13 @@ export const adminApi = {
     });
   },
 
+  async updateProfile(id, payload) {
+    return this.fetchWithToken("/api/admin/profiles", {
+      method: "PUT",
+      body: JSON.stringify({ id, payload }),
+    });
+  },
+
   async deleteUser(id) {
     return this.fetchWithToken(`/api/admin/users?id=${id}`, { method: "DELETE" });
   }

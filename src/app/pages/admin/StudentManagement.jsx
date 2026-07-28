@@ -447,12 +447,10 @@ function StudentManagement() {
     setIsSubmitting(true);
 
     try {
-      const { data, error } = await db
-        .from("profiles")
-        .update(buildPayload(editFormData))
-        .eq("id", selectedStudent.id)
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
-        .single();
+      const { data, error } = await adminApi.updateProfile(
+        selectedStudent.id,
+        buildPayload(editFormData)
+      );
 
       if (error) {
         throw error;
@@ -972,10 +970,10 @@ function StudentManagement() {
         }
       }
 
-      const { error: profileError } = await db.from("profiles").update({
+      const { error: profileError } = await adminApi.updateProfile(selectedStudent.id, {
         must_change_password: resetSettings.forceChange,
         last_password_reset: new Date().toISOString()
-      }).eq("id", selectedStudent.id);
+      });
 
       if (profileError) throw profileError;
 

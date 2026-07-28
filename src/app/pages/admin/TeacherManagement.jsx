@@ -1083,7 +1083,7 @@ function TeacherManagement() {
         throw new Error("Teacher ID is missing.");
       }
 
-      const { data, error } = await db.from("profiles").update(payload).eq("id", selectedTeacher.id).select(teacherSelectColumns).single();
+      const { data, error } = await adminApi.updateProfile(selectedTeacher.id, payload);
 
       if (error) {
         throw error;
@@ -1258,10 +1258,10 @@ function TeacherManagement() {
 
       if (authError) throw authError;
 
-      const { error: profileError } = await db.from("profiles").update({
+      const { error: profileError } = await adminApi.updateProfile(selectedTeacher.id, {
         must_change_password: resetSettings.forceChange,
         last_password_reset: new Date().toISOString()
-      }).eq("id", selectedTeacher.id);
+      });
 
       if (profileError) throw profileError;
 
