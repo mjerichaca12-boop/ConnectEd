@@ -65,6 +65,7 @@ function StudentManagement() {
   const [editFormErrors, setEditFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [gradeSectionsMap, setGradeSectionsMap] = useState({});
 
   // New state variables for Masterlist
   const [masterlist, setMasterlist] = useState([]);
@@ -664,7 +665,7 @@ function StudentManagement() {
         successCount++;
       } catch (err) {
         // Structured error logging as requested
-        console.error(`Failed to generate account for ${student.lrn}:`, JSON.stringify(err, null, 2));
+        console.error(`Failed to generate account for ${student.lrn}:`, err.message || err);
         errorCount++;
       }
     }

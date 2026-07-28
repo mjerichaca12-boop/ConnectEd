@@ -20,6 +20,7 @@ export const adminApi = {
           const errorData = await res.json();
           errorMsg = errorData.error || errorMsg;
         } catch (e) {}
+        console.error("[adminApi] API Error:", errorMsg);
         const err = new Error(errorMsg);
         err.status = status;
         throw err;
