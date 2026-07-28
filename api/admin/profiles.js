@@ -77,9 +77,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: error.message });
   }
 
-  const supabaseAdmin = getSupabaseAdmin();
-
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     if (req.method === "PUT") {
       const body = await readJsonBody(req);
       const { id, payload } = body;

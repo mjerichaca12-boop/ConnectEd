@@ -79,9 +79,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: error.message });
   }
 
-  const supabaseAdmin = getSupabaseAdmin();
-
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     if (req.method === "GET") {
       const { data, error } = await supabaseAdmin.auth.admin.listUsers();
       if (error) throw error;
