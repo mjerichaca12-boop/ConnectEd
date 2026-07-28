@@ -65,5 +65,12 @@ export const adminApi = {
 
   async deleteUser(id) {
     return this.fetchWithToken(`/api/admin/users?id=${id}`, { method: "DELETE" });
+  },
+
+  async db(table, action, options = {}) {
+    return this.fetchWithToken("/api/admin/db", {
+      method: "POST",
+      body: JSON.stringify({ table, action, ...options }),
+    });
   }
 };
