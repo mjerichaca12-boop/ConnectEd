@@ -268,7 +268,7 @@ function Login() {
     if (normalizedEmail === STATIC_ADMIN_EMAIL) {
       const adminValidation = await validateStaticAdminCredentials(normalizedEmail, formData.password);
       if (adminValidation.ok) {
-        localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser()));
+        localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
         navigate("/admin/dashboard");
         return;
       }

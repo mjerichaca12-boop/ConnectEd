@@ -3,13 +3,19 @@ import { supabase } from "./supabaseClient";
 export const adminApi = {
   async fetchWithToken(url, options = {}) {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
       const headers = {
         ...options.headers,
         "Content-Type": "application/json",
       };
-      if (token) {
+      const currentUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
+      if (currentUser.role === "admin" && currentUser.token) {
+        headers["Authorization"] = `Bearer static_${currentUser.token}`;
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) {
+          throw new Error("Your session has expired. Please log in again.");
+        }
         headers["Authorization"] = `Bearer ${token}`;
       }
       const res = await fetch(url, { ...options, headers });

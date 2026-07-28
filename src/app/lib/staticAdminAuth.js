@@ -28,7 +28,7 @@ export const isStaticAdminUser = (user) => {
   return normalizeEmail(user.email) === STATIC_ADMIN_EMAIL;
 };
 
-export const getStaticAdminSessionUser = () => ({
+export const getStaticAdminSessionUser = (token) => ({
   id: "11111111-1111-1111-1111-111111111111",
   name: "System Administrator",
   email: STATIC_ADMIN_EMAIL,
@@ -57,7 +57,7 @@ export const validateStaticAdminCredentials = async (email, password) => {
       if (passwordHash !== STATIC_ADMIN_PASSWORD_HASH) {
         return { ok: false, message: "Admin password is incorrect." };
       }
-      return { ok: true };
+      return { ok: true, token: passwordHash };
     } catch {
       // Fall through to plaintext check below
     }
@@ -68,5 +68,5 @@ export const validateStaticAdminCredentials = async (email, password) => {
     return { ok: false, message: "Admin password is incorrect." };
   }
 
-  return { ok: true };
+  return { ok: true, token: passwordHash };
 };
