@@ -22,10 +22,8 @@ export function TeacherTourSpotlightOverlay() {
   const {
     isTourActive,
     isPreparingTour,
-    currentStep,
     currentStepIndex,
     totalSteps,
-    isFinalStep,
     nextStep,
     prevStep,
     skipTour,
@@ -69,115 +67,218 @@ export function TeacherTourSpotlightOverlay() {
   const [arrowOffsetPx, setArrowOffsetPx] = useState(50);
   const cardRef = useRef(null);
 
-  // Locate, highlight, and measure active target element
-  const updateTargetRect = useCallback(() => {
-    clearActiveHighlights();
+  const [visibleStepIndex, setVisibleStepIndex] = useState(0);
+  const [modalOpacity, setModalOpacity] = useState(0);
+  const [spotlightOpacity, setSpotlightOpacity] = useState(0);
+  const [isInteractionEnabled, setIsInteractionEnabled] = useState(false);
+  const currentTransitionIdRef = useRef(0);
 
-    if (!isTourActive || !currentStep || currentStep.targetSelector === null) {
+  // Synchronized step resolver that coordinates navigation, scroll, spotlight positioning, and modal fade-in
+  const runStepTransition = useCallback((stepIdx) => {
+    const transitionId = ++currentTransitionIdRef.current;
+    setIsInteractionEnabled(false);
+    setModalOpacity(0);
+
+    const targetStep = TEACHER_TOUR_STEPS[stepIdx];
+    if (!targetStep) {
+      setTargetRect(null);
+      setSpotlightOpacity(0);
+      return;
+    }
+
+    // Wait for tooltip fade-out before rendering next spotlight/coordinates to prevent flash
+    setTimeout(() => {
+      if (transitionId !== currentTransitionIdRef.current) return;
+
+      const checkReadyAndPosition = () => {
+        if (transitionId !== currentTransitionIdRef.current) return;
+
+        // Ensure page data loader screens are not overlaying
+        const isPageLoading = !!document.querySelector(
+          ".loading-screen, [data-loading='true'], .animate-bounce:not(.connected-tour-spinner)"
+        );
+
+        if (isPreparingTour || isPageLoading) {
+          requestAnimationFrame(checkReadyAndPosition);
+          return;
+        }
+
+        // Center overlay if no target is requested
+        if (targetStep.targetSelector === null) {
+          setVisibleStepIndex(stepIdx);
+          setTargetRect(null);
+          setSpotlightOpacity(0);
+          
+          setTimeout(() => {
+            if (transitionId !== currentTransitionIdRef.current) return;
+            setModalOpacity(1);
+            setTimeout(() => {
+              if (transitionId !== currentTransitionIdRef.current) return;
+              setIsInteractionEnabled(true);
+            }, 200);
+          }, 100);
+          return;
+        }
+
+        let el = document.querySelector(targetStep.targetSelector);
+        if (!el && targetStep.fallbackTargetSelector) {
+          el = document.querySelector(targetStep.fallbackTargetSelector);
+        }
+
+        if (el && el.isConnected) {
+          const rect = el.getBoundingClientRect();
+          const hasSize = rect.width > 0 && rect.height > 0;
+
+          if (hasSize) {
+            // Scroll target into view if outside stable viewport boundaries
+            const vHeight = window.innerHeight || document.documentElement.clientHeight;
+            const vWidth = window.innerWidth || document.documentElement.clientWidth;
+            const isVisibleInViewport =
+              rect.top >= 40 &&
+              rect.bottom <= vHeight - 40 &&
+              rect.left >= 40 &&
+              rect.right <= vWidth - 40;
+
+            if (!isVisibleInViewport) {
+              el.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+              });
+
+              // Detect when smooth scrolling completes to compute stable coordinate rect
+              let lastTop = null;
+              let lastLeft = null;
+              let stableFrames = 0;
+
+              const checkScroll = () => {
+                if (transitionId !== currentTransitionIdRef.current) return;
+                const r = el.getBoundingClientRect();
+                if (lastTop !== null && Math.abs(r.top - lastTop) < 0.5 && Math.abs(r.left - lastLeft) < 0.5) {
+                  stableFrames++;
+                  if (stableFrames >= 3) {
+                    finalizePosition(el, stepIdx, transitionId);
+                    return;
+                  }
+                } else {
+                  stableFrames = 0;
+                }
+                lastTop = r.top;
+                lastLeft = r.left;
+                requestAnimationFrame(checkScroll);
+              };
+              requestAnimationFrame(checkScroll);
+            } else {
+              finalizePosition(el, stepIdx, transitionId);
+            }
+            return;
+          }
+        }
+
+        requestAnimationFrame(checkReadyAndPosition);
+      };
+
+      requestAnimationFrame(checkReadyAndPosition);
+    }, 150);
+  }, [isPreparingTour, clearActiveHighlights]);
+
+  const finalizePosition = (el, stepIdx, transitionId) => {
+    if (transitionId !== currentTransitionIdRef.current) return;
+
+    clearActiveHighlights();
+    if (
+      TEACHER_TOUR_STEPS[stepIdx]?.targetSelector === '[data-tour="teacher-sidebar"]' ||
+      TEACHER_TOUR_STEPS[stepIdx]?.targetSelector?.includes("teacher-")
+    ) {
+      const sidebarParent = el.closest("aside") || el;
+      sidebarParent?.classList.add("connected-tour-sidebar-elevated");
+    }
+    el.classList.add("tour-active-target", "connected-tour-target-active");
+
+    const compStyle = window.getComputedStyle(el);
+    const computedRadius = compStyle.borderRadius || "16px";
+    const rect = el.getBoundingClientRect();
+
+    setTargetRect({
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      borderRadius: computedRadius,
+    });
+
+    setVisibleStepIndex(stepIdx);
+    setSpotlightOpacity(1);
+
+    // Wait for spotlight transition to finish before fading in modal
+    setTimeout(() => {
+      if (transitionId !== currentTransitionIdRef.current) return;
+      setModalOpacity(1);
+      
+      setTimeout(() => {
+        if (transitionId !== currentTransitionIdRef.current) return;
+        setIsInteractionEnabled(true);
+      }, 200);
+    }, 300);
+  };
+
+  // Run transition coordinator whenever step index changes
+  useEffect(() => {
+    if (isTourActive) {
+      runStepTransition(currentStepIndex);
+    } else {
+      setTargetRect(null);
+      setModalOpacity(0);
+      setSpotlightOpacity(0);
+      clearActiveHighlights();
+    }
+  }, [isTourActive, currentStepIndex, runStepTransition, clearActiveHighlights]);
+
+  // Live coordinate tracker for manual resize/scroll once interaction is enabled
+  const updateTargetRect = useCallback(() => {
+    if (!isTourActive || !isInteractionEnabled) return;
+
+    const currentStepObj = TEACHER_TOUR_STEPS[currentStepIndex];
+    if (!currentStepObj || currentStepObj.targetSelector === null) {
       setTargetRect(null);
       return;
     }
 
-    let el = document.querySelector(currentStep.targetSelector);
-    if (!el && currentStep.fallbackTargetSelector) {
-      el = document.querySelector(currentStep.fallbackTargetSelector);
+    let el = document.querySelector(currentStepObj.targetSelector);
+    if (!el && currentStepObj.fallbackTargetSelector) {
+      el = document.querySelector(currentStepObj.fallbackTargetSelector);
     }
 
     if (el) {
-      if (
-        currentStep.targetSelector === '[data-tour="teacher-sidebar"]' ||
-        currentStep.targetSelector?.includes("teacher-")
-      ) {
-        const sidebarParent = el.closest("aside") || el;
-        sidebarParent?.classList.add("connected-tour-sidebar-elevated");
-      }
-
-      el.classList.add("tour-active-target", "connected-tour-target-active");
-
-      const compStyle = window.getComputedStyle(el);
-      const computedRadius = compStyle.borderRadius || "16px";
-
       const rect = el.getBoundingClientRect();
+      const compStyle = window.getComputedStyle(el);
       setTargetRect({
         top: rect.top,
         left: rect.left,
         width: rect.width,
         height: rect.height,
-        borderRadius: computedRadius,
+        borderRadius: compStyle.borderRadius || "16px",
       });
-
-      if (currentStep.targetSelector !== '[data-tour="teacher-sidebar"]') {
-        const vHeight = window.innerHeight || document.documentElement.clientHeight;
-        const vWidth = window.innerWidth || document.documentElement.clientWidth;
-        const isTable = rect.height > 150 && rect.width > vWidth * 0.5;
-
-        const isVisibleInViewport =
-          rect.top >= 20 &&
-          rect.bottom <= vHeight - 20 &&
-          rect.left >= 20 &&
-          rect.right <= vWidth - 20;
-
-        const prefPlacement = currentStep.placement || "bottom";
-        const cardMinHeight = 260;
-        const hasEnoughSpaceBelow = vHeight - rect.bottom >= cardMinHeight;
-        const hasEnoughSpaceAbove = rect.top >= cardMinHeight;
-
-        let needsScroll = !isVisibleInViewport || isTable;
-        if (prefPlacement.startsWith("bottom") && !hasEnoughSpaceBelow) {
-          needsScroll = true;
-        } else if (prefPlacement.startsWith("top") && !hasEnoughSpaceAbove) {
-          needsScroll = true;
-        }
-
-        if (needsScroll) {
-          const scrollBlock = prefPlacement.startsWith("top") ? "end" : "start";
-          el.scrollIntoView({
-            behavior: "smooth",
-            block: scrollBlock,
-            inline: "nearest",
-          });
-
-          let scrollFrames = 0;
-          const pollScrollRect = () => {
-            const updatedRect = el.getBoundingClientRect();
-            const latestCompStyle = window.getComputedStyle(el);
-            setTargetRect({
-              top: updatedRect.top,
-              left: updatedRect.left,
-              width: updatedRect.width,
-              height: updatedRect.height,
-              borderRadius: latestCompStyle.borderRadius || "16px",
-            });
-            scrollFrames++;
-            if (scrollFrames < 15) {
-              requestAnimationFrame(pollScrollRect);
-            }
-          };
-          requestAnimationFrame(pollScrollRect);
-        }
-      }
-    } else {
-      setTargetRect(null);
     }
-  }, [isTourActive, currentStep, clearActiveHighlights]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex]);
 
-  // Scroll main container & auto-switch Class Detail tabs on step change
+  // Handle auto-tab shifting
   useEffect(() => {
-    if (!isTourActive || !currentStep) return;
+    if (!isTourActive || !isInteractionEnabled) return;
 
-    const stepId = currentStep.id || "";
+    const currentStepObj = TEACHER_TOUR_STEPS[currentStepIndex];
+    if (!currentStepObj) return;
+
+    const stepId = currentStepObj.id || "";
     if (stepId === "class-detail-students" || stepId === "class-detail-students-list") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "students" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     } else if (stepId === "class-detail-lessons") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "lessons" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     } else if (stepId === "class-detail-announcements") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "announcements" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     }
 
     const isTopStep = [
@@ -194,59 +295,38 @@ export function TeacherTourSpotlightOverlay() {
         mainEl.scrollTo({ top: 0, left: 0, behavior: "smooth" });
       }
     }
-  }, [isTourActive, currentStep?.id]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, updateTargetRect]);
 
-  // Layout Shift Observers
+  // Window listener integration for manual events
   useEffect(() => {
-    updateTargetRect();
+    if (!isTourActive) return;
 
-    let resizeObserver = null;
-    let mutationObserver = null;
-
-    if (isTourActive && currentStep?.targetSelector) {
-      let el = document.querySelector(currentStep.targetSelector);
-      if (!el && currentStep.fallbackTargetSelector) {
-        el = document.querySelector(currentStep.fallbackTargetSelector);
-      }
-
-      if (el) {
-        try {
-          resizeObserver = new ResizeObserver(() => {
-            requestAnimationFrame(updateTargetRect);
-          });
-          resizeObserver.observe(el);
-        } catch {
-          // Ignore
-        }
-      }
-
-      mutationObserver = new MutationObserver(() => {
-        requestAnimationFrame(updateTargetRect);
-      });
-      mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
-    }
-
-    const handleResizeOrScroll = () => {
+    const handleScrollOrResize = () => {
       updateTargetRect();
     };
 
-    window.addEventListener("resize", handleResizeOrScroll);
-    window.addEventListener("scroll", handleResizeOrScroll, true);
+    window.addEventListener("resize", handleScrollOrResize);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+
+    const mutationObserver = new MutationObserver(() => {
+      updateTargetRect();
+    });
+    mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
 
     return () => {
-      if (resizeObserver) resizeObserver.disconnect();
-      if (mutationObserver) mutationObserver.disconnect();
-      window.removeEventListener("resize", handleResizeOrScroll);
-      window.removeEventListener("scroll", handleResizeOrScroll, true);
-      clearActiveHighlights();
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      mutationObserver.disconnect();
     };
-  }, [updateTargetRect, currentStepIndex, isTourActive, currentStep, clearActiveHighlights]);
+  }, [isTourActive, updateTargetRect]);
 
   // Handle direct click on interactive view class button on page
   useEffect(() => {
-    if (!isTourActive || !currentStep) return;
+    if (!isTourActive || !isInteractionEnabled) return;
+    const currentStepObj = TEACHER_TOUR_STEPS[currentStepIndex];
+    if (!currentStepObj) return;
 
-    if (currentStep.actionToRoute === "auto-first-class" || currentStep.id === "teacher-classes-view-btn" || currentStep.id === "classes-view-btn") {
+    if (currentStepObj.actionToRoute === "auto-first-class" || currentStepObj.id === "teacher-classes-view-btn" || currentStepObj.id === "classes-view-btn") {
       const handleDirectClassClick = (e) => {
         const targetBtn = e.target.closest('[data-tour="teacher-classes-view-btn"]');
         if (targetBtn) {
@@ -261,17 +341,18 @@ export function TeacherTourSpotlightOverlay() {
       document.addEventListener("click", handleDirectClassClick, true);
       return () => document.removeEventListener("click", handleDirectClassClick, true);
     }
-  }, [isTourActive, currentStep, navigate, nextStep]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, navigate, nextStep]);
 
   // Keyboard navigation listeners
   useEffect(() => {
-    if (!isTourActive) return;
+    if (!isTourActive || !isInteractionEnabled) return;
 
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
         skipTour();
       } else if (e.key === "ArrowRight") {
-        if (!isFinalStep) nextStep(navigate);
+        const currentStepObj = TEACHER_TOUR_STEPS[currentStepIndex];
+        if (currentStepIndex < TEACHER_TOUR_STEPS.length - 1) nextStep(navigate);
       } else if (e.key === "ArrowLeft") {
         if (currentStepIndex > 0) prevStep(navigate);
       }
@@ -279,11 +360,12 @@ export function TeacherTourSpotlightOverlay() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isTourActive, isFinalStep, currentStepIndex, nextStep, prevStep, skipTour, navigate]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, nextStep, prevStep, skipTour, navigate]);
 
-  // Calculate card position without overlap
+  // Calculate card position without overlap using visible index
   const getCardStyle = () => {
-    if (!targetRect || !currentStep) {
+    const currentStepObj = TEACHER_TOUR_STEPS[visibleStepIndex];
+    if (!targetRect || !currentStepObj) {
       return {
         top: "50%",
         left: "50%",
@@ -302,7 +384,7 @@ export function TeacherTourSpotlightOverlay() {
     const vWidth = window.innerWidth || document.documentElement.clientWidth;
     const vHeight = window.innerHeight || document.documentElement.clientHeight;
 
-    const preferredPos = currentStep.placement || "right";
+    const preferredPos = currentStepObj.placement || "right";
 
     const candidatePositions = {
       right: {
@@ -407,7 +489,8 @@ export function TeacherTourSpotlightOverlay() {
   };
 
   const renderPointerArrow = () => {
-    if (!currentStep?.targetSelector || !targetRect) return null;
+    const currentStepObj = TEACHER_TOUR_STEPS[visibleStepIndex];
+    if (!currentStepObj?.targetSelector || !targetRect) return null;
 
     if (activeDirection === "right") {
       return (
@@ -442,17 +525,18 @@ export function TeacherTourSpotlightOverlay() {
   };
 
   const renderMessageBadge = () => {
-    if (!currentStep.messageText) return null;
+    const currentStepObj = TEACHER_TOUR_STEPS[visibleStepIndex];
+    if (!currentStepObj?.messageText) return null;
 
     let bgClass = "bg-blue-50/80 border-blue-200/80 text-blue-900";
     let iconClass = "text-blue-600";
     let IconComponent = Info;
 
-    if (currentStep.messageType === "tip") {
+    if (currentStepObj.messageType === "tip") {
       bgClass = "bg-green-50/80 border-green-200/80 text-green-900";
       iconClass = "text-green-600";
       IconComponent = Lightbulb;
-    } else if (currentStep.messageType === "warning") {
+    } else if (currentStepObj.messageType === "warning") {
       bgClass = "bg-amber-50/80 border-amber-200/80 text-amber-900";
       iconClass = "text-amber-600";
       IconComponent = AlertTriangle;
@@ -462,10 +546,10 @@ export function TeacherTourSpotlightOverlay() {
       <div className={`flex items-start gap-2.5 p-3 rounded-2xl border ${bgClass} mb-4 text-xs`}>
         <IconComponent className={`w-4 h-4 shrink-0 mt-0.5 ${iconClass}`} />
         <div className="flex-1 min-w-0">
-          {currentStep.messageTitle && (
-            <p className="font-bold text-[11px] uppercase tracking-wider mb-0.5">{currentStep.messageTitle}</p>
+          {currentStepObj.messageTitle && (
+            <p className="font-bold text-[11px] uppercase tracking-wider mb-0.5">{currentStepObj.messageTitle}</p>
           )}
-          <p className="leading-relaxed">{currentStep.messageText}</p>
+          <p className="leading-relaxed">{currentStepObj.messageText}</p>
         </div>
       </div>
     );
@@ -481,7 +565,10 @@ export function TeacherTourSpotlightOverlay() {
     );
   }
 
-  if (!isTourActive || !currentStep) return null;
+  if (!isTourActive) return null;
+
+  const currentStep = TEACHER_TOUR_STEPS[visibleStepIndex] || TEACHER_TOUR_STEPS[0];
+  const isFinalStep = visibleStepIndex === totalSteps - 1;
 
   const portalContent = (
     <div
@@ -494,7 +581,7 @@ export function TeacherTourSpotlightOverlay() {
       {/* 1. Dark Backdrop Overlay / Spotlight Cutout Box (z-index: 960) */}
       {targetRect ? (
         <div
-          className="fixed pointer-events-none transition-all duration-300 ease-out z-[960]"
+          className="fixed pointer-events-none z-[960]"
           style={{
             top: `${targetRect.top - 6}px`,
             left: `${targetRect.left - 6}px`,
@@ -503,17 +590,28 @@ export function TeacherTourSpotlightOverlay() {
             borderRadius: `${(parseFloat(targetRect.borderRadius) || 16) + 6}px`,
             boxShadow:
               "0 0 0 9999px rgba(0, 0, 0, 0.65), 0 0 0 3px #22c55e, 0 0 25px rgba(34, 197, 94, 0.5)",
+            willChange: "top, left, width, height, opacity",
+            opacity: spotlightOpacity,
+            transition: "top 300ms cubic-bezier(0.16, 1, 0.3, 1), left 300ms cubic-bezier(0.16, 1, 0.3, 1), width 300ms cubic-bezier(0.16, 1, 0.3, 1), height 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out",
           }}
         />
       ) : (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[900] transition-opacity duration-300" />
+        <div 
+          className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[900] transition-opacity duration-200" 
+          style={{ opacity: spotlightOpacity }}
+        />
       )}
 
       {/* 2. Tour Tooltip Popover Card (z-index: 1000) */}
       <div
         ref={cardRef}
-        style={getCardStyle()}
-        className="z-[1000] w-full max-w-sm transition-all duration-300 ease-out relative"
+        style={{
+          ...getCardStyle(),
+          willChange: "top, left, opacity",
+          opacity: modalOpacity,
+          transition: "top 300ms cubic-bezier(0.16, 1, 0.3, 1), left 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out",
+        }}
+        className={`z-[1000] w-full max-w-sm relative ${isInteractionEnabled ? "" : "pointer-events-none"}`}
       >
         {/* Pointer Arrow Tooltip Tip (Outside overflow container so it's NEVER clipped!) */}
         {renderPointerArrow()}
@@ -528,16 +626,17 @@ export function TeacherTourSpotlightOverlay() {
                 Teacher Tour
               </span>
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-teal-50 text-teal-700 border border-teal-200/80 shadow-2xs">
-                Step {currentStepIndex + 1} of {totalSteps}
+                Step {visibleStepIndex + 1} of {totalSteps}
               </span>
             </div>
 
             <button
               type="button"
+              disabled={!isInteractionEnabled}
               onClick={(e) => {
                 handleExitAllTours(e);
               }}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 cursor-pointer disabled:opacity-50"
               title="Exit tour (Esc)"
             >
               <X className="w-4 h-4" />
@@ -550,9 +649,9 @@ export function TeacherTourSpotlightOverlay() {
               <div
                 key={i}
                 className={`h-1.5 rounded-full transition-all duration-300 ease-out ${
-                  i === currentStepIndex
+                  i === visibleStepIndex
                     ? "w-6 bg-gradient-to-r from-green-500 to-teal-500 shadow-sm"
-                    : i < currentStepIndex
+                    : i < visibleStepIndex
                     ? "w-2 bg-green-500/60"
                     : "w-2 bg-gray-200"
                 }`}
@@ -581,22 +680,24 @@ export function TeacherTourSpotlightOverlay() {
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <button
               type="button"
+              disabled={!isInteractionEnabled}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 skipTour();
               }}
-              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer"
+              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer disabled:opacity-50"
             >
               Skip Tour
             </button>
 
             <div className="flex items-center gap-2">
-              {currentStepIndex > 0 && !isFinalStep && (
+              {visibleStepIndex > 0 && !isFinalStep && (
                 <button
                   type="button"
+                  disabled={!isInteractionEnabled}
                   onClick={() => prevStep(navigate)}
-                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Previous
@@ -606,8 +707,9 @@ export function TeacherTourSpotlightOverlay() {
               {isFinalStep && !currentStep.actionButtonText ? (
                 <button
                   type="button"
+                  disabled={!isInteractionEnabled}
                   onClick={finishTour}
-                  className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                  className="px-5 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Finish</span>
@@ -615,8 +717,9 @@ export function TeacherTourSpotlightOverlay() {
               ) : (
                 <button
                   type="button"
+                  disabled={!isInteractionEnabled}
                   onClick={() => nextStep(navigate)}
-                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer"
+                  className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
                   <span>{currentStep.actionButtonText || "Next"}</span>
                   <ChevronRight className="w-4 h-4" />

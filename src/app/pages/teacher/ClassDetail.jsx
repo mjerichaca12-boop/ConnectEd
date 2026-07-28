@@ -682,7 +682,7 @@ export function ClassDetail() {
     setIsStudentsLoading(true);
     setHasLoadedStudents(false);
 
-    const tableCandidates = ["students", "profiles"];
+    const tableCandidates = ["profiles", "students"];
     const classCandidate = classObj || classData || {};
     const resolvedClassGradeRaw = await resolveSubjectGradeLevel(classCandidate);
     let classGrade = normalizeGradeLevel(resolvedClassGradeRaw);
@@ -1413,11 +1413,11 @@ export function ClassDetail() {
 
       if (!foundClass && supabase) {
         try {
-          let { data: subData } = await supabase.from("subjects").select("*").eq("id", id).maybeSingle();
-          if (!subData && String(id).startsWith("demo-")) {
+          if (String(id).startsWith("demo-") || isNaN(Number(id))) {
             const demoMatch = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
             foundClass = demoMatch;
           } else {
+            let { data: subData } = await supabase.from("subjects").select("*").eq("id", Number(id)).maybeSingle();
             if (!subData) {
               const { data: firstSub } = await supabase.from("subjects").select("*").limit(1).maybeSingle();
               subData = firstSub;

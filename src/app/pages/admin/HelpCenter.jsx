@@ -181,7 +181,7 @@ export function HelpCenter() {
 
         {/* Content Body */}
         <div className="p-6 space-y-8 max-w-6xl mx-auto">
-          {/* Hero Banner: Restart Guided Tour */}
+          {/* Hero Banner: Interactive Guided Tour */}
           <div className="relative bg-gradient-to-r from-green-600 via-teal-600 to-blue-600 rounded-3xl p-8 text-white shadow-lg overflow-hidden">
             <div className="absolute top-0 right-0 translate-x-8 -translate-y-8 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
             <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -194,17 +194,9 @@ export function HelpCenter() {
                   Interactive Guided Tour
                 </h2>
                 <p className="text-green-50 text-sm leading-relaxed">
-                  Need a refresher on ConnectED modules? Restart the guided walkthrough anytime to highlight system features step-by-step.
+                  Need a refresher on ConnectED modules? The guided walkthrough highlights system features step-by-step.
                 </p>
               </div>
-
-              <button
-                onClick={handleStartTourClick}
-                className="px-6 py-3.5 bg-white text-green-700 font-bold rounded-2xl shadow-lg hover:bg-green-50 active:scale-95 transition-all text-sm flex items-center gap-2.5 shrink-0"
-              >
-                <PlayCircle className="w-5 h-5 text-green-600" />
-                <span>Restart Admin Tour</span>
-              </button>
             </div>
           </div>
 

@@ -22,10 +22,8 @@ export function ModuleTourOverlay() {
     isTourActive,
     isPreparingTour,
     activeConfig,
-    currentStep,
     currentStepIndex,
     totalSteps,
-    isFinalStep,
     nextStep,
     prevStep,
     skipModuleTour,
@@ -35,8 +33,13 @@ export function ModuleTourOverlay() {
   const [targetRect, setTargetRect] = useState(null);
   const [activeDirection, setActiveDirection] = useState("bottom");
   const [arrowOffsetPx, setArrowOffsetPx] = useState(50);
-  const [, setForceUpdate] = useState(0);
   const cardRef = useRef(null);
+
+  const [visibleStepIndex, setVisibleStepIndex] = useState(0);
+  const [modalOpacity, setModalOpacity] = useState(0);
+  const [spotlightOpacity, setSpotlightOpacity] = useState(0);
+  const [isInteractionEnabled, setIsInteractionEnabled] = useState(false);
+  const currentTransitionIdRef = useRef(0);
 
   // Clear previous highlighted targets & sidebar elevation
   const clearActiveHighlights = useCallback(() => {
@@ -48,176 +51,246 @@ export function ModuleTourOverlay() {
     });
   }, []);
 
-  // Locate, highlight, and measure active target element
-  const updateTargetRect = useCallback(() => {
-    clearActiveHighlights();
+  // Synchronized step resolver that coordinates navigation, scroll, spotlight positioning, and modal fade-in
+  const runStepTransition = useCallback((stepIdx) => {
+    const transitionId = ++currentTransitionIdRef.current;
+    setIsInteractionEnabled(false);
+    setModalOpacity(0);
 
-    if (!isTourActive || !currentStep || currentStep.targetSelector === null) {
+    const steps = activeConfig?.steps || [];
+    const targetStep = steps[stepIdx];
+    if (!targetStep) {
+      setTargetRect(null);
+      setSpotlightOpacity(0);
+      return;
+    }
+
+    // Wait for tooltip fade-out before rendering next spotlight/coordinates to prevent flash
+    setTimeout(() => {
+      if (transitionId !== currentTransitionIdRef.current) return;
+
+      const checkReadyAndPosition = () => {
+        if (transitionId !== currentTransitionIdRef.current) return;
+
+        // Ensure page data loader screens are not overlaying
+        const isPageLoading = !!document.querySelector(
+          ".loading-screen, [data-loading='true'], .animate-bounce:not(.connected-tour-spinner)"
+        );
+
+        if (isPreparingTour || isPageLoading) {
+          requestAnimationFrame(checkReadyAndPosition);
+          return;
+        }
+
+        // Center overlay if no target is requested
+        if (targetStep.targetSelector === null) {
+          setVisibleStepIndex(stepIdx);
+          setTargetRect(null);
+          setSpotlightOpacity(0);
+          
+          setTimeout(() => {
+            if (transitionId !== currentTransitionIdRef.current) return;
+            setModalOpacity(1);
+            setTimeout(() => {
+              if (transitionId !== currentTransitionIdRef.current) return;
+              setIsInteractionEnabled(true);
+            }, 200);
+          }, 100);
+          return;
+        }
+
+        let el = document.querySelector(targetStep.targetSelector);
+        if (!el && targetStep.fallbackTargetSelector) {
+          el = document.querySelector(targetStep.fallbackTargetSelector);
+        }
+
+        if (el && el.isConnected) {
+          const rect = el.getBoundingClientRect();
+          const hasSize = rect.width > 0 && rect.height > 0;
+
+          if (hasSize) {
+            // Scroll target into view if outside stable viewport boundaries
+            const vHeight = window.innerHeight || document.documentElement.clientHeight;
+            const vWidth = window.innerWidth || document.documentElement.clientWidth;
+            const isVisibleInViewport =
+              rect.top >= 40 &&
+              rect.bottom <= vHeight - 40 &&
+              rect.left >= 40 &&
+              rect.right <= vWidth - 40;
+
+            if (!isVisibleInViewport) {
+              el.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+              });
+
+              // Detect when smooth scrolling completes to compute stable coordinate rect
+              let lastTop = null;
+              let lastLeft = null;
+              let stableFrames = 0;
+
+              const checkScroll = () => {
+                if (transitionId !== currentTransitionIdRef.current) return;
+                const r = el.getBoundingClientRect();
+                if (lastTop !== null && Math.abs(r.top - lastTop) < 0.5 && Math.abs(r.left - lastLeft) < 0.5) {
+                  stableFrames++;
+                  if (stableFrames >= 3) {
+                    finalizePosition(el, stepIdx, transitionId);
+                    return;
+                  }
+                } else {
+                  stableFrames = 0;
+                }
+                lastTop = r.top;
+                lastLeft = r.left;
+                requestAnimationFrame(checkScroll);
+              };
+              requestAnimationFrame(checkScroll);
+            } else {
+              finalizePosition(el, stepIdx, transitionId);
+            }
+            return;
+          }
+        }
+
+        requestAnimationFrame(checkReadyAndPosition);
+      };
+
+      requestAnimationFrame(checkReadyAndPosition);
+    }, 150);
+  }, [isPreparingTour, activeConfig]);
+
+  const finalizePosition = (el, stepIdx, transitionId) => {
+    if (transitionId !== currentTransitionIdRef.current) return;
+
+    clearActiveHighlights();
+    const sidebarEl = document.querySelector('[data-tour="sidebar"]');
+    if (sidebarEl && (sidebarEl === el || sidebarEl.contains(el))) {
+      sidebarEl.classList.add("connected-tour-sidebar-elevated");
+    }
+    el.classList.add("tour-active-target", "connected-tour-target-active");
+
+    const compStyle = window.getComputedStyle(el);
+    const computedRadius = compStyle.borderRadius || "16px";
+    const rect = el.getBoundingClientRect();
+
+    setTargetRect({
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+      borderRadius: computedRadius,
+    });
+
+    setVisibleStepIndex(stepIdx);
+    setSpotlightOpacity(1);
+
+    // Wait for spotlight transition to finish before fading in modal
+    setTimeout(() => {
+      if (transitionId !== currentTransitionIdRef.current) return;
+      setModalOpacity(1);
+      
+      setTimeout(() => {
+        if (transitionId !== currentTransitionIdRef.current) return;
+        setIsInteractionEnabled(true);
+      }, 200);
+    }, 300);
+  };
+
+  // Run transition coordinator whenever step index changes
+  useEffect(() => {
+    if (isTourActive) {
+      runStepTransition(currentStepIndex);
+    } else {
+      setTargetRect(null);
+      setModalOpacity(0);
+      setSpotlightOpacity(0);
+      clearActiveHighlights();
+    }
+  }, [isTourActive, currentStepIndex, runStepTransition, clearActiveHighlights]);
+
+  // Live coordinate tracker for manual resize/scroll once interaction is enabled
+  const updateTargetRect = useCallback(() => {
+    if (!isTourActive || !isInteractionEnabled) return;
+
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[currentStepIndex];
+    if (!currentStepObj || currentStepObj.targetSelector === null) {
       setTargetRect(null);
       return;
     }
 
-    let el = document.querySelector(currentStep.targetSelector);
-    if (!el && currentStep.fallbackTargetSelector) {
-      el = document.querySelector(currentStep.fallbackTargetSelector);
+    let el = document.querySelector(currentStepObj.targetSelector);
+    if (!el && currentStepObj.fallbackTargetSelector) {
+      el = document.querySelector(currentStepObj.fallbackTargetSelector);
     }
 
     if (el) {
-      // Elevate sidebar parent if active target is sidebar itself or inside sidebar
-      const sidebarEl = document.querySelector('[data-tour="sidebar"]');
-      if (sidebarEl && (sidebarEl === el || sidebarEl.contains(el))) {
-        sidebarEl.classList.add("connected-tour-sidebar-elevated");
-      }
-
-      // Elevate active target element to z-index: 950
-      el.classList.add("tour-active-target", "connected-tour-target-active");
-
-      const compStyle = window.getComputedStyle(el);
-      const computedRadius = compStyle.borderRadius || "16px";
-
       const rect = el.getBoundingClientRect();
+      const compStyle = window.getComputedStyle(el);
       setTargetRect({
         top: rect.top,
         left: rect.left,
         width: rect.width,
         height: rect.height,
-        borderRadius: computedRadius,
+        borderRadius: compStyle.borderRadius || "16px",
       });
-
-      // Scroll target into view if outside viewport, if table, or if insufficient popover clearance
-      if (currentStep.targetSelector !== '[data-tour="sidebar"]') {
-        const vHeight = window.innerHeight || document.documentElement.clientHeight;
-        const vWidth = window.innerWidth || document.documentElement.clientWidth;
-        const isTable = rect.height > 150 && rect.width > vWidth * 0.5;
-
-        const isVisibleInViewport =
-          rect.top >= 20 &&
-          rect.bottom <= vHeight - 20 &&
-          rect.left >= 20 &&
-          rect.right <= vWidth - 20;
-
-        const prefPlacement = currentStep.placement || "bottom";
-        const cardMinHeight = 260;
-        const hasEnoughSpaceBelow = vHeight - rect.bottom >= cardMinHeight;
-        const hasEnoughSpaceAbove = rect.top >= cardMinHeight;
-
-        let needsScroll = !isVisibleInViewport || isTable;
-        if (prefPlacement === "bottom" && !hasEnoughSpaceBelow) {
-          needsScroll = true;
-        } else if (prefPlacement === "top" && !hasEnoughSpaceAbove) {
-          needsScroll = true;
-        }
-
-        if (needsScroll) {
-          const scrollBlock = prefPlacement.startsWith("top") ? "end" : "start";
-          el.scrollIntoView({
-            behavior: "smooth",
-            block: scrollBlock,
-            inline: "nearest",
-          });
-
-          let scrollFrames = 0;
-          const pollScrollRect = () => {
-            const updatedRect = el.getBoundingClientRect();
-            const latestCompStyle = window.getComputedStyle(el);
-            setTargetRect({
-              top: updatedRect.top,
-              left: updatedRect.left,
-              width: updatedRect.width,
-              height: updatedRect.height,
-              borderRadius: latestCompStyle.borderRadius || "16px",
-            });
-            scrollFrames++;
-            if (scrollFrames < 15) {
-              requestAnimationFrame(pollScrollRect);
-            }
-          };
-          requestAnimationFrame(pollScrollRect);
-        }
-      }
-    } else {
-      setTargetRect(null);
     }
-  }, [isTourActive, currentStep, clearActiveHighlights]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, activeConfig]);
 
-  // Auto-switch Class Detail tabs on step change
+  // Handle auto-tab shifting
   useEffect(() => {
-    if (!isTourActive || !currentStep) return;
+    if (!isTourActive || !isInteractionEnabled) return;
 
-    const stepId = currentStep.id || "";
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[currentStepIndex];
+    if (!currentStepObj) return;
+
+    const stepId = currentStepObj.id || "";
     if (stepId === "class-detail-students" || stepId === "class-detail-students-list") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "students" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     } else if (stepId === "class-detail-lessons") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "lessons" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     } else if (stepId === "class-detail-announcements") {
       window.dispatchEvent(new CustomEvent("tour-switch-tab", { detail: { tab: "announcements" } }));
-      setTimeout(() => updateTargetRect(), 60);
-      setTimeout(() => updateTargetRect(), 180);
+      setTimeout(() => updateTargetRect(), 80);
     }
-  }, [isTourActive, currentStep?.id]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, activeConfig, updateTargetRect]);
 
-  // Handle step changes, window resize, scroll, and DOM readiness retries
+  // Window listener integration for manual events
   useEffect(() => {
-    updateTargetRect();
+    if (!isTourActive) return;
 
-    let resizeObserver = null;
-    let mutationObserver = null;
-
-    if (isTourActive && currentStep?.targetSelector) {
-      let el = document.querySelector(currentStep.targetSelector);
-      if (!el && currentStep.fallbackTargetSelector) {
-        el = document.querySelector(currentStep.fallbackTargetSelector);
-      }
-
-      if (el) {
-        try {
-          resizeObserver = new ResizeObserver(() => {
-            requestAnimationFrame(updateTargetRect);
-          });
-          resizeObserver.observe(el);
-        } catch {
-          // Ignore
-        }
-      }
-
-      mutationObserver = new MutationObserver(() => {
-        requestAnimationFrame(updateTargetRect);
-      });
-      mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
-    }
-
-    const handleResizeOrScroll = () => {
+    const handleScrollOrResize = () => {
       updateTargetRect();
     };
 
-    window.addEventListener("resize", handleResizeOrScroll);
-    window.addEventListener("scroll", handleResizeOrScroll, true);
+    window.addEventListener("resize", handleScrollOrResize);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+
+    const mutationObserver = new MutationObserver(() => {
+      updateTargetRect();
+    });
+    mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
 
     return () => {
-      if (resizeObserver) resizeObserver.disconnect();
-      if (mutationObserver) mutationObserver.disconnect();
-      window.removeEventListener("resize", handleResizeOrScroll);
-      window.removeEventListener("scroll", handleResizeOrScroll, true);
-      clearActiveHighlights();
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
+      mutationObserver.disconnect();
     };
-  }, [updateTargetRect, currentStepIndex, isTourActive, currentStep, clearActiveHighlights]);
-
-  // Clean up highlights when tour deactivates
-  useEffect(() => {
-    if (!isTourActive) {
-      clearActiveHighlights();
-    }
-  }, [isTourActive, clearActiveHighlights]);
+  }, [isTourActive, updateTargetRect]);
 
   // Handle direct click on interactive view class button on page
   useEffect(() => {
-    if (!isTourActive || !currentStep) return;
+    if (!isTourActive || !isInteractionEnabled) return;
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[currentStepIndex];
+    if (!currentStepObj) return;
 
-    if (currentStep.actionToRoute === "auto-first-class" || currentStep.id === "teacher-classes-view-btn" || currentStep.id === "classes-view-btn") {
+    if (currentStepObj.actionToRoute === "auto-first-class" || currentStepObj.id === "teacher-classes-view-btn" || currentStepObj.id === "classes-view-btn") {
       const handleDirectClassClick = (e) => {
         const targetBtn = e.target.closest('[data-tour="teacher-classes-view-btn"]');
         if (targetBtn) {
@@ -232,83 +305,32 @@ export function ModuleTourOverlay() {
       document.addEventListener("click", handleDirectClassClick, true);
       return () => document.removeEventListener("click", handleDirectClassClick, true);
     }
-  }, [isTourActive, currentStep, navigate, nextStep]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, activeConfig, navigate, nextStep]);
 
-  // Keyboard navigation & accessibility focus trap
+  // Keyboard navigation listeners
   useEffect(() => {
-    if (!isTourActive) return;
+    if (!isTourActive || !isInteractionEnabled) return;
 
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        e.preventDefault();
         skipTour();
       } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        nextStep(navigate);
+        const steps = activeConfig?.steps || [];
+        if (currentStepIndex < steps.length - 1) nextStep(navigate);
       } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        prevStep(navigate);
+        if (currentStepIndex > 0) prevStep(navigate);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isTourActive, nextStep, prevStep, skipTour, navigate]);
+  }, [isTourActive, isInteractionEnabled, currentStepIndex, activeConfig, nextStep, prevStep, skipTour, navigate]);
 
-  if (!isTourActive || !currentStep) return null;
-
-  // Render contextual message box badge
-  const renderMessageBadge = () => {
-    const type = currentStep.messageType || "info";
-    const title = currentStep.messageTitle;
-    const text = currentStep.messageText;
-
-    if (!text) return null;
-
-    const badgeConfigs = {
-      info: {
-        bg: "bg-blue-50/90 border-blue-200 text-blue-800",
-        icon: <Info className="w-4 h-4 text-blue-600 shrink-0" />,
-        label: title || "Information",
-      },
-      tip: {
-        bg: "bg-amber-50/90 border-amber-200 text-amber-900",
-        icon: <Lightbulb className="w-4 h-4 text-amber-600 shrink-0" />,
-        label: title || "Pro Tip",
-      },
-      reminder: {
-        bg: "bg-purple-50/90 border-purple-200 text-purple-900",
-        icon: <Bell className="w-4 h-4 text-purple-600 shrink-0" />,
-        label: title || "Reminder",
-      },
-      warning: {
-        bg: "bg-red-50/90 border-red-200 text-red-900",
-        icon: <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />,
-        label: title || "Warning",
-      },
-      best_practice: {
-        bg: "bg-emerald-50/90 border-emerald-200 text-emerald-900",
-        icon: <Award className="w-4 h-4 text-emerald-600 shrink-0" />,
-        label: title || "Best Practice",
-      },
-    };
-
-    const cfg = badgeConfigs[type] || badgeConfigs.info;
-
-    return (
-      <div className={`p-3 rounded-2xl border ${cfg.bg} mb-4 transition-all duration-200`}>
-        <div className="flex items-center gap-1.5 font-bold text-xs mb-1">
-          {cfg.icon}
-          <span>{cfg.label}</span>
-        </div>
-        <p className="text-[11px] leading-relaxed opacity-90">{text}</p>
-      </div>
-    );
-  };
-
-  // Calculate strict non-overlapping card placement style & dynamic arrow alignment
+  // Calculate card position without overlap using visible index
   const getCardStyle = () => {
-    if (!currentStep.targetSelector) {
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[visibleStepIndex];
+    if (!targetRect || !currentStepObj) {
       return {
         top: "50%",
         left: "50%",
@@ -317,211 +339,108 @@ export function ModuleTourOverlay() {
       };
     }
 
-    if (!targetRect) {
-      return {
-        top: "80px",
-        left: "280px",
-        position: "fixed",
-      };
-    }
+    const cardWidth = cardRef.current?.offsetWidth || 380;
+    const cardHeight = cardRef.current?.offsetHeight || 380;
+    const offset = 18;
 
-    const gap = 18;
-    const cardWidth = 380;
-    const cardHeight = cardRef.current ? Math.max(220, cardRef.current.offsetHeight) : 260;
-    const vWidth = window.innerWidth;
-    const vHeight = window.innerHeight;
-
-    // Target center coordinates
     const targetCenterX = targetRect.left + targetRect.width / 2;
     const targetCenterY = targetRect.top + targetRect.height / 2;
 
-    // Wide Table Target detection
-    const isWideTableTarget = targetRect.height > 150 && targetRect.width > vWidth * 0.5;
+    const vWidth = window.innerWidth || document.documentElement.clientWidth;
+    const vHeight = window.innerHeight || document.documentElement.clientHeight;
 
-    let preferred = currentStep.placement;
+    const preferredPos = currentStepObj.placement || "bottom";
 
-    // Intelligent auto-detection of optimal non-overlapping direction
-    if (!preferred || isWideTableTarget) {
-      if (isWideTableTarget) {
-        preferred = "top";
-      } else if (targetCenterY > vHeight * 0.6) {
-        preferred = "top";
-      } else {
-        preferred = "bottom";
-      }
-    }
-
-    // Target bounding box with safety clearance
-    const tTop = targetRect.top - gap;
-    const tBottom = targetRect.top + targetRect.height + gap;
-    const tLeft = targetRect.left - gap;
-    const tRight = targetRect.left + targetRect.width + gap;
-
-    // Center alignment offsets
-    const centeredTopForSide = Math.max(16, Math.min(targetRect.top + targetRect.height / 2 - cardHeight / 2, vHeight - cardHeight - 16));
-    const centeredLeftForVertical = Math.max(16, Math.min(targetRect.left + targetRect.width / 2 - cardWidth / 2, vWidth - cardWidth - 16));
-
-    // Mathematical overlap test function
-    const checkOverlap = (l, t) => {
-      const rLeft = l;
-      const rRight = l + cardWidth;
-      const rTop = t;
-      const rBottom = t + cardHeight;
-      const noOverlap = rRight <= tLeft || rLeft >= tRight || rBottom <= tTop || rTop >= tBottom;
-      return !noOverlap;
-    };
-
-    // Candidate position options in all 4 directions with centered alignment
-    const candidates = {
-      top: {
-        dir: "top",
-        top: Math.max(16, tTop - cardHeight),
-        left: centeredLeftForVertical,
-      },
-      "top-left": {
-        dir: "top",
-        top: Math.max(16, tTop - cardHeight),
-        left: Math.max(16, targetRect.left + 32),
-      },
-      bottom: {
-        dir: "bottom",
-        top: tBottom,
-        left: centeredLeftForVertical,
-      },
-      "bottom-left": {
-        dir: "bottom",
-        top: tBottom,
-        left: Math.max(16, targetRect.left + 32),
-      },
-      "bottom-right": {
-        dir: "bottom",
-        top: tBottom,
-        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
-      },
-      "top-right": {
-        dir: "top",
-        top: Math.max(16, tTop - cardHeight),
-        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
-      },
+    const candidatePositions = {
       right: {
+        top: Math.max(16, Math.min(targetCenterY - cardHeight / 2, vHeight - cardHeight - 16)),
+        left: targetRect.left + targetRect.width + offset,
         dir: "right",
-        top: centeredTopForSide,
-        left: tRight,
       },
       left: {
+        top: Math.max(16, Math.min(targetCenterY - cardHeight / 2, vHeight - cardHeight - 16)),
+        left: targetRect.left - cardWidth - offset,
         dir: "left",
-        top: centeredTopForSide,
-        left: tLeft - cardWidth,
+      },
+      bottom: {
+        top: Math.max(16, Math.min(targetRect.top + targetRect.height + offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, Math.min(targetCenterX - cardWidth / 2, vWidth - cardWidth - 16)),
+        dir: "bottom",
+      },
+      "bottom-left": {
+        top: Math.max(16, Math.min(targetRect.top + targetRect.height + offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, targetRect.left + 32),
+        dir: "bottom",
+      },
+      "bottom-right": {
+        top: Math.max(16, Math.min(targetRect.top + targetRect.height + offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
+        dir: "bottom",
+      },
+      top: {
+        top: Math.max(16, Math.min(targetRect.top - cardHeight - offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, Math.min(targetCenterX - cardWidth / 2, vWidth - cardWidth - 16)),
+        dir: "top",
+      },
+      "top-left": {
+        top: Math.max(16, Math.min(targetRect.top - cardHeight - offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, targetRect.left + 32),
+        dir: "top",
+      },
+      "top-right": {
+        top: Math.max(16, Math.min(targetRect.top - cardHeight - offset, vHeight - cardHeight - 16)),
+        left: Math.max(16, Math.min(targetRect.left + targetRect.width - cardWidth - 32, vWidth - cardWidth - 16)),
+        dir: "top",
       },
     };
 
-    // Direction fallback sequence
-    const order = isWideTableTarget ? ["top", "bottom"] : [preferred];
-    if (!isWideTableTarget) {
-      if (preferred.startsWith("bottom")) order.push("bottom", "bottom-right", "bottom-left", "top", "right", "left");
-      else if (preferred.startsWith("top")) order.push("top", "top-right", "top-left", "bottom", "right", "left");
-      else if (preferred === "right") order.push("right", "bottom", "top", "left");
-      else if (preferred === "left") order.push("left", "bottom", "top", "right");
+    let chosenPos = candidatePositions[preferredPos] || candidatePositions["bottom-left"] || candidatePositions.right;
+
+    const hasRightSpace = candidatePositions.right.left + cardWidth <= vWidth - 16;
+    const hasLeftSpace = candidatePositions.left.left >= 16;
+    const hasBottomSpace = candidatePositions.bottom.top + cardHeight <= vHeight - 16;
+    const hasTopSpace = candidatePositions.top.top >= 16;
+
+    if (preferredPos === "right" && !hasRightSpace) {
+      if (hasLeftSpace) chosenPos = candidatePositions.left;
+      else if (hasBottomSpace) chosenPos = candidatePositions.bottom;
+      else if (hasTopSpace) chosenPos = candidatePositions.top;
+    } else if (preferredPos === "left" && !hasLeftSpace) {
+      if (hasRightSpace) chosenPos = candidatePositions.right;
+      else if (hasBottomSpace) chosenPos = candidatePositions.bottom;
+      else if (hasTopSpace) chosenPos = candidatePositions.top;
+    } else if (preferredPos === "bottom" && !hasBottomSpace) {
+      if (hasTopSpace) chosenPos = candidatePositions.top;
+      else if (hasLeftSpace) chosenPos = candidatePositions.left;
+      else if (hasRightSpace) chosenPos = candidatePositions.right;
+    } else if (preferredPos === "top" && !hasTopSpace) {
+      if (hasBottomSpace) chosenPos = candidatePositions.bottom;
+      else if (hasLeftSpace) chosenPos = candidatePositions.left;
+      else if (hasRightSpace) chosenPos = candidatePositions.right;
     }
 
-    let chosenPos = null;
-
-    for (const dir of order) {
-      if (!dir || !candidates[dir]) continue;
-      const pos = candidates[dir];
-      const fitsViewport =
-        pos.top >= 10 &&
-        pos.top + cardHeight <= vHeight - 10 &&
-        pos.left >= 10 &&
-        pos.left + cardWidth <= vWidth - 10;
-
-      const overlaps = checkOverlap(pos.left, pos.top);
-
-      if (fitsViewport && !overlaps) {
-        chosenPos = pos;
-        break;
-      }
-    }
-
-    // Strict Non-Overlapping Fallback Solver for Tables & Cards
-    if (!chosenPos) {
-      if (isWideTableTarget) {
-        const spaceAbove = tTop;
-        const spaceBelow = vHeight - tBottom;
-
-        if (spaceAbove >= cardHeight || spaceAbove >= spaceBelow) {
-          chosenPos = {
-            dir: "top",
-            top: Math.max(16, tTop - cardHeight),
-            left: centeredLeftForVertical,
-          };
-        } else {
-          chosenPos = {
-            dir: "bottom",
-            top: Math.min(tBottom, vHeight - cardHeight - 16),
-            left: centeredLeftForVertical,
-          };
-        }
-      } else {
-        const spaceBelow = vHeight - tBottom;
-        const spaceAbove = tTop;
-        const spaceLeft = tLeft;
-        const spaceRight = vWidth - tRight;
-
-        if (spaceLeft >= cardWidth + 16) {
-          chosenPos = {
-            dir: "left",
-            top: centeredTopForSide,
-            left: tLeft - cardWidth,
-          };
-        } else if (spaceRight >= cardWidth + 16) {
-          chosenPos = {
-            dir: "right",
-            top: centeredTopForSide,
-            left: tRight,
-          };
-        } else if (spaceBelow >= cardHeight || spaceBelow >= spaceAbove) {
-          chosenPos = {
-            dir: "bottom",
-            top: Math.min(tBottom, vHeight - cardHeight - 10),
-            left: centeredLeftForVertical,
-          };
-        } else {
-          chosenPos = {
-            dir: "top",
-            top: Math.max(10, tTop - cardHeight),
-            left: centeredLeftForVertical,
-          };
-        }
-      }
-    }
-
-    // Determine exact arrow pointing direction based on actual target vs card center position
-    const actualArrowDir = chosenPos.dir;
-
-    // Compute dynamic pointer arrow position along card edge pointing 100% directly at target center
     const finalTop = Math.max(16, Math.min(chosenPos.top, vHeight - cardHeight - 16));
     const finalLeft = Math.max(16, Math.min(chosenPos.left, vWidth - cardWidth - 16));
+
+    const actualArrowDir = chosenPos.dir;
 
     let calculatedArrowPx = 50;
     if (actualArrowDir === "left" || actualArrowDir === "right") {
       const relY = targetCenterY - finalTop;
       calculatedArrowPx = Math.max(28, Math.min(relY, cardHeight - 28));
     } else {
-      if (preferred === "bottom-left" || preferred === "top-left") {
+      if (preferredPos === "bottom-left" || preferredPos === "top-left") {
         calculatedArrowPx = 48;
+      } else if (preferredPos === "bottom-right" || preferredPos === "top-right") {
+        calculatedArrowPx = Math.max(28, cardWidth - 48);
       } else {
         const relX = targetCenterX - finalLeft;
         calculatedArrowPx = Math.max(28, Math.min(relX, cardWidth - 28));
       }
     }
 
-    if (activeDirection !== actualArrowDir) {
-      setActiveDirection(actualArrowDir);
-    }
-    if (arrowOffsetPx !== calculatedArrowPx) {
-      setArrowOffsetPx(calculatedArrowPx);
-    }
+    if (activeDirection !== actualArrowDir) setActiveDirection(actualArrowDir);
+    if (arrowOffsetPx !== calculatedArrowPx) setArrowOffsetPx(calculatedArrowPx);
 
     return {
       top: `${finalTop}px`,
@@ -530,11 +449,10 @@ export function ModuleTourOverlay() {
     };
   };
 
-  const progressPercent = Math.round(((currentStepIndex + 1) / totalSteps) * 100);
-
-  // Render dynamic callout arrow at z-index: 1001 pointing 100% directly at target content center
   const renderPointerArrow = () => {
-    if (!currentStep?.targetSelector || !targetRect) return null;
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[visibleStepIndex];
+    if (!currentStepObj?.targetSelector || !targetRect) return null;
 
     if (activeDirection === "right") {
       return (
@@ -567,6 +485,39 @@ export function ModuleTourOverlay() {
     }
     return null;
   };
+
+  const renderMessageBadge = () => {
+    const steps = activeConfig?.steps || [];
+    const currentStepObj = steps[visibleStepIndex];
+    if (!currentStepObj?.messageText) return null;
+
+    let bgClass = "bg-blue-50/80 border-blue-200/80 text-blue-900";
+    let iconClass = "text-blue-600";
+    let IconComponent = Info;
+
+    if (currentStepObj.messageType === "tip") {
+      bgClass = "bg-green-50/80 border-green-200/80 text-green-900";
+      iconClass = "text-green-600";
+      IconComponent = Lightbulb;
+    } else if (currentStepObj.messageType === "warning") {
+      bgClass = "bg-amber-50/80 border-amber-200/80 text-amber-900";
+      iconClass = "text-amber-600";
+      IconComponent = AlertTriangle;
+    }
+
+    return (
+      <div className={`flex items-start gap-2.5 p-3 rounded-2xl border ${bgClass} mb-4 text-xs`}>
+        <IconComponent className={`w-4 h-4 shrink-0 mt-0.5 ${iconClass}`} />
+        <div className="flex-1 min-w-0">
+          {currentStepObj.messageTitle && (
+            <p className="font-bold text-[11px] uppercase tracking-wider mb-0.5">{currentStepObj.messageTitle}</p>
+          )}
+          <p className="leading-relaxed">{currentStepObj.messageText}</p>
+        </div>
+      </div>
+    );
+  };
+
   if (isPreparingTour) {
     return createPortal(
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1001] bg-gray-900/90 text-white backdrop-blur-md px-5 py-2.5 rounded-full shadow-2xl border border-white/20 flex items-center gap-3 animate-in fade-in zoom-in-95 font-sans pointer-events-none">
@@ -577,7 +528,11 @@ export function ModuleTourOverlay() {
     );
   }
 
-  if (!isTourActive || !currentStep) return null;
+  if (!isTourActive) return null;
+
+  const steps = activeConfig?.steps || [];
+  const currentStep = steps[visibleStepIndex] || steps[0];
+  const isFinalStep = visibleStepIndex === steps.length - 1;
 
   const portalContent = (
     <div
@@ -587,10 +542,10 @@ export function ModuleTourOverlay() {
       aria-describedby="tour-step-description"
       className="connected-tour-portal-root font-sans"
     >
-      {/* 1. Dark Backdrop Overlay / Spotlight Cutout Box (z-index: 900 / 960) */}
+      {/* 1. Dark Backdrop Overlay / Spotlight Cutout Box (z-index: 960) */}
       {targetRect ? (
         <div
-          className="fixed pointer-events-none transition-all duration-300 ease-out z-[960]"
+          className="fixed pointer-events-none z-[960]"
           style={{
             top: `${targetRect.top - 6}px`,
             left: `${targetRect.left - 6}px`,
@@ -599,42 +554,54 @@ export function ModuleTourOverlay() {
             borderRadius: `${(parseFloat(targetRect.borderRadius) || 16) + 6}px`,
             boxShadow:
               "0 0 0 9999px rgba(0, 0, 0, 0.65), 0 0 0 3px #22c55e, 0 0 25px rgba(34, 197, 94, 0.5)",
+            willChange: "top, left, width, height, opacity",
+            opacity: spotlightOpacity,
+            transition: "top 300ms cubic-bezier(0.16, 1, 0.3, 1), left 300ms cubic-bezier(0.16, 1, 0.3, 1), width 300ms cubic-bezier(0.16, 1, 0.3, 1), height 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 300ms ease-out",
           }}
         />
       ) : (
-        <div className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[900] transition-opacity duration-300" />
+        <div 
+          className="fixed inset-0 bg-black/65 backdrop-blur-xs z-[900] transition-opacity duration-200" 
+          style={{ opacity: spotlightOpacity }}
+        />
       )}
 
       {/* 2. Tour Tooltip Popover Card (z-index: 1000) */}
       <div
         ref={cardRef}
-        style={getCardStyle()}
-        className="z-[1000] w-full max-w-sm transition-all duration-300 ease-out relative"
+        style={{
+          ...getCardStyle(),
+          willChange: "top, left, opacity",
+          opacity: modalOpacity,
+          transition: "top 300ms cubic-bezier(0.16, 1, 0.3, 1), left 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out",
+        }}
+        className={`z-[1000] w-full max-w-sm relative ${isInteractionEnabled ? "" : "pointer-events-none"}`}
       >
-        {/* Callout Pointer Arrow (z-index: 1001) */}
+        {/* Pointer Arrow Tooltip Tip */}
         {renderPointerArrow()}
 
         {/* Card Body Container */}
         <div className="bg-white/98 backdrop-blur-xl rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.3),0_0_30px_rgba(34,197,94,0.15)] border border-gray-200/80 max-h-[calc(100vh-32px)] overflow-y-auto no-scrollbar p-6">
-          {/* Top Header - Aligned Badges on Same Baseline */}
+          {/* Header Badges */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-gray-100 text-gray-700 border border-gray-200/80 shadow-2xs">
                 {activeConfig?.moduleTitle || "Module Tour"}
               </span>
               <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase bg-green-50 text-green-700 border border-green-200/80 shadow-2xs">
-                Step {currentStepIndex + 1} of {totalSteps}
+                Step {visibleStepIndex + 1} of {totalSteps}
               </span>
             </div>
 
             <button
               type="button"
+              disabled={!isInteractionEnabled}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 skipTour();
               }}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 cursor-pointer"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/50 cursor-pointer disabled:opacity-50"
               title="Exit tour (Esc)"
             >
               <X className="w-4 h-4" />
@@ -647,9 +614,9 @@ export function ModuleTourOverlay() {
               <div
                 key={i}
                 className={`h-1.5 rounded-full transition-all duration-300 ease-out ${
-                  i === currentStepIndex
+                  i === visibleStepIndex
                     ? "w-6 bg-gradient-to-r from-green-500 to-teal-500 shadow-sm"
-                    : i < currentStepIndex
+                    : i < visibleStepIndex
                     ? "w-2 bg-green-500/60"
                     : "w-2 bg-gray-200"
                 }`}
@@ -657,7 +624,7 @@ export function ModuleTourOverlay() {
             ))}
           </div>
 
-          {/* Step Title & Description */}
+          {/* Title & Description */}
           <h3 className="text-lg font-bold text-gray-900 tracking-tight mb-2">
             {currentStep.title}
           </h3>
@@ -678,22 +645,24 @@ export function ModuleTourOverlay() {
           <div className="flex items-center justify-between pt-3 border-t border-gray-100">
             <button
               type="button"
+              disabled={!isInteractionEnabled}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 skipTour();
               }}
-              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer"
+              className="text-xs text-gray-400 hover:text-gray-700 font-medium transition-colors cursor-pointer disabled:opacity-50"
             >
               Exit Tour
             </button>
 
             <div className="flex items-center gap-2">
-              {currentStepIndex > 0 && (
+              {visibleStepIndex > 0 && (
                 <button
                   type="button"
+                  disabled={!isInteractionEnabled}
                   onClick={() => prevStep(navigate)}
-                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-2 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Previous
@@ -702,8 +671,9 @@ export function ModuleTourOverlay() {
 
               <button
                 type="button"
+                disabled={!isInteractionEnabled}
                 onClick={() => nextStep(navigate)}
-                className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer"
+                className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-teal-700 active:scale-[0.98] shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
               >
                 <span>{currentStep.actionButtonText || (isFinalStep ? "Finish" : "Next")}</span>
                 {isFinalStep && !currentStep.actionButtonText ? (

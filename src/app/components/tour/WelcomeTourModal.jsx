@@ -1,12 +1,20 @@
 import React from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Compass, X, ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Sparkles, GraduationCap, X, ArrowRight, CheckCircle2, ShieldCheck } from "lucide-react";
 import { useTour } from "../../context/TourContext";
 
 export function WelcomeTourModal() {
   const { isWelcomeOpen, startTour, skipWelcome } = useTour();
 
-  if (!isWelcomeOpen) return null;
+  const currentPath = window.location.pathname;
+  if (
+    !isWelcomeOpen ||
+    currentPath.includes("/change-password") ||
+    currentPath.includes("/login") ||
+    currentPath.includes("/reset-password")
+  ) {
+    return null;
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200 font-sans">
@@ -37,9 +45,9 @@ export function WelcomeTourModal() {
             </div>
           </div>
 
-          {/* Icon Badge */}
-          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-green-500 via-teal-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/20 mb-6 transform hover:scale-105 transition-transform duration-200">
-            <Compass className="w-8 h-8 text-white" />
+          {/* Icon Badge / Official Logo */}
+          <div className="mx-auto w-16 h-16 bg-white rounded-2xl border border-gray-100/90 flex items-center justify-center shadow-lg shadow-green-500/15 mb-6 transform hover:scale-105 transition-transform duration-200 p-2.5">
+            <img src="/connected_logo.png" alt="ConnectED Official Logo" className="w-12 h-12 object-contain" />
           </div>
 
           {/* Title */}

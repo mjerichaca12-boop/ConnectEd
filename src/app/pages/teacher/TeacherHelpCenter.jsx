@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { useTeacherTour } from "@/app/context/TeacherTourContext";
@@ -27,7 +27,9 @@ import {
 
 export function TeacherHelpCenter() {
   const navigate = useNavigate();
-  const { restartTour } = useTeacherTour();
+  const [searchParams] = useSearchParams();
+  const isFromOnboarding = searchParams.get("fromOnboarding") === "true";
+  const { restartTour, tourStatus } = useTeacherTour();
   const { getModuleProgress, handleModuleCardClick } = useModuleTour();
   const [teacherName] = useState(() => {
     const rawUser = localStorage.getItem("currentUser");
@@ -181,33 +183,22 @@ export function TeacherHelpCenter() {
 
         {/* Content Body */}
         <div className="p-6 space-y-8 max-w-6xl mx-auto">
-          {/* Hero Banner: Restart Guided Tour */}
-          <div className="relative bg-gradient-to-r from-green-600 via-teal-600 to-blue-600 rounded-3xl p-8 text-white shadow-lg overflow-hidden">
-            <div className="absolute top-0 right-0 translate-x-8 -translate-y-8 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="space-y-2 max-w-xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold tracking-wide">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Teacher Onboarding</span>
+          {/* Onboarding Welcome Notice (Only shown when coming from First Login Onboarding) */}
+          {isFromOnboarding && (
+            <div className="bg-gradient-to-r from-green-500/10 via-teal-500/10 to-emerald-500/10 border border-green-200 rounded-2xl p-5 flex items-center justify-between gap-4 animate-in fade-in zoom-in-95">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-md">
+                  <BookOpen className="w-5 h-5" />
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                  Interactive Guided Tour
-                </h2>
-                <p className="text-green-50 text-sm leading-relaxed">
-                  Need a refresher on ConnectED modules? Restart the guided walkthrough anytime to highlight system features step-by-step.
-                </p>
+                <div>
+                  <h4 className="font-bold text-gray-900 text-sm">Welcome to Teacher Help Center!</h4>
+                  <p className="text-gray-600 text-xs mt-0.5">
+                    Explore the <strong>User Guide &amp; Key Modules</strong> below to start interactive guided tours for any platform feature.
+                  </p>
+                </div>
               </div>
-
-              <button
-                type="button"
-                onClick={handleStartTourClick}
-                className="px-6 py-3.5 bg-white text-green-700 font-bold rounded-2xl shadow-lg hover:bg-green-50 active:scale-95 transition-all text-sm flex items-center gap-2.5 shrink-0 cursor-pointer"
-              >
-                <PlayCircle className="w-5 h-5 text-green-600" />
-                <span>Restart Teacher Tour</span>
-              </button>
             </div>
-          </div>
+          )}
 
           {/* Search Filter Bar */}
           <div className="relative">
@@ -293,7 +284,7 @@ export function TeacherHelpCenter() {
                         <button
                           type="button"
                           onClick={() => handleModuleCardClick(guide.moduleId, navigate)}
-                          className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-xl font-semibold text-xs flex items-center gap-1.5 hover:from-green-700 hover:to-teal-700 active:scale-95 transition-all shadow-xs cursor-pointer"
+                          className="px-4 py-2 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-xl font-semibold text-xs flex items-center gap-1.5 hover:from-green-700 hover:to-teal-700 active:scale-95 transition-all shadow-md cursor-pointer animate-pulse ring-2 ring-green-400/80 shadow-green-600/30 hover:animate-none"
                         >
                           <Sparkles className="w-3.5 h-3.5" />
                           <span>Start Tour</span>

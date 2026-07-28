@@ -22,6 +22,16 @@ export function TourProvider({ children }) {
   // Automatically check on mount if admin needs first-time login welcome screen
   useEffect(() => {
     const checkWelcomeEligibility = () => {
+      const pathname = window.location.pathname;
+      if (
+        pathname.includes("/change-password") ||
+        pathname.includes("/login") ||
+        pathname.includes("/reset-password")
+      ) {
+        setIsWelcomeOpen(false);
+        return;
+      }
+
       const rawUser = localStorage.getItem("currentUser");
       if (!rawUser) return;
       try {
@@ -40,7 +50,11 @@ export function TourProvider({ children }) {
     };
 
     const timer = setTimeout(checkWelcomeEligibility, 300);
-    return () => clearTimeout(timer);
+    const interval = setInterval(checkWelcomeEligibility, 800);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, []);
 
   // Cancel & stop all pending readiness observers
@@ -58,13 +72,24 @@ export function TourProvider({ children }) {
     });
   }, []);
 
-  // Page Data & Target Readiness Observer
-  const waitForPageAndTargetReady = useCallback((stepIndex, onReady) => {
+  // Strict 6-Step Page & Target Readiness Observer Pipeline
+  const waitForPageAndTargetReady = useCallback((stepIndex, onReady, isPageChange = false) => {
     cancelReadinessObserver();
     cancelledRef.current = false;
 
     const targetStep = ADMIN_TOUR_STEPS[stepIndex] || ADMIN_TOUR_STEPS[0];
     const targetSelector = targetStep?.targetSelector;
+    const fallbackSelector = targetStep?.fallbackTargetSelector;
+
+    // Synchronously update step index and active state immediately for 0ms frame response
+    setCurrentStepIndex(stepIndex);
+    setIsTourActive(true);
+
+    if (isPageChange) {
+      setIsPreparingTour(true);
+    } else {
+      setIsPreparingTour(false);
+    }
 
     let attempts = 0;
     let lastRectStr = "";
@@ -74,34 +99,37 @@ export function TourProvider({ children }) {
       if (cancelledRef.current) return;
 
       if (!targetSelector) {
-        if (cancelledRef.current) return;
         setIsPreparingTour(false);
-        setCurrentStepIndex(stepIndex);
-        setIsTourActive(true);
         if (onReady) onReady();
         return;
       }
 
-      const isPageDataLoading = !!document.querySelector(".animate-bounce, .animate-spin:not(.connected-tour-spinner), [data-loading='true']");
+      // Verify no global loading screen or fetching state is active
+      const isPageLoading = !!document.querySelector(
+        ".loading-screen, [data-loading='true'], .animate-bounce:not(.connected-tour-spinner)"
+      );
 
       let el = document.querySelector(targetSelector);
-      if (el && el.isConnected) {
+      if (!el && fallbackSelector) {
+        el = document.querySelector(fallbackSelector);
+      }
+
+      if (el && el.isConnected && !isPageLoading) {
         const rect = el.getBoundingClientRect();
         const hasSize = rect.width > 0 && rect.height > 0;
         const currentRectStr = `${Math.round(rect.top)},${Math.round(rect.left)},${Math.round(rect.width)},${Math.round(rect.height)}`;
 
-        if (hasSize && !isPageDataLoading && currentRectStr === lastRectStr) {
+        if (hasSize && currentRectStr === lastRectStr) {
           stableCount++;
         } else {
           stableCount = 0;
         }
         lastRectStr = currentRectStr;
 
-        if (stableCount >= 2 || (hasSize && attempts > 15)) {
+        // Ensure target coordinates have stabilized for consecutive animation frames
+        if (stableCount >= 1 || (hasSize && attempts > 10)) {
           if (cancelledRef.current) return;
           setIsPreparingTour(false);
-          setCurrentStepIndex(stepIndex);
-          setIsTourActive(true);
           if (onReady) onReady();
           return;
         }
@@ -109,27 +137,20 @@ export function TourProvider({ children }) {
 
       attempts++;
       if (attempts < 60 && !cancelledRef.current) {
-        requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
+        requestAnimationFrame(checkStabilityAndActivate);
       } else if (!cancelledRef.current) {
         setIsPreparingTour(false);
-        setCurrentStepIndex(stepIndex);
-        setIsTourActive(true);
         if (onReady) onReady();
       }
     };
 
-    setIsPreparingTour(true);
-    setIsTourActive(false);
-
     const observer = new MutationObserver(() => {
-      if (!cancelledRef.current) {
-        checkStabilityAndActivate();
-      }
+      if (!cancelledRef.current) checkStabilityAndActivate();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     observerRef.current = observer;
 
-    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 50));
+    requestAnimationFrame(checkStabilityAndActivate);
   }, [cancelReadinessObserver]);
 
   const resetWelcomeState = useCallback(() => {

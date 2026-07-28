@@ -167,7 +167,6 @@ function NotificationDropdown({
 
     const load = async () => {
       const currentUser = getCurrentUser();
-      console.log("[NotificationDropdown] Loading notifications for user:", currentUser?.id);
 
       if (currentUser?.role === "admin" && !isValidUuid(currentUser.id)) {
         currentUser.id = "11111111-1111-1111-1111-111111111111"; // Patch for old admin sessions
@@ -176,31 +175,21 @@ function NotificationDropdown({
       const key = getStorageKey(currentUser);
 
       if (!currentUser || !currentUser.id) {
-        console.warn("[NotificationDropdown] Skipping notification fetch: currentUser is null.");
         setNotifications([]);
         return;
       }
 
-      if (!supabase?.auth?.getUser) {
-        console.warn("[NotificationDropdown] Supabase auth client is unavailable; falling back to local notifications.");
-      } else {
+      if (supabase?.auth?.getUser) {
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
-           console.warn("[NotificationDropdown] No active session found. Skipping user fetch.");
            return;
         }
 
-        const { data: authData, error: authError } = await supabase.auth.getUser();
-        if (authError) {
-          if (!authError.message?.toLowerCase().includes("session missing") && authError.name !== "AuthSessionMissingError") {
-            console.error("[NotificationDropdown] Supabase auth error:", authError);
-          }
-        }
+        const { data: authData } = await supabase.auth.getUser();
 
         const authUser = authData?.user ?? null;
         if (db() && isValidUuid(authUser?.id)) {
           try {
-            console.log("[NotificationDropdown] Retrieving notifications from DB for:", authUser.id);
             const res = await db()
               .from("notifications")
               .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type")
@@ -225,20 +214,11 @@ function NotificationDropdown({
                 }
               }
 
-              console.log("[NotificationDropdown] Retrieved", finalItems.length, "notifications.");
               setNotifications(finalItems);
               localStorage.setItem(key, JSON.stringify(finalItems));
               return;
             }
-
-            if (res.error) {
-              console.error("[NotificationDropdown] Supabase notification fetch error:", res.error);
-            }
-          } catch (err) {
-            console.error("[NotificationDropdown] Notification DB load error:", err);
-          }
-        } else {
-          console.warn("[NotificationDropdown] Skipping notification fetch until a valid authenticated user exists.");
+          } catch {}
         }
       }
 
@@ -294,7 +274,6 @@ function NotificationDropdown({
     if (!supabase || !user?.id) return;
 
     try {
-      console.log("[NotificationDropdown] Setting up realtime subscription for notifications channel:", `notifications-${user.id}`);
       channel = supabase
         .channel(`notifications-${user.id}`)
         .on(
@@ -307,7 +286,6 @@ function NotificationDropdown({
           },
           (payload) => {
             const newRow = payload.new;
-            console.log("[NotificationDropdown] Realtime INSERT event received payload:", payload);
             if (!newRow || String(newRow.user_id) !== String(user.id)) return;
 
             const item = mapRow(newRow, user.role);
@@ -317,27 +295,20 @@ function NotificationDropdown({
               onNotificationsChange?.(merged);
               try {
                 if (audioRef.current) {
-                  audioRef.current.play().catch((err) => {
-                    console.log("[NotificationDropdown] Sound playback failed:", err);
-                  });
+                  audioRef.current.play().catch(() => {});
                 }
               } catch {}
               return merged;
             });
           }
         )
-        .subscribe((status) => {
-          console.log("[NotificationDropdown] Realtime channel subscription status changed:", status);
-        });
-    } catch (err) {
-      console.warn("[NotificationDropdown] Realtime notifications setup failed:", err);
-    }
+        .subscribe();
+    } catch {}
 
     return () => {
       try {
         if (channel && supabase) {
           supabase.removeChannel(channel);
-          console.log("[NotificationDropdown] Unsubscribed from realtime channel.");
         }
       } catch {}
     };

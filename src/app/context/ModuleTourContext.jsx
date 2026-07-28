@@ -14,10 +14,24 @@ export function ModuleTourProvider({ children }) {
   const [pendingModuleId, setPendingModuleId] = useState(null);
   const [isFinishOpen, setIsFinishOpen] = useState(false);
 
+  // Helper to get storage key per user
+  const getStorageKey = () => {
+    try {
+      const rawUser = localStorage.getItem("currentUser");
+      if (rawUser) {
+        const user = JSON.parse(rawUser);
+        return `${PROGRESS_STORAGE_KEY}_${user.id || user.email || "default"}`;
+      }
+    } catch {
+      // Ignore
+    }
+    return `${PROGRESS_STORAGE_KEY}_default`;
+  };
+
   // Store learning progress for all modules
   const [progressData, setProgressData] = useState(() => {
     try {
-      const saved = localStorage.getItem(PROGRESS_STORAGE_KEY);
+      const saved = localStorage.getItem(getStorageKey());
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -38,7 +52,7 @@ export function ModuleTourProvider({ children }) {
         },
       };
       try {
-        localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(getStorageKey(), JSON.stringify(next));
       } catch (err) {
         console.error("Failed to save module tour progress:", err);
       }
@@ -50,7 +64,16 @@ export function ModuleTourProvider({ children }) {
   const getModuleProgress = useCallback(
     (moduleId) => {
       const moduleConfig = MODULE_TOURS[moduleId];
-      const data = progressData[moduleId] || { status: "not_started", lastStepIndex: 0 };
+      let userProgress = progressData;
+      try {
+        const saved = localStorage.getItem(getStorageKey());
+        if (saved) {
+          userProgress = JSON.parse(saved);
+        }
+      } catch {
+        // Ignore
+      }
+      const data = userProgress[moduleId] || { status: "not_started", lastStepIndex: 0 };
       return {
         status: data.status || "not_started",
         lastStepIndex: data.lastStepIndex || 0,
@@ -75,8 +98,8 @@ export function ModuleTourProvider({ children }) {
     });
   }, []);
 
-  // Robust Page & DOM Target Readiness Observer Engine
-  const waitForPageAndTargetReady = useCallback((stepIndex, moduleId, onReady) => {
+  // Strict 6-Step Page & Target Readiness Observer Pipeline
+  const waitForPageAndTargetReady = useCallback((stepIndex, moduleId, onReady, isPageChange = false) => {
     const config = MODULE_TOURS[moduleId];
     if (!config) return;
 
@@ -87,6 +110,16 @@ export function ModuleTourProvider({ children }) {
     const targetSelector = targetStep?.targetSelector;
     const fallbackSelector = targetStep?.fallbackTargetSelector;
 
+    // Synchronously update step index and active state immediately for 0ms frame response
+    setCurrentStepIndex(stepIndex);
+    setIsTourActive(true);
+
+    if (isPageChange) {
+      setIsPreparingTour(true);
+    } else {
+      setIsPreparingTour(false);
+    }
+
     let attempts = 0;
     let lastRectStr = "";
     let stableCount = 0;
@@ -95,66 +128,58 @@ export function ModuleTourProvider({ children }) {
       if (cancelledRef.current) return;
 
       if (!targetSelector) {
-        if (cancelledRef.current) return;
         setIsPreparingTour(false);
-        setCurrentStepIndex(stepIndex);
-        setIsTourActive(true);
         if (onReady) onReady();
         return;
       }
 
-      const isPageDataLoading = !!document.querySelector(".animate-bounce:not(.connected-tour-spinner), [data-loading='true']");
+      // Verify no global loading screen or fetching state is active
+      const isPageLoading = !!document.querySelector(
+        ".loading-screen, [data-loading='true'], .animate-bounce:not(.connected-tour-spinner)"
+      );
 
       let el = document.querySelector(targetSelector);
       if (!el && fallbackSelector) {
         el = document.querySelector(fallbackSelector);
       }
 
-      if (el && el.isConnected) {
+      if (el && el.isConnected && !isPageLoading) {
         const rect = el.getBoundingClientRect();
         const hasSize = rect.width > 0 && rect.height > 0;
         const currentRectStr = `${Math.round(rect.top)},${Math.round(rect.left)},${Math.round(rect.width)},${Math.round(rect.height)}`;
 
-        if (hasSize && !isPageDataLoading && currentRectStr === lastRectStr) {
+        if (hasSize && currentRectStr === lastRectStr) {
           stableCount++;
         } else {
           stableCount = 0;
         }
         lastRectStr = currentRectStr;
 
-        if (stableCount >= 2 || (hasSize && attempts > 15)) {
+        // Ensure target coordinates have stabilized for consecutive animation frames
+        if (stableCount >= 1 || (hasSize && attempts > 10)) {
           if (cancelledRef.current) return;
           setIsPreparingTour(false);
-          setCurrentStepIndex(stepIndex);
-          setIsTourActive(true);
           if (onReady) onReady();
           return;
         }
       }
 
       attempts++;
-      if (attempts < 200 && !cancelledRef.current) {
-        requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 60));
+      if (attempts < 60 && !cancelledRef.current) {
+        requestAnimationFrame(checkStabilityAndActivate);
       } else if (!cancelledRef.current) {
         setIsPreparingTour(false);
-        setCurrentStepIndex(stepIndex);
-        setIsTourActive(true);
         if (onReady) onReady();
       }
     };
 
-    setIsPreparingTour(true);
-    setIsTourActive(false);
-
     const observer = new MutationObserver(() => {
-      if (!cancelledRef.current) {
-        checkStabilityAndActivate();
-      }
+      if (!cancelledRef.current) checkStabilityAndActivate();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     observerRef.current = observer;
 
-    requestAnimationFrame(() => setTimeout(checkStabilityAndActivate, 100));
+    requestAnimationFrame(checkStabilityAndActivate);
   }, [cancelReadinessObserver]);
 
   // Handle clicking a module card in HelpCenter
