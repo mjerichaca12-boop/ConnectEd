@@ -570,7 +570,7 @@ function StudentManagement() {
   };
 
   const handleGenerateAccounts = async (specificIds = null) => {
-    const idsToProcess = specificIds ? new Set(specificIds) : selectedMasterlistIds;
+    const idsToProcess = Array.isArray(specificIds) ? new Set(specificIds) : selectedMasterlistIds;
     const selected = masterlist.filter(m => idsToProcess.has(m.id) && !m.account_created);
     if (selected.length === 0) return;
 
