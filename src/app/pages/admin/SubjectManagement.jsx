@@ -7,6 +7,7 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
