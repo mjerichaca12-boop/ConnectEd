@@ -169,7 +169,7 @@ function TeacherManagement() {
   const isTeacherActive = (status) => normalizeTeacherStatus(status) === "Active";
   const getSubjectLabel = (subjectId) => {
     const subject = availableSubjects.find((item) => item.id === subjectId);
-    if (!subject) return subjectId || "Unknown subject";
+    if (!subject) return null;
     return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"} - ${subject.section || "All Sections"})`;
   };
   const splitTeacherName = (fullName) => {
@@ -251,18 +251,13 @@ function TeacherManagement() {
     const subjectIds = normalizeSubjects(teacher?.subjects);
     return subjectIds.map((subjectId) => {
       const subject = availableSubjects.find((item) => String(item.id) === String(subjectId));
-      if (!subject) {
-        return {
-          subjectLabel: subjectId || "Unknown subject",
-          classLabel: "No grade assigned"
-        };
-      }
+      if (!subject) return null;
 
       return {
         subjectLabel: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`,
         classLabel: subject.grade_level || "No grade assigned"
       };
-    });
+    }).filter(Boolean);
   };
   const validateTeacherField = (field, value, formData) => {
     const nextValue = typeof value === "string" ? value : "";
@@ -2064,16 +2059,19 @@ function TeacherManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-2">Assigned Subjects</label>
                     <div className="flex flex-wrap gap-2">
-                      {normalizeSubjects(selectedTeacher.subjects).length > 0 ? (
-                        normalizeSubjects(selectedTeacher.subjects).map((subjectId, idx) => (
-                          <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
-                            <BookOpen className="w-4 h-4" />
-                            {getSubjectLabel(subjectId)}
-                          </span>
-                        ))
-                      ) : (
-                        <p className="text-gray-500 text-sm">No subjects assigned</p>
-                      )}
+                      {(() => {
+                        const validSubjects = normalizeSubjects(selectedTeacher.subjects).filter(id => getSubjectLabel(id) !== null);
+                        return validSubjects.length > 0 ? (
+                          validSubjects.map((subjectId, idx) => (
+                            <span key={idx} className="flex items-center gap-1 px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium">
+                              <BookOpen className="w-4 h-4" />
+                              {getSubjectLabel(subjectId)}
+                            </span>
+                          ))
+                        ) : (
+                          <p className="text-gray-500 text-sm">No subjects assigned</p>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
