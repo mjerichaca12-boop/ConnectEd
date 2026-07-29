@@ -846,8 +846,7 @@ function TeacherManagement() {
             { name: "teacher_student_grades", col: "teacher_id" },
             { name: "teacher_assessment_submissions", col: "teacher_id" },
             { name: "teacher_assessment_grades", col: "teacher_id" },
-            { name: "lessons", col: "teacher_id" },
-            { name: "student_masterlist_history", col: "updated_by" }
+            { name: "lessons", col: "teacher_id" }
           ];
 
           for (const table of cleanupTables) {
