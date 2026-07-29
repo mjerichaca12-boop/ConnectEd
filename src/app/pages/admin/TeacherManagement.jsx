@@ -1335,21 +1335,18 @@ function TeacherManagement() {
 
       const nextAssignedClass = [...currentClasses, assignedClass].join(", ");
 
-      const { data, error } = await db
-        .from("profiles")
-        .update({ assigned_class: nextAssignedClass })
-        .eq("id", teacherToAssign.id)
-        .select(teacherSelectColumns)
-        .single();
+      const { error } = await adminApi.updateProfile(teacherToAssign.id, { assigned_class: nextAssignedClass });
 
       if (error) {
-        throw error;
+        throw new Error(error.message || "Failed to update teacher profile");
       }
 
       const updatedTeacher = {
-        ...data,
-        display_name: formatTeacherFullName(data),
-        subjects: normalizeSubjects(data.subjects)
+        ...teacherToAssign,
+        assigned_class: nextAssignedClass,
+        updated_at: new Date().toISOString(),
+        display_name: formatTeacherFullName(teacherToAssign),
+        subjects: normalizeSubjects(teacherToAssign.subjects)
       };
       setTeachers((current) => current.map((teacher) => (teacher.id === updatedTeacher.id ? updatedTeacher : teacher)));
       const updatedTeacherName = getTeacherName(updatedTeacher);

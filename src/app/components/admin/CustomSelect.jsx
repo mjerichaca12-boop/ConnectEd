@@ -101,34 +101,46 @@ function CustomSelect({
   }
       {isOpen && !disabled && <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="max-h-64 overflow-y-auto scrollbar-hide">
-            {options.map((option, index) => {
-    const isSelected = multiple ? selectedValues.some((selectedValue) => String(selectedValue) === String(option.value)) : String(option.value) === String(value);
-    return <button
-      key={option.value}
-      type="button"
-      onClick={() => handleSelect(option.value)}
-      className={`
-                    w-full flex items-center justify-between gap-3 px-5 py-4 
-                    transition-all duration-150
-                    ${isSelected ? "bg-green-50 text-green-700" : "hover:bg-gray-50 text-gray-700 hover:text-gray-900"}
-                    ${index !== 0 ? "border-t border-gray-100" : ""}
-                  `}
-    >
-                  <div className="flex items-center gap-2 flex-1">
-                    {option.icon && <span className={`flex-shrink-0 transition-transform ${isSelected ? "scale-110" : "scale-100"}`}>
-                        {option.icon}
-                      </span>}
-                    <span className={`font-medium ${isSelected ? "text-green-700" : ""}`}>
-                      {option.label}
-                    </span>
-                    {option.badge && <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${isSelected ? "bg-green-500/20 text-green-700" : "bg-gray-50 text-gray-600"}`}>
-                        {option.badge}
-                      </span>}
-                  </div>
-                  
-                  {isSelected && <Check className="w-5 h-5 text-green-600 animate-in zoom-in duration-200" />}
-                </button>;
-  })}
+            {options.length === 0 ? (
+              <div className="px-5 py-4 text-sm text-gray-500 text-center italic">
+                No options available
+              </div>
+            ) : (
+              options.map((option, index) => {
+                const isSelected = multiple ? selectedValues.some((selectedValue) => String(selectedValue) === String(option.value)) : String(option.value) === String(value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => handleSelect(option.value)}
+                    className={`
+                      w-full flex items-center justify-between gap-3 px-5 py-4 
+                      transition-all duration-150
+                      ${isSelected ? "bg-green-50 text-green-700" : "hover:bg-gray-50 text-gray-700 hover:text-gray-900"}
+                      ${index !== 0 ? "border-t border-gray-100" : ""}
+                    `}
+                  >
+                    <div className="flex items-center gap-2 flex-1">
+                      {option.icon && (
+                        <span className={`flex-shrink-0 transition-transform ${isSelected ? "scale-110" : "scale-100"}`}>
+                          {option.icon}
+                        </span>
+                      )}
+                      <span className={`font-medium ${isSelected ? "text-green-700" : ""}`}>
+                        {option.label}
+                      </span>
+                      {option.badge && (
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${isSelected ? "bg-green-500/20 text-green-700" : "bg-gray-50 text-gray-600"}`}>
+                          {option.badge}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {isSelected && <Check className="w-5 h-5 text-green-600 animate-in zoom-in duration-200" />}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>}
     </div>;
