@@ -85,7 +85,7 @@ export default async function handler(req, res) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const body = await readJsonBody(req);
-    const { table, action, payload, onConflict, eq, neq, in: inArgs } = body;
+    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single } = body;
 
     if (!table || !action) {
       return res.status(400).json({ error: "Missing table or action" });
@@ -109,6 +109,16 @@ export default async function handler(req, res) {
     if (eq) query = query.eq(eq.column, eq.value);
     if (neq) query = query.neq(neq.column, neq.value);
     if (inArgs) query = query.in(inArgs.column, inArgs.value);
+
+    if (action === "insert" || action === "update" || action === "upsert") {
+      query = query.select(select || "*");
+    } else if (action === "delete") {
+      if (select) query = query.select(select);
+    }
+    
+    if (single) {
+      query = query.single();
+    }
 
     const { data, error } = await query;
 

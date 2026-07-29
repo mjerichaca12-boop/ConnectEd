@@ -74,11 +74,10 @@ export function SectionDropdown({ gradeLevel, value, onChange, error, disabled, 
     
     setIsSubmitting(true);
     try {
-      const { data, error } = await db
-        .from("grade_sections")
-        .insert({ grade_level: dbGradeLevel, section_name: sectionName })
-        .select()
-        .single();
+      const { data, error } = await adminApi.db("grade_sections", "insert", {
+        payload: { grade_level: dbGradeLevel, section_name: sectionName },
+        single: true
+      });
         
       if (error) throw error;
       toast.success(`Section '${sectionName}' created!`);
@@ -106,10 +105,10 @@ export function SectionDropdown({ gradeLevel, value, onChange, error, disabled, 
     }
     
     try {
-      const { error } = await db
-        .from("grade_sections")
-        .update({ section_name: updatedName })
-        .eq("id", id);
+      const { error } = await adminApi.db("grade_sections", "update", {
+        payload: { section_name: updatedName },
+        eq: { column: "id", value: id }
+      });
         
       if (error) throw error;
       
@@ -164,7 +163,9 @@ export function SectionDropdown({ gradeLevel, value, onChange, error, disabled, 
         return;
       }
       
-      const { error } = await db.from("grade_sections").delete().eq("id", id);
+      const { error } = await adminApi.db("grade_sections", "delete", {
+        eq: { column: "id", value: id }
+      });
       if (error) throw error;
       
       toast.success("Section deleted successfully.");
