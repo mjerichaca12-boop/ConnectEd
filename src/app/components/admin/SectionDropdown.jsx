@@ -29,11 +29,13 @@ export function SectionDropdown({ gradeLevel, value, onChange, error, disabled, 
     
     setLoading(true);
     try {
-      const { data, error } = await db
-        .from("grade_sections")
-        .select("*")
-        .eq("grade_level", gradeLevel.replace("Grade ", "").trim())
-        .order("section_name");
+      const { data, error } = await adminApi.db("grade_sections", "select", {
+        eq: { column: "grade_level", value: gradeLevel.replace("Grade ", "").trim() }
+      });
+      // Sort manually since adminApi doesn't support order yet
+      if (data) {
+        data.sort((a, b) => a.section_name.localeCompare(b.section_name));
+      }
         
       if (error) throw error;
       
