@@ -15,30 +15,21 @@ function ForgotPassword() {
   const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim()) || String(value || "").trim().endsWith(".local");
 
   const sendResetRequest = async () => {
-    if (!supabase) {
-      throw new Error("Service is not configured. Please try again later.");
-    }
-
-    // Attempt to lookup user ID
-    const { data: userProfile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', email.trim())
-      .eq('role', role)
-      .maybeSingle();
-      
-    if (profileError) throw profileError;
-
-    const { error: insertError } = await supabase
-      .from('password_reset_requests')
-      .insert({
-        user_id: userProfile?.id || null,
+    const res = await fetch("/api/public/request-reset", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
         email: email.trim(),
-        role: role,
-        status: 'Pending'
-      });
+        role: role
+      })
+    });
 
-    if (insertError) throw insertError;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Error ${res.status}`);
+    }
   };
 
   const handleSubmit = async (e) => {
