@@ -4,7 +4,6 @@ function Footer() {
   const links = [
     { label: "Privacy Policy", href: "/privacy-policy" },
     { label: "Terms of Service", href: "/terms-of-service" },
-    { label: "Contact Us", href: "/contact" },
     { label: "Support", href: "/support" },
   ];
 
