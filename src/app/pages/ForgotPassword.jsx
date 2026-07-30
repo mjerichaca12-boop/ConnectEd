@@ -3,11 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
-import { RoleSelector } from "../components/RoleSelector";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("student");
+  const [role] = useState("teacher");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
@@ -127,17 +126,9 @@ function ForgotPassword() {
                       </motion.div>}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                      <RoleSelector
-                        label="Account Type"
-                        value={role}
-                        onChange={(newRole) => setRole(newRole)}
-                        allowedRoles={["student", "teacher"]}
-                        required={true}
-                      />
-
                       <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                          {role === 'student' ? 'Student Email' : 'Teacher Email'}
+                          Teacher Email
                         </label>
                         <input
                           type="text"
