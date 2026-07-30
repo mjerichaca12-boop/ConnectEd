@@ -138,7 +138,8 @@ export const UnreadMessagesProvider = ({ children }) => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const channel = supabase.channel('unread_messages_sync')
+    const channelName = `unread_messages_sync_${currentUser.id}_${Date.now()}`;
+    const channel = supabase.channel(channelName)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const msg = payload.new;
         if (!msg || msg.sender_id === currentUser.id) return; // Ignore own messages
