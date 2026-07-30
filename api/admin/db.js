@@ -85,7 +85,7 @@ export default async function handler(req, res) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const body = await readJsonBody(req);
-    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order } = body;
+    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head } = body;
 
     if (!table || !action) {
       return res.status(400).json({ error: "Missing table or action" });
@@ -101,7 +101,8 @@ export default async function handler(req, res) {
     } else if (action === "delete") {
       query = supabaseAdmin.from(table).delete();
     } else if (action === "select") {
-      query = supabaseAdmin.from(table).select(payload || "*");
+      const selectOpts = countOption ? { count: countOption, head: !!head } : undefined;
+      query = supabaseAdmin.from(table).select(payload || "*", selectOpts);
     } else {
       return res.status(400).json({ error: `Unsupported action: ${action}` });
     }
@@ -125,9 +126,12 @@ export default async function handler(req, res) {
       query = query.single();
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) throw error;
+    if (countOption) {
+      return res.status(200).json({ data, count });
+    }
     return res.status(200).json(data);
   } catch (error) {
     console.error("[api/admin/db]", error);

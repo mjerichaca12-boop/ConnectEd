@@ -274,20 +274,21 @@ export function AdminDashboard() {
 
     const fetchSubjectsCount = async () => {
       for (const tableName of subjectTableCandidates) {
-        const result = await db.from(tableName).select("id", { count: "exact", head: true });
-        if (!result.error) {
-          return result.count ?? 0;
+        const { data, error: err } = await adminApi.db(tableName, "select", {
+          payload: "id", countOption: "exact", head: true
+        }).catch(() => ({ error: { message: "Failed" } }));
+        if (!err && data?.count !== undefined) {
+          return data.count ?? 0;
         }
       }
-
       return 0;
     };
 
     const [studentsResult, teachersResult, subjectsCount, pendingResetsResult] = await Promise.all([
-      db.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
-      db.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher"),
+      adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "student" } }),
+      adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "teacher" } }),
       fetchSubjectsCount(),
-      db.from("password_reset_requests").select("id", { count: "exact", head: true }).eq("status", "Pending")
+      adminApi.db("password_reset_requests", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "status", value: "Pending" } })
     ]);
 
     if (studentsResult.error) {
@@ -300,10 +301,10 @@ export function AdminDashboard() {
 
     setStats((current) => ({
       ...current,
-      totalStudents: studentsResult.count ?? 0,
-      totalTeachers: teachersResult.count ?? 0,
+      totalStudents: studentsResult.data?.count ?? 0,
+      totalTeachers: teachersResult.data?.count ?? 0,
       totalSubjects: subjectsCount,
-      totalPendingResets: pendingResetsResult.count ?? 0
+      totalPendingResets: pendingResetsResult.data?.count ?? 0
     }));
   };
 
