@@ -120,13 +120,15 @@ function StudentManagement() {
         }
 
         const [profilesRes, masterlistRes] = await Promise.all([
-          db.from("profiles")
-            .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
-            .eq("role", "student")
-            .order("created_at", { ascending: false }),
-          db.from("student_masterlist")
-            .select("*")
-            .order("created_at", { ascending: false })
+          adminApi.db("profiles", "select", {
+            payload: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+            eq: { column: "role", value: "student" },
+            order: { column: "created_at", options: { ascending: false } }
+          }),
+          adminApi.db("student_masterlist", "select", {
+            payload: "*",
+            order: { column: "created_at", options: { ascending: false } }
+          })
         ]);
 
         if (profilesRes.error) {
@@ -162,14 +164,16 @@ function StudentManagement() {
     if (!db) return;
 
     const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
-      db.from("profiles")
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
-        .eq("role", "student")
-        .order("created_at", { ascending: false }),
-      db.from("student_masterlist")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      db.from("grade_sections").select("*")
+      adminApi.db("profiles", "select", {
+        payload: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        eq: { column: "role", value: "student" },
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("student_masterlist", "select", {
+        payload: "*",
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("grade_sections", "select", { payload: "*" })
     ]);
 
     if (profilesRes.error) {
@@ -312,12 +316,21 @@ function StudentManagement() {
       return errors;
     }
 
-    const emailQuery = db.from("profiles").select("id").eq("email", formData.email.trim().toLowerCase()).limit(1);
-    const lrnQuery = db.from("profiles").select("id").eq("lrn", normalizeLrn(formData.lrn)).limit(1);
+    const emailOpts = {
+      payload: "id",
+      eq: { column: "email", value: formData.email.trim().toLowerCase() }
+    };
+    if (excludeId) emailOpts.neq = { column: "id", value: excludeId };
+
+    const lrnOpts = {
+      payload: "id",
+      eq: { column: "lrn", value: normalizeLrn(formData.lrn) }
+    };
+    if (excludeId) lrnOpts.neq = { column: "id", value: excludeId };
 
     const [emailResult, lrnResult] = await Promise.all([
-      excludeId ? emailQuery.neq("id", excludeId) : emailQuery,
-      excludeId ? lrnQuery.neq("id", excludeId) : lrnQuery
+      adminApi.db("profiles", "select", emailOpts),
+      adminApi.db("profiles", "select", lrnOpts)
     ]);
 
     if (emailResult.error) {
@@ -381,11 +394,11 @@ function StudentManagement() {
          userId = authData.user.id;
       }
 
-      const { data, error } = await db
-        .from("profiles")
-        .insert({ id: userId, ...buildPayload(studentFormData) })
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at")
-        .single();
+      const { data, error } = await adminApi.db("profiles", "insert", {
+        payload: { id: userId, ...buildPayload(studentFormData) },
+        select: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        single: true
+      });
 
       if (error) {
         throw error;
@@ -636,29 +649,33 @@ function StudentManagement() {
         }
 
         // 4. Upsert Profile using the resolved user ID
-        const { error: profileError } = await db.from("profiles").upsert({
-          id: userId,
-          role: "student",
-          first_name: student.first_name,
-          last_name: student.last_name,
-          middle_name: student.middle_name,
-          lrn: normalizedLRN,
-          year_level: student.year_level,
-          section: student.section,
-          email: email,
-          status: "Active",
-          must_change_password: true,
-          is_verified: false
-        }, { onConflict: "id" });
+        const { error: profileError } = await adminApi.db("profiles", "upsert", {
+          payload: {
+            id: userId,
+            role: "student",
+            first_name: student.first_name,
+            last_name: student.last_name,
+            middle_name: student.middle_name,
+            lrn: normalizedLRN,
+            year_level: student.year_level,
+            section: student.section,
+            email: email,
+            status: "Active",
+            must_change_password: true,
+            is_verified: false
+          },
+          onConflict: "id"
+        });
 
         if (profileError) {
           throw profileError;
         }
 
         // 5. Atomic Masterlist Update
-        const { error: masterlistError } = await db.from("student_masterlist")
-          .update({ account_created: true })
-          .eq("id", student.id);
+        const { error: masterlistError } = await adminApi.db("student_masterlist", "update", {
+          payload: { account_created: true },
+          eq: { column: "id", value: student.id }
+        });
 
         if (masterlistError) throw masterlistError;
 
@@ -784,10 +801,10 @@ function StudentManagement() {
       ];
 
       for (const table of cleanupTables) {
-        await db.from(table.name).delete().eq(table.col, studentId);
+        await adminApi.db(table.name, "delete", { eq: { column: table.col, value: studentId } });
       }
 
-      const { error } = await db.from("profiles").delete().eq("id", studentId);
+      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: studentId } });
 
       if (error) {
         throw new Error(error.message);
@@ -855,11 +872,11 @@ function StudentManagement() {
           ];
 
           for (const table of cleanupTables) {
-            await db.from(table.name).delete().eq(table.col, id);
+            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
           }
 
           // 2. Delete the profile
-          const { error: profileError } = await db.from("profiles").delete().eq("id", id);
+          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
           if (profileError) throw profileError;
 
           // 3. Fully delete the user from Auth
