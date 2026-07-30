@@ -951,7 +951,7 @@ function TeacherManagement() {
         suffix++;
       }
 
-      const { data: authData, error: authError } = await db.auth.admin.createUser({
+      const { data: authData, error: authError } = await adminApi.createUser({
         email: teacherEmail,
         password: tempPassword,
         email_confirm: true
@@ -974,10 +974,13 @@ function TeacherManagement() {
         is_verified: false
       };
 
-      const { data, error } = await db.from("profiles").insert(payload).select(teacherSelectColumns).single();
+      const { data, error } = await adminApi.db("profiles", "insert", {
+        payload,
+        single: true
+      });
 
       if (error) {
-        await db.auth.admin.deleteUser(resolvedId).catch(() => {});
+        await adminApi.deleteUser(resolvedId).catch(() => {});
         throw error;
       }
 
@@ -1017,7 +1020,7 @@ function TeacherManagement() {
     } catch (error) {
       if (createdTeacherId) {
         try {
-          await db.from("profiles").delete().eq("id", createdTeacherId);
+          await adminApi.db("profiles", "delete", { eq: { column: "id", value: createdTeacherId } });
         } catch {
         }
       }
