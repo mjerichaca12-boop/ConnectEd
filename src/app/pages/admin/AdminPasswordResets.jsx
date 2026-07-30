@@ -109,9 +109,9 @@ export const AdminPasswordResets = () => {
       });
       if (profileError) throw profileError;
 
-      // 3. Mark request as Approved
+      // 3. Mark request as Completed
       const { error: reqError } = await adminApi.db("password_reset_requests", "update", {
-        payload: { status: "Approved" },
+        payload: { status: "Completed" },
         eq: { column: "id", value: selectedRequest.id }
       });
       if (reqError) throw reqError;
@@ -120,9 +120,8 @@ export const AdminPasswordResets = () => {
       // 4. Log the action
       await adminApi.db("password_reset_logs", "insert", {
         payload: {
-          request_id: selectedRequest.id,
-          admin_id: adminData.id || "admin",
-          action: "Approved"
+          user_id: selectedRequest.user_id,
+          temporary_password_generated: true
         }
       });
 
@@ -130,10 +129,9 @@ export const AdminPasswordResets = () => {
       await adminApi.db("notifications", "insert", {
         payload: {
           user_id: selectedRequest.user_id,
-          title: "Password Reset Approved",
-          message: "Your password has been reset by the administrator. Please log in with the temporary password provided to you.",
-          type: "system",
-          is_read: false
+          title: "Password Reset Complete",
+          message: "Your password was reset by an administrator.",
+          type: "system"
         }
       });
 
