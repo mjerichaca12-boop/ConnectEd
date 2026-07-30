@@ -899,13 +899,13 @@ function TeacherManagement() {
   };
 
   const filteredTeachers = teachers.filter((teacher) => {
-    const search = searchQuery.toLowerCase();
+    const search = (searchQuery || "").toLowerCase();
     const assignments = getTeacherAssignments(teacher);
     const subjectText = assignments.map((item) => item.subjectLabel).join(" ").toLowerCase();
     const sectionText = assignments.map((item) => item.classLabel).join(" ").toLowerCase();
     const matchesSearch =
       getTeacherName(teacher).toLowerCase().includes(search) ||
-      (teacher.email ?? "").toLowerCase().includes(search) ||
+      String(teacher.email || "").toLowerCase().includes(search) ||
       subjectText.includes(search) ||
       sectionText.includes(search);
     const matchesFilter = filterStatus === "all" || normalizeTeacherStatus(teacher.status).toLowerCase() === filterStatus;
