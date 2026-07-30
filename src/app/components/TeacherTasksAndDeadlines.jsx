@@ -121,7 +121,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     
     let isMounted = true;
     
-    const channel = supabase.channel(`teacher-tasks-${teacherId}`)
+    const channel = supabase.channel(`teacher-tasks-${teacherId}_${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, () => {
         if (isMounted) fetchData();
       })
