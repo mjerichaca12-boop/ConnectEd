@@ -85,7 +85,7 @@ export default async function handler(req, res) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const body = await readJsonBody(req);
-    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single } = body;
+    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order } = body;
 
     if (!table || !action) {
       return res.status(400).json({ error: "Missing table or action" });
@@ -113,9 +113,14 @@ export default async function handler(req, res) {
     if (action === "insert" || action === "update" || action === "upsert") {
       query = query.select(select || "*");
     } else if (action === "delete") {
-      if (select) query = query.select(select);
+    if (select) query = query.select(select);
     }
     
+    if (order) {
+      // order = { column: "created_at", options: { ascending: false } }
+      query = query.order(order.column, order.options);
+    }
+
     if (single) {
       query = query.single();
     }

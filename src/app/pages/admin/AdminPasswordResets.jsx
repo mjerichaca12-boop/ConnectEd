@@ -52,10 +52,10 @@ export const AdminPasswordResets = () => {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const { data, error: err } = await db
-        .from("password_reset_requests")
-        .select("id, user_id, email, role, status, created_at, profiles(first_name, last_name)")
-        .order("created_at", { ascending: false });
+      const { data, error: err } = await adminApi.db("password_reset_requests", "select", {
+        payload: "id, user_id, email, role, status, created_at, profiles(first_name, last_name)",
+        order: { column: "created_at", options: { ascending: false } }
+      });
 
       if (err) throw err;
       
@@ -100,34 +100,41 @@ export const AdminPasswordResets = () => {
       if (updateAuthError) throw updateAuthError;
 
       // 2. Mark profile as needing password change
-      const { error: profileError } = await db
-        .from("profiles")
-        .update({
+      const { error: profileError } = await adminApi.db("profiles", "update", {
+        payload: {
           must_change_password: forceChange,
           last_password_reset: new Date().toISOString()
-        })
-        .eq("id", selectedRequest.user_id);
+        },
+        eq: { column: "id", value: selectedRequest.user_id }
+      });
       if (profileError) throw profileError;
 
-      // 3. Mark request as Completed
-      const { error: reqError } = await db
-        .from("password_reset_requests")
-        .update({ status: "Completed" })
-        .eq("id", selectedRequest.id);
+      // 3. Mark request as Approved
+      const { error: reqError } = await adminApi.db("password_reset_requests", "update", {
+        payload: { status: "Approved" },
+        eq: { column: "id", value: selectedRequest.id }
+      });
       if (reqError) throw reqError;
 
+      const adminData = JSON.parse(localStorage.getItem("currentUser") || "{}");
       // 4. Log the action
-      await db.from("password_reset_logs").insert({
-        user_id: selectedRequest.user_id,
-        temporary_password_generated: true,
+      await adminApi.db("password_reset_logs", "insert", {
+        payload: {
+          request_id: selectedRequest.id,
+          admin_id: adminData.id || "admin",
+          action: "Approved"
+        }
       });
 
       // 5. Create notification for the user
-      await db.from("notifications").insert({
-        user_id: selectedRequest.user_id,
-        title: "Password Reset Complete",
-        message: "Your password was reset by an administrator.",
-        type: "system"
+      await adminApi.db("notifications", "insert", {
+        payload: {
+          user_id: selectedRequest.user_id,
+          title: "Password Reset Approved",
+          message: "Your password has been reset by the administrator. Please log in with the temporary password provided to you.",
+          type: "system",
+          is_read: false
+        }
       });
 
       trackActivity("Password Reset", "Admin fulfilled a password reset request.");
@@ -145,10 +152,10 @@ export const AdminPasswordResets = () => {
 
   const handleRejectRequest = async (requestId) => {
     try {
-      const { error: rejectError } = await db
-        .from("password_reset_requests")
-        .update({ status: "Rejected" })
-        .eq("id", requestId);
+      const { error: rejectError } = await adminApi.db("password_reset_requests", "update", {
+        payload: { status: "Rejected" },
+        eq: { column: "id", value: requestId }
+      });
         
       if (rejectError) throw rejectError;
       
