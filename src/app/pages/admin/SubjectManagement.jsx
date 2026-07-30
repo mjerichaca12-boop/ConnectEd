@@ -322,10 +322,7 @@ function SubjectManagement() {
         .filter((subject) => String(subject.teacher_id) === String(teacherId))
         .map((subject) => subject.id);
 
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ subjects: assignedSubjectIds })
-        .eq("id", teacherId);
+      const { error: updateError } = await adminApi.updateProfile(teacherId, { subjects: assignedSubjectIds });
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -372,7 +369,7 @@ function SubjectManagement() {
 
     const subjectChannel = supabase
       ? supabase
-          .channel("admin-subject-table")
+          .channel(`admin-subject-table-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, async () => {
             try {
               await fetchSubjects();
@@ -385,7 +382,7 @@ function SubjectManagement() {
 
     const teacherChannel = supabase
       ? supabase
-          .channel("admin-subject-teachers")
+          .channel(`admin-subject-teachers-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async (payload) => {
             if (payload.new?.role !== "teacher" && payload.old?.role !== "teacher") return;
 
@@ -422,10 +419,6 @@ function SubjectManagement() {
 
     if (!name) {
       errors.name = "Subject name is required";
-    }
-
-    if (!credits) {
-      errors.credits = "Credits are required";
     }
 
     if (teacherId && !teachers.some((item) => item.id === teacherId)) {
@@ -493,7 +486,7 @@ function SubjectManagement() {
     code: normalizeCode(formData.code || "").trim(),
     name: (formData.name || "").trim(),
     description: (formData.description || "").trim() || null,
-    credits: Number(normalizePositiveInteger(String(formData.credits || ""))),
+    credits: formData.credits ? Number(normalizePositiveInteger(String(formData.credits))) : null,
     teacher_id: (() => {
       const t = (formData.teacher || "").trim();
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
@@ -530,6 +523,12 @@ function SubjectManagement() {
         .eq("name", payload.name)
         .eq("grade_level", payload.grade_level);
 
+      if (payload.section) {
+        query.eq("section", payload.section);
+      } else {
+        query.is("section", null);
+      }
+
       if (payload.teacher_id) {
         query.eq("teacher_id", payload.teacher_id);
       } else {
@@ -551,7 +550,7 @@ function SubjectManagement() {
         return;
       }
 
-      const { data, error } = await supabase.from(tableName).insert(payload).select(subjectSelectColumns).single();
+      const { data, error } = await adminApi.db(tableName, "insert", { payload, select: subjectSelectColumns, single: true });
 
       if (error) throw error;
 
@@ -642,11 +641,7 @@ function SubjectManagement() {
       const payload = buildPayload(editFormData);
       const previousTeacherId = selectedSubject.teacher_id || "";
       const tableName = await getSubjectTableName();
-      const { error } = await supabase
-        .from(tableName)
-        .update(payload)
-        .eq("id", selectedSubject.id)
-        .select("id");
+      const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: selectedSubject.id }, select: "id" });
 
       if (error) throw error;
 
@@ -722,7 +717,7 @@ function SubjectManagement() {
       
       const results = await Promise.allSettled(
         idsToDelete.map(async (id) => {
-          const { error } = await supabase.from(tableName).delete().eq("id", id);
+          const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: id } });
           if (error) throw error;
         })
       );
@@ -859,17 +854,12 @@ function SubjectManagement() {
       }));
 
       // Insert enrollment records
-      const { error: insertError } = await supabase
-        .from("teacher_student_assignments")
-        .insert(enrollmentRecords);
+      const { error: insertError } = await adminApi.db("teacher_student_assignments", "insert", { payload: enrollmentRecords });
 
       if (insertError) throw insertError;
 
       // Update the subject's enrolled count
-      const { error: updateError } = await supabase
-        .from("subjects")
-        .update({ enrolled: newEnrollmentCount })
-        .eq("id", subject.id);
+      const { error: updateError } = await adminApi.db("subjects", "update", { payload: { enrolled: newEnrollmentCount }, eq: { column: "id", value: subject.id } });
 
       if (updateError) throw updateError;
 

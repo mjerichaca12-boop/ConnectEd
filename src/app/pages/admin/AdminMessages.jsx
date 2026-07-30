@@ -127,15 +127,17 @@ export function AdminMessages() {
         }
 
         if (!existingAdmin) {
-          const { error: insertError } = await db.from("profiles").insert({
-            id: HARDCODED_ADMIN_ID,
-            first_name: "Connected",
-            last_name: "Admin",
-            email: HARDCODED_ADMIN_EMAIL,
-            role: "admin",
-            status: "Active",
-            is_verified: true,
-            created_at: new Date().toISOString(),
+          const { error: insertError } = await adminApi.db("profiles", "insert", {
+            payload: {
+              id: HARDCODED_ADMIN_ID,
+              first_name: "Connected",
+              last_name: "Admin",
+              email: HARDCODED_ADMIN_EMAIL,
+              role: "admin",
+              status: "Active",
+              is_verified: true,
+              created_at: new Date().toISOString(),
+            }
           });
           if (insertError) {
             console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
@@ -186,6 +188,9 @@ export function AdminMessages() {
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
     setConversations(sorted);
+    try {
+      localStorage.setItem("admin_conversations", JSON.stringify(sorted));
+    } catch(e) {}
   };
 
   useEffect(() => {
@@ -302,7 +307,7 @@ export function AdminMessages() {
   useEffect(() => {
     if (!supabase || !adminId) return;
     const channel = supabase
-      .channel("global-chat")
+      .channel(`global-chat-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
         const newMsg = payload.new;
         if (!newMsg) return;
@@ -329,12 +334,12 @@ export function AdminMessages() {
       const adminFilter = `sender_id.eq.${effectiveAdminId},receiver_id.eq.${effectiveAdminId}`;
 
       // Load direct messages (exclude group messages)
-      const { data: messageRows, error } = await db
-        .from("messages")
-        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
-          .or(adminFilter)
-        .is("conversation_id", null)
-        .order("created_at", { ascending: true });
+      const { data: messageRows, error } = await adminApi.db("messages", "select", {
+        select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
+        or: adminFilter,
+        is: { column: "conversation_id", value: null },
+        order: { column: "created_at", options: { ascending: true } }
+      });
 
       if (error) {
         console.error("[AdminMessages] Failed to load messages from DB:", error);
@@ -482,11 +487,11 @@ export function AdminMessages() {
               const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
               
               // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await db
-                .from("messages")
-                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
-                .eq("conversation_id", conv.id)
-                .order("created_at", { ascending: true });
+              const { data: groupMessages, error: groupMsgError } = await adminApi.db("messages", "select", {
+                select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
+                eq: { column: "conversation_id", value: conv.id },
+                order: { column: "created_at", options: { ascending: true } }
+              });
 
               console.log("[AdminMessages] Group messages loaded for conversation", conv.id, ":", {
                 count: groupMessages?.length || 0,
@@ -587,6 +592,18 @@ export function AdminMessages() {
       
       // Combine direct messages and group conversations
       const allConversations = [...conversationsByParticipant.values(), ...groupConversations];
+      
+      try {
+        const local = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
+        local.forEach(lc => {
+          if (!allConversations.find(c => c.id === lc.id || c.participantId === lc.participantId)) {
+            if (lc.messages && lc.messages.length === 0) {
+              allConversations.push(lc);
+            }
+          }
+        });
+      } catch(e) {}
+
       saveConversations(allConversations);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
@@ -611,7 +628,7 @@ export function AdminMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
+      const { error } = await adminApi.db("conversations", "update", { payload: { name: newName }, eq: { column: "id", value: selectedConv.id } });
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       setConversations(updated);
@@ -649,7 +666,7 @@ export function AdminMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
-      const { error } = await db.from("conversations").delete().eq("id", selectedConv.id);
+      const { error } = await adminApi.db("conversations", "delete", { eq: { column: "id", value: selectedConv.id } });
       if (error) throw error;
       
       const remaining = conversations.filter((c) => c.id !== selectedConv.id);
@@ -724,7 +741,7 @@ export function AdminMessages() {
       return;
     }
     const newConv = {
-      id: Date.now().toString(),
+      id: `conv_${person.id}`,
       participantId: person.id,
       participantName: person.name,
       participantRole: person.role || "teacher",
@@ -793,9 +810,22 @@ export function AdminMessages() {
         }
         const cleanedName = sanitizeAttachmentFileName(file.name);
         const filePath = `${adminSenderId}/${activeConversation.participantId || "group"}/${Date.now()}_${cleanedName}`;
-        const uploadResult = await db.storage
-          .from(MESSAGE_ATTACHMENT_BUCKET)
-          .upload(filePath, file, { cacheControl: "3600", upsert: false });
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+        });
+        const base64File = await toBase64(file);
+        
+        const uploadResult = await adminApi.db("storage", "storage_upload", {
+          payload: {
+            bucket: MESSAGE_ATTACHMENT_BUCKET,
+            path: filePath,
+            base64File,
+            contentType: file.type || "application/octet-stream"
+          }
+        });
           
         if (uploadResult.error) {
           console.error("Upload error:", uploadResult.error);
@@ -841,10 +871,10 @@ export function AdminMessages() {
 
     let data, error;
     try {
-      const result = await db
-        .from("messages")
-        .insert(insertPayload)
-        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status");
+      const result = await adminApi.db("messages", "insert", {
+        payload: insertPayload,
+        select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status"
+      });
       data = result.data;
       error = result.error;
     } catch (err) {
@@ -865,7 +895,7 @@ export function AdminMessages() {
         }
       }
       if (attachmentPayloads.length > 0) {
-        await db.from("message_attachments").insert(attachmentPayloads);
+        await adminApi.db("message_attachments", "insert", { payload: attachmentPayloads });
       }
     }
 
@@ -923,15 +953,16 @@ export function AdminMessages() {
     try {
       const effectiveAdminId = adminId || HARDCODED_ADMIN_ID;
       if (conv.isGroup) {
-        await db.from("messages").update({ is_read: true, status: 'read' })
-          .eq("conversation_id", conv.id)
-          .neq("sender_id", effectiveAdminId)
-          .eq("is_read", false);
+        await adminApi.db("messages", "update", {
+          payload: { is_read: true, status: 'read' },
+          match: { conversation_id: conv.id, is_read: false },
+          neq: { column: "sender_id", value: effectiveAdminId }
+        });
       } else {
-        await db.from("messages").update({ is_read: true, status: 'read' })
-          .eq("sender_id", conv.participantId)
-          .eq("receiver_id", effectiveAdminId)
-          .eq("is_read", false);
+        await adminApi.db("messages", "update", {
+          payload: { is_read: true, status: 'read' },
+          match: { sender_id: conv.participantId, receiver_id: effectiveAdminId, is_read: false }
+        });
       }
     } catch (err) {
       console.error("[AdminMessages] DB mark read error:", err);

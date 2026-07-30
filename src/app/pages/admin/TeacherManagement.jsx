@@ -383,10 +383,9 @@ function TeacherManagement() {
         assignedSubjectIds
       });
 
-      const { error: updateError } = await db
-        .from("profiles")
-        .update({ subjects: assignedSubjectIds })
-        .eq("id", teacherId);
+      const { error: updateError } = await adminApi.updateProfile(teacherId, {
+        subjects: assignedSubjectIds
+      });
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -428,8 +427,8 @@ function TeacherManagement() {
 
     if (addSubjectIds.length > 0) {
       try {
-        const { data: teacherRow } = await db.from("profiles").select("grade_level, year_level, grade, year").eq("id", teacherId).maybeSingle();
-        const teacherGradeNorm = normalizeGradeLevel(String(teacherRow?.grade_level || teacherRow?.year_level || teacherRow?.grade || teacherRow?.year || ""));
+        const { data: teacherRow } = await db.from("profiles").select("year_level").eq("id", teacherId).maybeSingle();
+        const teacherGradeNorm = normalizeGradeLevel(String(teacherRow?.year_level || ""));
 
         if (teacherGradeNorm) {
           const { data: subjectsToAdd } = await db.from("subjects").select("id, grade_level").in("id", addSubjectIds);
@@ -449,10 +448,10 @@ function TeacherManagement() {
     try {
       if (addSubjectIds.length > 0) {
         console.log("[TeacherManagement] assigning subjects", { teacherId, addSubjectIds });
-        const { error: assignError } = await db
-          .from("subjects")
-          .update({ teacher_id: teacherId })
-          .in("id", addSubjectIds);
+        const { error: assignError } = await adminApi.db("subjects", "update", {
+          payload: { teacher_id: teacherId },
+          in: { column: "id", value: addSubjectIds }
+        });
 
         if (assignError) {
           throw new Error(assignError.message);
@@ -466,10 +465,10 @@ function TeacherManagement() {
           .map((subject) => subject.id);
 
         if (removableIds.length > 0) {
-          const { error: removeError } = await db
-            .from("subjects")
-            .update({ teacher_id: null })
-            .in("id", removableIds);
+          const { error: removeError } = await adminApi.db("subjects", "update", {
+            payload: { teacher_id: null },
+            in: { column: "id", value: removableIds }
+          });
 
           if (removeError) {
             throw new Error(removeError.message);
@@ -487,10 +486,10 @@ function TeacherManagement() {
       return { affectedTeacherIds: [teacherId, ...displacedTeacherIds] };
     } catch (error) {
       await Promise.all((currentSubjects ?? []).map(async (subject) => {
-        const { error: restoreError } = await db
-          .from("subjects")
-          .update({ teacher_id: snapshot.get(subject.id) ?? null })
-          .eq("id", subject.id);
+        const { error: restoreError } = await adminApi.db("subjects", "update", {
+          payload: { teacher_id: snapshot.get(subject.id) ?? null },
+          eq: { column: "id", value: subject.id }
+        });
 
         if (restoreError) {
           throw new Error(restoreError.message);
@@ -701,7 +700,7 @@ function TeacherManagement() {
 
     const channel = supabase
       ? supabase
-          .channel("admin-teacher-profiles")
+          .channel(`admin-teacher-profiles-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async (payload) => {
             if (payload?.new?.role !== "teacher" && payload?.old?.role !== "teacher") {
               return;
@@ -723,7 +722,7 @@ function TeacherManagement() {
 
     const subjectsChannel = supabase
       ? supabase
-          .channel("admin-teacher-subjects")
+          .channel(`admin-teacher-subjects-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, async () => {
             try {
               await fetchSubjects();
@@ -828,7 +827,7 @@ function TeacherManagement() {
           if (teacher) {
             const subjectIdsToRelease = normalizeSubjects(teacher.subjects);
             if (subjectIdsToRelease.length > 0) {
-              await db.from("subjects").update({ teacher_id: null }).in("id", subjectIdsToRelease);
+              await adminApi.db("subjects", "update", { payload: { teacher_id: null }, in: { column: "id", value: subjectIdsToRelease } });
             }
           }
 
@@ -845,10 +844,10 @@ function TeacherManagement() {
           ];
 
           for (const table of cleanupTables) {
-            await db.from(table.name).delete().eq(table.col, id);
+            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
           }
 
-          const { error: profileError } = await db.from("profiles").delete().eq("id", id);
+          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
           if (profileError) throw profileError;
 
           try {
@@ -1135,18 +1134,15 @@ function TeacherManagement() {
       if (updateSucceeded) {
         try {
           const previousSubjectIds = normalizeSubjects(selectedTeacher.subjects);
-          await db
-            .from("profiles")
-            .update({
-              first_name: selectedTeacher.first_name ?? "",
-              middle_name: selectedTeacher.middle_name ?? null,
-              last_name: selectedTeacher.last_name ?? null,
-              email: selectedTeacher.email ?? "",
-              phone: selectedTeacher.phone ?? "",
-              subjects: previousSubjectIds,
-              status: selectedTeacher.status ?? "Active"
-            })
-            .eq("id", selectedTeacher.id);
+          await adminApi.updateProfile(selectedTeacher.id, {
+                first_name: selectedTeacher.first_name ?? "",
+                middle_name: selectedTeacher.middle_name ?? null,
+                last_name: selectedTeacher.last_name ?? null,
+                email: selectedTeacher.email ?? "",
+                phone: selectedTeacher.phone ?? "",
+                subjects: previousSubjectIds,
+                status: selectedTeacher.status ?? "Active"
+            });
 
           await syncTeacherSubjectAssignments({
             teacherId: selectedTeacher.id,
@@ -1189,17 +1185,17 @@ function TeacherManagement() {
     try {
       const subjectIdsToRelease = normalizeSubjects(teacherToDelete.subjects);
       if (subjectIdsToRelease.length > 0) {
-        const { error: subjectError } = await db
-          .from("subjects")
-          .update({ teacher_id: null })
-          .in("id", subjectIdsToRelease);
+        const { error: subjectError } = await adminApi.db("subjects", "update", {
+            payload: { teacher_id: null },
+            in: { column: "id", value: subjectIdsToRelease }
+          });
 
         if (subjectError) {
           throw subjectError;
         }
       }
 
-      const { error } = await db.from("profiles").delete().eq("id", teacherId);
+      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: teacherId } });
 
       if (error) {
         throw error;
@@ -1262,19 +1258,23 @@ function TeacherManagement() {
 
       if (profileError) throw profileError;
 
-      const { error: logError } = await db.from("password_reset_logs").insert({
-        user_id: selectedTeacher.id,
-        reset_by: JSON.parse(localStorage.getItem("currentUser")).id,
-        temporary_password_generated: true
+      const { error: logError } = await adminApi.db("password_reset_logs", "insert", {
+        payload: {
+          user_id: selectedTeacher.id,
+          reset_by: JSON.parse(localStorage.getItem("currentUser")).id,
+          temporary_password_generated: true
+        }
       });
 
       if (logError) console.error("Failed to log password reset:", logError);
 
-      await db.from("notifications").insert({
-        user_id: selectedTeacher.id,
-        title: "Password Reset",
-        message: `Your password has been reset by the administrator. Temporary Password: ${resetSettings.tempPassword}. You will be required to change your password after login.`,
-        type: "system"
+      await adminApi.db("notifications", "insert", {
+        payload: {
+          user_id: selectedTeacher.id,
+          title: "Password Reset",
+          message: `Your password has been reset by the administrator. Temporary Password: ${resetSettings.tempPassword}. You will be required to change your password after login.`,
+          type: "system"
+        }
       });
 
       toast.success("Temporary password generated and saved.");

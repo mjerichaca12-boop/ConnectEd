@@ -564,9 +564,9 @@ function TeacherAnnouncements() {
                     ) : (
                       activeAnnouncements.map((announcement) => (
                         <div key={announcement.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-                          {announcement.imageUrl || announcement.fileUrl ? (
+                          {announcement.imageUrl ? (
                             <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                              <img src={announcement.imageUrl || announcement.fileUrl} alt={announcement.title || "announcement"} className="h-56 w-full object-cover" />
+                              <img src={announcement.imageUrl} alt={announcement.title || "announcement"} className="h-56 w-full object-cover" />
                             </div>
                           ) : null}
                           <div className="flex items-start justify-between mb-3">

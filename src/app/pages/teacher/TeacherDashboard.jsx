@@ -670,10 +670,10 @@ export function TeacherDashboard() {
                           className="w-full text-left px-4 py-3 bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 hover:bg-gray-100 transition-colors"
                         >
                           {console.log("Announcement data:", announcement)}
-                          {announcement.imageUrl || announcement.fileUrl ? (
-                            <div className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
+                          {announcement.imageUrl ? (
+                            <div className="mb-3 rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
                               <img
-                                src={announcement.imageUrl || announcement.fileUrl}
+                                src={announcement.imageUrl}
                                 alt={announcement.title || "announcement"}
                                 className="h-44 w-full object-cover"
                               />

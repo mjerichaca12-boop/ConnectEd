@@ -1039,11 +1039,11 @@ function StudentManagement() {
 
   const filterStudent = (student, isMasterlist = false) => {
     const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
-    const search = searchQuery.toLowerCase();
+    const search = (searchQuery || "").toLowerCase();
     
     const matchesSearch = fullName.includes(search) || 
-      (student.email ?? "").toLowerCase().includes(search) || 
-      (student.lrn ?? "").toLowerCase().includes(search);
+      String(student.email || "").toLowerCase().includes(search) || 
+      String(student.lrn || "").toLowerCase().includes(search);
 
     const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
     const matchesSection = sectionFilter === "all" || student.section === sectionFilter;

@@ -210,7 +210,7 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
     createdAt: normalizeTimestamp(row),
     author: row?.author || row?.created_by_name || row?.created_by || "Admin Office",
     ...attachments,
-    imageUrl: String(row?.image_url || row?.imageUrl || attachments.attachments.find((attachment) => attachment.kind === "image")?.fileUrl || attachments.fileUrls[0] || row?.file_url || row?.fileUrl || "").trim(),
+    imageUrl: String(row?.image_url || row?.imageUrl || attachments.attachments.find((attachment) => attachment.kind === "image")?.fileUrl || "").trim(),
     fileUrl: String(row?.file_url || row?.fileUrl || attachments.fileUrls[0] || "").trim(),
     fileName: attachments.fileNames[0] || "",
     filePath: attachments.filePaths[0] || "",
@@ -375,14 +375,26 @@ function AdminAnnouncements() {
         }
 
         const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
-        const uploadResult = await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).upload(storagePath, file, {
-          upsert: false,
-          contentType: file.type || "application/octet-stream"
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+        });
+        const base64File = await toBase64(file);
+        
+        const { error: uploadError } = await adminApi.db("storage", "storage_upload", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            path: storagePath,
+            base64File,
+            contentType: file.type || "application/octet-stream"
+          }
         });
 
-        if (uploadResult.error) {
-          console.error("Announcement attachment upload failed:", uploadResult.error);
-          throw uploadResult.error;
+        if (uploadError) {
+          console.error("Announcement attachment upload failed:", uploadError);
+          throw uploadError;
         }
 
         const { data } = client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).getPublicUrl(storagePath);
@@ -404,7 +416,12 @@ function AdminAnnouncements() {
     } catch (error) {
       console.error("Announcement attachment processing failed:", error);
       if (uploaded.length > 0) {
-        await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uploaded.map((item) => item.filePath)).catch(() => {
+        await adminApi.db("storage", "storage_remove", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            paths: uploaded.map((item) => item.filePath)
+          }
+        }).catch(() => {
           // Ignore rollback cleanup failures.
         });
       }
@@ -632,96 +649,7 @@ function AdminAnnouncements() {
     const attachmentTableName = getAnnouncementAttachmentTableName(tableName);
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
 
-    const resolveLinkedAnnouncementIdForSchoolAnnouncement = async (schoolAnnouncementId) => {
-      const normalizedSchoolAnnouncementId = String(schoolAnnouncementId || "").trim();
-      if (!normalizedSchoolAnnouncementId) {
-        throw new Error("School announcement ID is required to save attachments.");
-      }
 
-      const existingLink = await supabase
-        .from("announcement_attachments")
-        .select("announcement_id")
-        .eq("school_announcement_id", normalizedSchoolAnnouncementId)
-        .not("announcement_id", "is", null)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingLink.error) {
-        console.error("Failed to resolve existing attachment link:", existingLink.error);
-        throw new Error(existingLink.error.message || "Unable to resolve announcement attachment link.");
-      }
-
-      const linkedAnnouncementId = String(existingLink.data?.announcement_id || "").trim();
-      if (linkedAnnouncementId) {
-        return linkedAnnouncementId;
-      }
-
-      const schoolAnnouncementResult = await supabase
-        .from("school_announcements")
-        .select("*")
-        .eq("id", normalizedSchoolAnnouncementId)
-        .maybeSingle();
-
-      if (schoolAnnouncementResult.error) {
-        console.error("Failed to load school announcement for attachment linking:", schoolAnnouncementResult.error);
-        throw new Error(schoolAnnouncementResult.error.message || "Unable to load school announcement for attachment linking.");
-      }
-
-      const source = schoolAnnouncementResult.data || {};
-      const resolvedAudienceType = toDatabaseAudienceType(
-        source.audience_type ?? source.target_audience ?? DEFAULT_AUDIENCE_TYPE
-      );
-      const basePayloads = [
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment",
-          audience_type: resolvedAudienceType,
-          author: String(source.author || source.created_by_name || "Admin Office").trim() || "Admin Office",
-          created_by: isUuid(source.created_by) ? source.created_by : null,
-          created_by_name: source.created_by_name || null,
-          school_id: isUuid(source.school_id) ? source.school_id : null,
-          created_at: source.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment",
-          audience_type: resolvedAudienceType
-        },
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment"
-        }
-      ];
-
-      let lastError = null;
-      for (const initialPayload of basePayloads) {
-        const { data, error } = await supabase
-          .from("announcements")
-          .insert(initialPayload)
-          .select("id")
-          .maybeSingle();
-
-        if (!error) {
-          const createdLinkedAnnouncementId = String(data?.id || "").trim();
-          if (!createdLinkedAnnouncementId) {
-            throw new Error("Unable to create linked announcement for attachments.");
-          }
-
-          return createdLinkedAnnouncementId;
-        }
-
-        lastError = error;
-      }
-
-      console.error("Failed to create linked announcement record:", lastError);
-      throw new Error(lastError?.message || "Unable to create linked announcement for attachments.");
-    };
-
-    let linkedAnnouncementId = "";
-    if (tableName === "school_announcements") {
-      linkedAnnouncementId = await resolveLinkedAnnouncementIdForSchoolAnnouncement(announcementId);
-    }
 
     const payload = attachments.map((attachment, index) => {
       const fileName = String(attachment?.fileName || "").trim();
@@ -734,9 +662,7 @@ function AdminAnnouncements() {
       }
 
       return {
-      ...(tableName === "school_announcements"
-        ? { announcement_id: linkedAnnouncementId }
-        : {}),
+
       [attachmentForeignKey]: announcementId,
       file_url: fileUrl,
       file_name: fileName,
@@ -752,7 +678,7 @@ function AdminAnnouncements() {
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
     const client = supabase;
-    const { error } = await client.from(attachmentTableName).insert(payload);
+    const { error } = await adminApi.db(attachmentTableName, "insert", { payload });
 
     if (error) {
       console.error("Announcement attachment database insert failed:", error);
@@ -811,10 +737,7 @@ function AdminAnnouncements() {
           return;
         }
 
-        const { error: updateError } = await supabase
-          .from(targetTable)
-          .update(payload)
-          .eq("id", normalizedTargetId);
+        const { error: updateError } = await adminApi.db(targetTable, "update", { payload, eq: { column: "id", value: normalizedTargetId } });
 
         if (!updateError) {
           return;
@@ -937,11 +860,7 @@ function AdminAnnouncements() {
     for (let attemptIndex = 0; attemptIndex < payloads.length; attemptIndex += 1) {
       const payload = payloads[attemptIndex];
       if (mode === "insert") {
-        const { data, error } = await client
-          .from(tableName)
-          .insert(payload)
-          .select("id")
-          .maybeSingle();
+        const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "id", single: true });
 
         if (!error) {
           return {
@@ -950,7 +869,7 @@ function AdminAnnouncements() {
           };
         }
 
-        const fallbackInsert = await client.from(tableName).insert(payload);
+        const fallbackInsert = await adminApi.db(tableName, "insert", { payload });
         if (!fallbackInsert.error) {
           return {
             payload,
@@ -975,7 +894,7 @@ function AdminAnnouncements() {
         continue;
       }
 
-      const { error } = await client.from(tableName).update(payload).eq("id", id);
+      const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: id } });
 
       if (!error) {
         return {
@@ -1403,7 +1322,7 @@ function AdminAnnouncements() {
 
       const { data: attachmentRows, error: attachmentFetchError } = await supabase
         .from(attachmentTableName)
-        .select("id, file_path, announcement_id")
+        .select("id, file_path")
         .eq(attachmentForeignKey, normalizedAnnouncementId);
 
       if (attachmentFetchError) {
@@ -1423,41 +1342,26 @@ function AdminAnnouncements() {
       const client = supabase;
 
       if (uniqueFilePaths.length > 0) {
-        await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uniqueFilePaths).catch(() => {
+        await adminApi.db("storage", "storage_remove", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            paths: uniqueFilePaths
+          }
+        }).catch(() => {
           // Continue with the delete even if file cleanup fails.
         });
       }
 
-      const linkedAnnouncementIds = [...new Set(
-        (attachmentRows || [])
-          .map((row) => String(row?.announcement_id || "").trim())
-          .filter(Boolean)
-      )];
-
-      const { error } = await client.from(tableName).delete().eq("id", deletingAnnouncement.id);
+      const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: deletingAnnouncement.id } });
 
       if (error) {
         throw new Error(error.message);
       }
 
-      const { error: attachmentCleanupError } = await client
-        .from(attachmentTableName)
-        .delete()
-        .eq(attachmentForeignKey, normalizedAnnouncementId);
+      const { error: attachmentCleanupError } = await adminApi.db(attachmentTableName, "delete", { eq: { column: attachmentForeignKey, value: normalizedAnnouncementId } });
 
       if (attachmentCleanupError) {
         console.error("Failed to cleanup attachment rows after parent delete:", attachmentCleanupError);
-      }
-
-      if (tableName === "school_announcements" && linkedAnnouncementIds.length > 0) {
-        const { error: linkedAnnouncementCleanupError } = await supabase
-          .from("announcements")
-          .delete()
-          .in("id", linkedAnnouncementIds);
-
-        if (linkedAnnouncementCleanupError) {
-          console.error("Failed to cleanup linked announcements after delete:", linkedAnnouncementCleanupError);
-        }
       }
 
       logActivity({

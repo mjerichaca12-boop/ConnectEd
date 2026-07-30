@@ -123,34 +123,8 @@ export function AdminCalendar() {
     return normalized.includes("school") || normalized.includes("teacher") || normalized.includes("student");
   };
 
-  const resolveCalendarTable = async () => {
-    if (!db) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    for (const tableName of calendarTableCandidates) {
-      const { error } = await db.from(tableName).select("id", { count: "exact", head: true });
-      if (!error) {
-        setCalendarTable(tableName);
-        return tableName;
-      }
-    }
-
-    throw new Error("Could not find the school calendar table in Supabase.");
-  };
-
-  const getCalendarTableName = async () => {
-    if (!db) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    if (calendarTable) {
-      const { error } = await db.from(calendarTable).select("id", { count: "exact", head: true });
-      if (!error) return calendarTable;
-    }
-
-    return resolveCalendarTable();
-  };
+  const resolveCalendarTable = async () => "school_calendar_events";
+  const getCalendarTableName = async () => "school_calendar_events";
 
   const loadEvents = async (tableNameOverride) => {
     if (!db) {
@@ -167,54 +141,9 @@ export function AdminCalendar() {
     return sortEvents((data ?? []).map(normalizeEvent).filter((item) => item.id));
   };
 
-  const resolveCalendarColumns = async (tableNameOverride) => {
-    if (!db) {
-      throw new Error("Supabase client is not configured.");
-    }
-
-    const tableName = tableNameOverride || (await getCalendarTableName());
-    const candidates = [
-      "id",
-      "title",
-      "description",
-      "event_date",
-      "date",
-      "event_time",
-      "time",
-      "target_audience",
-      "audience",
-      "created_by",
-      "createdBy",
-      "author",
-      "created_at",
-      "updated_at"
-    ];
-
-    const detected = [];
-
-    for (const columnName of candidates) {
-      try {
-        const { error } = await db.from(tableName).select(columnName, { count: "exact", head: true });
-        if (!error) {
-          detected.push(columnName);
-        }
-      } catch (err) {
-        console.debug(`Column detection failed for ${columnName}:`, err);
-      }
-    }
-
-    // Fallback: ensure we have the minimum required columns
-    const expectedColumns = ["id", "title", "description", "event_date", "event_time", "target_audience", "created_at", "updated_at"];
-    const missingRequired = expectedColumns.filter(col => !detected.includes(col));
-    
-    if (missingRequired.length > 0) {
-      console.warn("Column detection incomplete. Missing:", missingRequired);
-      // Add the expected columns as a fallback
-      detected.push(...missingRequired);
-    }
-
+  const resolveCalendarColumns = async () => {
+    const detected = ["id", "title", "description", "event_date", "event_time", "target_audience", "created_at", "updated_at"];
     setCalendarColumns(detected);
-    console.debug("Detected calendar columns:", detected);
     return detected;
   };
 
@@ -440,7 +369,7 @@ export function AdminCalendar() {
       const payload = buildCreatePayload(columns, new Date().toISOString(), user?.id || null);
 
       console.debug("Inserting calendar payload:", JSON.stringify(payload));
-      const { data, error } = await db.from(tableName).insert(payload).select();
+      const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "*" });
       
       if (error) {
         console.error("Supabase Database Insert Error Details:", JSON.stringify(error, null, 2));
@@ -483,7 +412,7 @@ export function AdminCalendar() {
       const previous = events;
       setEvents((current) => current.filter((item) => item.id !== eventId));
 
-      const { error } = await db.from(tableName).delete().eq("id", eventId);
+      const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: eventId } });
       if (error) {
         setEvents(previous);
         throw new Error(error.message);

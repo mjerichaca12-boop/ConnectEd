@@ -396,9 +396,6 @@ export const normalizeAnnouncement = (row, attachmentRows = []) => {
       row?.image_url ??
         row?.imageUrl ??
         firstImageAttachment?.fileUrl ??
-        firstAttachment?.fileUrl ??
-        row?.file_url ??
-        row?.fileUrl ??
         ""
     ).trim(),
     fileUrl: String(

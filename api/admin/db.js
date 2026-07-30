@@ -85,14 +85,26 @@ export default async function handler(req, res) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const body = await readJsonBody(req);
-    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head } = body;
+    const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head, or, is: isArgs, match } = body;
 
-    if (!table || !action) {
+    if ((!table && action !== "storage_upload" && action !== "storage_remove") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }
 
     let query;
-    if (action === "upsert") {
+    if (action === "storage_upload") {
+      const buffer = Buffer.from(payload.base64File, 'base64');
+      const { data, error } = await supabaseAdmin.storage.from(payload.bucket).upload(payload.path, buffer, {
+        contentType: payload.contentType,
+        upsert: true
+      });
+      if (error) throw error;
+      return res.status(200).json(data);
+    } else if (action === "storage_remove") {
+      const { data, error } = await supabaseAdmin.storage.from(payload.bucket).remove(payload.paths);
+      if (error) throw error;
+      return res.status(200).json(data);
+    } else if (action === "upsert") {
       query = supabaseAdmin.from(table).upsert(payload, onConflict ? { onConflict } : undefined);
     } else if (action === "insert") {
       query = supabaseAdmin.from(table).insert(payload);
@@ -110,6 +122,9 @@ export default async function handler(req, res) {
     if (eq) query = query.eq(eq.column, eq.value);
     if (neq) query = query.neq(neq.column, neq.value);
     if (inArgs) query = query.in(inArgs.column, inArgs.value);
+    if (or) query = query.or(or);
+    if (isArgs) query = query.is(isArgs.column, isArgs.value);
+    if (match) query = query.match(match);
 
     if (action === "insert" || action === "update" || action === "upsert") {
       query = query.select(select || "*");

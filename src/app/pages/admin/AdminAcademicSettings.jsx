@@ -106,9 +106,10 @@ export default function AdminAcademicSettings() {
         updated_by: userId,
       };
 
-      const { error } = await db
-        .from("academic_settings")
-        .upsert(payload, { onConflict: "id" });
+      const { error } = await adminApi.db("academic_settings", "upsert", {
+        payload,
+        onConflict: "id"
+      });
 
       if (error) throw error;
 

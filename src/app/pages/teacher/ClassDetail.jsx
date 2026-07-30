@@ -248,6 +248,8 @@ const getAnnouncementAttachmentKind = (announcement) => {
   return fileUrl ? "document" : "";
 };
 
+let classMaterialsTableStatus = "unknown";
+
 export function ClassDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -808,24 +810,25 @@ export function ClassDetail() {
       "file_type",
       "file_url",
       "file_name",
-      "file_path",
-      "subject_id",
-      "class_id",
-      "course_id",
-      "subject",
-      "section",
       "teacher_id",
       "created_by",
-      "created_at"
+      "class_id",
+      "subject_id",
+      "course_id"
     ];
 
     const detected = [];
+
+    if (classMaterialsTableStatus === "missing") {
+      return ["id", "title", "description", "file_type", "file_url", "created_at"];
+    }
 
     // First check if table exists by trying a simple query
     try {
       const { error: tableCheckError } = await supabase.from("class_materials").select("id").limit(1);
 
-      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400 || tableCheckError.code === 'PGRST205')) {
+      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400 || tableCheckError.status === 404 || tableCheckError.code === '42P01' || tableCheckError.code === 'PGRST205')) {
+        classMaterialsTableStatus = "missing";
         console.warn("class_materials table not accessible in ClassDetail, using default columns:", tableCheckError);
         // Return default columns that might exist
         return ["id", "title", "description", "file_type", "file_url", "created_at"];
@@ -848,14 +851,6 @@ export function ClassDetail() {
 
     setMaterialColumns(detected);
     return detected;
-  };
-
-  const getMaterialColumns = async () => {
-    if (materialColumns.length > 0) {
-      return materialColumns;
-    }
-
-    return resolveMaterialColumns();
   };
 
   const resolveAssignmentTable = async () => {
@@ -1317,7 +1312,14 @@ export function ClassDetail() {
       return;
     }
 
+    if (classMaterialsTableStatus === "missing") {
+      setMaterials([]);
+      setMatError("");
+      return;
+    }
+
     try {
+
       const columns = await getMaterialColumns();
       const ownerColumn = resolveColumnName(columns, ["teacher_id", "created_by"]);
       const classColumn = resolveColumnName(columns, ["subject_id", "class_id", "course_id"]);
@@ -1338,8 +1340,9 @@ export function ClassDetail() {
       let { data, error } = await query;
 
       // Handle case where table doesn't exist or permissions issue
-      if (error && (error.code === 'PGRST116' || error.status === 400)) {
+      if (error && (error.code === 'PGRST116' || error.status === 400 || error.status === 404 || error.code === '42P01')) {
         console.warn("[ClassDetail] class_materials table not accessible, showing empty state:", error);
+        classMaterialsTableStatus = "missing";
         setMaterials([]);
         setMatError("");
         return;
@@ -1488,7 +1491,7 @@ export function ClassDetail() {
     if (!supabase || !teacherProfileId || !id) return;
 
     const channel = supabase
-      .channel(`teacher-class-students-${teacherProfileId}-${id}`)
+      .channel(`teacher-class-students-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
       .on(
         "postgres_changes",
         {
@@ -1531,16 +1534,18 @@ export function ClassDetail() {
       config.filter = `${ownerColumn}=eq.${teacherProfileId}`;
     }
 
-    const channel = supabase
-      .channel(`class-detail-materials-${teacherProfileId}-${id}`)
-      .on("postgres_changes", config, () => {
-        fetchClassMaterials(teacherProfileId, classData);
-      })
-      .subscribe();
+    if (classMaterialsTableStatus !== "missing") {
+      const channel = supabase
+        .channel(`class-detail-materials-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
+        .on("postgres_changes", config, () => {
+          fetchClassMaterials(teacherProfileId, classData);
+        })
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [teacherProfileId, id, materialColumns, classData]);
 
   useEffect(() => {
@@ -1563,7 +1568,7 @@ export function ClassDetail() {
     }
 
     const channel = supabase
-      .channel(`class-detail-assignments-${teacherProfileId}-${id}`)
+      .channel(`class-detail-assignments-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", config, () => {
         fetchClassAssignments(teacherProfileId, classData);
       })
@@ -1603,7 +1608,7 @@ export function ClassDetail() {
     }
 
     const channel = supabase
-      .channel(`class-detail-announcements-${teacherProfileId}-${id}-${announcementTable}`)
+      .channel(`class-detail-announcements-${teacherProfileId}-${id}-${announcementTable}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", config, () => {
         fetchClassAnnouncements(teacherProfileId, classData);
       })
