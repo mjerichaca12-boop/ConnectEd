@@ -21,7 +21,7 @@ export const AdminPasswordResets = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const { trackActivity } = useActivity();
+  const { logActivity } = useActivity();
   
   const [showModal, setShowModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
@@ -135,7 +135,13 @@ export const AdminPasswordResets = () => {
         }
       });
 
-      trackActivity("Password Reset", "Admin fulfilled a password reset request.");
+      logActivity({
+        entityType: selectedRequest.role || "student",
+        actionType: "updated",
+        entityId: selectedRequest.user_id,
+        entityName: selectedRequest.profiles ? `${selectedRequest.profiles.first_name} ${selectedRequest.profiles.last_name}` : "User",
+        details: { message: "Admin fulfilled a password reset request." }
+      });
       toast.success("Password reset successfully. The temporary password is: " + tempPassword);
       
       setShowModal(false);
