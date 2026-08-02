@@ -123,8 +123,6 @@ export function ChangePassword() {
         throw new Error("Failed to update profile status.");
       }
 
-      await supabase.auth.signOut();
-      localStorage.removeItem("currentUser");
       setVerificationSent(true);
 
     } catch (err) {
