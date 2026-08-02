@@ -15,20 +15,12 @@ function ForgotPassword() {
   const validateEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim()) || String(value || "").trim().endsWith(".local");
 
   const sendResetRequest = async () => {
-    const res = await fetch("/api/public/request-reset", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        email: email.trim(),
-        role: role
-      })
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: getAuthRedirectUrl("reset-password")
     });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Error ${res.status}`);
+    
+    if (error) {
+      throw new Error(error.message);
     }
   };
 
@@ -76,7 +68,7 @@ function ForgotPassword() {
               </h1>
 
               <p className="text-lg text-gray-600 leading-relaxed">
-                Please contact the administrator to reset your password. Submit a request below.
+                Enter your registered personal email address to receive a secure password reset link.
               </p>
 
               <div className="mt-10 relative h-64 hidden md:block">
@@ -104,7 +96,7 @@ function ForgotPassword() {
                     </div>
 
                     <p className="text-gray-600 mb-6">
-                      Submit a password reset request to your system administrator.
+                      Enter the personal email associated with your account.
                     </p>
 
                     {error && <motion.div
@@ -119,7 +111,7 @@ function ForgotPassword() {
                     <form onSubmit={handleSubmit} className="space-y-5">
                       <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                          Teacher Email
+                          Registered Email Address
                         </label>
                         <input
                           type="text"
@@ -179,12 +171,12 @@ function ForgotPassword() {
                       </h2>
 
                       <p className="text-gray-600 mb-6 leading-relaxed">
-                        Your request has been submitted successfully. Please wait for administrator approval.
+                        If an account exists for {email}, a password reset link has been sent. Please check your inbox.
                       </p>
 
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
                         <p className="text-sm text-emerald-800">
-                          The administrator will generate a temporary password for you. Check back later or contact your school administration.
+                          Click the link in the email to securely reset your password. The link will expire in 1 hour.
                         </p>
                       </div>
 

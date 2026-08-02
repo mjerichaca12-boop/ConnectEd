@@ -25,17 +25,7 @@ export const DASHBOARD_TOUR = {
       messageText: "Counts update automatically in real-time whenever new users register or courses are added.",
       placement: "bottom",
     },
-    {
-      id: "dashboard-resets",
-      targetSelector: '[data-tour="dashboard-resets-stat"]',
-      fallbackTargetSelector: '[data-tour="dashboard-stats"]',
-      title: "Pending Password Resets",
-      description: "Quickly view and resolve student and teacher temporary password reset requests.",
-      messageType: "warning",
-      messageTitle: "Action Item",
-      messageText: "Clicking this card takes you directly to the Password Reset Requests management panel.",
-      placement: "bottom",
-    },
+
     {
       id: "dashboard-activity",
       targetSelector: '[data-tour="dashboard-activity"]',

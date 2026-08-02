@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { Lock, Eye, EyeOff, Loader2, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, ShieldCheck, CheckCircle2, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 export function ChangePassword() {
@@ -11,6 +11,8 @@ export function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [verificationSent, setVerificationSent] = useState(false);
   
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -60,6 +62,11 @@ export function ChangePassword() {
       return;
     }
 
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Please enter a valid personal email address.");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError("New passwords do not match.");
       return;
@@ -84,21 +91,23 @@ export function ChangePassword() {
         throw new Error("Invalid current password.");
       }
 
-      // Update password
+      // Update password and email
       const { error: updateAuthError } = await supabase.auth.updateUser({
-        password: newPassword
+        password: newPassword,
+        email: email
       });
 
       if (updateAuthError) {
-        throw new Error(updateAuthError.message || "Failed to update password.");
+        throw new Error(updateAuthError.message || "Failed to update account details.");
       }
 
-      // Update profiles table
+      // Update profiles table - mark must_change_password as false, but keep is_verified tracking if needed
+      // They won't be able to log in until auth.user.email updates from @temp.local
       const { error: dbError } = await supabase
         .from("profiles")
         .update({
           must_change_password: false,
-          is_verified: true
+          email: email
         })
         .eq("id", currentUser.id);
 
@@ -106,14 +115,9 @@ export function ChangePassword() {
         throw new Error("Failed to update profile status.");
       }
 
-      // Update local storage
-      const updatedUser = { ...currentUser, must_change_password: false };
-      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
-      
-      toast.success("Password changed successfully!");
-      
-      // Redirect
-      redirectBasedOnRole(updatedUser.role);
+      await supabase.auth.signOut();
+      localStorage.removeItem("currentUser");
+      setVerificationSent(true);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred.");
@@ -141,16 +145,25 @@ export function ChangePassword() {
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 tracking-tight">
-          Secure Your Account
+          {verificationSent ? "Verification Sent!" : "Secure Your Account"}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600 max-w-sm mx-auto">
-          For your security, you must change your temporary password before accessing your dashboard.
+          {verificationSent 
+            ? "We've sent a verification link to your email address. Please check your inbox and click the link to activate your account."
+            : "For your security, you must set a new password and link your personal email before accessing your dashboard."}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-white/80 backdrop-blur-xl py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-white">
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          {verificationSent ? (
+            <div className="flex justify-center">
+              <button onClick={() => navigate("/login")} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                Return to Login
+              </button>
+            </div>
+          ) : (
+            <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
               <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-start gap-3">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-2 flex-shrink-0" />
@@ -186,6 +199,26 @@ export function ChangePassword() {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Personal Email Address
+              </label>
+              <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-gray-50 focus:bg-white transition-all text-sm placeholder:text-gray-400"
+                  placeholder="name@gmail.com"
+                  required
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">This email will be used for password resets.</p>
             </div>
 
             <div>
@@ -271,6 +304,7 @@ export function ChangePassword() {
               )}
             </button>
           </form>
+          )}
         </div>
       </div>
     </div>

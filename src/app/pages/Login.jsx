@@ -22,11 +22,11 @@ const GoogleLogo = () => (
 const GOOGLE_OAUTH_INTENT_KEY = "connected_google_oauth_intent";
 
 function Login() {
-  const [formData, setFormData] = useState({ usernameOrEmail: "", password: "" });
+  const [formData, setFormData] = useState({ username: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({ usernameOrEmail: "", password: "" });
-  const [touched, setTouched] = useState({ usernameOrEmail: false, password: false });
+  const [fieldErrors, setFieldErrors] = useState({ username: "", password: "" });
+  const [touched, setTouched] = useState({ username: false, password: false });
   const [loading, setLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -203,9 +203,8 @@ function Login() {
   }, [navigate]);
 
   const validateField = (name, value) => {
-    if (name === "usernameOrEmail") {
-      if (!value.trim()) return "Email is required.";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) && !value.trim().endsWith('.local')) return "Please enter a valid email address.";
+    if (name === "username") {
+      if (!value.trim()) return "Username is required.";
     }
     if (name === "password") {
       if (!value) return "Password is required.";
@@ -218,7 +217,6 @@ function Login() {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
     setError("");
-    // Clear the field error as the user types (if it was touched)
     if (touched[name]) {
       setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
     }
@@ -254,19 +252,17 @@ function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Run validation on all fields before submitting
-    const emailErr = validateField("usernameOrEmail", formData.usernameOrEmail);
+    const usernameErr = validateField("username", formData.username);
     const passwordErr = validateField("password", formData.password);
-    setTouched({ usernameOrEmail: true, password: true });
-    setFieldErrors({ usernameOrEmail: emailErr, password: passwordErr });
-    if (emailErr || passwordErr) return;
+    setTouched({ username: true, password: true });
+    setFieldErrors({ username: usernameErr, password: passwordErr });
+    if (usernameErr || passwordErr) return;
 
     setLoading(true);
-    const normalizedEmail = formData.usernameOrEmail.trim().toLowerCase();
+    const normalizedUsername = formData.username.trim().toLowerCase();
 
-    // Static Admin Check
-    if (normalizedEmail === STATIC_ADMIN_EMAIL) {
-      const adminValidation = await validateStaticAdminCredentials(normalizedEmail, formData.password);
+    if (normalizedUsername === STATIC_ADMIN_EMAIL) {
+      const adminValidation = await validateStaticAdminCredentials(normalizedUsername, formData.password);
       if (adminValidation.ok) {
         localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
         navigate("/admin/dashboard");
@@ -278,34 +274,35 @@ function Login() {
     }
 
     try {
-      console.log("LOGIN ATTEMPT:", { email: normalizedEmail });
-
-      // Clear only the local session token before attempting a fresh login.
-      // Using scope: 'global' can race with the immediately following signInWithPassword
-      // and cause spurious 400 errors even with correct credentials.
       try {
         await supabase.auth.signOut({ scope: "local" });
       } catch (signOutError) {
         console.warn("LOGIN signOut cleanup warning:", signOutError);
       }
 
+      const { data: resolvedEmail, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
+      
+      if (rpcError || !resolvedEmail) {
+        setError("Invalid username or password.");
+        setLoading(false);
+        return;
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
+        email: resolvedEmail,
         password: formData.password
       });
-
-      console.log("LOGIN AUTH RESULT:", { userId: authData?.user?.id, error: authError?.message });
 
       if (authError) {
         const authMessage = String(authError.message || "").toLowerCase();
         if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
-          setError("Invalid email or password. Please try again.");
+          setError("Invalid username or password. Please try again.");
         } else if (authMessage.includes("email not confirmed")) {
           setError("Please confirm your invitation email before logging in.");
         } else if (authMessage.includes("token")) {
           setError("Login session could not be created. Please refresh the page and try again.");
         } else {
-          setError(authError.message || "Invalid email or password. Please try again.");
+          setError(authError.message || "Invalid username or password. Please try again.");
         }
         setLoading(false);
         return;
@@ -314,7 +311,7 @@ function Login() {
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
-        .ilike("email", normalizedEmail)
+        .ilike("email", resolvedEmail)
         .maybeSingle();
 
       if (profileError || !profile) {
@@ -370,10 +367,13 @@ function Login() {
         isFirstLogin: isFirstLogin
       }));
 
-      console.log("LOGIN DATA:", { email: normalizedEmail, profileId: profile.id, role });
-
       if (profile.must_change_password === true) {
         navigate("/change-password");
+      } else if (authData.user.email && authData.user.email.endsWith(".local")) {
+        setError("Please check your inbox and click the verification link to activate your account.");
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
       } else if (role === "admin") {
         navigate("/admin/dashboard");
       } else if (role === "teacher") {
@@ -399,27 +399,27 @@ function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email</label>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Username</label>
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                name="usernameOrEmail"
-                value={formData.usernameOrEmail}
+                name="username"
+                value={formData.username}
                 onChange={handleInputChange}
                 onBlur={handleBlur}
                 className={`w-full pl-11 pr-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
-                  touched.usernameOrEmail && fieldErrors.usernameOrEmail
+                  touched.username && fieldErrors.username
                     ? "border-red-400 focus:ring-red-300 bg-red-50"
                     : "border-gray-200 focus:ring-emerald-500"
                 }`}
-                placeholder="name@dasma.deped.gov.ph"
+                placeholder="Enter your username"
               />
             </div>
-            {touched.usernameOrEmail && fieldErrors.usernameOrEmail && (
+            {touched.username && fieldErrors.username && (
               <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
                 <span className="inline-block w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />
-                {fieldErrors.usernameOrEmail}
+                {fieldErrors.username}
               </p>
             )}
           </div>

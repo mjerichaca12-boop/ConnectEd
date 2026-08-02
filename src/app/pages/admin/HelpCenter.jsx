@@ -90,7 +90,7 @@ export function HelpCenter() {
       moduleId: "dashboard",
       icon: LayoutDashboard,
       title: "Dashboard Overview",
-      description: "Monitor real-time school KPIs, student & teacher counts, system activity logs, and pending password resets.",
+      description: "Monitor real-time school KPIs, student & teacher counts, and system activity logs.",
     },
     {
       moduleId: "students",

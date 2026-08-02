@@ -300,7 +300,7 @@ function StudentManagement() {
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};
 
-    const fieldNames = ["first_name", "last_name", "email", "lrn", "year_level", "section", "status"];
+    const fieldNames = ["first_name", "last_name", "lrn", "year_level", "section", "status"];
 
     fieldNames.forEach((field) => {
       const fieldError = validateAddField(field, formData[field], formData);
@@ -316,35 +316,9 @@ function StudentManagement() {
       return errors;
     }
 
-    const emailOpts = {
-      payload: "id",
-      eq: { column: "email", value: formData.email.trim().toLowerCase() }
-    };
-    if (excludeId) emailOpts.neq = { column: "id", value: excludeId };
-
-    const lrnOpts = {
-      payload: "id",
-      eq: { column: "lrn", value: normalizeLrn(formData.lrn) }
-    };
-    if (excludeId) lrnOpts.neq = { column: "id", value: excludeId };
-
-    const [emailResult, lrnResult] = await Promise.all([
-      adminApi.db("profiles", "select", emailOpts),
-      adminApi.db("profiles", "select", lrnOpts)
-    ]);
-
-    if (emailResult.error) {
-      errors.form = emailResult.error.message;
-      return errors;
-    }
-
     if (lrnResult.error) {
       errors.form = lrnResult.error.message;
       return errors;
-    }
-
-    if ((emailResult.data ?? []).length > 0) {
-      errors.email = "Email already exists";
     }
 
     if ((lrnResult.data ?? []).length > 0) {
@@ -370,13 +344,26 @@ function StudentManagement() {
     setIsSubmitting(true);
 
     try {
-      const email = studentFormData.email || `${studentFormData.lrn}@students.connected`;
+      const firstInitial = studentFormData.first_name.charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+      const lastNameLow = studentFormData.last_name.trim().toLowerCase().replace(/[^a-z]/g, "");
+      let baseUsername = (firstInitial + lastNameLow) || "student";
+      let username = `${baseUsername}01`;
+      let suffix = 1;
+
+      while (true) {
+        const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: username }, single: true });
+        if (!existing || existing.error) break;
+        suffix++;
+        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+      }
+
+      const tempEmail = `${username}@temp.local`;
       const tempPassword = studentFormData.password || generateUUID().slice(0, 8);
       
       let userId = generateUUID();
       
       const { data: authData, error: authError } = await adminApi.createUser({
-        email: email,
+        email: tempEmail,
         password: tempPassword,
         email_confirm: true
       });
@@ -384,7 +371,7 @@ function StudentManagement() {
       if (authError) {
          if (authError.message?.includes("already exists") || authError.status === 422) {
             const { data: retryList } = await adminApi.listUsers();
-            const retryUser = retryList?.users?.find(u => u.email === email);
+            const retryUser = retryList?.users?.find(u => u.email === tempEmail);
             if (!retryUser) throw new Error("Email exists but user not found in fallback query.");
             userId = retryUser.id;
          } else {
@@ -395,8 +382,8 @@ function StudentManagement() {
       }
 
       const { data, error } = await adminApi.db("profiles", "insert", {
-        payload: { id: userId, ...buildPayload(studentFormData) },
-        select: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        payload: { id: userId, username: username, email: tempEmail, ...buildPayload(studentFormData) },
+        select: "id, first_name, middle_name, last_name, username, lrn, year_level, section, status, role, created_at",
         single: true
       });
 
@@ -413,7 +400,7 @@ function StudentManagement() {
           entityType: "student",
           entityId: data.id,
           entityName: studentName,
-          details: { email: data.email, lrn: data.lrn, section: data.section },
+          details: { username: username, lrn: data.lrn, section: data.section },
           timestamp: data.created_at
         });
       }
@@ -422,7 +409,6 @@ function StudentManagement() {
         first_name: "",
         middle_name: "",
         last_name: "",
-        email: "",
         lrn: "",
         year_level: "",
 
@@ -1042,7 +1028,7 @@ function StudentManagement() {
     const search = (searchQuery || "").toLowerCase();
     
     const matchesSearch = fullName.includes(search) || 
-      String(student.email || "").toLowerCase().includes(search) || 
+      String(student.username || "").toLowerCase().includes(search) || 
       String(student.lrn || "").toLowerCase().includes(search);
 
     const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
@@ -1060,10 +1046,10 @@ function StudentManagement() {
 
   const handleExportToCSV = () => {
     if (activeTab === "Profiles") {
-      const headers = ["Full Name", "Email", "LRN", "Year Level", "Section", "Status", "Created At"];
+      const headers = ["Full Name", "Username", "LRN", "Year Level", "Section", "Status", "Created At"];
       const rows = filteredStudents.map((student) => [
         getFullName(student),
-        student.email,
+        student.username,
         student.lrn || "",
         student.year_level || "",
         student.section || "",
@@ -1277,7 +1263,7 @@ function StudentManagement() {
               <div className="flex flex-col md:flex-row gap-4 items-center">
                 <div data-tour="students-search" className="flex-1 relative w-full">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
-                  <input type="text" placeholder="Search by name, email, or LRN..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
+                  <input type="text" placeholder="Search by name, username, or LRN..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
                 </div>
                 <button data-tour="students-export-btn" onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
                   <Download className="w-4 h-4" />
@@ -1338,7 +1324,7 @@ function StudentManagement() {
                       </button>
                     </th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Email</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Username</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">LRN</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -1401,8 +1387,8 @@ function StudentManagement() {
                               </td>
                               <td className="px-6 py-5 align-middle">
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <Mail className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <div className="truncate max-w-[200px]">{student.email}</div>
+                                  <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <div className="truncate max-w-[200px]">{student.username}</div>
                                 </div>
                               </td>
                               <td className="px-6 py-5 text-sm text-gray-600 align-middle">
@@ -1617,11 +1603,7 @@ function StudentManagement() {
                     <input type="text" value={studentFormData.last_name} onChange={(e) => handleAddStudentFieldChange("last_name", e.target.value)} placeholder="Enter last name" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={studentFormData.email} readOnly placeholder="Auto-generated from LRN" className={`w-full px-4 py-3 border rounded-lg focus:outline-none bg-gray-100 text-gray-500 cursor-not-allowed ${formErrors.email ? "border-red-500" : "border-gray-300"}`} />
-                    {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
-                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
                     <input type="text" value={studentFormData.lrn} onChange={(e) => handleAddStudentFieldChange("lrn", e.target.value)} inputMode="numeric" maxLength={12} placeholder="12-digit LRN" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.lrn ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
@@ -1722,17 +1704,12 @@ function StudentManagement() {
                     <input type="text" value={editFormData.last_name} onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={editFormData.email} readOnly placeholder="Auto-generated from LRN" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none bg-gray-100 text-gray-500 cursor-not-allowed" />
-                    {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
-                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
                     <input type="text" value={editFormData.lrn} onChange={(e) => {
                       const nextValue = normalizeLrn(e.target.value);
-                      const autoEmail = `${nextValue.toLowerCase()}@students.connected`;
-                      setEditFormData({ ...editFormData, lrn: nextValue, email: autoEmail });
+                      setEditFormData({ ...editFormData, lrn: nextValue });
                       setEditFormErrors((currentErrors) => {
                         const nextErrors = { ...currentErrors };
                         const fieldError = validateAddField("lrn", nextValue);
@@ -1741,13 +1718,6 @@ function StudentManagement() {
                           nextErrors.lrn = fieldError;
                         } else {
                           delete nextErrors.lrn;
-                        }
-                        
-                        const emailError = validateAddField("email", autoEmail);
-                        if (emailError) {
-                          nextErrors.email = emailError;
-                        } else {
-                          delete nextErrors.email;
                         }
 
                         return nextErrors;

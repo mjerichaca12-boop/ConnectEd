@@ -35,11 +35,9 @@ export function AdminDashboard() {
     totalStudents: 0,
     totalTeachers: 0,
     totalSubjects: 0,
-    totalEnrollments: 0,
     activeAnnouncements: 0,
     newStudentsThisMonth: 0,
-    newTeachersThisMonth: 0,
-    totalPendingResets: 0
+    newTeachersThisMonth: 0
   });
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState("");
@@ -287,8 +285,7 @@ export function AdminDashboard() {
     const [studentsResult, teachersResult, subjectsCount, pendingResetsResult] = await Promise.all([
       adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "student" } }),
       adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "teacher" } }),
-      fetchSubjectsCount(),
-      adminApi.db("password_reset_requests", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "status", value: "Pending" } })
+      fetchSubjectsCount()
     ]);
 
     if (studentsResult.error) {
@@ -303,8 +300,7 @@ export function AdminDashboard() {
       ...current,
       totalStudents: studentsResult.data?.count ?? 0,
       totalTeachers: teachersResult.data?.count ?? 0,
-      totalSubjects: subjectsCount,
-      totalPendingResets: pendingResetsResult.data?.count ?? 0
+      totalSubjects: subjectsCount
     }));
   };
 
@@ -669,23 +665,6 @@ export function AdminDashboard() {
                   <p className="text-3xl font-bold text-gray-900">
                     {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalSubjects.toLocaleString()}
                   </p>
-                </div>
-
-                <div data-tour="dashboard-resets-stat" className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-amber-300 transition-colors cursor-pointer" onClick={() => navigate("/admin/password-resets")}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                      <Key className="w-6 h-6 text-amber-500" />
-                    </div>
-                  </div>
-                  <p className="text-gray-600 text-sm mb-1">Pending Password Resets</p>
-                  <div className="flex items-baseline gap-2">
-                    <p className="text-3xl font-bold text-gray-900">
-                      {statsLoading ? <Loader2 className="w-7 h-7 animate-spin text-gray-600" /> : stats.totalPendingResets.toLocaleString()}
-                    </p>
-                    {!statsLoading && stats.totalPendingResets > 0 && (
-                      <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">Needs Action</span>
-                    )}
-                  </div>
                 </div>
               </div>
 

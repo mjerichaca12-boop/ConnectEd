@@ -939,19 +939,21 @@ function TeacherManagement() {
       const lastNameLow = teacherFormData.last_name.trim().toLowerCase().replace(/\s+/g, "");
       
       const tempPassword = `${firstNameLow}${middleNameLow}${lastNameLow}`;
-      const baseEmail = `${firstNameLow}.${lastNameLow}@dasma.deped.gov.ph`;
-      
-      let teacherEmail = baseEmail;
+      let baseUsername = (firstInitial + lastNameLow) || "teacher";
+      let username = `${baseUsername}01`;
       let suffix = 1;
+
       while (true) {
-        const { data: existing } = await db.from("profiles").select("id").eq("email", teacherEmail).maybeSingle();
+        const { data: existing } = await db.from("profiles").select("id").eq("username", username).maybeSingle();
         if (!existing) break;
-        teacherEmail = `${firstNameLow}.${lastNameLow}.${suffix}@dasma.deped.gov.ph`;
         suffix++;
+        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
       }
 
+      const tempEmail = `${username}@temp.local`;
+
       const { data: authData, error: authError } = await adminApi.createUser({
-        email: teacherEmail,
+        email: tempEmail,
         password: tempPassword,
         email_confirm: true
       });
@@ -965,7 +967,8 @@ function TeacherManagement() {
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
         last_name: teacherFormData.last_name.trim() || null,
-        email: teacherEmail,
+        email: tempEmail,
+        username: username,
         phone: normalizePhone(teacherFormData.phone),
         status: normalizeTeacherStatus(teacherFormData.status),
         year_level: teacherFormData.grade_level?.trim() || null,
@@ -1011,7 +1014,7 @@ function TeacherManagement() {
       
       setCreatedCredentials({
         name: nextTeacherName,
-        email: teacherEmail,
+        username: username,
         password: tempPassword
       });
       setShowCredentialsModal(true);
@@ -2143,10 +2146,10 @@ function TeacherManagement() {
                 <p className="font-semibold text-gray-900">{createdCredentials.name}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <p className="text-sm font-medium text-gray-500 mb-1">Email</p>
+                <p className="text-sm font-medium text-gray-500 mb-1">Username</p>
                 <div className="flex items-center justify-between">
-                  <p className="font-mono text-gray-900">{createdCredentials.email}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.email); toast.success("Email copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                  <p className="font-mono text-gray-900">{createdCredentials.username}</p>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.username); toast.success("Username copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
                 </div>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
@@ -2160,7 +2163,7 @@ function TeacherManagement() {
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button 
                 onClick={() => {
-                  const csv = `Name,Email,Temporary Password\n"${createdCredentials.name}","${createdCredentials.email}","${createdCredentials.password}"`;
+                  const csv = `Name,Username,Temporary Password\n"${createdCredentials.name}","${createdCredentials.username}","${createdCredentials.password}"`;
                   const blob = new Blob([csv], { type: "text/csv" });
                   const link = document.createElement("a");
                   link.href = URL.createObjectURL(blob);

@@ -14,6 +14,7 @@ import { Support } from "./pages/Support";
 import { Login } from "./pages/Login";
 import { ForgotPassword } from "./pages/ForgotPassword";
 import { ChangePassword } from "./pages/ChangePassword";
+import { ResetPassword } from "./pages/ResetPassword";
 import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { Classes } from "./pages/teacher/Classes";
 import { ClassDetail } from "./pages/teacher/ClassDetail";
@@ -247,6 +248,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route path="/admin" element={<Navigate to="/login" replace />} />
 
