@@ -1,7 +1,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-size: 16px;
+  --font-size: 14px;
   --primary-color: #2563eb;
   --primary-hover: #1d4ed8;
   --secondary-color: #e2e8f0;
