@@ -332,7 +332,7 @@ function Login() {
       }
 
       const role = String(profile.role || "student").toLowerCase();
-      const isMobile = window.innerWidth <= 1280;
+      const isMobile = window.innerWidth < 768;
 
       if (role === "student") {
         await supabase.auth.signOut();
