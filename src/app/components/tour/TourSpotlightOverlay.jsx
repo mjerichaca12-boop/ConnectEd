@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useTour } from "../../context/TourContext";
 import { useModuleTour } from "../../context/ModuleTourContext";
+import { ADMIN_TOUR_STEPS } from "../../config/adminTourSteps";
 
 export function TourSpotlightOverlay() {
   const navigate = useNavigate();
