@@ -91,14 +91,22 @@ export function ChangePassword() {
         throw new Error("Invalid current password.");
       }
 
-      // Update password and email
-      const { error: updateAuthError } = await supabase.auth.updateUser({
-        password: newPassword,
+      // Update password first
+      const { error: passwordUpdateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (passwordUpdateError) {
+        throw new Error(passwordUpdateError.message || "Failed to update password.");
+      }
+
+      // Then update email
+      const { error: emailUpdateError } = await supabase.auth.updateUser({
         email: email
       });
 
-      if (updateAuthError) {
-        throw new Error(updateAuthError.message || "Failed to update account details.");
+      if (emailUpdateError) {
+        throw new Error(emailUpdateError.message || "Failed to initiate email verification.");
       }
 
       // Update profiles table - mark must_change_password as false, but keep is_verified tracking if needed
