@@ -398,11 +398,6 @@ function Login() {
 
       if (profile.must_change_password === true) {
         navigate("/change-password");
-      } else if (authData.user.email && authData.user.email.endsWith(".local")) {
-        setError("Please check your inbox and click the verification link to activate your account.");
-        await supabase.auth.signOut();
-        setLoading(false);
-        return;
       } else if (role === "admin") {
         navigate("/admin/dashboard");
       } else if (role === "teacher") {
