@@ -46,11 +46,7 @@ export function TeacherTourProvider({ children }) {
   useEffect(() => {
     const checkWelcomeEligibility = () => {
       const pathname = window.location.pathname;
-      if (
-        pathname.includes("/change-password") ||
-        pathname.includes("/login") ||
-        pathname.includes("/reset-password")
-      ) {
+      if (!pathname.includes("/teacher/dashboard")) {
         setIsWelcomeOpen(false);
         return;
       }

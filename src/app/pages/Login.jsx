@@ -382,7 +382,7 @@ function Login() {
 
       const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
       const isFirstLogin = !hasCompletedLoginSession;
-      if (isFirstLogin) {
+      if (isFirstLogin && profile.must_change_password !== true) {
         localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
       }
 

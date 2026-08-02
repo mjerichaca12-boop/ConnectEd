@@ -9,12 +9,7 @@ export function TeacherWelcomeModal() {
   const { isWelcomeOpen, completeOnboarding } = useTeacherTour();
 
   const currentPath = window.location.pathname;
-  if (
-    !isWelcomeOpen ||
-    currentPath.includes("/change-password") ||
-    currentPath.includes("/login") ||
-    currentPath.includes("/reset-password")
-  ) {
+  if (!isWelcomeOpen || !currentPath.includes("/teacher/dashboard")) {
     return null;
   }
 
