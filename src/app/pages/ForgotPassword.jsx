@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, User, CheckCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
 
 function ForgotPassword() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
@@ -13,8 +13,13 @@ function ForgotPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setError("Please enter your username.");
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
@@ -22,25 +27,35 @@ function ForgotPassword() {
     setError("");
 
     try {
-      // Step 1: Look up the actual auth email from the username via RPC
-      const normalizedUsername = username.trim().toLowerCase();
-      const { data: resolvedEmail, error: rpcError } = await supabase.rpc("get_email_by_username", {
-        p_username: normalizedUsername
-      });
+      // Step 1: Look up the profile by the real email to get the username
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("username")
+        .ilike("email", trimmedEmail)
+        .maybeSingle();
 
-      if (rpcError || !resolvedEmail) {
-        // For security, don't reveal whether the username exists
+      // Always show success for security — never reveal if email exists or not
+      if (!profile?.username) {
         setRequestSent(true);
         return;
       }
 
-      // Step 2: Send the password reset to the resolved email (temp or real)
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(resolvedEmail, {
-        redirectTo: getAuthRedirectUrl("reset-password")
+      // Step 2: Try sending reset to the real email first.
+      // If the email change hasn't been verified yet, Supabase Auth still
+      // knows the user by their @temp.local email, so try that as a fallback.
+      const redirectTo = getAuthRedirectUrl("reset-password");
+      const tempEmail = `${profile.username}@temp.local`;
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo
       });
 
+      // If real email failed (user still on temp.local in auth), try the temp email
       if (resetError) {
-        throw new Error(resetError.message);
+        const { error: fallbackError } = await supabase.auth.resetPasswordForEmail(tempEmail, {
+          redirectTo
+        });
+        if (fallbackError) throw new Error(fallbackError.message);
       }
 
       setRequestSent(true);
@@ -71,7 +86,7 @@ function ForgotPassword() {
               </h1>
 
               <p className="text-lg text-gray-600 leading-relaxed">
-                Enter your username to receive a secure password reset link on your registered email address.
+                Enter your registered email address to receive a secure password reset link.
               </p>
 
               <div className="mt-10 relative h-64 hidden md:block">
@@ -91,7 +106,7 @@ function ForgotPassword() {
                 {!requestSent ? <>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="p-3 bg-emerald-50 rounded-lg">
-                        <User className="w-6 h-6 text-emerald-600" />
+                        <Mail className="w-6 h-6 text-emerald-600" />
                       </div>
                       <h2 className="text-3xl font-bold text-gray-900">
                         Forgot Password
@@ -99,7 +114,7 @@ function ForgotPassword() {
                     </div>
 
                     <p className="text-gray-600 mb-6">
-                      Enter your username and we'll send a reset link to your registered email.
+                      Enter your registered email and we'll send a reset link.
                     </p>
 
                     {error && <motion.div
@@ -113,19 +128,19 @@ function ForgotPassword() {
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                       <div>
-                        <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                          Username
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                          Email Address
                         </label>
                         <input
-                          type="text"
-                          id="username"
-                          name="username"
-                          value={username}
+                          type="email"
+                          id="email"
+                          name="email"
+                          value={email}
                           onChange={(e) => {
-                            setUsername(e.target.value);
+                            setEmail(e.target.value);
                             setError("");
                           }}
-                          placeholder="Enter your username (e.g. jdelacruz01)"
+                          placeholder="Enter your registered email"
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                         />
                       </div>
@@ -174,7 +189,7 @@ function ForgotPassword() {
                       </h2>
 
                       <p className="text-gray-600 mb-6 leading-relaxed">
-                        If an account exists for <strong>{username}</strong>, a password reset link has been sent to the registered email address. Please check your inbox (and spam folder).
+                        If an account with that email exists, a password reset link has been sent. Please check your inbox (and spam folder).
                       </p>
 
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
