@@ -288,13 +288,42 @@ function Login() {
         return;
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      let authData = null;
+      let authError = null;
+      let authMessage = "";
+
+      // Try with the resolved email from profiles
+      const { data: primaryData, error: primaryError } = await supabase.auth.signInWithPassword({
         email: resolvedEmail,
         password: formData.password
       });
 
+      if (!primaryError) {
+        authData = primaryData;
+      } else {
+        authMessage = String(primaryError.message || "").toLowerCase();
+        // If it failed with invalid credentials, it might be because the email change is pending.
+        // In that case, the user's email in auth.users is still their temporary email.
+        if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
+          const tempEmail = `${normalizedUsername}@temp.local`;
+          if (tempEmail !== resolvedEmail) {
+            const { data: fallbackData, error: fallbackError } = await supabase.auth.signInWithPassword({
+              email: tempEmail,
+              password: formData.password
+            });
+            
+            if (!fallbackError) {
+              authData = fallbackData;
+            }
+          }
+        }
+        
+        if (!authData) {
+          authError = primaryError;
+        }
+      }
+
       if (authError) {
-        const authMessage = String(authError.message || "").toLowerCase();
         if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
           setError("Invalid username or password. Please try again.");
         } else if (authMessage.includes("email not confirmed")) {
