@@ -10,7 +10,7 @@ import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key } from "lucide-react";
+import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User } from "lucide-react";
 const db = supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();

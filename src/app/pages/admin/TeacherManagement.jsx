@@ -939,6 +939,7 @@ function TeacherManagement() {
       const lastNameLow = teacherFormData.last_name.trim().toLowerCase().replace(/\s+/g, "");
       
       const tempPassword = `${firstNameLow}${middleNameLow}${lastNameLow}`;
+      const firstInitial = teacherFormData.first_name.charAt(0).toLowerCase().replace(/[^a-z]/g, "");
       let baseUsername = (firstInitial + lastNameLow) || "teacher";
       let username = `${baseUsername}01`;
       let suffix = 1;
