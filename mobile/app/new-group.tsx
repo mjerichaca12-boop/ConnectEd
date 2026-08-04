@@ -39,26 +39,28 @@ export default function NewGroupScreen() {
             const { data: userData } = await supabase.auth.getUser();
             if (!userData?.user) throw new Error("Not authenticated");
 
+            const conversationId = "group_" + Date.now() + "_" + Math.floor(Math.random() * 1000000);
+
             // 1. Create Room
-            const { data: room, error: roomError } = await supabase
-                .from('chat_rooms')
+            const { error: roomError } = await supabase
+                .from('groupchats')
                 .insert({
+                    id: conversationId,
                     name: groupName.trim(),
-                    created_by: userData.user.id
-                })
-                .select()
-                .single();
+                    created_by: userData.user.id,
+                    is_group: true
+                });
 
             if (roomError) throw roomError;
 
             // 2. Add Members
             const members = [
-                { room_id: room.id, user_id: userData.user.id },
-                ...selectedUsers.map(userId => ({ room_id: room.id, user_id: userId }))
+                { conversation_id: conversationId, profile_id: userData.user.id },
+                ...selectedUsers.map(userId => ({ conversation_id: conversationId, profile_id: userId }))
             ];
 
             const { error: membersError } = await supabase
-                .from('room_members')
+                .from('conversation_participants')
                 .insert(members);
 
             if (membersError) throw membersError;
@@ -68,7 +70,7 @@ export default function NewGroupScreen() {
                 .from('messages')
                 .insert({
                     sender_id: userData.user.id,
-                    room_id: room.id,
+                    conversation_id: conversationId,
                     content: `Group "${groupName}" created`,
                     message_text: `Group "${groupName}" created`
                 });
@@ -78,7 +80,7 @@ export default function NewGroupScreen() {
             queryClient.invalidateQueries({ queryKey: ['chat-list'] });
             router.replace({
                 pathname: "/conversation/[id]",
-                params: { id: room.id, name: groupName, isRoom: 'true' }
+                params: { id: conversationId, name: groupName, isRoom: 'true' }
             });
         } catch (error: any) {
             Alert.alert("Error", error.message);

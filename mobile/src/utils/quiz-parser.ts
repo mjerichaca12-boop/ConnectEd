@@ -3,6 +3,8 @@ export interface QuizQuestion {
     questionText: string;
     options: { label: string; text: string }[];
     correctAnswer: string;
+    questionType?: string;
+    points?: number;
 }
 
 export interface ParsedQuiz {
@@ -11,9 +13,9 @@ export interface ParsedQuiz {
 }
 
 export function parseQuiz(instructions: string): ParsedQuiz | null {
-    if (!instructions || typeof instructions !== 'string') return createDefaultQuiz();
+    if (!instructions || typeof instructions !== 'string') return null;
     const trimmedStr = instructions.trim();
-    if (!trimmedStr) return createDefaultQuiz();
+    if (!trimmedStr) return null;
 
     // 1. Check if it's JSON formatted e.g. DATA_JSON: or QUIZ_JSON: or raw JSON {"questions":[...]}
     let jsonContent = trimmedStr;
@@ -153,7 +155,12 @@ export function parseQuiz(instructions: string): ParsedQuiz | null {
     }
 
     if (rawQuestions.length === 0) {
-        return createDefaultQuiz();
+        return null;
+    }
+
+    const hasAnswers = Object.keys(answerMap).length > 0 || rawQuestions.some(q => q.detectedAnswer);
+    if (!hasAnswers) {
+        return null;
     }
 
     const questions: QuizQuestion[] = rawQuestions.map((q, idx) => {

@@ -6,7 +6,7 @@ require('dotenv').config();
 console.log('Starting ConnectEd Backend and Unstoppable Tunnel...');
 
 // 1. Start the Backend Server
-const backend = spawn('node', ['index.js'], { stdio: 'inherit' });
+const backend = spawn('node', ['index.js'], { stdio: 'inherit', cwd: __dirname });
 
 backend.on('error', (err) => {
     console.error('Failed to start backend:', err);

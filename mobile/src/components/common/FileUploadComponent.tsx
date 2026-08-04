@@ -22,41 +22,63 @@ export const FileUploadComponent: React.FC<FileUploadComponentProps> = ({
 }) => {
     const isImage = fileType?.startsWith('image/') || fileName?.match(/\.(jpg|jpeg|png|gif)$/i);
 
+    if (fileName) {
+        return (
+            <View style={[styles.selectedOuterContainer, style]}>
+                {/* Preview Container */}
+                <View style={styles.selectedContainer}>
+                    {fileUri && isImage ? (
+                        <View style={styles.previewContainer}>
+                            <Image source={{ uri: fileUri }} style={styles.previewImage} />
+                        </View>
+                    ) : (
+                        <View style={styles.selectedContent}>
+                            <Ionicons name="document-text" size={32} color={Colors.light.primary} />
+                            <Text style={styles.selectedText} numberOfLines={1}>
+                                {fileName}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
+                {/* Actions bottom bar */}
+                <View style={styles.actionBar}>
+                    {onRemoveFile && (
+                        <TouchableOpacity 
+                            style={styles.actionButtonDanger} 
+                            onPress={onRemoveFile}
+                            activeOpacity={0.7}
+                            accessibilityLabel="Remove selected file"
+                        >
+                            <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                            <Text style={styles.actionButtonDangerText}>Remove (X)</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    <View style={styles.statusBadge}>
+                        <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
+                        <Text style={styles.statusBadgeText}>Ready</Text>
+                    </View>
+                </View>
+            </View>
+        );
+    }
+
     return (
         <View style={[styles.outerContainer, style]}>
-            <TouchableOpacity style={styles.container} onPress={onPickFile}>
-                {fileUri && isImage ? (
-                    <View style={styles.previewContainer}>
-                        <Image source={{ uri: fileUri }} style={styles.previewImage} />
-                        <View style={styles.overlay}>
-                            <Ionicons name="camera" size={20} color="#FFF" />
-                            <Text style={styles.overlayText}>Change</Text>
-                        </View>
-                    </View>
-                ) : (
-                    <View style={styles.content}>
-                        <Ionicons 
-                            name={fileName ? "document-text" : "cloud-upload-outline"} 
-                            size={32} 
-                            color={Colors.light.primary} 
-                        />
-                        <Text style={styles.text}>
-                            {fileName ? fileName : "Tap to upload file or image"}
-                        </Text>
-                        {!fileName && <Text style={styles.subtext}>Max size: 150MB</Text>}
-                    </View>
-                )}
+            <TouchableOpacity style={styles.container} onPress={onPickFile} activeOpacity={0.7}>
+                <View style={styles.content}>
+                    <Ionicons 
+                        name="cloud-upload-outline" 
+                        size={32} 
+                        color={Colors.light.primary} 
+                    />
+                    <Text style={styles.text}>
+                        Tap to upload file or image
+                    </Text>
+                    <Text style={styles.subtext}>Max size: 150MB</Text>
+                </View>
             </TouchableOpacity>
-
-            {fileName && onRemoveFile && (
-                <TouchableOpacity 
-                    style={styles.removeButton} 
-                    onPress={onRemoveFile}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons name="close" size={20} color="#FFF" />
-                </TouchableOpacity>
-            )}
         </View>
     );
 };
@@ -76,48 +98,9 @@ const styles = StyleSheet.create({
         backgroundColor: "#F0FAF5",
         overflow: "hidden",
     },
-    removeButton: {
-        position: "absolute",
-        top: 8,
-        right: 8,
-        backgroundColor: "rgba(239, 68, 68, 0.9)",
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        justifyContent: "center",
-        alignItems: "center",
-        zIndex: 10,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
     content: {
         alignItems: "center",
         padding: 20,
-    },
-    previewContainer: {
-        width: "100%",
-        height: 120,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    previewImage: {
-        width: "100%",
-        height: "100%",
-        resizeMode: "cover",
-    },
-    overlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(0,0,0,0.3)",
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    overlayText: {
-        color: "#FFF",
-        fontWeight: "600",
-        marginTop: 4,
     },
     text: {
         color: Colors.light.primary,
@@ -130,6 +113,97 @@ const styles = StyleSheet.create({
         color: Colors.light.textSecondary,
         fontSize: 12,
         marginTop: 4,
+    },
+    selectedOuterContainer: {
+        borderWidth: 1.5,
+        borderColor: "#E2E8F0",
+        borderRadius: 16,
+        backgroundColor: "#FFFFFF",
+        overflow: "hidden",
+    },
+    selectedContainer: {
+        backgroundColor: "#F8FAFC",
+        minHeight: 140,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    selectedContent: {
+        alignItems: "center",
+        padding: 20,
+    },
+    selectedText: {
+        color: "#1E293B",
+        fontSize: 14,
+        fontWeight: "600",
+        marginTop: 8,
+        paddingHorizontal: 16,
+        textAlign: "center",
+    },
+    previewContainer: {
+        width: "100%",
+        height: 160,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    previewImage: {
+        width: "100%",
+        height: "100%",
+        resizeMode: "contain",
+    },
+    actionBar: {
+        flexDirection: "row",
+        borderTopWidth: 1,
+        borderTopColor: "#E2E8F0",
+        padding: 12,
+        backgroundColor: "#FFFFFF",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    actionButtonDanger: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#FCA5A5",
+        backgroundColor: "#FEF2F2",
+    },
+    actionButtonDangerText: {
+        color: "#DC2626",
+        fontSize: 12,
+        fontWeight: "600",
+    },
+    actionButtonSecondary: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: "#CBD5E1",
+        backgroundColor: "#F8FAFC",
+    },
+    actionButtonSecondaryText: {
+        color: "#475569",
+        fontSize: 12,
+        fontWeight: "600",
+    },
+    statusBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        backgroundColor: "#ECFDF5",
+    },
+    statusBadgeText: {
+        color: "#059669",
+        fontSize: 12,
+        fontWeight: "600",
     },
 });
 

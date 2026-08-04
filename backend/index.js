@@ -65,6 +65,33 @@ app.post("/auth/send-otp", async (req, res) => {
     }
 });
 
+app.post("/auth/send-secure-otp", async (req, res) => {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+        return res.status(400).json({ error: "Email and OTP are required" });
+    }
+
+    try {
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: "Your ConnectEd Verification Code",
+            text: `Your account verification OTP code is: ${otp}. It will expire in 24 hours.`,
+            html: `<h3>Account Verification</h3>
+                   <p>Please enter the following 4-digit One-Time Password (OTP) in the app to complete your secure account setup:</p>
+                   <h2 style="font-size: 24px; letter-spacing: 2px; color: #2563EB;"><strong>${otp}</strong></h2>
+                   <p>This code will expire in 24 hours.</p>`,
+        };
+
+        await transporter.sendMail(mailOptions);
+        return res.status(200).json({ success: true, message: "OTP email sent successfully" });
+    } catch (error) {
+        console.error("Error sending secure OTP email:", error);
+        return res.status(500).json({ error: "Failed to send OTP email", details: error.message });
+    }
+});
+
 app.post("/auth/verify-otp", async (req, res) => {
     const { email, code } = req.body;
 

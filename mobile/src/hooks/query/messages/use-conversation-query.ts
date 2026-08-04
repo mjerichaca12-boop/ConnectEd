@@ -26,8 +26,8 @@ export function useConversationQuery(partnerId: string) {
                     table: 'messages',
                 },
                 async (payload) => {
-                    console.log('[messages] RT message received:', payload.eventType, (payload.new || payload.old)?.id);
-                    const newMessage = payload.new || payload.old;
+                    console.log('[messages] RT message received:', payload.eventType, ((payload.new || payload.old) as any)?.id);
+                    const newMessage = (payload.new || payload.old) as any;
                     if (!newMessage) return;
                     const { data: { user } } = await supabase.auth.getUser();
                     if (!user) return;

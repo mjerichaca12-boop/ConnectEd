@@ -192,9 +192,10 @@ function Subjects() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSubjects.map((subject) => <div
     key={subject.id}
-    className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group overflow-hidden"
+    onClick={() => navigate(`/subject/${subject.id}`)}
+    className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer group overflow-hidden"
   >
-                <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-4">
+                <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-4 transition-all duration-300 group-hover:from-emerald-700 group-hover:to-teal-700">
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-emerald-100 text-sm font-medium">{subject.code}</p>
@@ -211,17 +212,17 @@ function Subjects() {
 
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="p-2 bg-emerald-50 rounded-lg">
+                      <div className="p-2 bg-emerald-50 rounded-lg group-hover:bg-emerald-100 transition-colors duration-300">
                         <User className="w-4 h-4 text-emerald-600" />
                       </div>
                       <div>
                         <p className="text-gray-500 text-xs">Teacher</p>
-                        <p className="text-gray-900 font-medium">{subject.teacher}</p>
+                        <p className="text-gray-900 font-medium group-hover:text-emerald-700 transition-colors">{subject.teacher}</p>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 text-sm">
-                      <div className="p-2 bg-blue-50 rounded-lg">
+                      <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors duration-300">
                         <Calendar className="w-4 h-4 text-blue-600" />
                       </div>
                       <div>
@@ -232,8 +233,8 @@ function Subjects() {
                   </div>
 
                   <button
-    onClick={() => navigate(`/subject/${subject.id}`)}
-    className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all duration-300 shadow-sm hover:shadow-md"
+    onClick={(e) => { e.stopPropagation(); navigate(`/subject/${subject.id}`); }}
+    className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg group-hover:bg-emerald-700 transition-all duration-300 shadow-sm hover:shadow-md"
   >
                     <span className="font-medium">View Details</span>
                     <ChevronRight className="w-4 h-4" />

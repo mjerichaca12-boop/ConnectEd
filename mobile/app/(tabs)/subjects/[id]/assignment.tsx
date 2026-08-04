@@ -15,21 +15,42 @@ import StatusBadge from "../../../../src/components/common/StatusBadge";
 import Button from "../../../../src/components/common/Button";
 import AppHeader from "../../../../src/components/common/AppHeader";
 import FileUploadComponent from "../../../../src/components/common/FileUploadComponent";
+import FileViewerModal from "../../../../src/components/common/FileViewerModal";
 
 import { supabase } from "../../../../src/lib/supabase";
 import { useMyAssignmentsQuery } from "../../../../src/hooks/query/assignments/use-my-assignments-query";
 
 import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../../../src/utils/quiz-parser";
 
-const AssignmentItem = ({ title, dueDate, status, grade, onPress }: any) => {
+const AssignmentItem = ({ title, dueDate, status, grade, assessmentType, onPress }: any) => {
     const isLate = status === "late";
     const hasGrade = typeof grade !== "undefined" && grade !== null;
+    const isQuiz = assessmentType === "quiz";
     return (
         <TouchableOpacity 
             style={[styles.itemContainer, isLate && styles.lateItemContainer]} 
             onPress={onPress}
         >
             <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <View style={{ 
+                        backgroundColor: isQuiz ? '#EFF6FF' : '#F0FDF4', 
+                        paddingHorizontal: 6, 
+                        paddingVertical: 1, 
+                        borderRadius: 4,
+                        borderWidth: 0.5,
+                        borderColor: isQuiz ? '#BFDBFE' : '#BBF7D0'
+                    }}>
+                        <Text style={{ 
+                            fontSize: 9, 
+                            fontWeight: 'bold', 
+                            color: isQuiz ? '#1E40AF' : '#166534',
+                            textTransform: 'uppercase'
+                        }}>
+                            {assessmentType || 'task'}
+                        </Text>
+                    </View>
+                </View>
                 <Text style={[styles.title, isLate && styles.lateText]}>{title}</Text>
                 <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
@@ -51,7 +72,113 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
     const [isQuizStarted, setIsQuizStarted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerTitle, setViewerTitle] = useState<string | null>(null);
+    const [hasAttemptedQuiz, setHasAttemptedQuiz] = useState(false);
+    const [quizAttemptData, setQuizAttemptData] = useState<any>(null);
     const queryClient = useQueryClient();
+
+    const [dbQuestions, setDbQuestions] = useState<any[]>([]);
+    const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
+    React.useEffect(() => {
+        const checkQuizAttempt = async () => {
+            try {
+                const { data: userData } = await supabase.auth.getUser();
+                const uid = userData?.user?.id;
+                if (uid && assignment && assignment.assessment_type === 'quiz') {
+                    const { data, error } = await supabase
+                        .from('quiz_attempts')
+                        .select('*')
+                        .eq('quiz_id', assignment.id)
+                        .eq('student_id', uid)
+                        .maybeSingle();
+                    if (!error && data) {
+                        setHasAttemptedQuiz(true);
+                        setQuizAttemptData(data);
+                    }
+                }
+            } catch (err) {
+                console.error("Error checking quiz attempt:", err);
+            }
+        };
+        checkQuizAttempt();
+    }, [assignment?.id]);
+
+    React.useEffect(() => {
+        if (assignment && assignment.assessment_type === 'quiz') {
+            setIsLoadingQuestions(true);
+            supabase
+                .from('quiz_questions')
+                .select('*')
+                .eq('quiz_id', assignment.id)
+                .order('order_index', { ascending: true })
+                .then(({ data, error }) => {
+                    setIsLoadingQuestions(false);
+                    if (!error && data) {
+                        setDbQuestions(data);
+                    } else if (error) {
+                        console.error("Failed to fetch quiz questions:", error.message);
+                    }
+                });
+        }
+    }, [assignment?.id]);
+
+    const quizData = React.useMemo(() => {
+        if (assignment.assessment_type !== 'quiz') return null;
+        if (dbQuestions && dbQuestions.length > 0) {
+            return {
+                instructionsHeader: assignment.description || assignment.instructions || "Please answer the questions below.",
+                questions: dbQuestions.map((q, idx) => {
+                    const questionNumber = idx + 1;
+                    
+                    let formattedOptions: { label: string; text: string }[] = [];
+                    if (Array.isArray(q.options)) {
+                        formattedOptions = q.options.map((optText: any, optIdx: number) => {
+                            const label = String.fromCharCode(65 + optIdx); // A, B, C, D...
+                            return {
+                                label: label,
+                                text: String(optText)
+                            };
+                        });
+                    } else if (q.question_type === 'True/False') {
+                        formattedOptions = [
+                            { label: 'True', text: 'True' },
+                            { label: 'False', text: 'False' }
+                        ];
+                    }
+
+                    let resolvedCorrectAnswer = q.correct_answer || '';
+                    if (q.question_type === 'Multiple Choice' && Array.isArray(q.options)) {
+                        const optIdx = q.options.findIndex((opt: any) => String(opt).trim().toLowerCase() === String(q.correct_answer).trim().toLowerCase());
+                        if (optIdx !== -1) {
+                            resolvedCorrectAnswer = String.fromCharCode(65 + optIdx); // A, B, C, D...
+                        }
+                    }
+
+                    return {
+                        id: q.id,
+                        questionNumber: questionNumber,
+                        questionText: q.question_text || '',
+                        questionType: q.question_type || 'Multiple Choice',
+                        options: formattedOptions,
+                        correctAnswer: resolvedCorrectAnswer,
+                        points: q.points || 1,
+                    };
+                })
+            };
+        }
+        // Fallback to instructions parser
+        const text = typeof assignment.instructions === 'string' ? assignment.instructions : String(assignment.instructions || '');
+        return parseQuiz(text);
+    }, [assignment, dbQuestions]);
+
+    const openFileViewer = (url: string, title: string) => {
+        setViewerUrl(url);
+        setViewerTitle(title);
+        setViewerVisible(true);
+    };
 
     const handleFileUpload = async () => {
         try {
@@ -121,16 +248,26 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     };
 
     const handleSubmit = async () => {
-        const quizData = parseQuiz(typeof assignment.instructions === 'string' ? assignment.instructions : String(assignment.instructions || ''));
+        const isQuiz = assignment.assessment_type === 'quiz';
         
-        if (quizData) {
-            const unanswered = quizData.questions.filter(q => !selectedAnswers[q.questionNumber]);
-            if (unanswered.length > 0) {
-                Alert.alert(
-                    "Validation Error", 
-                    `Please answer all questions before submitting. Unanswered: ${unanswered.map(q => q.questionNumber).join(", ")}`
-                );
-                return;
+        if (isQuiz) {
+            if (quizData) {
+                const unanswered = quizData.questions.filter(q => {
+                    const ans = selectedAnswers[q.questionNumber];
+                    return !ans || (typeof ans === 'string' && !ans.trim());
+                });
+                if (unanswered.length > 0 && !pickedFile) {
+                    Alert.alert(
+                        "Validation Error", 
+                        `Please answer all questions before submitting. Unanswered: ${unanswered.map(q => q.questionNumber).join(", ")}`
+                    );
+                    return;
+                }
+            } else {
+                if (!responseText.trim() && !pickedFile) {
+                    Alert.alert("Validation Error", "Please write your answers or upload a file/picture before submitting.");
+                    return;
+                }
             }
         } else if (!responseText.trim() && !pickedFile) {
             Alert.alert("Validation Error", "Please enter a response or attach a file before submitting.");
@@ -171,16 +308,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 publicUrl = url;
             }
 
-            // 2. Upsert into submissions table
-            const { error } = await supabase
-                .from('submissions')
-                .upsert({
-                    assignment_id: assignment.id,
-                    user_id: userId,
-                    file_url: publicUrl || (quizData ? "quiz-submission" : "text-only-submission")
-                }, { onConflict: 'assignment_id,user_id' });
 
-            if (error && error.code !== 'PGRST205') throw error;
 
             // Fetch teacher_id from subjects table using course_id / subjectId
             let teacherId = null;
@@ -202,9 +330,16 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             let correctCount = 0;
             let jsonText = "";
 
-            if (quizData) {
+            if (isQuiz && quizData) {
                 quizData.questions.forEach(q => {
-                    if (selectedAnswers[q.questionNumber] === q.correctAnswer) {
+                    let isCorrect = false;
+                    const studentAns = selectedAnswers[q.questionNumber];
+                    if (q.questionType === 'Multiple Choice' || q.questionType === 'True/False') {
+                        isCorrect = studentAns === q.correctAnswer;
+                    } else if (q.questionType === 'Identification' || q.questionType === 'Short Answer') {
+                        isCorrect = String(studentAns || '').trim().toLowerCase() === String(q.correctAnswer || '').trim().toLowerCase();
+                    }
+                    if (isCorrect) {
                         correctCount++;
                     }
                 });
@@ -224,7 +359,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     subject_id: subjectId,
                     assessment_id: assignment.id,
                     student_id: userId,
-                    response_text: quizData ? jsonText : (responseText.trim() || "Submitted via Mobile App"),
+                    response_text: isQuiz && quizData ? jsonText : (responseText.trim() || "Submitted via Mobile App"),
                     file_url: publicUrl,
                     file_name: pickedFile ? pickedFile.name : null,
                     file_path: storagePath,
@@ -248,7 +383,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             }
 
             // Directly upsert into teacher_assessment_grades if auto-graded
-            if (quizData && teacherId && subjectId) {
+            if (isQuiz && quizData && teacherId && subjectId) {
                 const { error: gradeError } = await supabase
                     .from('teacher_assessment_grades')
                     .upsert({
@@ -271,7 +406,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
             // Also record in quiz_attempts table
             if (quizData && userId) {
-                await supabase
+                const { error: upsertError } = await supabase
                     .from('quiz_attempts')
                     .upsert({
                         quiz_id: assignment.id,
@@ -285,6 +420,38 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                         response_text: jsonText,
                         status: 'completed'
                     }, { onConflict: 'quiz_id,user_id' });
+
+                if (upsertError) {
+                    const { error: insertError } = await supabase
+                        .from('quiz_attempts')
+                        .insert({
+                            quiz_id: assignment.id,
+                            assignment_id: assignment.id,
+                            student_id: userId,
+                            user_id: userId,
+                            score: Math.round(score),
+                            correct_count: correctCount,
+                            total_questions: quizData.questions.length,
+                            answers: selectedAnswers,
+                            response_text: jsonText,
+                            status: 'completed'
+                        });
+                    if (insertError) {
+                        console.error("Failed to insert quiz attempt fallback:", insertError.message);
+                    }
+                }
+            }
+
+            if (isQuiz && quizData) {
+                setHasAttemptedQuiz(true);
+                setQuizAttemptData({
+                    score: Math.round(score),
+                    correct_count: correctCount,
+                    total_questions: quizData.questions.length,
+                    answers: selectedAnswers,
+                    response_text: jsonText,
+                    status: 'completed'
+                });
             }
 
             Alert.alert(
@@ -312,11 +479,11 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
         try {
             if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-                await Linking.openURL(fileUrl);
+                openFileViewer(fileUrl, assignment.title + " Submission");
             } else {
                 const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
                 if (data?.publicUrl) {
-                    await Linking.openURL(data.publicUrl);
+                    openFileViewer(data.publicUrl, assignment.title + " Submission");
                 }
             }
         } catch (err) {
@@ -341,14 +508,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                             const userId = userData.user?.id;
                             if (!userId) throw new Error("User not authenticated");
 
-                            // 1. Delete from submissions
-                            const { error: deleteSubError } = await supabase
-                                .from('submissions')
-                                .delete()
-                                .eq('assignment_id', assignment.id)
-                                .eq('user_id', userId);
 
-                            if (deleteSubError && deleteSubError.code !== 'PGRST205') throw deleteSubError;
 
                             // 2. Delete from teacher_assessment_submissions
                             const { error: deleteTeacherSubError } = await supabase
@@ -405,7 +565,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
         if (!fileUrl || typeof fileUrl !== 'string') return;
         try {
             if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-                await Linking.openURL(fileUrl);
+                openFileViewer(fileUrl, assignment.file_name || "Assignment Attachment");
             } else {
                 let cleanPath = fileUrl;
                 if (cleanPath.startsWith('class-materials/')) {
@@ -413,7 +573,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 }
                 const { data } = supabase.storage.from('class-materials').getPublicUrl(cleanPath);
                 if (data?.publicUrl) {
-                    await Linking.openURL(data.publicUrl);
+                    openFileViewer(data.publicUrl, assignment.file_name || "Assignment Attachment");
                 }
             }
         } catch(e) {
@@ -424,14 +584,22 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
     const isImage = !!(pickedFile?.mimeType?.startsWith('image/') || pickedFile?.name?.match(/\.(jpg|jpeg|png)$/i));
     const instructionsStr = typeof assignment.instructions === 'string' ? assignment.instructions : String(assignment.instructions || '');
-    const parsedQuiz = parseQuiz(instructionsStr);
+    const parsedQuiz = quizData;
     const isSubmitDisabled = (() => {
         if (isSubmitting) return true;
-        if (parsedQuiz) {
-            const unansweredCount = parsedQuiz.questions.filter(q => !selectedAnswers[q.questionNumber]).length;
-            return unansweredCount > 0;
+        if (pickedFile) return false;
+        
+        if (assignment.assessment_type === 'quiz') {
+            if (parsedQuiz) {
+                const unansweredCount = parsedQuiz.questions.filter(q => {
+                    const ans = selectedAnswers[q.questionNumber];
+                    return !ans || (typeof ans === 'string' && !ans.trim());
+                }).length;
+                return unansweredCount > 0;
+            }
+            return !responseText.trim();
         } else {
-            return !responseText.trim() && !pickedFile;
+            return !responseText.trim();
         }
     })();
 
@@ -441,7 +609,28 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             
             <ScrollView contentContainerStyle={styles.detailedContent}>
                 <View style={styles.detailHeader}>
-                    <Text style={styles.detailTitle}>{assignment.title}</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.detailTitle}>{assignment.title}</Text>
+                        <View style={{ 
+                            backgroundColor: assignment.assessment_type === 'quiz' ? '#EFF6FF' : '#F0FDF4', 
+                            paddingHorizontal: 8, 
+                            paddingVertical: 2, 
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: assignment.assessment_type === 'quiz' ? '#BFDBFE' : '#BBF7D0',
+                            alignSelf: 'flex-start',
+                            marginTop: 4
+                        }}>
+                            <Text style={{ 
+                                fontSize: 10, 
+                                fontWeight: 'bold', 
+                                color: assignment.assessment_type === 'quiz' ? '#1E40AF' : '#166534',
+                                textTransform: 'uppercase'
+                            }}>
+                                {assignment.assessment_type || 'task'}
+                            </Text>
+                        </View>
+                    </View>
                     <StatusBadge status={assignment.status} />
                 </View>
 
@@ -643,13 +832,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                         {item.isImage ? (
                                             <TouchableOpacity 
                                                 activeOpacity={0.9} 
-                                                onPress={async () => {
-                                                    try {
-                                                        await Linking.openURL(item.url);
-                                                    } catch (e) {
-                                                        Alert.alert("Error", "Could not open image.");
-                                                    }
-                                                }}
+                                                onPress={() => openFileViewer(item.url, item.fileName)}
                                                 style={{
                                                     borderRadius: 12,
                                                     overflow: 'hidden',
@@ -680,7 +863,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                                         <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>
                                                             View Full
                                                         </Text>
-                                                        <Ionicons name="open-outline" size={14} color={Colors.light.primary} />
+                                                        <Ionicons name="eye-outline" size={14} color={Colors.light.primary} />
                                                     </View>
                                                 </View>
                                             </TouchableOpacity>
@@ -696,13 +879,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                                     borderColor: '#93C5FD',
                                                     marginTop: 6
                                                 }}
-                                                onPress={async () => {
-                                                    try {
-                                                        await Linking.openURL(item.url);
-                                                    } catch (e) {
-                                                        Alert.alert("Error", "Could not open attachment.");
-                                                    }
-                                                }}
+                                                onPress={() => openFileViewer(item.url, item.fileName)}
                                             >
                                                 <Ionicons name="document-text-outline" size={30} color={Colors.light.primary} />
                                                 <View style={{ flex: 1, marginLeft: 12 }}>
@@ -710,10 +887,10 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                                         {item.fileName}
                                                     </Text>
                                                     <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '600', marginTop: 2 }}>
-                                                        📄 Tap to Open / View File or PDF
+                                                        📄 Tap to Open
                                                     </Text>
                                                 </View>
-                                                <Ionicons name="open-outline" size={22} color={Colors.light.primary} />
+                                                <Ionicons name="eye-outline" size={22} color={Colors.light.primary} />
                                             </TouchableOpacity>
                                         )}
                                     </View>
@@ -723,13 +900,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     })()}
                 </View>
 
-                {(assignment.status === "pending" || assignment.status === "late") ? (
+                {(assignment.status === "pending" || assignment.status === "late") && !hasAttemptedQuiz ? (
                     <View style={styles.submissionSection}>
                         <Text style={styles.sectionTitle}>
                             {assignment.assessment_type === 'quiz' ? 'Quiz Assessment' : 'Your Submission'}
                         </Text>
                         
-                        {(assignment.assessment_type === 'quiz' || parsedQuiz) && !isQuizStarted ? (
+                        {(assignment.assessment_type === 'quiz') && !isQuizStarted ? (
                             <View style={{ marginVertical: 12, alignItems: 'center', backgroundColor: '#F8FAFC', padding: 20, borderRadius: 16, borderWidth: 1.5, borderColor: '#E2E8F0' }}>
                                 <Ionicons name="clipboard-outline" size={42} color={Colors.light.primary} style={{ marginBottom: 8 }} />
                                 <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#0F172A', textAlign: 'center' }}>
@@ -767,51 +944,78 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                             <>
                                 {parsedQuiz ? (
                                     <View style={styles.quizFormContainer}>
-                                        {parsedQuiz.questions.map((q) => {
+                                        {parsedQuiz.questions.map((q: any) => {
                                             const selectedOpt = selectedAnswers[q.questionNumber];
+                                            const showTextInput = q.questionType === 'Identification' || q.questionType === 'Short Answer' || q.questionType === 'Essay';
+                                            
                                             return (
                                                 <View key={q.questionNumber} style={styles.quizQuestionCard}>
-                                                    <Text style={styles.quizQuestionText}>
-                                                        {q.questionNumber}. {q.questionText}
-                                                    </Text>
-                                                    <View style={styles.quizOptionsContainer}>
-                                                        {q.options.map((opt) => {
-                                                            const isSelected = selectedOpt === opt.label;
-                                                            return (
-                                                                <TouchableOpacity
-                                                                    key={opt.label}
-                                                                    style={[
-                                                                        styles.quizOptionButton,
-                                                                        isSelected && styles.quizOptionButtonSelected
-                                                                    ]}
-                                                                    onPress={() => {
-                                                                        setSelectedAnswers(prev => ({
-                                                                            ...prev,
-                                                                            [q.questionNumber]: opt.label
-                                                                        }));
-                                                                    }}
-                                                                >
-                                                                    <View style={[
-                                                                        styles.quizOptionLetterCircle,
-                                                                        isSelected && styles.quizOptionLetterCircleSelected
-                                                                    ]}>
-                                                                        <Text style={[
-                                                                            styles.quizOptionLetterText,
-                                                                            isSelected && styles.quizOptionLetterTextSelected
-                                                                        ]}>
-                                                                            {opt.label}
-                                                                        </Text>
-                                                                    </View>
-                                                                    <Text style={[
-                                                                        styles.quizOptionText,
-                                                                        isSelected && styles.quizOptionTextSelected
-                                                                    ]}>
-                                                                        {opt.text}
-                                                                    </Text>
-                                                                </TouchableOpacity>
-                                                            );
-                                                        })}
+                                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                        <Text style={styles.quizQuestionText}>
+                                                            {q.questionNumber}. {q.questionText}
+                                                        </Text>
+                                                        <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600' }}>
+                                                            {q.points || 1} pts
+                                                        </Text>
                                                     </View>
+                                                    
+                                                    {showTextInput ? (
+                                                        <TextInput
+                                                            style={[
+                                                                styles.quizTextInput,
+                                                                { minHeight: q.questionType === 'Essay' ? 100 : 50 }
+                                                            ]}
+                                                            value={selectedOpt || ""}
+                                                            onChangeText={(text) => {
+                                                                    setSelectedAnswers(prev => ({
+                                                                        ...prev,
+                                                                        [q.questionNumber]: text
+                                                                    }));
+                                                            }}
+                                                            placeholder={q.questionType === 'Essay' ? "Write your essay response here..." : "Type your answer here..."}
+                                                            multiline={q.questionType === 'Essay' || q.questionType === 'Short Answer'}
+                                                            textAlignVertical={q.questionType === 'Essay' ? 'top' : 'center'}
+                                                        />
+                                                    ) : (
+                                                        <View style={styles.quizOptionsContainer}>
+                                                            {q.options.map((opt: any) => {
+                                                                const isSelected = selectedOpt === opt.label;
+                                                                return (
+                                                                    <TouchableOpacity
+                                                                        key={opt.label}
+                                                                        style={[
+                                                                            styles.quizOptionButton,
+                                                                            isSelected && styles.quizOptionButtonSelected
+                                                                        ]}
+                                                                        onPress={() => {
+                                                                            setSelectedAnswers(prev => ({
+                                                                                ...prev,
+                                                                                [q.questionNumber]: opt.label
+                                                                            }));
+                                                                        }}
+                                                                    >
+                                                                        <View style={[
+                                                                            styles.quizOptionLetterCircle,
+                                                                            isSelected && styles.quizOptionLetterCircleSelected
+                                                                        ]}>
+                                                                            <Text style={[
+                                                                                styles.quizOptionLetterText,
+                                                                                isSelected && styles.quizOptionLetterTextSelected
+                                                                            ]}>
+                                                                                {opt.label}
+                                                                            </Text>
+                                                                        </View>
+                                                                        <Text style={[
+                                                                            styles.quizOptionText,
+                                                                            isSelected && styles.quizOptionTextSelected
+                                                                        ]}>
+                                                                            {opt.text}
+                                                                        </Text>
+                                                                    </TouchableOpacity>
+                                                                );
+                                                            })}
+                                                        </View>
+                                                    )}
                                                 </View>
                                             );
                                         })}
@@ -867,13 +1071,21 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     </View>
                 ) : (() => {
                     let submissionData: any = null;
-                    const responseText_ = assignment.submission?.response_text;
+                    const responseText_ = assignment.submission?.response_text || (quizAttemptData && quizAttemptData.response_text);
                     if (typeof responseText_ === 'string' && responseText_.startsWith("DATA_JSON:")) {
                         try {
                             submissionData = JSON.parse(responseText_.substring(10));
                         } catch (e) {
                             console.error("Failed to parse DATA_JSON:", e);
                         }
+                    } else if (hasAttemptedQuiz && quizAttemptData) {
+                        submissionData = {
+                            score: quizAttemptData.score,
+                            correctCount: quizAttemptData.correct_count,
+                            totalQuestions: quizAttemptData.total_questions,
+                            answers: quizAttemptData.answers,
+                            questions: quizData?.questions || []
+                        };
                     }
 
                     return (
@@ -895,89 +1107,127 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                      </View>
                                      
                                      <Text style={styles.reviewTitle}>Question Review</Text>
-                                     
                                      {submissionData.questions && submissionData.questions.map((q: any) => {
-                                         const studentAns = submissionData.answers[q.questionNumber];
-                                         const isCorrect = studentAns === q.correctAnswer;
-                                         
-                                         return (
-                                             <View key={q.questionNumber} style={[
-                                                 styles.reviewQuestionCard,
-                                                 isCorrect ? styles.reviewQuestionCardCorrect : styles.reviewQuestionCardIncorrect
-                                             ]}>
-                                                 <View style={styles.reviewQuestionHeader}>
-                                                     <Text style={styles.reviewQuestionText}>
-                                                         {q.questionNumber}. {q.questionText}
-                                                     </Text>
-                                                     <Ionicons 
-                                                         name={isCorrect ? "checkmark-circle" : "close-circle"} 
-                                                         size={24} 
-                                                         color={isCorrect ? "#16A34A" : "#DC2626"} 
-                                                     />
-                                                 </View>
-                                                 
-                                                 <View style={styles.reviewOptionsContainer}>
-                                                     {q.options.map((opt: any) => {
-                                                         const isStudentSelect = studentAns === opt.label;
-                                                         const isCorrectAns = q.correctAnswer === opt.label;
-                                                         
-                                                         let optStyle = {};
-                                                         let textStyle = {};
-                                                         let circleStyle = {};
-                                                         let circleTextStyle = {};
-                                                         
-                                                         if (isStudentSelect) {
-                                                             if (isCorrect) {
-                                                                 optStyle = styles.optStudentCorrect;
-                                                                 textStyle = { color: "#166534", fontWeight: "600" };
-                                                                 circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
-                                                                 circleTextStyle = { color: "#15803D" };
-                                                             } else {
-                                                                 optStyle = styles.optStudentIncorrect;
-                                                                 textStyle = { color: "#991B1B", fontWeight: "600" };
-                                                                 circleStyle = { backgroundColor: "#FEE2E2", borderColor: "#DC2626" };
-                                                                 circleTextStyle = { color: "#B91C1C" };
-                                                             }
-                                                         } else if (isCorrectAns) {
-                                                             optStyle = styles.optCorrectTarget;
-                                                             textStyle = { color: "#166534", fontWeight: "600" };
-                                                             circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
-                                                             circleTextStyle = { color: "#15803D" };
-                                                         }
-                                                         
-                                                         return (
-                                                             <View
-                                                                 key={opt.label}
-                                                                 style={[styles.reviewOptionRow, optStyle]}
-                                                             >
-                                                                 <View style={[styles.reviewOptionCircle, circleStyle]}>
-                                                                     <Text style={[styles.reviewOptionCircleText, circleTextStyle]}>
-                                                                         {opt.label}
-                                                                     </Text>
-                                                                 </View>
-                                                                 <Text style={[styles.reviewOptionText, textStyle]}>
-                                                                     {opt.text}
-                                                                 </Text>
-                                                                 {isStudentSelect && (
-                                                                     <Text style={[
-                                                                         styles.yourAnswerTag,
-                                                                         isCorrect ? { color: "#15803D" } : { color: "#B91C1C" }
-                                                                     ]}>
-                                                                         (Your Answer)
-                                                                     </Text>
-                                                                 )}
-                                                                 {!isCorrect && isCorrectAns && (
-                                                                     <Text style={{ color: "#15803D", fontSize: 11, fontWeight: "600", marginLeft: "auto" }}>
-                                                                         (Correct Answer)
-                                                                     </Text>
-                                                                 )}
-                                                             </View>
-                                                         );
-                                                     })}
-                                                 </View>
-                                             </View>
-                                         );
-                                     })}
+                                          const studentAns = submissionData.answers[q.questionNumber];
+                                          const showTextInput = q.questionType === 'Identification' || q.questionType === 'Short Answer' || q.questionType === 'Essay';
+                                          
+                                          let isCorrect = false;
+                                          if (q.questionType === 'Multiple Choice' || q.questionType === 'True/False') {
+                                              isCorrect = studentAns === q.correctAnswer;
+                                          } else if (q.questionType === 'Identification' || q.questionType === 'Short Answer') {
+                                              isCorrect = String(studentAns || '').trim().toLowerCase() === String(q.correctAnswer || '').trim().toLowerCase();
+                                          }
+
+                                          return (
+                                              <View key={q.questionNumber} style={[
+                                                  styles.reviewQuestionCard,
+                                                  isCorrect ? styles.reviewQuestionCardCorrect : styles.reviewQuestionCardIncorrect
+                                              ]}>
+                                                  <View style={styles.reviewQuestionHeader}>
+                                                      <Text style={styles.reviewQuestionText}>
+                                                          {q.questionNumber}. {q.questionText}
+                                                      </Text>
+                                                      <Ionicons 
+                                                          name={isCorrect ? "checkmark-circle" : "close-circle"} 
+                                                          size={24} 
+                                                          color={isCorrect ? "#16A34A" : "#DC2626"} 
+                                                      />
+                                                  </View>
+                                                  
+                                                  {showTextInput ? (
+                                                      <View style={{ marginTop: 8 }}>
+                                                          <View style={{
+                                                              backgroundColor: isCorrect ? '#F0FDF4' : '#FEF2F2',
+                                                              padding: 12,
+                                                              borderRadius: 8,
+                                                              borderWidth: 1,
+                                                              borderColor: isCorrect ? '#BBF7D0' : '#FCA5A5',
+                                                              marginBottom: 8
+                                                          }}>
+                                                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: 'bold' }}>Your Answer:</Text>
+                                                              <Text style={{ fontSize: 14, color: isCorrect ? '#166534' : '#991B1B', marginTop: 2, fontWeight: '600' }}>
+                                                                  {studentAns || "(No Answer)"}
+                                                              </Text>
+                                                          </View>
+                                                          {(!isCorrect && q.correctAnswer) && (
+                                                              <View style={{
+                                                                  backgroundColor: '#F0FDF4',
+                                                                  padding: 12,
+                                                                  borderRadius: 8,
+                                                                  borderWidth: 1,
+                                                                  borderColor: '#BBF7D0'
+                                                              }}>
+                                                                  <Text style={{ fontSize: 13, color: '#475569', fontWeight: 'bold' }}>Correct Answer:</Text>
+                                                                  <Text style={{ fontSize: 14, color: '#166534', marginTop: 2, fontWeight: '600' }}>
+                                                                      {q.correctAnswer}
+                                                                  </Text>
+                                                              </View>
+                                                          )}
+                                                      </View>
+                                                  ) : (
+                                                      <View style={styles.reviewOptionsContainer}>
+                                                          {q.options && q.options.map((opt: any) => {
+                                                              const isStudentSelect = studentAns === opt.label;
+                                                              const isCorrectAns = q.correctAnswer === opt.label;
+                                                              
+                                                              let optStyle = {};
+                                                              let textStyle = {};
+                                                              let circleStyle = {};
+                                                              let circleTextStyle = {};
+                                                              
+                                                              if (isStudentSelect) {
+                                                                  if (isCorrect) {
+                                                                      optStyle = styles.optStudentCorrect;
+                                                                      textStyle = { color: "#166534", fontWeight: "600" };
+                                                                      circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
+                                                                      circleTextStyle = { color: "#15803D" };
+                                                                  } else {
+                                                                      optStyle = styles.optStudentIncorrect;
+                                                                      textStyle = { color: "#991B1B", fontWeight: "600" };
+                                                                      circleStyle = { backgroundColor: "#FEE2E2", borderColor: "#DC2626" };
+                                                                      circleTextStyle = { color: "#B91C1C" };
+                                                                  }
+                                                              } else if (isCorrectAns) {
+                                                                  optStyle = styles.optCorrectTarget;
+                                                                  textStyle = { color: "#166534", fontWeight: "600" };
+                                                                  circleStyle = { backgroundColor: "#BBF7D0", borderColor: "#16A34A" };
+                                                                  circleTextStyle = { color: "#15803D" };
+                                                              }
+                                                              
+                                                              return (
+                                                                  <View
+                                                                      key={opt.label}
+                                                                      style={[styles.reviewOptionRow, optStyle]}
+                                                                  >
+                                                                      <View style={[styles.reviewOptionCircle, circleStyle]}>
+                                                                          <Text style={[styles.reviewOptionCircleText, circleTextStyle]}>
+                                                                              {opt.label}
+                                                                          </Text>
+                                                                      </View>
+                                                                      <Text style={[styles.reviewOptionText, textStyle]}>
+                                                                          {opt.text}
+                                                                      </Text>
+                                                                      {isStudentSelect && (
+                                                                          <Text style={[
+                                                                              styles.yourAnswerTag,
+                                                                              isCorrect ? { color: "#15803D" } : { color: "#B91C1C" }
+                                                                          ]}>
+                                                                              (Your Answer)
+                                                                          </Text>
+                                                                      )}
+                                                                      {!isCorrect && isCorrectAns && (
+                                                                          <Text style={{ color: "#15803D", fontSize: 11, fontWeight: "600", marginLeft: "auto" }}>
+                                                                              (Correct Answer)
+                                                                          </Text>
+                                                                      )}
+                                                                  </View>
+                                                              );
+                                                          })}
+                                                      </View>
+                                                  )}
+                                              </View>
+                                          );
+                                      })}
                                  </View>
                              ) : (
                                  <>
@@ -1016,7 +1266,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                       variant="secondary"
                                   />
                              )}
-                             {(!assignment.submission?.grade) && (
+                             {(!assignment.submission?.grade) && assignment.assessment_type !== 'quiz' && (
                                   <TouchableOpacity 
                                       style={{ 
                                           marginTop: 12, 
@@ -1327,6 +1577,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     </View>
                 </View>
             </Modal>
+
+            <FileViewerModal 
+                visible={viewerVisible} 
+                onClose={() => setViewerVisible(false)} 
+                url={viewerUrl} 
+                fileName={viewerTitle} 
+            />
         </View>
     );
 };
@@ -1411,6 +1668,7 @@ export default function SubjectAssignments() {
                         dueDate={item.dueDate}
                         status={item.status}
                         grade={item.submission?.grade}
+                        assessmentType={item.assessment_type}
                         onPress={() => setSelectedAssignment(item)}
                     />
                 )}
@@ -1672,6 +1930,15 @@ const styles = StyleSheet.create({
         color: "#1E293B",
         marginBottom: 12,
         lineHeight: 22,
+    },
+    quizTextInput: {
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 15,
+        color: "#1E293B",
+        backgroundColor: "#F8FAFC",
     },
     quizOptionsContainer: {
         gap: 10,

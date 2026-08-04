@@ -83,7 +83,7 @@ export default function GlobalMessageNotification() {
 
                     // Check if the user is already actively chatting inside this conversation
                     const activeChatId = routeRef.current.id;
-                    const isOnConversationScreen = routeRef.current.segments.includes('conversation');
+                    const isOnConversationScreen = (routeRef.current.segments as string[]).includes('conversation');
                     
                     const isRoom = !!(msg.room_id || (msg.conversation_id && msg.conversation_id.startsWith('group_')));
                     const originId = msg.room_id || msg.conversation_id || msg.sender_id;
@@ -117,7 +117,7 @@ export default function GlobalMessageNotification() {
                         }
                     } else if (msg.conversation_id) {
                         const { data: conv } = await supabase
-                            .from('conversations')
+                            .from('groupchats')
                             .select('name')
                             .eq('id', msg.conversation_id)
                             .maybeSingle();
@@ -177,8 +177,9 @@ export default function GlobalMessageNotification() {
     const handlePress = () => {
         if (toast) {
             router.push({
-                pathname: `/conversation/${toast.partnerId}`,
+                pathname: "/conversation/[id]",
                 params: {
+                    id: toast.partnerId,
                     name: toast.name,
                     isRoom: String(toast.isRoom)
                 }

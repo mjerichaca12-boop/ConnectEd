@@ -17,7 +17,16 @@ export default function SubjectLayout() {
         <View style={{ flex: 1 }}>
             {/* Back header */}
             <View style={[styles.backHeader, { paddingTop: insets.top }]}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <TouchableOpacity 
+                    style={styles.backButton} 
+                    onPress={() => {
+                        if (router.canGoBack()) {
+                            router.back();
+                        } else {
+                            router.push("/(tabs)/subjects" as any);
+                        }
+                    }}
+                >
                     <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
                     <Text style={styles.backText}>Classes</Text>
                 </TouchableOpacity>
@@ -53,7 +62,6 @@ export default function SubjectLayout() {
                 <MaterialTopTabs.Screen name="announcement" options={{ title: "Announcement" }} />
                 <MaterialTopTabs.Screen name="assignment" options={{ title: "Assignment" }} />
                 <MaterialTopTabs.Screen name="materials" options={{ title: "Materials" }} />
-                <MaterialTopTabs.Screen name="meeting" options={{ href: null }} />
             </MaterialTopTabs>
         </View>
     );

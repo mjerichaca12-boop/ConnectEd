@@ -7,6 +7,7 @@ import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 const db = supabaseAdmin || supabase;
 import {
   Search,
+  ArrowLeft,
   Send,
   Plus,
   Edit2,
@@ -50,6 +51,7 @@ export function AdminMessages() {
   // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
+  const [showThread, setShowThread] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
@@ -318,7 +320,7 @@ export function AdminMessages() {
         const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
         
         const { data: conversationData, error: convError } = await db
-          .from("conversations")
+          .from("groupchats")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
           .eq("is_group", true);
@@ -443,7 +445,7 @@ export function AdminMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
+      const { error } = await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       setConversations(updated);
@@ -481,7 +483,7 @@ export function AdminMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
-      const { error } = await db.from("conversations").delete().eq("id", selectedConv.id);
+      const { error } = await db.from("groupchats").delete().eq("id", selectedConv.id);
       if (error) throw error;
       
       const remaining = conversations.filter((c) => c.id !== selectedConv.id);
@@ -546,6 +548,7 @@ export function AdminMessages() {
     const existing = conversations.find((c) => c.participantId === person.id);
     if (existing) {
       setSelectedConvId(existing.id);
+      setShowThread(true);
       setShowNewModal(false);
       setRecipientSearch("");
       return;
@@ -563,6 +566,7 @@ export function AdminMessages() {
     const updated = [newConv, ...conversations];
     saveConversations(updated);
     setSelectedConvId(newConv.id);
+    setShowThread(true);
     setShowNewModal(false);
     setRecipientSearch("");
   };
@@ -679,6 +683,7 @@ export function AdminMessages() {
       saveConversations(updated);
     }
     setSelectedConvId(conv.id);
+    setShowThread(true);
   };
 
   const getTimeLabel = (iso) => {
@@ -771,7 +776,7 @@ export function AdminMessages() {
           {/* Main chat layout */}
           <div className="flex-1 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* ══ Left: Conversations List ══ */}
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col">
+            <div className={`lg:col-span-1 border-r border-gray-200 flex flex-col ${showThread ? "hidden lg:flex" : "flex"}`}>
 
               {/* Search + New */}
               <div className="p-3 border-b border-gray-100 flex gap-2">
@@ -926,11 +931,19 @@ export function AdminMessages() {
             </div>
 
             {/* ══ Right: Chat Window ══ */}
-            <div className="lg:col-span-2 flex flex-col">
+            <div className={`lg:col-span-2 flex flex-col ${showThread ? "flex" : "hidden lg:flex"}`}>
               {selectedConv ? (
                 <>
                   {/* Chat Header */}
                   <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowThread(false)}
+                      className="lg:hidden p-1.5 hover:bg-blue-100 rounded-lg transition-colors -ml-1 mr-1"
+                      aria-label="Back to conversations"
+                    >
+                      <ArrowLeft className="w-5 h-5 text-gray-600" />
+                    </button>
                     <div
                       className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
                         selectedConv.isVideoMeet

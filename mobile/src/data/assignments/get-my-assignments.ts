@@ -155,6 +155,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
                 ...existing,
                 ...row,
                 course_id: mappedCourseId || existing.course_id,
+                subject_id: mappedCourseId || existing.subject_id || row.subject_id || row.course_id,
                 title: row.title || (linkedLesson ? linkedLesson.title : null) || "Quiz",
                 description: quizDescription || existing.description || "Please complete this quiz.",
                 deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
@@ -188,18 +189,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     const assignmentIds = assignments.map((a: any) => a.id);
 
-    // 2. Fetch submissions for these assignments
-    const { data: submissions, error: submissionsError } = await supabase
-        .from('submissions')
-        .select('assignment_id, file_url')
-        .eq('user_id', userData.user.id)
-        .in('assignment_id', assignmentIds);
-
-    if (submissionsError) {
-        console.warn(`[assignments] Submissions fetch error (non-fatal) [Code: ${submissionsError.code}]:`, submissionsError.message);
-    }
-
-    // 3. Fetch grades/results for these assignments separately
+    // 2. Fetch grades/results for these assignments separately
     const { data: results, error: resultsError } = await supabase
         .from('teacher_assessment_grades')
         .select('id, assessment_id, status, grade_value, feedback')
@@ -281,11 +271,6 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
     });
 
-    const submissionsMap = new Map();
-    (submissions || []).forEach(s => {
-        submissionsMap.set(s.assignment_id, s);
-    });
-
     // 4. Fetch subject names
     const uniqueCourseIds = [...new Set(assignments.map((a: any) => a.course_id))].filter(Boolean);
     const { data: subjectsData } = await supabase
@@ -300,7 +285,6 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     return assignments.map((row: any) => {
         const myResult = resultsMap.get(row.id);
-        const mySubmission = submissionsMap.get(row.id);
         const myAssessmentSub = assessmentSubMap.get(row.id);
         
         // Determine status
@@ -312,7 +296,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             status = 'returned';
         } else if (rawStatus === 'graded' || rawStatus === 'passed' || rawStatus === 'failed' || (myResult?.grade_value !== undefined && myResult?.grade_value !== null)) {
             status = 'graded';
-        } else if (rawStatus === 'submitted' || (mySubmission && mySubmission.file_url) || myAssessmentSub) {
+        } else if (rawStatus === 'submitted' || myAssessmentSub) {
             status = 'submitted';
         }
         
@@ -393,9 +377,9 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             file_url: fileUrl,
             file_name: fileName,
             assessment_type: (String(row.assessment_type || row.type || "assignment").trim().toLowerCase()) as Assignment['assessment_type'],
-            submission: (myResult || mySubmission || myAssessmentSub) ? {
+            submission: (myResult || myAssessmentSub) ? {
                 id: myResult?.id || myAssessmentSub?.id || row.id, // Fallback to assignment id if not graded yet
-                file_url: myAssessmentSub?.file_url || mySubmission?.file_url || null,
+                file_url: myAssessmentSub?.file_url || null,
                 grade: myResult?.grade_value,
                 teacher_comment: feedbackMap.get(row.id) || myResult?.feedback || null,
                 status: myResult?.status || 'submitted',

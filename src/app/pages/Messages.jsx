@@ -74,7 +74,7 @@ export function Messages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConversation) return;
     try {
-      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConversation.id);
+      const { error } = await db.from("groupchats").update({ name: newName }).eq("id", selectedConversation.id);
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConversation.id ? { ...c, participantName: newName } : c);
       setConversations(updated);
@@ -112,7 +112,7 @@ export function Messages() {
   const handleDeleteConversation = async () => {
     if (!selectedConversation) return;
     try { 
-      const { error } = await db.from("conversations").delete().eq("id", selectedConversation.id);
+      const { error } = await db.from("groupchats").delete().eq("id", selectedConversation.id);
       if (error) throw error;
       
       const remaining = conversations.filter((c) => c.id !== selectedConversation.id);
@@ -240,6 +240,7 @@ export function Messages() {
           "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size"
         )
         .or(`sender_id.eq.${studentIdToLoad},receiver_id.eq.${studentIdToLoad}`)
+        .is("conversation_id", null)
         .order("created_at", { ascending: true });
 
       if (error) {
@@ -313,14 +314,85 @@ export function Messages() {
         conversationsByParticipant.set(counterpartId, conversation);
       });
 
-      const loadedConversations = Array.from(conversationsByParticipant.values()).sort(
+      // Load group conversations
+      const { data: participantRows, error: participantError } = await db
+        .from("conversation_participants")
+        .select("conversation_id, profile_id")
+        .eq("profile_id", studentIdToLoad);
+
+      const groupConvsList = [];
+      if (!participantError && participantRows && participantRows.length > 0) {
+        const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
+
+        const { data: conversationData, error: convError } = await db
+          .from("groupchats")
+          .select("id, name, is_group, created_by")
+          .in("id", conversationIds)
+          .eq("is_group", true);
+
+        if (!convError && conversationData) {
+          for (const conv of conversationData) {
+            // Load participants for this group
+            const { data: groupParticipants, error: groupPartError } = await db
+              .from("conversation_participants")
+              .select("profile_id")
+              .eq("conversation_id", conv.id);
+
+            if (!groupPartError && groupParticipants) {
+              const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
+              
+              // Load messages for this group conversation
+              const { data: groupMessages, error: groupMsgError } = await db
+                .from("messages")
+                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size")
+                .eq("conversation_id", conv.id)
+                .order("created_at", { ascending: true });
+
+              const groupMsgObjs = (groupMessages || []).map((row) => {
+                const senderId = String(row.sender_id || "");
+                const attachmentKind = getAttachmentKindFromFileType(row.file_type);
+                return {
+                  id: String(row.id),
+                  isOwn: senderId === studentIdToLoad,
+                  content: row.content || row.message_text || "",
+                  timestamp: row.timestamp || row.created_at,
+                  fileUrl: String(row.file_url || "").trim(),
+                  fileName: String(row.file_name || "").trim(),
+                  fileType: String(row.file_type || "").trim(),
+                  fileSize: Number(row.file_size || 0),
+                  attachmentKind,
+                };
+              });
+
+              groupConvsList.push({
+                id: conv.id,
+                participantId: "",
+                participantIds: participantIds,
+                participantName: conv.name || `${participantIds.length} members`,
+                participantRole: "group",
+                messages: groupMsgObjs,
+                lastMessageTime: groupMsgObjs.length > 0 
+                  ? groupMsgObjs[groupMsgObjs.length - 1].timestamp 
+                  : conv.created_at || new Date().toISOString(),
+                lastMessage: groupMsgObjs.length > 0
+                  ? groupMsgObjs[groupMsgObjs.length - 1].content
+                  : "No messages yet",
+                unreadCount: 0,
+                isGroup: true,
+              });
+            }
+          }
+        }
+      }
+
+      const allConversations = [...conversationsByParticipant.values(), ...groupConvsList].sort(
         (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       );
 
-      setConversations(loadedConversations);
-      if (!selectedConvIdRef.current && loadedConversations.length > 0) {
-        selectedConvIdRef.current = loadedConversations[0].id;
-        setSelectedConversationId(loadedConversations[0].id);
+      setConversations(allConversations);
+      if (!selectedConvIdRef.current && allConversations.length > 0) {
+        selectedConvIdRef.current = allConversations[0].id;
+        setSelectedConversationId(allConversations[0].id);
       }
     } catch (err) {
       console.error("[Messages] Error loading conversations:", err);
@@ -408,7 +480,8 @@ export function Messages() {
 
     if (attachmentFile) {
       const cleanedName = sanitizeAttachmentFileName(attachmentFile.name);
-      const filePath = `${studentId}/${selectedConversation.participantId}/${Date.now()}_${cleanedName}`;
+      const destId = selectedConversation.isGroup ? selectedConversation.id : selectedConversation.participantId;
+      const filePath = `${studentId}/${destId}/${Date.now()}_${cleanedName}`;
       const uploadResult = await supabase.storage
         .from(MESSAGE_ATTACHMENT_BUCKET)
         .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
@@ -425,17 +498,32 @@ export function Messages() {
     }
 
     try {
-      const { error } = await db.from("messages").insert({
-        sender_id: studentId,
-        receiver_id: selectedConversation.participantId,
-        message_text: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
-        content: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
-        timestamp: now,
-        file_url: uploadedFileUrl || null,
-        file_name: uploadedFileName || null,
-        file_type: uploadedFileType || null,
-        file_size: uploadedFileSize || null,
-      });
+      const insertPayload = selectedConversation.isGroup
+        ? {
+            sender_id: studentId,
+            conversation_id: selectedConversation.id,
+            receiver_id: null,
+            message_text: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
+            content: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
+            timestamp: now,
+            file_url: uploadedFileUrl || null,
+            file_name: uploadedFileName || null,
+            file_type: uploadedFileType || null,
+            file_size: uploadedFileSize || null,
+          }
+        : {
+            sender_id: studentId,
+            receiver_id: selectedConversation.participantId,
+            message_text: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
+            content: messageInput.trim() || (attachmentFile ? "Sent an attachment" : ""),
+            timestamp: now,
+            file_url: uploadedFileUrl || null,
+            file_name: uploadedFileName || null,
+            file_type: uploadedFileType || null,
+            file_size: uploadedFileSize || null,
+          };
+
+      const { error } = await db.from("messages").insert(insertPayload);
 
       if (error) {
         console.error("[Messages] Failed to send message:", error);

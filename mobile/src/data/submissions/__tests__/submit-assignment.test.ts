@@ -37,7 +37,7 @@ describe("submitAssignment data service", () => {
         vi.clearAllMocks();
     });
 
-    it("should successfully upload the file and write to 'submissions' and 'teacher_assessment_submissions'", async () => {
+    it("should successfully upload the file and write to 'teacher_assessment_submissions'", async () => {
         const mockFile = { name: "test-assignment.pdf", size: 1024 };
 
         const result = await submitAssignment({
@@ -54,7 +54,6 @@ describe("submitAssignment data service", () => {
         expect(result.success).toBe(true);
         expect(result.publicUrl).toContain("test-assignment.pdf");
         expect(supabase.storage.from).toHaveBeenCalledWith("class-materials");
-        expect(supabase.from).toHaveBeenCalledWith("submissions");
         expect(supabase.from).toHaveBeenCalledWith("teacher_assessment_submissions");
     });
 

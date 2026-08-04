@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/src/constants/Colors";
 import AppHeader from "@/src/components/common/AppHeader";
 import Button from "@/src/components/common/Button";
+import FileViewerModal from "@/src/components/common/FileViewerModal";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
@@ -23,6 +24,16 @@ export default function AnnouncementDetailScreen() {
     const [announcement, setAnnouncement] = useState<Announcement | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerTitle, setViewerTitle] = useState<string | null>(null);
+    const [viewerVisible, setViewerVisible] = useState(false);
+
+    const openFileViewer = (url: string | null | undefined, title: string) => {
+        if (!url) return;
+        setViewerUrl(url);
+        setViewerTitle(title);
+        setViewerVisible(true);
+    };
 
     const deleteMutation = useDeleteAnnouncementMutation();
 
@@ -51,7 +62,11 @@ export default function AnnouncementDetailScreen() {
         if (from === 'manage') {
             router.push('/(tabs)/teacher/announcements');
         } else {
-            router.back();
+            if (router.canGoBack()) {
+                router.back();
+            } else {
+                router.push('/(tabs)/home');
+            }
         }
     };
 
@@ -202,7 +217,10 @@ export default function AnnouncementDetailScreen() {
 
                                 return (
                                     <View key={index} style={styles.attachmentContainer}>
-                                        <View style={styles.attachmentInfo}>
+                                        <TouchableOpacity 
+                                            style={styles.attachmentInfo}
+                                            onPress={() => openFileViewer(att.file_url, att.file_name || "Attachment")}
+                                        >
                                             <Ionicons
                                                 name={att.file_type?.startsWith('image/') ? "image-outline" : "document-attach-outline"}
                                                 size={24}
@@ -211,8 +229,8 @@ export default function AnnouncementDetailScreen() {
                                             <Text style={styles.attachmentName} numberOfLines={1}>
                                                 {att.file_name || "Attached File"}
                                             </Text>
-                                        </View>
-                                        <TouchableOpacity
+                                        </TouchableOpacity>
+                                        <TouchableOpacity 
                                             style={styles.downloadButtonSmall}
                                             onPress={() => handleDownloadAttachment(att)}
                                         >
@@ -226,22 +244,33 @@ export default function AnnouncementDetailScreen() {
 
                     {announcement.file_url && !announcement.image_url && (!announcement.attachments || announcement.attachments.length === 0) && (
                         <View style={styles.attachmentContainer}>
-                            <View style={styles.attachmentInfo}>
+                            <TouchableOpacity 
+                                style={styles.attachmentInfo}
+                                onPress={() => openFileViewer(announcement.file_url, announcement.file_name || "Attachment")}
+                            >
                                 <Ionicons name="document-attach-outline" size={24} color={Colors.light.primary} />
                                 <Text style={styles.attachmentName} numberOfLines={1}>
                                     {announcement.file_name || "Attached File"}
                                 </Text>
-                            </View>
-                            <Button
-                                title={isDownloading ? "Downloading..." : "Download Attachment"}
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.downloadButtonSmall}
                                 onPress={handleDownload}
                                 disabled={isDownloading}
-                                style={{ marginTop: 16 }}
-                            />
+                            >
+                                <Ionicons name="download-outline" size={20} color="#64748B" />
+                            </TouchableOpacity>
                         </View>
                     )}
                 </View>
             </ScrollView>
+
+            <FileViewerModal 
+                visible={viewerVisible} 
+                onClose={() => setViewerVisible(false)} 
+                url={viewerUrl} 
+                fileName={viewerTitle} 
+            />
         </View>
     );
 }

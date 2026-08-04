@@ -23,32 +23,45 @@ export default function LoginScreen() {
 
     const handleLogin = async () => {
         if (!email || !password) {
-            alert("Please enter your email and password.");
+            alert("Please enter your username/ email address and password.");
             return;
         }
 
         setIsLoading(true);
         try {
-            // Use Supabase signInWithPassword directly so verified-email accounts work
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email: email.trim(),
-                password,
-            });
+            const normalizedInput = email.trim().toLowerCase();
 
-            if (error) throw error;
-
-            // Fetch user profile to check role and must_change_password status
+            // First, find profile by email or username
             const { data: profile, error: profileError } = await supabase
                 .from("profiles")
-                .select("role, must_change_password")
-                .eq("id", data.user.id)
+                .select("id, role, must_change_password, email, username")
+                .or(`email.ilike.${normalizedInput},username.ilike.${normalizedInput}`)
                 .maybeSingle();
 
             if (profileError || !profile) {
-                await supabase.auth.signOut();
-                alert("Account profile not found.");
+                alert("Wrong password or email/username. Please check your credentials and try again.");
+                setIsLoading(false);
                 return;
             }
+
+            // Try signing in with the email from the profile first
+            let signInResult = await supabase.auth.signInWithPassword({
+                email: profile.email,
+                password,
+            });
+
+            // Fallback: try logging in with username@temp.local if email sign-in fails and username exists
+            if (signInResult.error && profile.username) {
+                const retryResult = await supabase.auth.signInWithPassword({
+                    email: `${profile.username.toLowerCase()}@temp.local`,
+                    password,
+                });
+                if (!retryResult.error) {
+                    signInResult = retryResult;
+                }
+            }
+
+            if (signInResult.error) throw signInResult.error;
 
             if (profile.role !== 'student') {
                 await supabase.auth.signOut();
@@ -63,11 +76,10 @@ export default function LoginScreen() {
             }
         } catch (error: any) {
             console.log("Login failed: invalid credentials or network error");
-            // Customize error message for wrong password or email as requested
             if (error.message && error.message.toLowerCase().includes("credentials")) {
-                alert("Wrong password or email. Please check your credentials and try again.");
+                alert("Wrong password or email/username. Please check your credentials and try again.");
             } else {
-                alert(error.message || "Wrong password or email.");
+                alert(error.message || "Wrong password or email/username.");
             }
         } finally {
             setIsLoading(false);
@@ -88,10 +100,11 @@ export default function LoginScreen() {
                         <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.icon} />
                         <TextInput
                             style={styles.input}
-                            placeholder="Email Address"
+                            placeholder="Username/Email Address"
                             placeholderTextColor="#94A3B8"
                             value={email}
-                            onChangeText={setEmail}
+                            onChangeText={(text) => setEmail(text.replace(/\s/g, '').slice(0, 30))}
+                            maxLength={30}
                             keyboardType="email-address"
                             autoCapitalize="none"
                         />
@@ -105,7 +118,8 @@ export default function LoginScreen() {
                             placeholder="Password"
                             placeholderTextColor="#94A3B8"
                             value={password}
-                            onChangeText={setPassword}
+                            onChangeText={(text) => setPassword(text.replace(/\s/g, '').slice(0, 15))}
+                            maxLength={15}
                             secureTextEntry={!showPassword}
                             autoCapitalize="none"
                         />

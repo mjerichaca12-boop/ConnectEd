@@ -296,17 +296,24 @@ export function StudentDashboard() {
                     <div
                       key={subject.id}
                       onClick={() => navigate(`/subject/${subject.id}`)}
-                      className="group p-5 bg-white border border-gray-200 rounded-2xl hover:border-emerald-500/50 hover:shadow-md transition-all cursor-pointer relative overflow-hidden"
+                      className="group p-5 bg-white border border-gray-200 rounded-2xl hover:border-emerald-500 hover:shadow-lg hover:-translate-y-1.5 transition-all duration-300 ease-out cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[160px]"
                     >
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/2 group-hover:bg-emerald-500/10 transition-colors" />
-                      <p className="text-emerald-600 text-[10px] font-bold uppercase tracking-wider mb-2">{subject.code || "SUBJ"}</p>
-                      <h4 className="font-bold text-gray-900 group-hover:text-emerald-700 transition-colors mb-4 line-clamp-1">{subject.name}</h4>
+                      <div>
+                        <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300 mb-3">
+                          {subject.code || "SUBJ"}
+                        </span>
+                        <h4 className="font-bold text-gray-900 group-hover:text-emerald-700 transition-colors text-base line-clamp-2 leading-snug mb-4">
+                          {subject.name}
+                        </h4>
+                      </div>
                       
-                      <div className="flex items-center gap-2 mt-auto">
-                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] font-bold text-emerald-700">
+                      <div className="flex items-center gap-2 pt-3 border-t border-gray-100 group-hover:border-emerald-100 transition-colors">
+                        <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] font-bold text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
                           {subject.teacher?.charAt(0) || "T"}
                         </div>
-                        <p className="text-xs text-gray-500 font-medium truncate">{subject.teacher}</p>
+                        <p className="text-xs text-gray-500 font-medium truncate group-hover:text-gray-800 transition-colors">
+                          {subject.teacher}
+                        </p>
                       </div>
                     </div>
                   ))}

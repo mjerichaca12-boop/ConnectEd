@@ -53,17 +53,6 @@ export async function submitAssignment(params: SubmitAssignmentParams) {
 
     if (!publicUrl) throw new Error("Failed to retrieve public file URL.");
 
-    // 3. Upsert into submissions table
-    const { error: subError } = await supabase
-        .from("submissions")
-        .upsert({
-            assignment_id: assignmentId,
-            user_id: studentId,
-            file_url: publicUrl
-        }, { onConflict: "assignment_id,user_id" });
-
-    if (subError) throw subError;
-
     // 4. Fetch teacher_id and subject_id from subjects if not provided
     let teacherId = initialTeacherId;
     let subjectId = initialSubjectId;

@@ -8,6 +8,7 @@ import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
 const db = supabaseAdmin || supabase;
 import {
   Search,
+  ArrowLeft,
   Send,
   Plus,
   Edit2,
@@ -125,6 +126,7 @@ function TeacherMessages() {
 
   const [conversations, setConversations] = useState([]);
   const [selectedConvId, setSelectedConvId] = useState(null);
+  const [showThread, setShowThread] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
   const [attachmentFile, setAttachmentFile] = useState(null);
@@ -311,7 +313,7 @@ function TeacherMessages() {
         const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id));
 
         const { data: conversationData, error: convError } = await db
-          .from("conversations")
+          .from("groupchats")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
           .eq("is_group", true);
@@ -479,7 +481,7 @@ function TeacherMessages() {
 
   const handleStartConversation = async (student) => {
     const existing = conversations.find((c) => !c.isGroup && c.participantId === student.id);
-    if (existing) { setSelectedConvId(existing.id); closeNewMessageModal(); return; }
+    if (existing) { setSelectedConvId(existing.id); setShowThread(true); closeNewMessageModal(); return; }
     const conversationId = `direct_${teacherId}_${student.id}_${Date.now()}`;
     const newConversation = {
       id: conversationId,
@@ -497,6 +499,7 @@ function TeacherMessages() {
     };
     saveConversations([newConversation, ...conversations]);
     setSelectedConvId(conversationId);
+    setShowThread(true);
     closeNewMessageModal();
   };
 
@@ -519,13 +522,13 @@ function TeacherMessages() {
     
     // Insert conversation into database
     try {
-      const { error: convError } = await supabase
-        .from("conversations")
+      const { error: convError } = await db
+        .from("groupchats")
         .insert({
           id: conversationId,
           name: memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName,
           is_group: true,
-          created_by: (await supabase.auth.getUser()).data.user?.id,
+          created_by: teacherId,
         });
       
       if (convError) {
@@ -542,7 +545,7 @@ function TeacherMessages() {
         is_admin: false,
       }));
 
-      const { error: partError } = await supabase
+      const { error: partError } = await db
         .from("conversation_participants")
         .insert(participantInserts);
 
@@ -572,6 +575,7 @@ function TeacherMessages() {
     };
     saveConversations([groupConversation, ...conversations]);
     setSelectedConvId(conversationId);
+    setShowThread(true);
     setShowGroupModal(false);
     setGroupSearch("");
     setSelectedGroupMemberIds([]);
@@ -716,6 +720,7 @@ function TeacherMessages() {
       saveConversations(updated);
     }
     setSelectedConvId(conv.id);
+    setShowThread(true);
   };
 
   const handleOpenRename = () => {
@@ -744,7 +749,7 @@ function TeacherMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
+      const { error } = await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       saveConversations(updated);
@@ -777,7 +782,7 @@ function TeacherMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
-      const { error } = await db.from("conversations").delete().eq("id", selectedConv.id);
+      const { error } = await db.from("groupchats").delete().eq("id", selectedConv.id);
       if (error) throw error;
     } catch (err) {
       console.error("[TeacherMessages] Delete error:", err);
@@ -876,7 +881,7 @@ function TeacherMessages() {
           )}
 
           <div className="flex-1 overflow-hidden bg-white rounded-2xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
-            <div className="lg:col-span-1 border-r border-gray-200 flex flex-col">
+            <div className={`lg:col-span-1 border-r border-gray-200 flex flex-col ${showThread ? "hidden lg:flex" : "flex"}`}>
               <div className="p-3 border-b border-gray-100 flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -978,10 +983,18 @@ function TeacherMessages() {
               </div>
             </div>
 
-            <div className="lg:col-span-2 flex flex-col">
+            <div className={`lg:col-span-2 flex flex-col ${showThread ? "flex" : "hidden lg:flex"}`}>
               {selectedConv ? (
                 <>
                   <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowThread(false)}
+                      className="lg:hidden p-1.5 hover:bg-green-100 rounded-lg transition-colors -ml-1 mr-1"
+                      aria-label="Back to conversations"
+                    >
+                      <ArrowLeft className="w-5 h-5 text-gray-600" />
+                    </button>
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                       selectedConv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
                     }`}>
