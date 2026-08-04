@@ -26,122 +26,130 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing email" });
     }
 
-    const trimmedEmail = String(email).trim().toLowerCase();
+    const trimmedInput = String(email).trim().toLowerCase();
 
-    // 1. Look up user in profiles table first by email
-    const { data: profile } = await supabase
+    // 1. Look up user in profiles table first by email or username
+    let { data: profile } = await supabase
       .from("profiles")
       .select("id, username, email, role")
-      .ilike("email", trimmedEmail)
+      .ilike("email", trimmedInput)
       .maybeSingle();
 
-    let targetUserId = profile?.id;
-    let targetAuthEmail = profile?.email;
-
-    // 2. If not found by email, search by username
     if (!profile) {
       const { data: profileByUsername } = await supabase
         .from("profiles")
         .select("id, username, email, role")
-        .ilike("username", trimmedEmail)
+        .ilike("username", trimmedInput)
         .maybeSingle();
 
       if (profileByUsername) {
-        targetUserId = profileByUsername.id;
-        targetAuthEmail = profileByUsername.email;
+        profile = profileByUsername;
       }
     }
 
-    // If no user found in database, return success for security (prevent email enumeration)
-    if (!targetUserId) {
+    // Security: if user is not found in database, return success message without leaking
+    if (!profile || !profile.id) {
       return res.status(200).json({ success: true, message: "If an account exists, a reset email has been sent." });
     }
 
-    // 3. Get the auth user from Supabase Auth admin API to ensure we have the exact auth email
-    let authUser = null;
-    const { data: userData, error: getUserError } = await supabase.auth.admin.getUserById(targetUserId);
-    if (!getUserError && userData?.user) {
-      authUser = userData.user;
+    // Determine the user's real email destination (must NOT be @temp.local)
+    let realEmail = profile.email;
+    if (!realEmail || realEmail.endsWith("@temp.local")) {
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedInput) && !trimmedInput.endsWith("@temp.local")) {
+        realEmail = trimmedInput;
+        // Update profile email to realEmail
+        await supabase.from("profiles").update({ email: realEmail }).eq("id", profile.id);
+      } else {
+        return res.status(400).json({ error: "Please enter a valid real email address." });
+      }
     }
 
-    const authEmailToUse = authUser?.email || targetAuthEmail || `${profile?.username}@temp.local`;
+    // 2. Ensure auth.users has their REAL email (sync from profile if it was @temp.local)
+    const { data: userData } = await supabase.auth.admin.getUserById(profile.id);
+    const authUser = userData?.user;
 
-    // 4. Generate password recovery link via Supabase Admin API
+    if (authUser && (authUser.email !== realEmail || authUser.email.endsWith("@temp.local"))) {
+      console.log(`Syncing auth email for user ${profile.id} from ${authUser.email} to ${realEmail}`);
+      const { error: syncError } = await supabase.auth.admin.updateUserById(profile.id, {
+        email: realEmail,
+        email_confirm: true
+      });
+      if (syncError) {
+        console.error("Failed to sync auth email:", syncError);
+      }
+    }
+
+    // 3. Generate password recovery link & send email
     const finalRedirectUrl = redirectTo || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/reset-password` : "http://localhost:5173/reset-password");
 
-    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-      type: "recovery",
-      email: authEmailToUse,
-      options: {
-        redirectTo: finalRedirectUrl
-      }
-    });
-
-    if (linkError) {
-      console.error("Failed to generate recovery link:", linkError);
-      return res.status(500).json({ error: linkError.message || "Failed to generate password reset link" });
-    }
-
-    const actionLink = linkData?.properties?.action_link;
-
-    // 5. Send Email via Resend if RESEND_API_KEY is available
+    // Try sending via Resend REST API directly if key is available
     const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
     const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
 
-    if (resendApiKey && actionLink) {
-      const resendRes = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: emailFrom,
-          to: [trimmedEmail],
-          subject: "Reset Your ConnectEd LMS Password",
-          html: `
-            <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
-              <h2 style="color: #111827; margin-bottom: 16px; font-size: 24px; font-weight: 700;">Reset Your Password</h2>
-              <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin-bottom: 32px;">
-                We received a request to reset your password for your <strong>ConnectEd LMS</strong> account. Click the button below to set a new password. This link will expire in 1 hour.
-              </p>
-              <a href="${actionLink}" style="display: inline-block; background-color: #10b981; color: #ffffff; font-weight: 600; font-size: 16px; text-decoration: none; padding: 14px 32px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                Change Password
-              </a>
-              <p style="color: #6b7280; font-size: 13px; line-height: 1.4; margin-top: 24px;">
-                If the button above doesn't work, copy and paste this link into your browser:<br/>
-                <a href="${actionLink}" style="color: #10b981; word-break: break-all;">${actionLink}</a>
-              </p>
-              <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 32px 0 20px 0;" />
-              <p style="color: #9ca3af; font-size: 13px; margin: 0;">
-                If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
-              </p>
-            </div>
-          `
-        })
+    if (resendApiKey) {
+      const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+        type: "recovery",
+        email: realEmail,
+        options: { redirectTo: finalRedirectUrl }
       });
 
-      if (!resendRes.ok) {
-        const resendErrText = await resendRes.text();
-        console.error("Resend API error:", resendErrText);
-      } else {
-        const resendData = await resendRes.json();
-        console.log("Password reset email sent via Resend:", resendData);
-        return res.status(200).json({ success: true, message: "Password reset email sent via Resend." });
+      if (!linkError && linkData?.properties?.action_link) {
+        const actionLink = linkData.properties.action_link;
+        const resendRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            from: emailFrom,
+            to: [realEmail],
+            subject: "Reset Your ConnectEd LMS Password",
+            html: `
+              <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
+                <h2 style="color: #111827; margin-bottom: 16px; font-size: 24px; font-weight: 700;">Reset Your Password</h2>
+                <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin-bottom: 32px;">
+                  We received a request to reset your password for your <strong>ConnectEd LMS</strong> account. Click the button below to set a new password. This link will expire in 1 hour.
+                </p>
+                <a href="${actionLink}" style="display: inline-block; background-color: #10b981; color: #ffffff; font-weight: 600; font-size: 16px; text-decoration: none; padding: 14px 32px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                  Change Password
+                </a>
+                <p style="color: #6b7280; font-size: 13px; line-height: 1.4; margin-top: 24px;">
+                  If the button above doesn't work, copy and paste this link into your browser:<br/>
+                  <a href="${actionLink}" style="color: #10b981; word-break: break-all;">${actionLink}</a>
+                </p>
+                <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 32px 0 20px 0;" />
+                <p style="color: #9ca3af; font-size: 13px; margin: 0;">
+                  If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+                </p>
+              </div>
+            `
+          })
+        });
+
+        if (resendRes.ok) {
+          console.log(`Password reset email sent via Resend API to ${realEmail}`);
+          return res.status(200).json({ success: true, message: "Password reset email sent via Resend API." });
+        } else {
+          console.error("Resend API error:", await resendRes.text());
+        }
       }
     }
 
-    // Fallback if RESEND_API_KEY is not set or failed:
-    // Try Supabase auth recovery
-    const { error: fallbackError } = await supabase.auth.admin.resetPasswordForEmail(authEmailToUse, {
+    // 4. Fallback / Standard Supabase Auth Password Reset
+    // Since we synced auth user email to realEmail above, this WILL send to realEmail (e.g. lych0721@gmail.com)
+    const { error: resetError } = await supabase.auth.admin.resetPasswordForEmail(realEmail, {
       redirectTo: finalRedirectUrl
     });
 
-    if (fallbackError) {
-      console.error("Fallback resetPasswordForEmail error:", fallbackError);
+    if (resetError) {
+      console.error("resetPasswordForEmail error:", resetError);
+      return res.status(500).json({ error: resetError.message });
     }
 
-    return res.status(200).json({ success: true, message: "Reset request processed." });
+    console.log(`Password reset triggered via Supabase Auth for ${realEmail}`);
+    return res.status(200).json({ success: true, message: "Password reset email sent." });
+
   } catch (error) {
     console.error("send-password-reset handler error:", error);
     return res.status(500).json({ error: error.message || "Internal server error" });
