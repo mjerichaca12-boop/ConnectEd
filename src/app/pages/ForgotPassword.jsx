@@ -27,35 +27,43 @@ function ForgotPassword() {
     setError("");
 
     try {
-      // Step 1: Look up the profile by the real email to get the username
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("username")
-        .ilike("email", trimmedEmail)
-        .maybeSingle();
+      const redirectTo = getAuthRedirectUrl("reset-password");
 
-      // Always show success for security — never reveal if email exists or not
-      if (!profile?.username) {
-        setRequestSent(true);
-        return;
+      // Step 1: Attempt to send password reset via serverless API (uses Resend)
+      let apiSuccess = false;
+      try {
+        const response = await fetch("/api/public/send-password-reset", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            redirectTo
+          })
+        });
+        if (response.ok) {
+          apiSuccess = true;
+        }
+      } catch (apiErr) {
+        console.warn("Serverless password reset endpoint call failed, falling back:", apiErr);
       }
 
-      // Step 2: Try sending reset to the real email first.
-      // If the email change hasn't been verified yet, Supabase Auth still
-      // knows the user by their @temp.local email, so try that as a fallback.
-      const redirectTo = getAuthRedirectUrl("reset-password");
-      const tempEmail = `${profile.username}@temp.local`;
+      // Step 2: Fallback to client-side Supabase auth reset if serverless API call didn't succeed
+      if (!apiSuccess) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username")
+          .ilike("email", trimmedEmail)
+          .maybeSingle();
 
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-        redirectTo
-      });
-
-      // If real email failed (user still on temp.local in auth), try the temp email
-      if (resetError) {
-        const { error: fallbackError } = await supabase.auth.resetPasswordForEmail(tempEmail, {
-          redirectTo
-        });
-        if (fallbackError) throw new Error(fallbackError.message);
+        if (profile?.username) {
+          const tempEmail = `${profile.username}@temp.local`;
+          const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo });
+          if (resetError) {
+            await supabase.auth.resetPasswordForEmail(tempEmail, { redirectTo });
+          }
+        }
       }
 
       setRequestSent(true);
