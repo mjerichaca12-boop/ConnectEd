@@ -78,6 +78,15 @@ function StudentManagement() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showImportPreviewModal, setShowImportPreviewModal] = useState(false);
+  const [importPreviewSummary, setImportPreviewSummary] = useState({
+    total: 0,
+    valid: [],
+    invalid: [],
+    duplicates: []
+  });
+  const [previewTab, setPreviewTab] = useState("valid");
+  const [isSavingImport, setIsSavingImport] = useState(false);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -556,6 +565,86 @@ function StudentManagement() {
     }
   };
 
+  // --- CSV Import Helpers & Dictionary Mapping ---
+  const HEADER_MAPPINGS = {
+    lrn: ["lrn", "student_lrn", "student lrn", "id_number", "id number"],
+    first_name: ["first_name", "first name", "firstname", "first", "given_name", "given name"],
+    last_name: ["last_name", "last name", "lastname", "last", "surname", "family_name", "family name"],
+    middle_name: ["middle_name", "middle name", "middlename", "middle", "middle_initial", "middle initial"],
+    full_name: ["full_name", "full name", "fullname", "student name", "student_name", "name"],
+    year_level: ["year_level", "year level", "yearlevel", "year", "grade", "grade_level", "grade level", "level"],
+    section: ["section", "section_name", "section name", "class_section", "class section"],
+    email: ["email", "email_address", "email address"]
+  };
+
+  const normalizeHeaderKey = (headerStr) => {
+    return String(headerStr || "").toLowerCase().trim().replace(/[\s\-_]+/g, "");
+  };
+
+  const matchHeaderField = (rawHeader) => {
+    const norm = normalizeHeaderKey(rawHeader);
+    for (const [field, aliases] of Object.entries(HEADER_MAPPINGS)) {
+      if (aliases.some(alias => normalizeHeaderKey(alias) === norm)) {
+        return field;
+      }
+    }
+    return null;
+  };
+
+  const splitFullName = (fullNameStr) => {
+    const clean = String(fullNameStr || "").trim();
+    if (!clean) return { first_name: "", last_name: "" };
+    const parts = clean.split(/\s+/);
+    if (parts.length === 1) {
+      return { first_name: parts[0], last_name: parts[0] };
+    }
+    return {
+      first_name: parts[0],
+      last_name: parts.slice(1).join(" ")
+    };
+  };
+
+  const parseCsvText = (text) => {
+    const lines = text.split(/\r?\n/);
+    const rows = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const cells = [];
+      let insideQuotes = false;
+      let currentCell = "";
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          insideQuotes = !insideQuotes;
+        } else if (char === ',' && !insideQuotes) {
+          cells.push(currentCell.trim().replace(/^"+|"+$/g, ''));
+          currentCell = "";
+        } else {
+          currentCell += char;
+        }
+      }
+      cells.push(currentCell.trim().replace(/^"+|"+$/g, ''));
+      if (cells.some(c => c !== "")) {
+        rows.push(cells);
+      }
+    }
+    return rows;
+  };
+
+  const downloadCsvTemplate = () => {
+    const csvContent = "lrn,first_name,last_name,year_level,section\n120000000001,Juan,Dela Cruz,11,Emerald\n120000000002,Maria,Santos,11,Diamond";
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.setAttribute("href", URL.createObjectURL(blob));
+    link.setAttribute("download", "connected_student_masterlist_template.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("CSV template downloaded.");
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -565,72 +654,182 @@ function StudentManagement() {
     reader.onload = async (event) => {
       try {
         const text = event.target.result;
-        const rows = text.split('\n').map(row => row.trim()).filter(Boolean);
+        const rows = parseCsvText(text);
+
         if (rows.length < 2) {
-          toast.error("CSV file is empty or missing headers");
+          toast.error("CSV file is empty or missing data rows.");
           setIsImporting(false);
           return;
         }
 
-        const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
-        const lrnIdx = headers.indexOf('lrn');
-        const firstNameIdx = headers.indexOf('first_name');
-        const lastNameIdx = headers.indexOf('last_name');
-        const middleNameIdx = headers.indexOf('middle_name');
-        const yearLevelIdx = headers.indexOf('year_level');
-        const sectionIdx = headers.indexOf('section');
+        const rawHeaders = rows[0];
+        const headerMap = {};
+        rawHeaders.forEach((h, idx) => {
+          const field = matchHeaderField(h);
+          if (field) headerMap[field] = idx;
+        });
 
-        if (lrnIdx === -1 || firstNameIdx === -1 || lastNameIdx === -1) {
-          toast.error("CSV missing required headers: lrn, first_name, last_name");
+        const hasLrn = headerMap.lrn !== undefined;
+        const hasNames = (headerMap.first_name !== undefined && headerMap.last_name !== undefined) || headerMap.full_name !== undefined;
+
+        if (!hasLrn || !hasNames) {
+          const missing = [];
+          if (!hasLrn) missing.push("LRN");
+          if (!hasNames) missing.push("First Name & Last Name (or Full Name)");
+
+          toast.error(
+            `Missing required fields: ${missing.join(", ")}.\nAccepted header formats:\n• LRN, First Name, Last Name\n• LRN, Full Name`,
+            { duration: 7000 }
+          );
           setIsImporting(false);
           return;
         }
 
-        const records = [];
+        const { data: existingMasterlist } = db ? await db.from("student_masterlist").select("lrn") : { data: [] };
+        const dbLrnSet = new Set((existingMasterlist || []).map(r => r.lrn));
+
+        const validRecords = [];
+        const invalidRecords = [];
+        const duplicateRecords = [];
+        const fileLrnSet = new Set();
+
         for (let i = 1; i < rows.length; i++) {
-          const cols = rows[i].split(',').map(c => c.trim());
-          if (cols.length > lrnIdx && cols[lrnIdx]) {
-             records.push({
-               lrn: normalizeLrn(cols[lrnIdx]),
-               first_name: cols[firstNameIdx],
-               last_name: cols[lastNameIdx],
-               middle_name: middleNameIdx !== -1 ? cols[middleNameIdx] : null,
-               year_level: yearLevelIdx !== -1 ? normalizeYearLevel(cols[yearLevelIdx]) : null,
-               section: sectionIdx !== -1 ? cols[sectionIdx] : null,
-               account_created: false
-             });
+          const cols = rows[i];
+          const rowNum = i + 1;
+
+          if (!cols || cols.length === 0 || cols.every(c => !c || !c.trim())) {
+            continue; // Skip blank rows
           }
+
+          const rawLrn = (cols[headerMap.lrn] || "").trim();
+          const cleanLrn = rawLrn.replace(/\D/g, "");
+
+          let firstName = "";
+          let lastName = "";
+          let middleName = headerMap.middle_name !== undefined ? (cols[headerMap.middle_name] || "").trim() : null;
+
+          if (headerMap.first_name !== undefined && headerMap.last_name !== undefined) {
+            firstName = (cols[headerMap.first_name] || "").trim();
+            lastName = (cols[headerMap.last_name] || "").trim();
+          } else if (headerMap.full_name !== undefined) {
+            const split = splitFullName(cols[headerMap.full_name]);
+            firstName = split.first_name;
+            lastName = split.last_name;
+          }
+
+          const yearLevel = headerMap.year_level !== undefined ? normalizeYearLevel(cols[headerMap.year_level] || "") : null;
+          const section = headerMap.section !== undefined ? (cols[headerMap.section] || "").trim() : null;
+          const email = headerMap.email !== undefined ? (cols[headerMap.email] || "").trim() : null;
+
+          const fullNameDisplay = [firstName, lastName].filter(Boolean).join(" ") || "N/A";
+
+          // LRN Validation (12-digit numeric)
+          if (!cleanLrn || cleanLrn.length !== 12 || rawLrn.replace(/\D/g, "") !== rawLrn) {
+            invalidRecords.push({
+              rowNum,
+              lrn: rawLrn || "Empty",
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Invalid LRN (${rawLrn || "empty"}). Expected a 12-digit numeric value.`
+            });
+            continue;
+          }
+
+          if (!firstName || !lastName) {
+            invalidRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Missing student first or last name.`
+            });
+            continue;
+          }
+
+          if (fileLrnSet.has(cleanLrn)) {
+            duplicateRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Duplicate LRN in uploaded file (${cleanLrn}).`
+            });
+            continue;
+          }
+          fileLrnSet.add(cleanLrn);
+
+          if (dbLrnSet.has(cleanLrn)) {
+            duplicateRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: LRN ${cleanLrn} already exists in database masterlist.`
+            });
+            continue;
+          }
+
+          validRecords.push({
+            rowNum,
+            lrn: cleanLrn,
+            first_name: firstName,
+            last_name: lastName,
+            middle_name: middleName || null,
+            year_level: yearLevel || null,
+            section: section || null,
+            email: email || null,
+            account_created: false
+          });
         }
 
-        if (records.length === 0) {
-          toast.error("No valid records found in CSV");
+        const totalRows = validRecords.length + invalidRecords.length + duplicateRecords.length;
+
+        if (totalRows === 0) {
+          toast.error("No valid data rows found in CSV file.");
           setIsImporting(false);
           return;
         }
 
-        if (!db) throw new Error("Supabase client not configured");
-
-        const { data: existing } = await db.from("student_masterlist").select("lrn");
-        const existingLrns = new Set((existing || []).map(r => r.lrn));
-        const newRecords = records.filter(r => !existingLrns.has(r.lrn));
-
-        if (newRecords.length > 0) {
-          const { error } = await db.from("student_masterlist").insert(newRecords);
-          if (error) throw error;
-          toast.success(`Successfully imported ${newRecords.length} students to masterlist.`);
-          const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
-          if (data) setMasterlist(data);
-        } else {
-          toast.info("All LRNs in the CSV already exist in the masterlist.");
-        }
+        setImportPreviewSummary({
+          total: totalRows,
+          valid: validRecords,
+          invalid: invalidRecords,
+          duplicates: duplicateRecords
+        });
+        setPreviewTab(validRecords.length > 0 ? "valid" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"));
+        setShowImportPreviewModal(true);
       } catch (err) {
-        toast.error(err.message || "Failed to import CSV");
+        toast.error(err.message || "Failed to process CSV file.");
       } finally {
         setIsImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleConfirmImport = async () => {
+    if (importPreviewSummary.valid.length === 0) {
+      toast.error("No valid records to import.");
+      return;
+    }
+
+    setIsSavingImport(true);
+    try {
+      if (!db) throw new Error("Supabase client not configured");
+
+      const recordsToInsert = importPreviewSummary.valid.map(({ rowNum, email, ...record }) => record);
+
+      const { error } = await db.from("student_masterlist").insert(recordsToInsert);
+      if (error) throw error;
+
+      toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist.`);
+
+      const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
+      if (data) setMasterlist(data);
+
+      setShowImportPreviewModal(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to insert masterlist records.");
+    } finally {
+      setIsSavingImport(false);
+    }
   };
 
   const handleGenerateAccounts = async (specificIds = null) => {
@@ -1221,6 +1420,10 @@ function StudentManagement() {
                 <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
                   {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                   {isImporting ? "Importing..." : "Import Masterlist"}
+                </button>
+                <button onClick={downloadCsvTemplate} type="button" className="flex items-center gap-2 px-4 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer" title="Download CSV Template">
+                  <Download className="w-4 h-4 text-gray-500" />
+                  CSV Template
                 </button>
                 <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
                   <UserPlus className="w-5 h-5" />
@@ -2005,6 +2208,170 @@ function StudentManagement() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {showImportPreviewModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-100 rounded-xl text-blue-600">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">CSV Import Summary & Preview</h3>
+                  <p className="text-sm text-gray-500">Review parsed rows before importing into masterlist</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImportPreviewModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                disabled={isSavingImport}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Total Rows</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{importPreviewSummary.total}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wider">Valid Rows</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{importPreviewSummary.valid.length}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider">Duplicates</p>
+                  <p className="text-2xl font-bold text-amber-700 mt-1">{importPreviewSummary.duplicates.length}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wider">Invalid Rows</p>
+                  <p className="text-2xl font-bold text-red-700 mt-1">{importPreviewSummary.invalid.length}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-b border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab("valid")}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    previewTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Valid Records ({importPreviewSummary.valid.length})
+                </button>
+                {importPreviewSummary.duplicates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("duplicates")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      previewTab === "duplicates" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Duplicates ({importPreviewSummary.duplicates.length})
+                  </button>
+                )}
+                {importPreviewSummary.invalid.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("invalid")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      previewTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Invalid Rows ({importPreviewSummary.invalid.length})
+                  </button>
+                )}
+              </div>
+
+              {previewTab === "valid" && (
+                <div>
+                  {importPreviewSummary.valid.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No valid records to import.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                      <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3">Row</th>
+                            <th className="px-4 py-3">LRN</th>
+                            <th className="px-4 py-3">Name</th>
+                            <th className="px-4 py-3">Year Level</th>
+                            <th className="px-4 py-3">Section</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {importPreviewSummary.valid.map((r, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">#{r.rowNum}</td>
+                              <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                              <td className="px-4 py-2.5 font-medium text-gray-900">{[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(" ")}</td>
+                              <td className="px-4 py-2.5">{r.year_level || "-"}</td>
+                              <td className="px-4 py-2.5">{r.section || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {previewTab === "duplicates" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.duplicates.map((d, idx) => (
+                    <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{d.reason}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {previewTab === "invalid" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.invalid.map((inv, idx) => (
+                    <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{inv.reason}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                Only <strong className="text-emerald-700">{importPreviewSummary.valid.length} valid record(s)</strong> will be inserted into Supabase.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowImportPreviewModal(false)}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                  disabled={isSavingImport}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmImport}
+                  disabled={isSavingImport || importPreviewSummary.valid.length === 0}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+                >
+                  {isSavingImport && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isSavingImport ? "Importing..." : `Confirm Import (${importPreviewSummary.valid.length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
