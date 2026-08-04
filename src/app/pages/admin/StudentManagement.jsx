@@ -316,6 +316,17 @@ function StudentManagement() {
       return errors;
     }
 
+    let lrnQuery = db
+      .from("profiles")
+      .select("id")
+      .eq("lrn", formData.lrn);
+
+    if (excludeId) {
+      lrnQuery = lrnQuery.neq("id", excludeId);
+    }
+
+    const lrnResult = await lrnQuery;
+
     if (lrnResult.error) {
       errors.form = lrnResult.error.message;
       return errors;
