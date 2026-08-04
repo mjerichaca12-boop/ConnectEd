@@ -180,7 +180,46 @@ function StudentManagement() {
       throw new Error(profilesRes.error.message);
     }
 
-    setStudents(profilesRes.data ?? []);
+    const fetchedProfiles = profilesRes.data ?? [];
+    setStudents(fetchedProfiles);
+
+    // Auto-backfill missing usernames for existing student profiles
+    const missingUsernameStudents = fetchedProfiles.filter(s => !s.username);
+    if (missingUsernameStudents.length > 0) {
+      (async () => {
+        let updatedAny = false;
+        for (const s of missingUsernameStudents) {
+          const firstInitial = (s.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+          const lastNameLow = (s.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+          let baseUsername = (firstInitial + lastNameLow) || "student";
+          let genUsername = `${baseUsername}01`;
+          let suffix = 1;
+
+          while (true) {
+            const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: genUsername }, maybeSingle: true });
+            if (!existing) break;
+            suffix++;
+            genUsername = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+          }
+
+          const { error: updErr } = await adminApi.db("profiles", "update", {
+            payload: { username: genUsername },
+            eq: { column: "id", value: s.id }
+          });
+          if (!updErr) updatedAny = true;
+        }
+
+        if (updatedAny) {
+          const { data: updatedProfiles } = await adminApi.db("profiles", "select", {
+            payload: "*",
+            eq: { column: "role", value: "student" },
+            order: { column: "created_at", options: { ascending: false } }
+          });
+          if (updatedProfiles) setStudents(updatedProfiles);
+        }
+      })();
+    }
+
     if (!masterlistRes.error) {
       setMasterlist(masterlistRes.data ?? []);
     }
@@ -645,11 +684,26 @@ function StudentManagement() {
            throw new Error("User flow succeeded but no userId was extracted.");
         }
 
+        // Generate unique username
+        const firstInitial = (student.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+        const lastNameLowClean = (student.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+        let baseUsername = (firstInitial + lastNameLowClean) || "student";
+        let username = `${baseUsername}01`;
+        let suffix = 1;
+
+        while (true) {
+          const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: username }, maybeSingle: true });
+          if (!existing) break;
+          suffix++;
+          username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+        }
+
         // 4. Upsert Profile using the resolved user ID
         const { error: profileError } = await adminApi.db("profiles", "upsert", {
           payload: {
             id: userId,
             role: "student",
+            username: username,
             first_name: student.first_name,
             last_name: student.last_name,
             middle_name: student.middle_name,
