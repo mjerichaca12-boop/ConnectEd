@@ -121,7 +121,7 @@ function StudentManagement() {
 
         const [profilesRes, masterlistRes] = await Promise.all([
           adminApi.db("profiles", "select", {
-            payload: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
             eq: { column: "role", value: "student" },
             order: { column: "created_at", options: { ascending: false } }
           }),
@@ -165,7 +165,7 @@ function StudentManagement() {
 
     const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
       adminApi.db("profiles", "select", {
-        payload: "id, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
         eq: { column: "role", value: "student" },
         order: { column: "created_at", options: { ascending: false } }
       }),
@@ -235,6 +235,20 @@ function StudentManagement() {
   };
 
   const getFullName = (student) => [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ");
+
+  const getDisplayUsername = (student) => {
+    if (student?.username) return student.username;
+    if (student?.email && !student.email.endsWith("@students.connected") && !student.email.endsWith("@temp.local")) {
+      const prefix = student.email.split("@")[0];
+      if (prefix && !/^\d+$/.test(prefix)) return prefix;
+    }
+    const firstInitial = (student?.first_name || "").charAt(0).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const lastNameClean = (student?.last_name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (firstInitial && lastNameClean) {
+      return `${firstInitial}${lastNameClean}01`;
+    }
+    return "student01";
+  };
 
   const formatDate = (value) => {
     if (!value) return "-";
@@ -1453,7 +1467,7 @@ function StudentManagement() {
                               <td className="px-6 py-5 align-middle">
                                 <div className="flex items-center gap-2 text-sm text-gray-600">
                                   <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <div className="truncate max-w-[200px]">{student.username}</div>
+                                  <div className="truncate max-w-[200px]">{getDisplayUsername(student)}</div>
                                 </div>
                               </td>
                               <td className="px-6 py-5 text-sm text-gray-600 align-middle">
