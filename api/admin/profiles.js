@@ -63,7 +63,7 @@ const verifyAdmin = async (req) => {
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
     
   if (profileError || profile?.role !== "admin") {
     throw new Error("Forbidden: Admin access required");
@@ -89,7 +89,7 @@ export default async function handler(req, res) {
         .update(payload)
         .eq("id", id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return res.status(200).json(data);
