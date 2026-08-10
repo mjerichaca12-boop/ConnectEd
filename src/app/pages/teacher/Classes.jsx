@@ -48,6 +48,7 @@ function Classes() {
       room: "",
       semester: "Current School Year",
       studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
+      capacity: Number(subject.capacity || 0),
       students: [],
       gradeLevel: String(subject.grade_level || subject.year_level || "").trim()
     }));
@@ -92,14 +93,14 @@ function Classes() {
 
     let { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section, schedule, enrolled, grade_level")
+      .select("id, code, name, section, schedule, enrolled, grade_level, capacity")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
 
     if (error && isColumnMissingError(error)) {
       const fallback = await supabase
         .from("subjects")
-        .select("id, code, name, section, schedule, enrolled, grade_level")
+        .select("id, code, name, section, schedule, enrolled, grade_level, capacity")
         .eq("teacher_id", id)
         .order("code", { ascending: true });
 
@@ -369,7 +370,10 @@ function Classes() {
                     )}
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
-                      {classItem.studentCount} students enrolled
+                      <span>{classItem.studentCount} / {classItem.capacity || 30} students enrolled</span>
+                      {classItem.capacity > 0 && classItem.studentCount >= classItem.capacity && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 rounded">Full</span>
+                      )}
                     </div>
                     <button
                       type="button"

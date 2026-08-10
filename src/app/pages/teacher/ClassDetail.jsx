@@ -1426,37 +1426,31 @@ export function ClassDetail() {
         }
       }
 
-      if (!foundClass && supabase) {
+      if (supabase && id && !String(id).startsWith("demo-") && !isNaN(Number(id))) {
         try {
-          if (String(id).startsWith("demo-") || isNaN(Number(id))) {
-            const demoMatch = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
-            foundClass = demoMatch;
-          } else {
-            let { data: subData } = await supabase.from("subjects").select("*").eq("id", Number(id)).maybeSingle();
-            if (!subData) {
-              const { data: firstSub } = await supabase.from("subjects").select("*").limit(1).maybeSingle();
-              subData = firstSub;
-            }
-            if (subData) {
-              foundClass = {
-                id: String(subData.id),
-                code: String(subData.code || ""),
-                name: String(subData.name || "Untitled Class"),
-                section: String(subData.section || "Section"),
-                schedule: String(subData.schedule || ""),
-                room: "",
-                semester: "Current School Year",
-                studentCount: Number(subData.enrolled || 0),
-                gradeLevel: String(subData.grade_level || subData.year_level || "")
-              };
-            }
+          const { data: subData } = await supabase.from("subjects").select("*").eq("id", Number(id)).maybeSingle();
+          if (subData) {
+            foundClass = {
+              ...foundClass,
+              id: String(subData.id),
+              code: String(subData.code || ""),
+              name: String(subData.name || "Untitled Class"),
+              section: String(subData.section || "Section"),
+              schedule: String(subData.schedule || ""),
+              room: "",
+              semester: "Current School Year",
+              studentCount: Number(subData.enrolled || 0),
+              capacity: Number(subData.capacity || 0),
+              gradeLevel: String(subData.grade_level || subData.year_level || "")
+            };
           }
         } catch (err) {
-          console.warn("[ClassDetail] Fallback subject fetch error:", err);
-          if (String(id).startsWith("demo-") || isDemoMode) {
-            foundClass = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
-          }
+          console.warn("[ClassDetail] Fresh subject fetch error:", err);
         }
+      }
+
+      if (!foundClass && (String(id).startsWith("demo-") || isDemoMode)) {
+        foundClass = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
       }
 
       if (isMounted) {
