@@ -1891,76 +1891,7 @@ function StudentManagement() {
           </div>
         </div>
 
-        {(activeTab === "Profiles" ? selectedStudentIds.size > 0 : selectedMasterlistIds.size > 0) && (
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-6 py-3.5 rounded-xl flex items-center justify-between shadow-lg mb-4 animate-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-3 font-semibold text-sm">
-              <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-              <span>
-                {activeTab === "Profiles" ? selectedStudentIds.size : selectedMasterlistIds.size} student(s) selected
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              {activeTab === "Profiles" ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleOpenBulkAssignSectionModal}
-                    className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <BookOpen className="w-4 h-4 text-indigo-600" />
-                    Assign Section
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowBulkDeleteConfirm(true)}
-                    className="px-3.5 py-2 bg-red-500/80 hover:bg-red-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
-                </>
-              ) : (() => {
-                const selectedRows = masterlist.filter(m => selectedMasterlistIds.has(m.id));
-                const newCount = selectedRows.filter(m => !m.account_created).length;
-                const createdCount = selectedRows.filter(m => m.account_created).length;
 
-                return (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleOpenBulkAssignSectionModal}
-                      disabled={createdCount === 0}
-                      title={createdCount === 0 ? "Account generation required before section assignment" : ""}
-                      className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <BookOpen className="w-4 h-4 text-indigo-600" />
-                      Assign Section {createdCount > 0 ? `(${createdCount})` : ""}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleGenerateAccounts}
-                      disabled={isGenerating || newCount === 0}
-                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      Generate Accounts {newCount > 0 ? `(${newCount})` : ""}
-                    </button>
-                  </>
-                );
-              })()}
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab === "Profiles") setSelectedStudentIds(new Set());
-                  else setSelectedMasterlistIds(new Set());
-                }}
-                className="px-2.5 py-2 text-white/80 hover:text-white text-sm cursor-pointer"
-              >
-                Deselect
-              </button>
-            </div>
-          </div>
-        )}
 
           <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
