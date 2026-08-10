@@ -1276,7 +1276,11 @@ function StudentManagement() {
 
   const allData = [...students, ...masterlist];
   
-  const availableYearLevels = Array.from(new Set(allData.map(s => s.year_level).filter(Boolean))).sort();
+  const availableYearLevels = Array.from(new Set(allData.map(s => s.year_level).filter(Boolean))).sort((a, b) => {
+    const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+    const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+    return numA - numB || String(a).localeCompare(String(b));
+  });
   const availableSections = Array.from(new Set(
     allData
       .filter(s => yearLevelFilter === "all" || s.year_level === yearLevelFilter)
