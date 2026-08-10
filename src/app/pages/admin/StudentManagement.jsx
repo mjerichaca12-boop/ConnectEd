@@ -107,10 +107,15 @@ function StudentManagement() {
   });
   const [resultsTab, setResultsTab] = useState("success");
 
+  // Bulk section assignment states
+  const [showBulkAssignSectionModal, setShowBulkAssignSectionModal] = useState(false);
+  const [targetBulkSection, setTargetBulkSection] = useState("");
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal) {
+    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -118,7 +123,7 @@ function StudentManagement() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal]);
+  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal, showBulkAssignSectionModal]);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -899,7 +904,8 @@ function StudentManagement() {
           invalid: invalidRecords,
           duplicates: duplicateRecords,
           sectionBreakdown,
-          newGradeSectionsToCreate
+          newGradeSectionsToCreate,
+          hasSectionColumn: headerMap.section !== undefined
         });
         setPreviewTab(validRecords.length > 0 ? "valid" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"));
         setShowImportPreviewModal(true);
@@ -940,7 +946,11 @@ function StudentManagement() {
       const { error } = await db.from("student_masterlist").insert(recordsToInsert);
       if (error) throw error;
 
-      toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist.`);
+      if (!importPreviewSummary.hasSectionColumn) {
+        toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist! Select students to assign sections in bulk.`, { duration: 6000 });
+      } else {
+        toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist.`);
+      }
 
       const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
       if (data) setMasterlist(data);
@@ -951,6 +961,90 @@ function StudentManagement() {
       toast.error(err.message || "Failed to insert masterlist records.");
     } finally {
       setIsSavingImport(false);
+    }
+  };
+
+  const handleOpenBulkAssignSectionModal = () => {
+    const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+    if (selectedSet.size === 0) {
+      toast.error("Please select at least one student.");
+      return;
+    }
+
+    const currentList = activeTab === "Profiles" ? students : masterlist;
+    const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+
+    const uniqueGradeLevels = Array.from(new Set(selectedRows.map(s => s.year_level).filter(Boolean)));
+
+    if (uniqueGradeLevels.length > 1) {
+      toast.warning(
+        `Selected students belong to multiple grade levels (${uniqueGradeLevels.map(g => `Grade ${g}`).join(", ")}). Please filter by Grade Level first to assign sections per grade level.`,
+        { duration: 6000 }
+      );
+      return;
+    }
+
+    setTargetBulkSection("");
+    setShowBulkAssignSectionModal(true);
+  };
+
+  const handleConfirmBulkAssignSection = async () => {
+    const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+    if (selectedSet.size === 0) {
+      toast.error("No students selected.");
+      return;
+    }
+
+    const cleanSection = formatSectionName(targetBulkSection);
+    if (!cleanSection) {
+      toast.error("Please select or enter a valid section name.");
+      return;
+    }
+
+    setIsBulkAssigning(true);
+    try {
+      const selectedIds = Array.from(selectedSet);
+
+      if (activeTab === "Profiles") {
+        const { error: updErr } = await adminApi.db("profiles", "update", {
+          payload: { section: cleanSection },
+          in: { column: "id", value: selectedIds }
+        });
+        if (updErr) throw updErr;
+
+        const targetStudents = students.filter(s => selectedSet.has(s.id));
+        const targetLrns = targetStudents.map(s => s.lrn).filter(Boolean);
+        if (targetLrns.length > 0) {
+          await db.from("student_masterlist").update({ section: cleanSection }).in("lrn", targetLrns);
+        }
+
+        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
+        setSelectedStudentIds(new Set());
+      } else {
+        const { error: updErr } = await adminApi.db("student_masterlist", "update", {
+          payload: { section: cleanSection },
+          in: { column: "id", value: selectedIds }
+        });
+        if (updErr) throw updErr;
+
+        const targetMaster = masterlist.filter(m => selectedSet.has(m.id));
+        const targetLrns = targetMaster.map(m => m.lrn).filter(Boolean);
+        if (targetLrns.length > 0) {
+          await db.from("profiles").update({ section: cleanSection }).in("lrn", targetLrns);
+        }
+
+        toast.success(`Successfully assigned ${selectedIds.length} masterlist record(s) to Section ${cleanSection}.`);
+        setSelectedMasterlistIds(new Set());
+      }
+
+      setShowBulkAssignSectionModal(false);
+      setTargetBulkSection("");
+      await refreshStudents();
+    } catch (err) {
+      console.error("Bulk section assignment error:", err);
+      toast.error(err.message || "Failed to assign section to selected students.");
+    } finally {
+      setIsBulkAssigning(false);
     }
   };
 
@@ -1644,27 +1738,49 @@ function StudentManagement() {
                 </button>
 
               {activeTab === "Profiles" && (
-                <button
-                  onClick={() => setShowBulkDeleteConfirm(true)}
-                  disabled={selectedStudentIds.size === 0 || isBulkDeleting}
-                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
-                >
-                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedStudentIds.size})`}
-                </button>
+                <>
+                  {selectedStudentIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleOpenBulkAssignSectionModal}
+                      className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      Assign Section ({selectedStudentIds.size})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    disabled={selectedStudentIds.size === 0 || isBulkDeleting}
+                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                  >
+                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedStudentIds.size})`}
+                  </button>
+                </>
               )}
 
               {activeTab === "Masterlist" && (
                 <>
                   {selectedMasterlistIds.size > 0 && (
-                    <button
-                      onClick={handleGenerateAccounts}
-                      disabled={isGenerating}
-                      className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
-                    >
-                      {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                      {isGenerating ? "Generating..." : `Generate Accounts (${selectedMasterlistIds.size})`}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleOpenBulkAssignSectionModal}
+                        className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center"
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        Assign Section ({selectedMasterlistIds.size})
+                      </button>
+                      <button
+                        onClick={handleGenerateAccounts}
+                        disabled={isGenerating}
+                        className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                      >
+                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                        {isGenerating ? "Generating..." : `Generate Accounts (${selectedMasterlistIds.size})`}
+                      </button>
+                    </>
                   )}
                   {masterlist.length > 0 && (
                     <button
@@ -1681,6 +1797,57 @@ function StudentManagement() {
             </div>
           </div>
         </div>
+
+        {(activeTab === "Profiles" ? selectedStudentIds.size > 0 : selectedMasterlistIds.size > 0) && (
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white px-6 py-3.5 rounded-xl flex items-center justify-between shadow-lg mb-4 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-3 font-semibold text-sm">
+              <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+              <span>
+                {activeTab === "Profiles" ? selectedStudentIds.size : selectedMasterlistIds.size} student(s) selected
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleOpenBulkAssignSectionModal}
+                className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5"
+              >
+                <BookOpen className="w-4 h-4 text-indigo-600" />
+                Assign Section
+              </button>
+              {activeTab === "Profiles" ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="px-3.5 py-2 bg-red-500/80 hover:bg-red-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleGenerateAccounts}
+                  disabled={isGenerating}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Generate Accounts
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab === "Profiles") setSelectedStudentIds(new Set());
+                  else setSelectedMasterlistIds(new Set());
+                }}
+                className="px-2.5 py-2 text-white/80 hover:text-white text-sm"
+              >
+                Deselect
+              </button>
+            </div>
+          </div>
+        )}
 
           <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -1710,7 +1877,8 @@ function StudentManagement() {
                     const grouped = {};
                     filteredStudents.forEach(student => {
                       const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
-                      const section = student.section || "Unassigned Section";
+                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                      const section = rawSec;
                       if (!grouped[year]) grouped[year] = {};
                       if (!grouped[year][section]) grouped[year][section] = [];
                       grouped[year][section].push(student);
@@ -1730,7 +1898,7 @@ function StudentManagement() {
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-gray-800">{year}</span>
                                 <span className="text-gray-400">•</span>
-                                <span className="font-semibold text-gray-700">{section.toLowerCase().includes('section') ? section : `Section ${section}`}</span>
+                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
                                 <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
                                   {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
                                 </span>
@@ -1844,7 +2012,8 @@ function StudentManagement() {
                     const grouped = {};
                     filteredMasterlist.forEach(student => {
                       const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
-                      const section = student.section || "Unassigned Section";
+                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                      const section = rawSec;
                       if (!grouped[year]) grouped[year] = {};
                       if (!grouped[year][section]) grouped[year][section] = [];
                       grouped[year][section].push(student);
@@ -1863,7 +2032,7 @@ function StudentManagement() {
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-gray-800">{year}</span>
                                 <span className="text-gray-400">•</span>
-                                <span className="font-semibold text-gray-700">{section.toLowerCase().includes('section') ? section : `Section ${section}`}</span>
+                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
                                 <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
                                   {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
                                 </span>
@@ -2686,6 +2855,87 @@ function StudentManagement() {
           </div>
         </div>
       )}
+
+      {/* Bulk Assign Section Modal */}
+      {showBulkAssignSectionModal && (() => {
+        const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+        const currentList = activeTab === "Profiles" ? students : masterlist;
+        const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+        const firstGrade = selectedRows[0]?.year_level || "";
+        const formattedGradeLevel = firstGrade ? `Grade ${firstGrade.replace(/\D/g, "")}` : "Grade 7";
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-blue-50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 rounded-xl text-indigo-600">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Bulk Assign Section</h3>
+                    <p className="text-xs text-gray-500">Assign section to {selectedSet.size} selected student(s)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBulkAssignSectionModal(false)}
+                  className="p-2 hover:bg-black/5 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={isBulkAssigning}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Grade Level</p>
+                    <p className="text-base font-bold text-gray-900 mt-0.5">{formattedGradeLevel}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Target Students</p>
+                    <p className="text-base font-bold text-indigo-600 mt-0.5">{selectedSet.size} Selected</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Section</label>
+                  <SectionDropdown
+                    gradeLevel={formattedGradeLevel}
+                    value={targetBulkSection}
+                    onChange={setTargetBulkSection}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Or click the settings icon in the section dropdown to create a new section for {formattedGradeLevel}.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkAssignSectionModal(false)}
+                  disabled={isBulkAssigning}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmBulkAssignSection}
+                  disabled={isBulkAssigning || !targetBulkSection}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isBulkAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isBulkAssigning ? "Assigning..." : `Assign to ${selectedSet.size} Student(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
