@@ -95,12 +95,55 @@ export default async function handler(req, res) {
     // 2. Server-side validation logic using admin service key
     const { data: subject, error: subjectError } = await supabaseAdmin
       .from("subjects")
-      .select("id, capacity, enrolled, name, code, section")
+      .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
       .eq("id", subject_id)
       .maybeSingle();
 
     if (subjectError || !subject) {
       return res.status(404).json({ error: "Class or subject not found." });
+    }
+
+    const normalizeGradeLevel = (val) => {
+      if (!val) return "";
+      const match = String(val).match(/\d+/);
+      return match ? `Grade ${match[0]}` : String(val).trim();
+    };
+
+    const normalizeSection = (val) => {
+      if (!val) return "";
+      const str = String(val).trim();
+      if (str.toLowerCase() === "unassigned" || str.toLowerCase() === "none") return "";
+      return str.toLowerCase();
+    };
+
+    const classGradeNorm = normalizeGradeLevel(subject.grade_level || subject.year_level || "");
+    const classSectionNorm = normalizeSection(subject.section || section || "");
+
+    // Validate Grade Level + Section for every student
+    const { data: studentProfiles, error: profilesError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, year_level, grade_level, section, first_name, last_name")
+      .in("id", student_ids);
+
+    if (profilesError || !studentProfiles) {
+      return res.status(400).json({ error: "Failed to resolve student profiles for enrollment." });
+    }
+
+    for (const student of studentProfiles) {
+      const studentGradeNorm = normalizeGradeLevel(student.grade_level || student.year_level || "");
+      const studentSectionNorm = normalizeSection(student.section || "");
+
+      if (!studentSectionNorm) {
+        return res.status(400).json({ error: "Student does not belong to this class section." });
+      }
+
+      if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
+        return res.status(400).json({ error: "Student does not belong to this class section." });
+      }
+
+      if (classSectionNorm && studentSectionNorm !== classSectionNorm) {
+        return res.status(400).json({ error: "Student does not belong to this class section." });
+      }
     }
 
     const capacity = Number(subject.capacity || 0);
@@ -142,15 +185,13 @@ export default async function handler(req, res) {
       });
     }
 
-    let enrolledToInsert = newStudentIdsToEnroll;
-    let skippedCapacityCount = 0;
-
     if (capacity > 0 && newStudentIdsToEnroll.length > availableSlots) {
-      enrolledToInsert = newStudentIdsToEnroll.slice(0, availableSlots);
-      skippedCapacityCount = newStudentIdsToEnroll.length - availableSlots;
+      return res.status(400).json({
+        error: `Only ${availableSlots} slots are available for this class.`
+      });
     }
 
-    const payload = enrolledToInsert.map(sid => ({
+    const payload = newStudentIdsToEnroll.map(sid => ({
       teacher_id: teacher_id || null,
       student_id: sid,
       subject_id: subject_id,
@@ -186,7 +227,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       enrolled_count: payload.length,
-      skipped_capacity: skippedCapacityCount,
+      skipped_capacity: 0,
       already_enrolled_count: alreadyEnrolledCount,
       new_total_enrolled: newEnrolledTotal,
       capacity

@@ -700,22 +700,7 @@ export function ClassDetail() {
     const classCandidate = classObj || classData || {};
     const resolvedClassGradeRaw = await resolveSubjectGradeLevel(classCandidate);
     let classGrade = normalizeGradeLevel(resolvedClassGradeRaw);
-
-    // If a teacher is selected, prefer the teacher's grade level to filter students
-    try {
-      const teacherId = String(teacherProfileId || "").trim();
-      if (teacherId) {
-        const { data: teacherRow, error: teacherErr } = await supabase.from("profiles").select("id, year_level").eq("id", teacherId).maybeSingle();
-        if (!teacherErr && teacherRow) {
-          const teacherGradeRaw = String(teacherRow?.year_level || "").trim();
-          const teacherGrade = normalizeGradeLevel(teacherGradeRaw);
-          if (teacherGrade) classGrade = teacherGrade;
-        }
-      }
-    } catch (err) {
-      // ignore teacher fetch errors and continue with class grade
-      console.warn("[ClassDetail] Failed to fetch teacher grade info:", err);
-    }
+    const classSectionRaw = String(classCandidate?.section || "").trim();
 
     try {
       let loadedRows = null;
@@ -730,7 +715,9 @@ export function ClassDetail() {
             .eq("role", "student")
             .order("first_name", { ascending: true });
 
-
+        if (classSectionRaw && classSectionRaw.toLowerCase() !== "unassigned") {
+          query = query.ilike("section", classSectionRaw);
+        }
 
         const { data, error } = await query;
 
@@ -1698,6 +1685,13 @@ export function ClassDetail() {
       return;
     }
 
+    if (currentCapacity > 0 && selectedStudentIds.length > availableSlots) {
+      const msg = `Only ${availableSlots} slots are available for this class.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
     const alreadyAssigned = selectedStudentIds.some((studentId) => assignedStudents.some((student) => String(student.id) === String(studentId)));
     if (alreadyAssigned) {
       setStuError("This student is already assigned to this class.");
@@ -1720,12 +1714,10 @@ export function ClassDetail() {
     for (const student of selectedStudents) {
       const studentGradeNorm = normalizeGradeLevel(student.grade_level || student.year_level);
       const studentSectionNorm = normalizeSection(student.section);
-      if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
-        setStuError("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
-        return;
-      }
-      if (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm) {
-        setStuError("This student belongs to a different section.");
+      if (!studentSectionNorm || studentSectionNorm === "unassigned" || (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) || (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm)) {
+        const msg = "Student does not belong to this class section.";
+        setStuError(msg);
+        toast.error(msg);
         return;
       }
     }
@@ -1788,6 +1780,13 @@ export function ClassDetail() {
       return;
     }
 
+    if (currentCapacity > 0 && selectedStudents.length > availableSlots) {
+      const msg = `Only ${availableSlots} slots are available for this class.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
     // Grade Level and Section Parity Validation
     const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
     const classSectionNorm = normalizeSection(classData?.section);
@@ -1795,12 +1794,10 @@ export function ClassDetail() {
     for (const student of selectedStudents) {
       const studentGradeNorm = normalizeGradeLevel(student.year_level || student.grade_level);
       const studentSectionNorm = normalizeSection(student.section);
-      if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
-        setStuError("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
-        return;
-      }
-      if (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm) {
-        setStuError("This student belongs to a different section.");
+      if (!studentSectionNorm || studentSectionNorm === "unassigned" || (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) || (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm)) {
+        const msg = "Student does not belong to this class section.";
+        setStuError(msg);
+        toast.error(msg);
         return;
       }
     }
@@ -3636,12 +3633,16 @@ export function ClassDetail() {
       const studentGradeNorm = normalizeGradeLevel(yearLevelRaw);
       const studentSectionNorm = normalizeSection(student.section || "");
 
+      // Unassigned or missing section is never eligible
+      if (!studentSectionNorm || studentSectionNorm === "unassigned") {
+        return false;
+      }
       // Grade Level validation
-      if (classGradeNormalized && studentGradeNorm && studentGradeNorm !== classGradeNormalized) {
+      if (classGradeNormalized && studentGradeNorm !== classGradeNormalized) {
         return false;
       }
       // Section validation
-      if (classSectionNormalized && studentSectionNorm && studentSectionNorm !== classSectionNormalized) {
+      if (classSectionNormalized && studentSectionNorm !== classSectionNormalized) {
         return false;
       }
 
@@ -4509,39 +4510,31 @@ export function ClassDetail() {
                         className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 text-sm"
                       />
                     </div>
-                    <div className="w-full md:w-48">
-                      <CustomSelect
-                        value={masterlistYearFilter}
-                        onChange={setMasterlistYearFilter}
-                        options={[
-                          { value: "all", label: "All Years" },
-                          ...Array.from(new Set(masterlistStudents.map(s => s.year_level).filter(Boolean))).sort().map(y => ({ value: y, label: y }))
-                        ]}
-                      />
-                    </div>
-                    <div className="w-full md:w-48">
-                      <CustomSelect
-                        value={masterlistSectionFilter}
-                        onChange={setMasterlistSectionFilter}
-                        options={[
-                          { value: "all", label: "All Sections" },
-                          ...Array.from(new Set(masterlistStudents.map(s => s.section).filter(Boolean))).sort().map(s => ({ value: s, label: s }))
-                        ]}
-                      />
-                    </div>
                   </div>
 
                   {(() => {
                     const filtered = masterlistStudents.filter(s => {
+                      const studentGradeNorm = normalizeGradeLevel(s.year_level || s.grade_level);
+                      const studentSectionNorm = normalizeSection(s.section);
+
+                      if (!studentSectionNorm || studentSectionNorm === "unassigned") return false;
+                      if (classGradeNormalized && studentGradeNorm !== classGradeNormalized) return false;
+                      if (classSectionNormalized && studentSectionNorm !== classSectionNormalized) return false;
+
+                      // Exclude already enrolled
+                      const lrnNorm = String(s.lrn || "").replace(/\D/g, "");
+                      if (assignedStudents.some(a => String(a.lrn || "").replace(/\D/g, "") === lrnNorm)) {
+                        return false;
+                      }
+
                       const q = masterlistQuery.toLowerCase();
                       const matchesQuery = !q || (
                         (s.first_name && s.first_name.toLowerCase().includes(q)) ||
                         (s.last_name && s.last_name.toLowerCase().includes(q)) ||
                         (s.lrn && String(s.lrn).includes(q))
                       );
-                      const matchesYear = masterlistYearFilter === "all" || (s.year_level && s.year_level.toLowerCase() === masterlistYearFilter.toLowerCase());
-                      const matchesSection = masterlistSectionFilter === "all" || (s.section && s.section.toLowerCase() === masterlistSectionFilter.toLowerCase());
-                      return matchesQuery && matchesYear && matchesSection;
+
+                      return matchesQuery;
                     });
 
                     return (
