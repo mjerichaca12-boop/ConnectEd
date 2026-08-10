@@ -79,5 +79,12 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify({ students: studentsBatch }),
     });
+  },
+
+  async enrollStudents(payload) {
+    return this.fetchWithToken("/api/admin/enrollment", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   }
 };

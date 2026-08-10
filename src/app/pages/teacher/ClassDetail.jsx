@@ -8,6 +8,7 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
 import {
@@ -609,6 +610,17 @@ export function ClassDetail() {
     });
 
     syncStudentsIntoClassData(mapped);
+
+    if (supabase && subjectId && !String(subjectId).startsWith("demo-") && !isNaN(Number(subjectId))) {
+      try {
+        const { data: sub } = await supabase.from("subjects").select("capacity, enrolled").eq("id", Number(subjectId)).maybeSingle();
+        if (sub && sub.capacity !== undefined) {
+          setClassData(prev => prev ? ({ ...prev, capacity: Number(sub.capacity || 0), enrolled: mapped.length }) : prev);
+        }
+      } catch (e) {
+        console.warn("[ClassDetail] Failed to re-fetch subject capacity:", e);
+      }
+    }
   };
 
   const fetchDashboardMetrics = async (teacherId, subjectId) => {
@@ -1680,6 +1692,17 @@ export function ClassDetail() {
       return;
     }
 
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
     const alreadyAssigned = selectedStudentIds.some((studentId) => assignedStudents.some((student) => String(student.id) === String(studentId)));
     if (alreadyAssigned) {
       setStuError("This student is already assigned to this class.");
@@ -1716,31 +1739,30 @@ export function ClassDetail() {
     setStuError("");
 
     try {
-      const payload = selectedStudents.map((student) => ({
-        teacher_id: teacherProfileId,
-        student_id: student.id,
+      const res = await adminApi.enrollStudents({
         subject_id: id,
-        section: String(classData?.section || "").trim() || null,
-        status: "Active"
-      }));
+        student_ids: selectedStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
 
-      const { error } = await supabase
-        .from("teacher_student_assignments")
-        .insert(payload);
-
-      if (error) {
-        if (error.code === "23505") {
-          setStuError("One or more selected students are already assigned to this class.");
-          return;
-        }
-
-        throw error;
+      if (res.error) {
+        throw new Error(res.error.message || res.error);
       }
+
+      const { enrolled_count, skipped_capacity, already_enrolled_count } = res.data;
 
       await loadAssignedStudents(teacherProfileId, id);
       setSelectedStudentIds([]);
       setShowStudentModal(false);
-      toast.success(`Successfully enrolled ${payload.length} student(s).`);
+
+      if (skipped_capacity > 0) {
+        toast.warning(`Successfully enrolled ${enrolled_count} student(s). ${skipped_capacity} student(s) skipped because class capacity was reached.`);
+      } else if (already_enrolled_count > 0 && enrolled_count === 0) {
+        toast.info("Selected student(s) are already enrolled in this class.");
+      } else {
+        toast.success(`Successfully enrolled ${enrolled_count} student(s).`);
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Unable to add student.";
       setStuError(msg);
@@ -1759,6 +1781,17 @@ export function ClassDetail() {
 
     const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
     if (selectedStudents.length === 0) return;
+
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
 
     // Grade Level and Section Parity Validation
     const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
@@ -1785,39 +1818,47 @@ export function ClassDetail() {
       const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", selectedLrns);
       const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
 
-      const payload = [];
-      const skippedCount = selectedStudents.length;
-      
+      const targetStudentIds = [];
+      let skippedNoAccount = 0;
+
       for (const student of selectedStudents) {
         const lrn = String(student.lrn || "").replace(/\D/g, "");
         const profileId = lrnToProfileId.get(lrn);
         if (profileId) {
-          payload.push({
-            teacher_id: teacherProfileId,
-            student_id: profileId,
-            subject_id: id,
-            section: String(classData?.section || "").trim() || null,
-            status: "Active"
-          });
+          targetStudentIds.push(profileId);
+        } else {
+          skippedNoAccount++;
         }
       }
 
-      if (payload.length > 0) {
-        const { error } = await supabase.from("teacher_student_assignments").insert(payload);
-        if (error && error.code !== "23505") throw error;
+      if (targetStudentIds.length === 0) {
+        setStuError("Selected masterlist students do not have registered student accounts.");
+        setIsStudentSubmitting(false);
+        return;
       }
+
+      const res = await adminApi.enrollStudents({
+        subject_id: id,
+        student_ids: targetStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
+
+      if (res.error) throw new Error(res.error.message || res.error);
+
+      const { enrolled_count, skipped_capacity } = res.data;
 
       await loadAssignedStudents(teacherProfileId, id);
       setShowStudentModal(false);
       
-      const skipped = selectedStudents.length - payload.length;
-      if (skipped > 0) {
-        toast.warning(`Imported ${payload.length} student(s). Skipped ${skipped} without an account.`);
+      if (skipped_capacity > 0 || skippedNoAccount > 0) {
+        toast.warning(`Imported ${enrolled_count} student(s). ${skipped_capacity > 0 ? `${skipped_capacity} skipped (capacity reached). ` : ''}${skippedNoAccount > 0 ? `${skippedNoAccount} skipped (no account).` : ''}`);
       } else {
-        toast.success(`Imported ${payload.length} student(s) from Masterlist.`);
+        toast.success(`Imported ${enrolled_count} student(s) from Masterlist.`);
       }
     } catch (err) {
       setStuError(err.message || "Failed to import from masterlist.");
+      toast.error(err.message || "Failed to import from masterlist.");
     } finally {
       setIsStudentSubmitting(false);
     }
@@ -1910,6 +1951,18 @@ export function ClassDetail() {
 
   const handleImportCSV = async () => {
     if (!supabase || !teacherProfileId || csvValidRecords.length === 0) return;
+
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
     setIsStudentSubmitting(true);
     setStuError("");
     try {
@@ -1927,34 +1980,41 @@ export function ClassDetail() {
       const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", csvLrns);
       const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
       
-      const enrollPayload = csvValidRecords.map(student => {
+      const targetStudentIds = [];
+      for (const student of csvValidRecords) {
          const profileId = lrnToProfileId.get(String(student.lrn || "").replace(/\D/g, ""));
-         if (!profileId) return null;
-         return {
-           teacher_id: teacherProfileId,
-           student_id: profileId,
-           subject_id: id,
-           section: String(classData?.section || "").trim() || null,
-           status: "Active"
-         };
-      }).filter(Boolean);
-
-      if (enrollPayload.length > 0) {
-        const { error: assignError } = await supabase.from("teacher_student_assignments").insert(enrollPayload);
-        if (assignError && assignError.code !== "23505") throw assignError;
+         if (profileId) targetStudentIds.push(profileId);
       }
+
+      if (targetStudentIds.length === 0) {
+        setStuError("No registered student accounts found for the CSV LRNs.");
+        setIsStudentSubmitting(false);
+        return;
+      }
+
+      const res = await adminApi.enrollStudents({
+        subject_id: id,
+        student_ids: targetStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
+
+      if (res.error) throw new Error(res.error.message || res.error);
+
+      const { enrolled_count, skipped_capacity } = res.data;
 
       await loadAssignedStudents(teacherProfileId, id);
       setShowStudentModal(false);
       
-      const skipped = csvValidRecords.length - enrollPayload.length;
-      if (skipped > 0) {
-        toast.warning(`Enrolled ${enrollPayload.length} students. Skipped ${skipped} without accounts.`);
+      const skippedNoAccount = csvValidRecords.length - targetStudentIds.length;
+      if (skipped_capacity > 0 || skippedNoAccount > 0) {
+        toast.warning(`Enrolled ${enrolled_count} students. ${skipped_capacity > 0 ? `${skipped_capacity} skipped (capacity reached). ` : ''}${skippedNoAccount > 0 ? `${skippedNoAccount} skipped (without accounts).` : ''}`);
       } else {
-        toast.success(`Successfully imported and enrolled ${enrollPayload.length} students from CSV.`);
+        toast.success(`Successfully imported and enrolled ${enrolled_count} students from CSV.`);
       }
     } catch (err) {
       setStuError(err.message || "Failed to process CSV enrollment.");
+      toast.error(err.message || "Failed to process CSV enrollment.");
     } finally {
       setIsStudentSubmitting(false);
     }
@@ -3921,12 +3981,32 @@ export function ClassDetail() {
 
             <div className="p-6">
               {/* STUDENTS TAB */}
-              {activeTab === "students" && (
+              {activeTab === "students" && (() => {
+                const capacity = Number(classData?.capacity || 30);
+                const enrolledCount = activeStudentsList.length;
+                const availableSlots = Math.max(0, capacity - enrolledCount);
+                const isClassFull = capacity > 0 && enrolledCount >= capacity;
+
+                return (
                 <div data-tour="class-detail-students-list">
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">{activeStudentsList.length} students enrolled</p>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {enrolledCount} / {capacity} Students
+                          <span className="ml-2 font-medium">
+                            ({isClassFull ? "0 slots available" : `${availableSlots} slot(s) available`})
+                          </span>
+                        </p>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                        isClassFull
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}>
+                        {isClassFull ? "FULL" : "Available"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
                       <div className="relative flex-1 md:w-64">
@@ -3941,13 +4021,23 @@ export function ClassDetail() {
                       </div>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm whitespace-nowrap"
+                        disabled={isClassFull}
+                        title={isClassFull ? "Class is full. No additional students can be enrolled." : ""}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         Add Student
                       </button>
                     </div>
                   </div>
+
+                  {isClassFull && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm font-semibold flex items-center gap-2 mb-4">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>Class is full. No additional students can be enrolled. (Capacity: {enrolledCount}/{capacity})</span>
+                    </div>
+                  )}
+
                   {filteredStudents.length === 0 ? (
                     <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
                       <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -3957,7 +4047,8 @@ export function ClassDetail() {
                       <p className="text-gray-500 text-sm mb-4">Add students to this class so they can access materials and assignments.</p>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                        disabled={isClassFull}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         Add First Student
@@ -4009,7 +4100,8 @@ export function ClassDetail() {
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {/* LESSONS TAB */}
               {activeTab === "lessons" && (
@@ -4301,6 +4393,32 @@ export function ClassDetail() {
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
+              {(() => {
+                const capacity = Number(classData?.capacity || 30);
+                const currentEnrolled = assignedStudents.length;
+                const availableSlots = Math.max(0, capacity - currentEnrolled);
+                const selectedCount = addStudentMode === "individual" ? selectedStudentIds.length : (addStudentMode === "masterlist" ? selectedMasterlistIds.length : csvValidRecords.length);
+                const isOverCapacity = capacity > 0 && selectedCount > availableSlots;
+
+                return (
+                  <>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity} Enrolled ({availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full"})</span>
+                      </div>
+                    </div>
+
+                    {isOverCapacity && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-center gap-2 mb-4">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Notice: Only {availableSlots} slot(s) are available. You selected {selectedCount} students. System will enroll the first {availableSlots} and skip the remaining.</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
               {stuError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 mb-4">{stuError}</div>
               )}

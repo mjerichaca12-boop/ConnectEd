@@ -425,8 +425,10 @@ function SubjectManagement() {
       errors.teacher = "Selected teacher is invalid";
     }
 
-    if (!capacity) {
-      errors.capacity = "Capacity is required";
+    const rawCap = String(formData.capacity || "").trim();
+    const parsedCap = Number(rawCap);
+    if (!rawCap || isNaN(parsedCap) || !Number.isInteger(parsedCap) || parsedCap <= 0) {
+      errors.capacity = "Capacity must be a positive integer (greater than 0)";
     }
 
     const gradeLevel = (formData.grade_level || '').trim();
@@ -641,6 +643,14 @@ function SubjectManagement() {
       const payload = buildPayload(editFormData);
       const previousTeacherId = selectedSubject.teacher_id || "";
       const tableName = await getSubjectTableName();
+
+      if (payload.capacity > 0 && payload.capacity < (selectedSubject.enrolled || 0)) {
+        toast.warning(
+          `Current enrollment (${selectedSubject.enrolled}) exceeds the new capacity (${payload.capacity}). Existing enrollments will not be removed, but no additional students can be enrolled until capacity is increased.`,
+          { duration: 8000 }
+        );
+      }
+
       const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: selectedSubject.id }, select: "id" });
 
       if (error) throw error;
@@ -824,39 +834,19 @@ function SubjectManagement() {
         }
       }
 
-      // Get current enrollment count
-      const { count: currentEnrollment, error: countError } = await supabase
-        .from("teacher_student_assignments")
-        .select("*", { count: "exact" })
-        .eq("subject_id", subject.id);
+      // Atomic Enrollment with Server-Side Capacity Validation
+      const res = await adminApi.enrollStudents({
+        subject_id: subject.id,
+        student_ids: Array.from(selectedStudents),
+        teacher_id: currentTeacherId,
+        section: subject.section || null
+      });
 
-      if (countError) throw countError;
-
-      const newEnrollmentCount = (currentEnrollment ?? 0) + selectedStudents.size;
-      
-      // Check capacity
-      if (subject.capacity > 0 && newEnrollmentCount > subject.capacity) {
-        setErrorMessage(
-          `Cannot enroll ${selectedStudents.size} students. Subject capacity is ${subject.capacity} and ${currentEnrollment ?? 0} are already enrolled. ` +
-          `Only ${subject.capacity - (currentEnrollment ?? 0)} more students can be added.`
-        );
-        setEnrollmentLoading(false);
-        return;
+      if (res.error) {
+        throw new Error(res.error.message || res.error);
       }
 
-      // Prepare enrollment records
-      const enrollmentRecords = Array.from(selectedStudents).map((studentId) => ({
-        teacher_id: currentTeacherId,
-        student_id: studentId,
-        subject_id: subject.id,
-        section: subject.section,
-        status: "Active"
-      }));
-
-      // Insert enrollment records
-      const { error: insertError } = await adminApi.db("teacher_student_assignments", "insert", { payload: enrollmentRecords });
-
-      if (insertError) throw insertError;
+      const { enrolled_count, skipped_capacity, already_enrolled_count } = res.data;
 
       // Sync student profile section and grade level if missing in profiles
       if (subject.section || subject.grade_level) {
@@ -878,11 +868,6 @@ function SubjectManagement() {
           }
         }
       }
-
-      // Update the subject's enrolled count
-      const { error: updateError } = await adminApi.db("subjects", "update", { payload: { enrolled: newEnrollmentCount }, eq: { column: "id", value: subject.id } });
-
-      if (updateError) throw updateError;
 
       // Log activity
       logActivity({
