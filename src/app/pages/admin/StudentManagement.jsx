@@ -24,6 +24,33 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
+const formatSectionName = (secStr) => {
+  const clean = String(secStr || "").trim();
+  if (!clean || clean.toLowerCase() === "unassigned" || clean.toLowerCase() === "unassigned section" || clean.toLowerCase() === "unknown") return null;
+  return clean.split(/\s+/).map(w => {
+    if (/^[a-z]/.test(w)) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }
+    return w;
+  }).join(" ");
+};
+
+const normalizeYearLevel = (rawVal) => {
+  if (!rawVal) return null;
+  const str = String(rawVal).trim();
+  const numMatch = str.match(/\d+/);
+  return numMatch ? numMatch[0] : str;
+};
+
+const splitFullName = (fullNameStr) => {
+  const parts = String(fullNameStr || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: parts[0] };
+  const last_name = parts.pop();
+  const first_name = parts.join(" ");
+  return { first_name, last_name };
+};
+
 function StudentManagement() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
@@ -754,31 +781,43 @@ function StudentManagement() {
 
         const hasLrn = headerMap.lrn !== undefined;
         const hasNames = (headerMap.first_name !== undefined && headerMap.last_name !== undefined) || headerMap.full_name !== undefined;
+        const hasGradeLevel = headerMap.year_level !== undefined;
 
-        if (!hasLrn || !hasNames) {
+        if (!hasLrn || !hasNames || !hasGradeLevel) {
           const missing = [];
           if (!hasLrn) missing.push("LRN");
           if (!hasNames) missing.push("First Name & Last Name (or Full Name)");
+          if (!hasGradeLevel) missing.push("Grade Level (Year Level)");
 
-          toast.error(
-            `Missing required fields: ${missing.join(", ")}.\nAccepted header formats:\n• LRN, First Name, Last Name\n• LRN, Full Name`,
-            { duration: 7000 }
-          );
+          toast.error(`Invalid CSV format: Missing required column(s): ${missing.join(", ")}.`, { duration: 7000 });
           setIsImporting(false);
           return;
         }
 
-        const [{ data: existingMasterlist }, { data: existingGradeSections }] = await Promise.all([
+        const [{ data: existingMasterlist }, { data: existingProfiles }, { data: existingGradeSections }] = await Promise.all([
           db ? db.from("student_masterlist").select("lrn") : { data: [] },
+          adminApi.db("profiles", "select", { payload: "id, lrn, email", eq: { column: "role", value: "student" } }),
           adminApi.db("grade_sections", "select", { payload: "*" })
         ]);
-        const dbLrnSet = new Set((existingMasterlist || []).map(r => r.lrn));
+
+        const existingMasterlistData = existingMasterlist || [];
+        const existingProfilesData = existingProfiles || [];
+
+        const dbLrnSet = new Set([
+          ...existingMasterlistData.map(r => r.lrn),
+          ...existingProfilesData.map(p => p.lrn)
+        ].filter(Boolean));
+
+        const dbEmailSet = new Set([
+          ...existingProfilesData.map(p => p.email?.toLowerCase())
+        ].filter(Boolean));
 
         const existingGradeSectionKeySet = new Set(
           (existingGradeSections || []).map(gs => `${String(gs.grade_level).replace(/\D/g, "")}_${String(gs.section_name).trim().toLowerCase()}`)
         );
 
         const validRecords = [];
+        const alreadyExistingRecords = [];
         const invalidRecords = [];
         const duplicateRecords = [];
         const fileLrnSet = new Set();
@@ -794,8 +833,21 @@ function StudentManagement() {
             continue; // Skip blank rows
           }
 
-          const rawLrn = (cols[headerMap.lrn] || "").trim();
-          const cleanLrn = rawLrn.replace(/\D/g, "");
+          let rawLrn = (cols[headerMap.lrn] || "").trim();
+          let cleanLrn = rawLrn.replace(/\D/g, "");
+
+          // Check for scientific notation e.g. 1.23456789012E+11
+          if (/^\d+(\.\d+)?[eE]\+\d+$/.test(rawLrn)) {
+            try {
+              const num = Number(rawLrn);
+              if (!isNaN(num)) {
+                const fullStr = num.toLocaleString('fullwide', { useGrouping: false });
+                if (/^\d{12}$/.test(fullStr)) {
+                  cleanLrn = fullStr;
+                }
+              }
+            } catch (e) {}
+          }
 
           let firstName = "";
           let lastName = "";
@@ -820,12 +872,12 @@ function StudentManagement() {
           const fullNameDisplay = [firstName, lastName].filter(Boolean).join(" ") || "N/A";
 
           // LRN Validation (12-digit numeric)
-          if (!cleanLrn || cleanLrn.length !== 12 || rawLrn.replace(/\D/g, "") !== rawLrn) {
+          if (!cleanLrn || cleanLrn.length !== 12) {
             invalidRecords.push({
               rowNum,
               lrn: rawLrn || "Empty",
               name: fullNameDisplay,
-              reason: `Row ${rowNum}: Invalid LRN (${rawLrn || "empty"}). Expected a 12-digit numeric value.`
+              reason: `Row ${rowNum}: Invalid LRN (${rawLrn || "empty"}). Must contain exactly 12 numeric digits.`
             });
             continue;
           }
@@ -840,23 +892,43 @@ function StudentManagement() {
             continue;
           }
 
+          if (!yearLevel) {
+            invalidRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Missing or invalid Grade Level.`
+            });
+            continue;
+          }
+
           if (fileLrnSet.has(cleanLrn)) {
             duplicateRecords.push({
               rowNum,
               lrn: cleanLrn,
               name: fullNameDisplay,
-              reason: `Row ${rowNum}: Duplicate LRN in uploaded file (${cleanLrn}).`
+              reason: `Row ${rowNum}: Duplicate LRN in uploaded CSV file (${cleanLrn}).`
             });
             continue;
           }
           fileLrnSet.add(cleanLrn);
 
           if (dbLrnSet.has(cleanLrn)) {
-            duplicateRecords.push({
+            alreadyExistingRecords.push({
               rowNum,
               lrn: cleanLrn,
               name: fullNameDisplay,
-              reason: `Row ${rowNum}: LRN ${cleanLrn} already exists in database masterlist.`
+              reason: `Row ${rowNum}: Student with LRN ${cleanLrn} already exists in database.`
+            });
+            continue;
+          }
+
+          if (email && dbEmailSet.has(email.toLowerCase())) {
+            alreadyExistingRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Email ${email} already exists in database.`
             });
             continue;
           }
@@ -890,10 +962,10 @@ function StudentManagement() {
           }
         }
 
-        const totalRows = validRecords.length + invalidRecords.length + duplicateRecords.length;
+        const totalRows = validRecords.length + alreadyExistingRecords.length + invalidRecords.length + duplicateRecords.length;
 
         if (totalRows === 0) {
-          toast.error("No valid data rows found in CSV file.");
+          toast.error("No data rows found in CSV file.");
           setIsImporting(false);
           return;
         }
@@ -901,13 +973,14 @@ function StudentManagement() {
         setImportPreviewSummary({
           total: totalRows,
           valid: validRecords,
+          alreadyExisting: alreadyExistingRecords,
           invalid: invalidRecords,
           duplicates: duplicateRecords,
           sectionBreakdown,
           newGradeSectionsToCreate,
           hasSectionColumn: headerMap.section !== undefined
         });
-        setPreviewTab(validRecords.length > 0 ? "valid" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"));
+        setPreviewTab(validRecords.length > 0 ? "valid" : (alreadyExistingRecords.length > 0 ? "alreadyExisting" : (duplicateRecords.length > 0 ? "duplicates" : "invalid")));
         setShowImportPreviewModal(true);
       } catch (err) {
         toast.error(err.message || "Failed to process CSV file.");
@@ -973,6 +1046,17 @@ function StudentManagement() {
 
     const currentList = activeTab === "Profiles" ? students : masterlist;
     const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+
+    if (activeTab === "Masterlist") {
+      const pendingAccountRows = selectedRows.filter(s => !s.account_created);
+      if (pendingAccountRows.length > 0) {
+        toast.warning(
+          `Section assignment is only available AFTER student accounts have been generated (${pendingAccountRows.length} selected student(s) pending account creation). Please click 'Generate Accounts' first.`,
+          { duration: 6000 }
+        );
+        return;
+      }
+    }
 
     const uniqueGradeLevels = Array.from(new Set(selectedRows.map(s => s.year_level).filter(Boolean)));
 
@@ -1760,40 +1844,49 @@ function StudentManagement() {
                 </>
               )}
 
-              {activeTab === "Masterlist" && (
-                <>
-                  {selectedMasterlistIds.size > 0 && (
-                    <>
+              {activeTab === "Masterlist" && (() => {
+                const selectedRows = masterlist.filter(m => selectedMasterlistIds.has(m.id));
+                const newCount = selectedRows.filter(m => !m.account_created).length;
+                const createdCount = selectedRows.filter(m => m.account_created).length;
+
+                return (
+                  <>
+                    {selectedMasterlistIds.size > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleOpenBulkAssignSectionModal}
+                          disabled={createdCount === 0}
+                          title={createdCount === 0 ? "Account generation required before section assignment" : ""}
+                          className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          <BookOpen className="w-4 h-4" />
+                          Assign Section ({createdCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleGenerateAccounts}
+                          disabled={isGenerating || newCount === 0}
+                          className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                          {isGenerating ? "Generating..." : `Generate Accounts (${newCount})`}
+                        </button>
+                      </>
+                    )}
+                    {masterlist.length > 0 && (
                       <button
-                        type="button"
-                        onClick={handleOpenBulkAssignSectionModal}
-                        className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center"
+                        onClick={() => setShowClearMasterlistConfirm(true)}
+                        disabled={isClearingMasterlist}
+                        className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                       >
-                        <BookOpen className="w-4 h-4" />
-                        Assign Section ({selectedMasterlistIds.size})
+                        {isClearingMasterlist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        {isClearingMasterlist ? "Clearing..." : "Clear Imported Masterlist"}
                       </button>
-                      <button
-                        onClick={handleGenerateAccounts}
-                        disabled={isGenerating}
-                        className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
-                      >
-                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                        {isGenerating ? "Generating..." : `Generate Accounts (${selectedMasterlistIds.size})`}
-                      </button>
-                    </>
-                  )}
-                  {masterlist.length > 0 && (
-                    <button
-                      onClick={() => setShowClearMasterlistConfirm(true)}
-                      disabled={isClearingMasterlist}
-                      className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
-                    >
-                      {isClearingMasterlist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      {isClearingMasterlist ? "Clearing..." : "Clear Imported Masterlist"}
-                    </button>
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1807,41 +1900,61 @@ function StudentManagement() {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleOpenBulkAssignSectionModal}
-                className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5"
-              >
-                <BookOpen className="w-4 h-4 text-indigo-600" />
-                Assign Section
-              </button>
               {activeTab === "Profiles" ? (
-                <button
-                  type="button"
-                  onClick={() => setShowBulkDeleteConfirm(true)}
-                  className="px-3.5 py-2 bg-red-500/80 hover:bg-red-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleGenerateAccounts}
-                  disabled={isGenerating}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Generate Accounts
-                </button>
-              )}
+                <>
+                  <button
+                    type="button"
+                    onClick={handleOpenBulkAssignSectionModal}
+                    className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <BookOpen className="w-4 h-4 text-indigo-600" />
+                    Assign Section
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    className="px-3.5 py-2 bg-red-500/80 hover:bg-red-600 text-white font-medium rounded-lg text-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </>
+              ) : (() => {
+                const selectedRows = masterlist.filter(m => selectedMasterlistIds.has(m.id));
+                const newCount = selectedRows.filter(m => !m.account_created).length;
+                const createdCount = selectedRows.filter(m => m.account_created).length;
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleOpenBulkAssignSectionModal}
+                      disabled={createdCount === 0}
+                      title={createdCount === 0 ? "Account generation required before section assignment" : ""}
+                      className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <BookOpen className="w-4 h-4 text-indigo-600" />
+                      Assign Section {createdCount > 0 ? `(${createdCount})` : ""}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGenerateAccounts}
+                      disabled={isGenerating || newCount === 0}
+                      className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg text-sm transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Generate Accounts {newCount > 0 ? `(${newCount})` : ""}
+                    </button>
+                  </>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => {
                   if (activeTab === "Profiles") setSelectedStudentIds(new Set());
                   else setSelectedMasterlistIds(new Set());
                 }}
-                className="px-2.5 py-2 text-white/80 hover:text-white text-sm"
+                className="px-2.5 py-2 text-white/80 hover:text-white text-sm cursor-pointer"
               >
                 Deselect
               </button>
@@ -1989,22 +2102,22 @@ function StudentManagement() {
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
                       <button 
                         onClick={() => {
-                          if (selectedMasterlistIds.size === filteredMasterlist.filter(m => !m.account_created).length) {
+                          if (selectedMasterlistIds.size === filteredMasterlist.length) {
                             setSelectedMasterlistIds(new Set());
                           } else {
-                            setSelectedMasterlistIds(new Set(filteredMasterlist.filter(m => !m.account_created).map(m => m.id)));
+                            setSelectedMasterlistIds(new Set(filteredMasterlist.map(m => m.id)));
                           }
                         }}
                         className="text-gray-500 hover:text-blue-600 transition-colors"
                       >
-                        {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.filter(m => !m.account_created).length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
+                        {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
                       </button>
                     </th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">LRN</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
                     <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Section</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Account Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2045,16 +2158,15 @@ function StudentManagement() {
                             <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedMasterlistIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
                               <td className="px-6 py-5 align-middle">
                                 <button
-                                  disabled={student.account_created}
                                   onClick={() => {
                                     const newSet = new Set(selectedMasterlistIds);
                                     if (newSet.has(student.id)) newSet.delete(student.id);
                                     else newSet.add(student.id);
                                     setSelectedMasterlistIds(newSet);
                                   }}
-                                  className="text-gray-500 hover:text-blue-600 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors"
+                                  className="text-gray-500 hover:text-blue-600 transition-colors"
                                 >
-                                  {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
+                                  {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
                                 </button>
                               </td>
                               <td className="px-6 py-5 align-middle">
@@ -2067,24 +2179,24 @@ function StudentManagement() {
                                 <span className="truncate">{student.year_level || "-"}</span>
                               </td>
                               <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                <span className="truncate">{student.section || "-"}</span>
+                                <span className="truncate">{student.section || "Unassigned"}</span>
                               </td>
                               <td className="px-6 py-5 text-right align-middle">
                                 <div className="flex items-center justify-end gap-2">
                                   <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
                                     student.account_created
-                                      ? "bg-green-50 text-green-600 border-green-200"
-                                      : "bg-gray-50 text-gray-500 border-gray-200"
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
                                   }`}>
-                                    {student.account_created ? "Created" : "Pending"}
+                                    {student.account_created ? "Account Generated" : "Pending Account"}
                                   </span>
                                   {!student.account_created && (
                                     <button
                                       onClick={() => handleGenerateAccounts([student.id])}
                                       disabled={isGenerating}
-                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm"
+                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
                                     >
-                                      Enroll
+                                      Generate
                                     </button>
                                   )}
                                 </div>
@@ -2492,22 +2604,26 @@ function StudentManagement() {
             </div>
 
             <div className="p-6 space-y-6 overflow-y-auto flex-1">
-              <div className="grid grid-cols-4 gap-4">
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Total Rows</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{importPreviewSummary.total}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Total Rows</p>
+                  <p className="text-xl font-bold text-gray-900 mt-0.5">{importPreviewSummary.total}</p>
                 </div>
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-                  <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wider">Valid Rows</p>
-                  <p className="text-2xl font-bold text-emerald-700 mt-1">{importPreviewSummary.valid.length}</p>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Valid (New)</p>
+                  <p className="text-xl font-bold text-emerald-700 mt-0.5">{importPreviewSummary.valid.length}</p>
                 </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-                  <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider">Duplicates</p>
-                  <p className="text-2xl font-bold text-amber-700 mt-1">{importPreviewSummary.duplicates.length}</p>
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-purple-600 font-semibold uppercase tracking-wider">Already Exists</p>
+                  <p className="text-xl font-bold text-purple-700 mt-0.5">{importPreviewSummary.alreadyExisting?.length || 0}</p>
                 </div>
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wider">Invalid Rows</p>
-                  <p className="text-2xl font-bold text-red-700 mt-1">{importPreviewSummary.invalid.length}</p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wider">CSV Duplicates</p>
+                  <p className="text-xl font-bold text-amber-700 mt-0.5">{importPreviewSummary.duplicates.length}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center col-span-2 sm:col-span-1">
+                  <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wider">Invalid Rows</p>
+                  <p className="text-xl font-bold text-red-700 mt-0.5">{importPreviewSummary.invalid.length}</p>
                 </div>
               </div>
 
@@ -2548,21 +2664,32 @@ function StudentManagement() {
                 </div>
               )}
 
-              <div className="flex gap-2 border-b border-gray-200">
+              <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setPreviewTab("valid")}
-                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
                     previewTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
                   }`}
                 >
                   Valid Records ({importPreviewSummary.valid.length})
                 </button>
+                {importPreviewSummary.alreadyExisting?.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("alreadyExisting")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                      previewTab === "alreadyExisting" ? "border-purple-600 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Already Existing ({importPreviewSummary.alreadyExisting.length})
+                  </button>
+                )}
                 {importPreviewSummary.duplicates.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setPreviewTab("duplicates")}
-                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
                       previewTab === "duplicates" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
                     }`}
                   >
@@ -2573,7 +2700,7 @@ function StudentManagement() {
                   <button
                     type="button"
                     onClick={() => setPreviewTab("invalid")}
-                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
                       previewTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
                     }`}
                   >
@@ -2585,7 +2712,7 @@ function StudentManagement() {
               {previewTab === "valid" && (
                 <div>
                   {importPreviewSummary.valid.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic py-4 text-center">No valid records to import.</p>
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No valid new records to import.</p>
                   ) : (
                     <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
                       <table className="w-full text-left text-sm text-gray-600">
@@ -2612,6 +2739,19 @@ function StudentManagement() {
                       </table>
                     </div>
                   )}
+                </div>
+              )}
+
+              {previewTab === "alreadyExisting" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.alreadyExisting?.map((ae, idx) => (
+                    <div key={idx} className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-900 flex items-start gap-2">
+                      <Users className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{ae.name} (LRN: {ae.lrn}):</span> {ae.reason}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
