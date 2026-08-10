@@ -72,5 +72,12 @@ export const adminApi = {
       method: "POST",
       body: JSON.stringify({ table, action, ...options }),
     });
+  },
+
+  async batchGenerateAccounts(studentsBatch) {
+    return this.fetchWithToken("/api/admin/batch-accounts", {
+      method: "POST",
+      body: JSON.stringify({ students: studentsBatch }),
+    });
   }
 };

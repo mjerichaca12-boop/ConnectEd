@@ -87,10 +87,30 @@ function StudentManagement() {
   });
   const [previewTab, setPreviewTab] = useState("valid");
   const [isSavingImport, setIsSavingImport] = useState(false);
+
+  // Batch account generation progress & results states
+  const [showGenerationProgressModal, setShowGenerationProgressModal] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState({
+    total: 0,
+    current: 0,
+    percentage: 0,
+    currentBatch: 0,
+    totalBatches: 0
+  });
+
+  const [showGenerationResultsModal, setShowGenerationResultsModal] = useState(false);
+  const [generationResultsSummary, setGenerationResultsSummary] = useState({
+    total: 0,
+    success: [],
+    alreadyExists: [],
+    failed: []
+  });
+  const [resultsTab, setResultsTab] = useState("success");
+
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showResetPasswordModal) {
+    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -98,7 +118,7 @@ function StudentManagement() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showResetPasswordModal]);
+  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal]);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -192,24 +212,23 @@ function StudentManagement() {
     const fetchedProfiles = profilesRes.data ?? [];
     setStudents(fetchedProfiles);
 
-    // Auto-backfill missing usernames for existing student profiles
+    // Auto-backfill missing usernames for existing student profiles efficiently
     const missingUsernameStudents = fetchedProfiles.filter(s => !s.username);
     if (missingUsernameStudents.length > 0) {
       (async () => {
+        const usedUsernames = new Set(fetchedProfiles.map(p => p.username).filter(Boolean));
         let updatedAny = false;
         for (const s of missingUsernameStudents) {
           const firstInitial = (s.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
           const lastNameLow = (s.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
-          let baseUsername = (firstInitial + lastNameLow) || "student";
+          const baseUsername = (firstInitial + lastNameLow) || "student";
           let genUsername = `${baseUsername}01`;
           let suffix = 1;
-
-          while (true) {
-            const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: genUsername }, maybeSingle: true });
-            if (!existing) break;
+          while (usedUsernames.has(genUsername)) {
             suffix++;
             genUsername = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
           }
+          usedUsernames.add(genUsername);
 
           const { error: updErr } = await adminApi.db("profiles", "update", {
             payload: { username: genUsername },
@@ -220,7 +239,7 @@ function StudentManagement() {
 
         if (updatedAny) {
           const { data: updatedProfiles } = await adminApi.db("profiles", "select", {
-            payload: "*",
+            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
             eq: { column: "role", value: "student" },
             order: { column: "created_at", options: { ascending: false } }
           });
@@ -838,124 +857,89 @@ function StudentManagement() {
     if (selected.length === 0) return;
 
     setIsGenerating(true);
-    let successCount = 0;
-    let errorCount = 0;
-    const processedLRNs = new Set(); // Added idempotency guard
+    setShowGenerationProgressModal(true);
+    setGenerationProgress({
+      total: selected.length,
+      current: 0,
+      percentage: 0,
+      currentBatch: 0,
+      totalBatches: 0
+    });
 
-    for (const student of selected) {
+    const BATCH_SIZE = 50; // Optimized batch size for Vercel & Supabase
+    const batches = [];
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      batches.push(selected.slice(i, i + BATCH_SIZE));
+    }
+
+    setGenerationProgress(prev => ({
+      ...prev,
+      totalBatches: batches.length
+    }));
+
+    const allResults = {
+      total: selected.length,
+      success: [],
+      alreadyExists: [],
+      failed: []
+    };
+
+    let processedCount = 0;
+
+    for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+      const batch = batches[bIndex];
+      setGenerationProgress(prev => ({
+        ...prev,
+        currentBatch: bIndex + 1
+      }));
+
       try {
-        const normalizedLRN = (student.lrn || "").trim();
-        if (!normalizedLRN) {
-           throw new Error("Student has an empty LRN.");
+        const { data, error } = await adminApi.batchGenerateAccounts(batch);
+        if (error) throw error;
+
+        if (data?.results && Array.isArray(data.results)) {
+          data.results.forEach(res => {
+            if (res.status === "success") {
+              allResults.success.push(res);
+            } else if (res.status === "already_exists") {
+              allResults.alreadyExists.push(res);
+            } else {
+              allResults.failed.push(res);
+            }
+          });
         }
-
-        if (processedLRNs.has(normalizedLRN)) {
-           continue; // skip duplicate LRN in the same batch immediately
-        }
-        processedLRNs.add(normalizedLRN);
-
-        const firstNameLow = (student.first_name || "").trim().toLowerCase().replace(/\s+/g, "");
-        const middleNameLow = (student.middle_name || "").trim().toLowerCase().replace(/\s+/g, "");
-        const lastNameLow = (student.last_name || "").trim().toLowerCase().replace(/\s+/g, "");
-
-        const tempPassword = `${firstNameLow}${middleNameLow}${lastNameLow}`;
-        // Generate deterministic, unique email based on normalized LRN
-        const email = `${normalizedLRN.toLowerCase()}@students.connected`;
-
-        let userId = null;
-
-        // 1. Pre-check if auth user already exists to prevent duplicate creation spam
-        const { data: listData } = await adminApi.listUsers();
-        const existingUser = listData?.users?.find(u => u.email === email);
-
-        if (existingUser) {
-           userId = existingUser.id;
-        } else {
-           // 2. Create auth user if not found
-           const { data: authData, error: authError } = await adminApi.createUser({
-             email,
-             password: tempPassword,
-             email_confirm: true
-           });
-
-           if (authError) {
-              // 3. Graceful fallback if 422 email_exists happens due to race condition
-              if (authError.message?.includes("already exists") || authError.status === 422) {
-                 const { data: retryList } = await adminApi.listUsers();
-                 const retryUser = retryList?.users?.find(u => u.email === email);
-                 if (!retryUser) throw new Error("email_exists 422 returned, but user not found in fallback query.");
-                 userId = retryUser.id;
-              } else {
-                 throw authError;
-              }
-           } else {
-              userId = authData?.user?.id;
-           }
-        }
-
-        if (!userId) {
-           throw new Error("User flow succeeded but no userId was extracted.");
-        }
-
-        // Generate unique username
-        const firstInitial = (student.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
-        const lastNameLowClean = (student.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
-        let baseUsername = (firstInitial + lastNameLowClean) || "student";
-        let username = `${baseUsername}01`;
-        let suffix = 1;
-
-        while (true) {
-          const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: username }, maybeSingle: true });
-          if (!existing) break;
-          suffix++;
-          username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
-        }
-
-        // 4. Upsert Profile using the resolved user ID
-        const { error: profileError } = await adminApi.db("profiles", "upsert", {
-          payload: {
-            id: userId,
-            role: "student",
-            username: username,
-            first_name: student.first_name,
-            last_name: student.last_name,
-            middle_name: student.middle_name,
-            lrn: normalizedLRN,
-            year_level: student.year_level,
-            section: student.section,
-            email: email,
-            status: "Active",
-            must_change_password: true,
-            is_verified: false
-          },
-          onConflict: "id"
-        });
-
-        if (profileError) {
-          throw profileError;
-        }
-
-        // 5. Atomic Masterlist Update
-        const { error: masterlistError } = await adminApi.db("student_masterlist", "update", {
-          payload: { account_created: true },
-          eq: { column: "id", value: student.id }
-        });
-
-        if (masterlistError) throw masterlistError;
-
-        successCount++;
       } catch (err) {
-        // Structured error logging as requested
-        console.error(`Failed to generate account for ${student.lrn}:`, err.message || err);
-        errorCount++;
+        console.error(`[handleGenerateAccounts] Batch ${bIndex + 1} error:`, err);
+        batch.forEach(student => {
+          allResults.failed.push({
+            id: student.id,
+            lrn: student.lrn,
+            name: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "N/A",
+            status: "failed",
+            reason: err.message || "Batch network error"
+          });
+        });
       }
+
+      processedCount += batch.length;
+      const pct = Math.round((processedCount / selected.length) * 100);
+      setGenerationProgress(prev => ({
+        ...prev,
+        current: processedCount,
+        percentage: pct
+      }));
+
+      // Short delay for UI responsiveness
+      await new Promise(r => setTimeout(r, 40));
     }
 
     setIsGenerating(false);
+    setShowGenerationProgressModal(false);
     setSelectedMasterlistIds(new Set());
-    
-    if (successCount > 0) toast.success(`Successfully generated ${successCount} accounts.`);
-    if (errorCount > 0) toast.error(`Failed to generate ${errorCount} accounts.`);
+
+    setGenerationResultsSummary(allResults);
+    setResultsTab(allResults.success.length > 0 ? "success" : (allResults.alreadyExists.length > 0 ? "alreadyExists" : "failed"));
+    setShowGenerationResultsModal(true);
 
     await refreshStudents();
   };
@@ -2368,6 +2352,192 @@ function StudentManagement() {
                   {isSavingImport ? "Importing..." : `Confirm Import (${importPreviewSummary.valid.length})`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Modal during Account Generation */}
+      {showGenerationProgressModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-6 text-center">
+            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
+              <UserPlus className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Generating Student Accounts...</h3>
+              <p className="text-sm text-gray-500 mt-1">Please wait while accounts are created in optimized batches.</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm font-semibold text-gray-700">
+                <span>Batch {generationProgress.currentBatch} of {generationProgress.totalBatches}</span>
+                <span className="text-blue-600 font-bold">{generationProgress.percentage}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200 shadow-inner">
+                <div 
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300 rounded-full" 
+                  style={{ width: `${generationProgress.percentage}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 pt-1">
+                {generationProgress.current} / {generationProgress.total} accounts processed
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Generation Results Summary Modal */}
+      {showGenerationResultsModal && generationResultsSummary && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-green-100 rounded-xl text-green-600">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Account Generation Summary</h3>
+                  <p className="text-sm text-gray-500">Bulk student account creation results</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGenerationResultsModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Total Processed</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{generationResultsSummary.total}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wider">Enrolled</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{generationResultsSummary.success.length}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider">Already Existed</p>
+                  <p className="text-2xl font-bold text-amber-700 mt-1">{generationResultsSummary.alreadyExists.length}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wider">Failed / Errors</p>
+                  <p className="text-2xl font-bold text-red-700 mt-1">{generationResultsSummary.failed.length}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-b border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setResultsTab("success")}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    resultsTab === "success" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Newly Enrolled ({generationResultsSummary.success.length})
+                </button>
+                {generationResultsSummary.alreadyExists.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setResultsTab("alreadyExists")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      resultsTab === "alreadyExists" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Already Existed ({generationResultsSummary.alreadyExists.length})
+                  </button>
+                )}
+                {generationResultsSummary.failed.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setResultsTab("failed")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      resultsTab === "failed" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Failed ({generationResultsSummary.failed.length})
+                  </button>
+                )}
+              </div>
+
+              {resultsTab === "success" && (
+                <div>
+                  {generationResultsSummary.success.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No new accounts created in this run.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                      <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3">LRN</th>
+                            <th className="px-4 py-3">Name</th>
+                            <th className="px-4 py-3">Generated Username</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {generationResultsSummary.success.map((r, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                              <td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td>
+                              <td className="px-4 py-2.5 font-mono text-blue-600 font-semibold">{r.username}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {resultsTab === "alreadyExists" && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-sm text-gray-600">
+                    <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">LRN</th>
+                        <th className="px-4 py-3">Name</th>
+                        <th className="px-4 py-3">Username</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {generationResultsSummary.alreadyExists.map((r, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/50">
+                          <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                          <td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-gray-600">{r.username || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {resultsTab === "failed" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {generationResultsSummary.failed.map((f, idx) => (
+                    <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{f.name} (LRN: {f.lrn}):</span> {f.reason}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowGenerationResultsModal(false)}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
