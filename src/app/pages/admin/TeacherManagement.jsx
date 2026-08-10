@@ -264,31 +264,39 @@ function TeacherManagement() {
     const teacherGrade = teacher.grade_level || teacher.year_level || "";
     const teacherSubjects = normalizeSubjects(teacher.subjects);
 
-    const classEntries = assignedClasses.map((className) => ({
-      classLabel: className,
-      gradeLevel: teacherGrade
-    }));
-
     const subjectEntries = teacherSubjects.map((subjectId) => {
       const subject = availableSubjects.find((item) => String(item.id) === String(subjectId) || String(item.code || "").toLowerCase() === String(subjectId).toLowerCase());
+      const subjGrade = subject?.grade_level || teacherGrade;
+      const subjSection = subject?.section;
+      const fullLabel = subjGrade ? (subjSection ? `${subjGrade} - ${subjSection}` : subjGrade) : (subjSection || teacherGrade);
       return {
         subjectLabel: getSubjectLabel(subjectId),
-        gradeLevel: subject?.grade_level || teacherGrade
+        gradeLevel: fullLabel
       };
     });
 
-    if (classEntries.length === 0 && subjectEntries.length === 0 && teacherGrade) {
-      return [{ classLabel: "", gradeLevel: teacherGrade, subjectLabel: "" }];
+    const classEntries = assignedClasses.map((className) => ({
+      classLabel: className,
+      gradeLevel: className.toLowerCase().includes("grade") ? className : (teacherGrade ? `${teacherGrade} - ${className}` : className)
+    }));
+
+    const allGradeLevels = [...new Set([
+      ...subjectEntries.map(s => s.gradeLevel),
+      ...classEntries.map(c => c.gradeLevel)
+    ].filter(Boolean))];
+
+    if (allGradeLevels.length === 0 && teacherGrade) {
+      allGradeLevels.push(teacherGrade);
     }
 
-    const maxLen = Math.max(classEntries.length, subjectEntries.length, 1);
+    const maxLen = Math.max(classEntries.length, subjectEntries.length, allGradeLevels.length, 1);
     const result = [];
 
     for (let i = 0; i < maxLen; i += 1) {
       result.push({
-        classLabel: classEntries[i]?.classLabel || "",
+        classLabel: allGradeLevels[i] || classEntries[i]?.classLabel || teacherGrade || "",
         subjectLabel: subjectEntries[i]?.subjectLabel || "",
-        gradeLevel: classEntries[i]?.gradeLevel || subjectEntries[i]?.gradeLevel || teacherGrade
+        gradeLevel: allGradeLevels[i] || subjectEntries[i]?.gradeLevel || classEntries[i]?.gradeLevel || teacherGrade
       });
     }
 
