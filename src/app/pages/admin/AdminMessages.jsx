@@ -84,28 +84,45 @@ export function AdminMessages() {
     // Load all teachers and students from Supabase
     const loadAllUsers = async () => {
       try {
-        const { data, error } = await db
+        const { data: staffData } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role")
-          .order("role", { ascending: true })
+          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+          .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"])
           .limit(100);
-        if (!error && data) {
-          const users = data
-            .filter((row) => row.role && ["teacher", "student", "admin"].includes(row.role))
-            .map((row) => ({
+
+        const { data: studentData } = await db
+          .from("profiles")
+          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+          .in("role", ["student", "Student", "STUDENT"])
+          .limit(200);
+
+        const combined = [...(staffData || []), ...(studentData || [])];
+
+        const users = combined
+          .filter((row) => {
+            if (!row || !row.id) return false;
+            const statusStr = String(row.status || "").trim().toLowerCase();
+            if (statusStr === "disabled" || statusStr === "inactive") return false;
+            const roleStr = String(row.role || "").trim().toLowerCase();
+            return ["student", "teacher", "admin"].includes(roleStr);
+          })
+          .map((row) => {
+            const fullName = [row.first_name, row.middle_name, row.last_name].map(p => String(p || "").trim()).filter(Boolean).join(" ");
+            const fallback = String(row.name || row.full_name || row.display_name || "").trim();
+            const roleStr = String(row.role || "student").trim().toLowerCase();
+            const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
+            return {
               id: String(row.id),
-              name: [row.first_name, row.middle_name, row.last_name].filter(Boolean).join(" ") || "User",
+              name: fullName || fallback || defaultName,
               email: String(row.email || ""),
-              role: String(row.role || "student"),
-            }));
-          setAllTeachers(users);
-          console.log("[AdminMessages] Loaded users:", users.length, users);
-        } else {
-          console.error("[AdminMessages] Error loading users:", error);
-        }
+              role: roleStr,
+            };
+          });
+
+        setAllTeachers(users);
+        console.log("[AdminMessages] Loaded users:", users.length, users);
       } catch (err) {
         console.error("[AdminMessages] Failed to load users:", err);
-        // Fallback to localStorage cache
         const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
         setAllTeachers(cached);
       }

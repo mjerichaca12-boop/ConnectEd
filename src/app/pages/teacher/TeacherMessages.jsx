@@ -382,24 +382,25 @@ function TeacherMessages() {
 
     return true;
   }, []);
-
   const resolveTeacherId = useCallback(async (email) => {
     try {
-      // Try with role=teacher first, prioritize verified accounts, then fall back
+      const cleanEmail = String(email || "").trim();
+      if (!cleanEmail) return null;
+
       let { data, error } = await supabase
         .from("profiles")
         .select("id")
-        .eq("email", email)
+        .eq("email", cleanEmail)
         .eq("role", "teacher")
         .order("is_verified", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (!error && data) return String(data.id);
-      // Fallback: match by email without role filter, still prioritize verified
+
       ({ data, error } = await supabase
         .from("profiles")
         .select("id")
-        .ilike("email", email)
+        .ilike("email", cleanEmail)
         .order("is_verified", { ascending: false })
         .limit(1)
         .maybeSingle());
@@ -413,63 +414,110 @@ function TeacherMessages() {
     try {
       const { data, error } = await db
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role")
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role")
         .in("id", ids);
       if (error || !data) return [];
       return data.map((row) => ({
         id: String(row.id),
-        name: buildStudentName(row),
+        name: buildProfileName(row),
         email: String(row.email || ""),
-        role: String(row.role || "student"),
+        role: String(row.role || "student").trim().toLowerCase(),
       }));
     } catch { return []; }
   }, []);
 
   const fetchAllRecipients = useCallback(async (currentTeacherId) => {
     try {
-      // Fetch both teachers and students (everyone except current user)
-      const { data, error } = await supabase
+      const cleanCurrentId = String(currentTeacherId || "").trim().toLowerCase();
+
+      let staffQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role")
-        .neq("id", currentTeacherId)
-        .order("role", { ascending: true })
-        .limit(80);
-      if (error || !data) return [];
-      return data
-        .filter((row) => row.role && ["student", "teacher", "admin"].includes(row.role))
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+        .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"]);
+
+      if (currentTeacherId && isUuid(currentTeacherId)) {
+        staffQuery = staffQuery.neq("id", currentTeacherId);
+      }
+
+      const { data: staffData } = await staffQuery.order("first_name", { ascending: true }).limit(100);
+
+      let studentQuery = supabase
+        .from("profiles")
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+        .in("role", ["student", "Student", "STUDENT"]);
+
+      if (currentTeacherId && isUuid(currentTeacherId)) {
+        studentQuery = studentQuery.neq("id", currentTeacherId);
+      }
+
+      const { data: studentData } = await studentQuery.order("first_name", { ascending: true }).limit(200);
+
+      const combined = [...(staffData || []), ...(studentData || [])];
+
+      return combined
+        .filter((row) => {
+          if (!row || !row.id) return false;
+          if (cleanCurrentId && String(row.id).toLowerCase() === cleanCurrentId) return false;
+          const statusStr = String(row.status || "").trim().toLowerCase();
+          if (statusStr === "disabled" || statusStr === "inactive") return false;
+          const roleStr = String(row.role || "").trim().toLowerCase();
+          return ["student", "teacher", "admin"].includes(roleStr);
+        })
         .map((row) => ({
           id: String(row.id),
-          name: buildStudentName(row),
+          name: buildProfileName(row),
           email: String(row.email || ""),
-          role: String(row.role || "student"),
+          role: String(row.role || "student").trim().toLowerCase(),
           classCode: "",
           section: "",
         }));
-    } catch { return []; }
+    } catch (err) {
+      console.error("[TeacherMessages] fetchAllRecipients error:", err);
+      return [];
+    }
   }, []);
 
   const fetchRecipientsByQuery = useCallback(async (currentTeacherId, query) => {
     try {
-      // Search all roles: teachers, students, admins
-      const { data, error } = await supabase
+      const q = String(query || "").trim();
+      if (!q) return fetchAllRecipients(currentTeacherId);
+
+      const cleanCurrentId = String(currentTeacherId || "").trim().toLowerCase();
+
+      let req = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role")
-        .neq("id", currentTeacherId)
-        .or(`email.ilike.%${query}%,first_name.ilike.%${query}%,last_name.ilike.%${query}%`)
-        .limit(30);
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+        .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,name.ilike.%${q}%,full_name.ilike.%${q}%`);
+
+      if (currentTeacherId && isUuid(currentTeacherId)) {
+        req = req.neq("id", currentTeacherId);
+      }
+
+      const { data, error } = await req.limit(100);
       if (error || !data) return [];
+
       return data
-        .filter((row) => row.role && ["student", "teacher", "admin"].includes(row.role))
+        .filter((row) => {
+          if (!row || !row.id) return false;
+          if (cleanCurrentId && String(row.id).toLowerCase() === cleanCurrentId) return false;
+          const statusStr = String(row.status || "").trim().toLowerCase();
+          if (statusStr === "disabled" || statusStr === "inactive") return false;
+          const roleStr = String(row.role || "").trim().toLowerCase();
+          return ["student", "teacher", "admin"].includes(roleStr);
+        })
         .map((row) => ({
           id: String(row.id),
-          name: buildStudentName(row),
+          name: buildProfileName(row),
           email: String(row.email || ""),
-          role: String(row.role || "student"),
+          role: String(row.role || "student").trim().toLowerCase(),
           classCode: "",
           section: "",
         }));
-    } catch { return []; }
-  }, []);
+    } catch (err) {
+      console.error("[TeacherMessages] fetchRecipientsByQuery error:", err);
+      return [];
+    }
+  }, [fetchAllRecipients]);
 
   const loadConversations = useCallback(async (currentTeacherId, teacherDisplayName) => {
     if (conversationLoadInFlightRef.current) {
