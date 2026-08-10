@@ -73,10 +73,44 @@ export default async function handler(req, res) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
+    let subject = null;
+    let subjectError = null;
+
+    const rawSubjectId = String(subject_id || "").trim();
+    if (/^[0-9a-fA-F-]{36}$/.test(rawSubjectId)) {
+      const { data, error } = await supabaseAdmin
+        .from("subjects")
+        .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+        .eq("id", rawSubjectId)
+        .maybeSingle();
+      subject = data;
+      subjectError = error;
+    }
+
+    if (!subject) {
+      const { data, error } = await supabaseAdmin
+        .from("subjects")
+        .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+        .ilike("code", rawSubjectId)
+        .maybeSingle();
+      if (data) {
+        subject = data;
+        subjectError = null;
+      } else if (error) {
+        subjectError = error;
+      }
+    }
+
+    if (subjectError || !subject) {
+      return res.status(404).json({ error: "Class or subject not found." });
+    }
+
+    const resolvedSubjectId = subject.id;
+
     // 1. Try atomic PostgreSQL RPC function if available
     try {
       const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("enroll_students_atomic", {
-        p_subject_id: subject_id,
+        p_subject_id: resolvedSubjectId,
         p_student_ids: student_ids,
         p_teacher_id: teacher_id || null,
         p_section: section || null
@@ -90,17 +124,6 @@ export default async function handler(req, res) {
       }
     } catch (e) {
       // Fall through to server-side transaction logic
-    }
-
-    // 2. Server-side validation logic using admin service key
-    const { data: subject, error: subjectError } = await supabaseAdmin
-      .from("subjects")
-      .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
-      .eq("id", subject_id)
-      .maybeSingle();
-
-    if (subjectError || !subject) {
-      return res.status(404).json({ error: "Class or subject not found." });
     }
 
     const normalizeGradeLevel = (val) => {
@@ -152,7 +175,7 @@ export default async function handler(req, res) {
     const { data: activeAssignments, error: countError } = await supabaseAdmin
       .from("teacher_student_assignments")
       .select("student_id")
-      .eq("subject_id", subject_id)
+      .eq("subject_id", resolvedSubjectId)
       .eq("status", "Active");
 
     if (countError) throw countError;
@@ -194,7 +217,7 @@ export default async function handler(req, res) {
     const payload = newStudentIdsToEnroll.map(sid => ({
       teacher_id: teacher_id || null,
       student_id: sid,
-      subject_id: subject_id,
+      subject_id: resolvedSubjectId,
       section: section || subject.section || null,
       status: "Active"
     }));
@@ -214,7 +237,7 @@ export default async function handler(req, res) {
     const { count: finalCount } = await supabaseAdmin
       .from("teacher_student_assignments")
       .select("id", { count: "exact", head: true })
-      .eq("subject_id", subject_id)
+      .eq("subject_id", resolvedSubjectId)
       .eq("status", "Active");
 
     const newEnrolledTotal = finalCount ?? (currentEnrolled + payload.length);
@@ -222,7 +245,7 @@ export default async function handler(req, res) {
     await supabaseAdmin
       .from("subjects")
       .update({ enrolled: newEnrolledTotal })
-      .eq("id", subject_id);
+      .eq("id", resolvedSubjectId);
 
     return res.status(200).json({
       success: true,
