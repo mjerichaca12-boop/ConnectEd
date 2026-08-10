@@ -248,6 +248,60 @@ function StudentManagement() {
       })();
     }
 
+    // Auto-backfill missing sections/year_levels from masterlist or teacher_student_assignments
+    const missingSectionStudents = fetchedProfiles.filter(s => !s.section || !s.year_level);
+    if (missingSectionStudents.length > 0) {
+      (async () => {
+        let updatedSectionAny = false;
+        const masterlistData = masterlistRes.data ?? [];
+        const masterlistByLrn = new Map((masterlistData).filter(m => m.lrn).map(m => [m.lrn, m]));
+
+        const missingIds = missingSectionStudents.map(s => s.id);
+        const { data: assignData } = db ? await db
+          .from("teacher_student_assignments")
+          .select("student_id, section, subjects(grade_level, section)")
+          .in("student_id", missingIds) : { data: [] };
+
+        const assignByStudentId = new Map();
+        (assignData || []).forEach(a => {
+          const sec = a.section || a.subjects?.section;
+          const gr = a.subjects?.grade_level;
+          if (sec && !assignByStudentId.has(a.student_id)) {
+            assignByStudentId.set(a.student_id, { section: sec, grade_level: gr });
+          }
+        });
+
+        for (const s of missingSectionStudents) {
+          const mRecord = s.lrn ? masterlistByLrn.get(s.lrn) : null;
+          const aRecord = assignByStudentId.get(s.id);
+
+          const targetSection = (mRecord?.section || aRecord?.section) ? formatSectionName(mRecord?.section || aRecord?.section) : null;
+          const targetGrade = (mRecord?.year_level || aRecord?.grade_level) ? normalizeYearLevel(mRecord?.year_level || aRecord?.grade_level) : null;
+
+          const pPayload = {};
+          if (!s.section && targetSection) pPayload.section = targetSection;
+          if (!s.year_level && targetGrade) pPayload.year_level = targetGrade;
+
+          if (Object.keys(pPayload).length > 0) {
+            const { error: updErr } = await adminApi.db("profiles", "update", {
+              payload: pPayload,
+              eq: { column: "id", value: s.id }
+            });
+            if (!updErr) updatedSectionAny = true;
+          }
+        }
+
+        if (updatedSectionAny) {
+          const { data: updatedProfiles } = await adminApi.db("profiles", "select", {
+            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+            eq: { column: "role", value: "student" },
+            order: { column: "created_at", options: { ascending: false } }
+          });
+          if (updatedProfiles) setStudents(updatedProfiles);
+        }
+      })();
+    }
+
     if (!masterlistRes.error) {
       setMasterlist(masterlistRes.data ?? []);
     }

@@ -858,6 +858,27 @@ function SubjectManagement() {
 
       if (insertError) throw insertError;
 
+      // Sync student profile section and grade level if missing in profiles
+      if (subject.section || subject.grade_level) {
+        const normSec = subject.section ? subject.section.trim() : null;
+        const normGrade = subject.grade_level ? normalizeGradeLevel(subject.grade_level) : null;
+
+        for (const studentId of selectedStudents) {
+          const sRow = (availableStudents || []).find(s => s.id === studentId);
+          if (!sRow?.section || !sRow?.grade_level) {
+            const pUpd = {};
+            if (!sRow?.section && normSec) pUpd.section = normSec;
+            if (!sRow?.grade_level && normGrade) pUpd.year_level = normGrade;
+            if (Object.keys(pUpd).length > 0) {
+              await adminApi.db("profiles", "update", {
+                payload: pUpd,
+                eq: { column: "id", value: studentId }
+              });
+            }
+          }
+        }
+      }
+
       // Update the subject's enrolled count
       const { error: updateError } = await adminApi.db("subjects", "update", { payload: { enrolled: newEnrollmentCount }, eq: { column: "id", value: subject.id } });
 
