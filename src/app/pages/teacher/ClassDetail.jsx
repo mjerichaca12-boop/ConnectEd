@@ -3705,7 +3705,6 @@ export function ClassDetail() {
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
     { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
-    { id: "materials", label: "Materials", icon: <FileText className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
   ];
 
@@ -3867,7 +3866,11 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("materials")}
+                    onClick={() => {
+                      setMatError("");
+                      setMatSuccess("");
+                      setShowMaterialModal(true);
+                    }}
                     className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
@@ -4084,89 +4087,6 @@ export function ClassDetail() {
                     teacherId={teacherProfileId} 
                     onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
                   />
-                </div>
-              )}
-              {/* MATERIALS TAB */}
-              {activeTab === "materials" && (
-                <div data-tour="class-detail-materials-content">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">Class Materials & Learning Resources</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Upload, share, and manage reference materials, lecture notes, and media for your students.</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setMatError("");
-                        setMatSuccess("");
-                        setShowMaterialModal(true);
-                      }}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Upload Material
-                    </button>
-                  </div>
-
-                  {materials.length === 0 ? (
-                    <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                      <div className="w-14 h-14 bg-green-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <FileText className="w-6 h-6 text-green-600" />
-                      </div>
-                      <h4 className="font-bold text-gray-900 mb-1">No class materials uploaded yet</h4>
-                      <p className="text-gray-500 text-sm max-w-sm mx-auto mb-5">
-                        Share PDFs, documents, presentations, or reference links with your students.
-                      </p>
-                      <button
-                        onClick={() => {
-                          setMatError("");
-                          setMatSuccess("");
-                          setShowMaterialModal(true);
-                        }}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm cursor-pointer"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Upload Material
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {materials.map((mat) => (
-                        <div key={mat.id} className="p-5 bg-white border border-gray-200 rounded-2xl hover:shadow-md hover:border-green-200 transition-all duration-200 flex flex-col justify-between">
-                          <div>
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="p-2.5 bg-green-50 text-green-700 rounded-xl">
-                                <FileText className="w-5 h-5" />
-                              </div>
-                              <button
-                                onClick={() => deleteMaterialRecord(mat)}
-                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                title="Delete Material"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                            <h4 className="font-bold text-gray-900 text-base mb-1 line-clamp-1">{mat.title}</h4>
-                            {mat.description && <p className="text-xs text-gray-600 line-clamp-2 mb-3">{mat.description}</p>}
-                          </div>
-
-                          <div className="pt-3 border-t border-gray-100 flex items-center justify-between mt-3 text-xs text-gray-500">
-                            <span>{mat.createdAt ? new Date(mat.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent"}</span>
-                            {mat.fileUrl && (
-                              <a
-                                href={mat.fileUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 font-semibold text-green-600 hover:text-green-700 hover:underline"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                                View File
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
               {/* ANNOUNCEMENTS TAB */}
