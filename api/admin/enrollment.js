@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     if (/^[0-9a-fA-F-]{36}$/.test(rawSubjectId)) {
       const { data, error } = await supabaseAdmin
         .from("subjects")
-        .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+        .select("id, capacity, enrolled, name, code, section, grade_level")
         .eq("id", rawSubjectId)
         .maybeSingle();
       subject = data;
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
     if (!subject) {
       const { data, error } = await supabaseAdmin
         .from("subjects")
-        .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+        .select("id, capacity, enrolled, name, code, section, grade_level")
         .ilike("code", rawSubjectId)
         .maybeSingle();
       if (data) {

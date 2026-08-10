@@ -105,7 +105,7 @@ export const adminApi = {
       if (/^[0-9a-fA-F-]{36}$/.test(rawSubjectId)) {
         const { data } = await supabase
           .from("subjects")
-          .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+          .select("id, capacity, enrolled, name, code, section, grade_level")
           .eq("id", rawSubjectId)
           .maybeSingle();
         subject = data;
@@ -114,7 +114,7 @@ export const adminApi = {
       if (!subject) {
         const { data } = await supabase
           .from("subjects")
-          .select("id, capacity, enrolled, name, code, section, grade_level, year_level")
+          .select("id, capacity, enrolled, name, code, section, grade_level")
           .ilike("code", rawSubjectId)
           .maybeSingle();
         subject = data;
