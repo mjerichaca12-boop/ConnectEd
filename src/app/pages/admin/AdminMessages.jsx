@@ -86,13 +86,13 @@ export function AdminMessages() {
       try {
         const { data: staffData } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+          .select("id, first_name, middle_name, last_name, email, role, status")
           .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"])
           .limit(100);
 
         const { data: studentData } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+          .select("id, first_name, middle_name, last_name, email, role, status")
           .in("role", ["student", "Student", "STUDENT"])
           .limit(200);
 

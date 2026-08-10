@@ -414,7 +414,7 @@ function TeacherMessages() {
     try {
       const { data, error } = await db
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role")
+        .select("id, first_name, middle_name, last_name, email, role")
         .in("id", ids);
       if (error || !data) return [];
       return data.map((row) => ({
@@ -432,7 +432,7 @@ function TeacherMessages() {
 
       let staffQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+        .select("id, first_name, middle_name, last_name, email, role, status")
         .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -443,7 +443,7 @@ function TeacherMessages() {
 
       let studentQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
+        .select("id, first_name, middle_name, last_name, email, role, status")
         .in("role", ["student", "Student", "STUDENT"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -486,8 +486,8 @@ function TeacherMessages() {
 
       let req = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status")
-        .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,name.ilike.%${q}%,full_name.ilike.%${q}%`);
+        .select("id, first_name, middle_name, last_name, email, role, status")
+        .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,username.ilike.%${q}%`);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
         req = req.neq("id", currentTeacherId);
