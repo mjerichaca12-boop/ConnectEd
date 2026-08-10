@@ -79,8 +79,9 @@ function Classes() {
   };
 
   const setClassesAndPersist = (nextClasses) => {
-    setClasses(nextClasses);
-    localStorage.setItem("teacher_classes", JSON.stringify(nextClasses));
+    const realClasses = (nextClasses ?? []).filter((c) => !String(c?.id || "").startsWith("demo-"));
+    setClasses(realClasses);
+    localStorage.setItem("teacher_classes", JSON.stringify(realClasses));
   };
 
 

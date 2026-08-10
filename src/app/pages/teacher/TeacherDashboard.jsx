@@ -359,12 +359,17 @@ export function TeacherDashboard() {
 
   useEffect(() => {
     if (teacherId && activeSchoolYear && activeQuarter) {
-      loadAnnouncements();
-      fetchTeacherSubjects(teacherId);
-      fetchTeacherStudentTotal(teacherId);
-      fetchGradesEncodedTotal(teacherId);
-      fetchLessonsCount(teacherId);
-      fetchRecentGrades(teacherId);
+      Promise.all([
+        loadAnnouncements().then(rows => {
+          setAnnouncements(rows);
+          setAnnouncementsError("");
+        }),
+        fetchTeacherSubjects(teacherId),
+        fetchTeacherStudentTotal(teacherId),
+        fetchGradesEncodedTotal(teacherId),
+        fetchLessonsCount(teacherId),
+        fetchRecentGrades(teacherId)
+      ]).catch(err => console.warn("[TeacherDashboard] Dashboard load error:", err));
     }
   }, [teacherId, activeSchoolYear, activeQuarter]);
 

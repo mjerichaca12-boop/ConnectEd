@@ -597,7 +597,7 @@ function GradesManagement() {
   }, []);
 
   const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId, schoolYear, quarter) => {
-    if (isDemoMode || String(classId).startsWith("demo-")) {
+    if (isDemoMode) {
       return MOCK_DEMO_ASSESSMENTS;
     }
     if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
@@ -769,7 +769,7 @@ function GradesManagement() {
   }, []);
 
   const fetchAssessmentGrades = useCallback(async (currentTeacherId, classId, assessments, studentIds) => {
-    if (isDemoMode || String(classId).startsWith("demo-")) {
+    if (isDemoMode) {
       setAssessmentGradesMap(MOCK_DEMO_GRADES_MAP);
       setAssessmentStatusMap(MOCK_DEMO_STATUS_MAP);
       return;
@@ -953,7 +953,7 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ fetch students + grades ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const fetchStudentsForClass = useCallback(async (currentTeacherId, classId) => {
-    if (isDemoMode || String(classId).startsWith("demo-")) {
+    if (isDemoMode) {
       return {
         studentIds: MOCK_DEMO_STUDENTS.map((s) => s.id),
         mapped: MOCK_DEMO_STUDENTS,

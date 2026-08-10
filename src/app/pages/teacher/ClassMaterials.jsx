@@ -424,6 +424,17 @@ function ClassMaterials() {
       return;
     }
 
+    if (materialFile.size === 0) {
+      setMaterialError("The selected file is empty.");
+      return;
+    }
+
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    if (materialFile.size > MAX_FILE_SIZE) {
+      setMaterialError("File is too large. Maximum allowed size is 50 MB.");
+      return;
+    }
+
     if (!supabase) {
       setMaterialError("Database connection is unavailable.");
       return;

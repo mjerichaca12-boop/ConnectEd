@@ -340,13 +340,47 @@ export function TeacherTourProvider({ children }) {
     });
   }, [waitForPageAndTargetReady]);
 
+  const cleanupDemoDataAndRedirect = useCallback(() => {
+    try {
+      const saved = localStorage.getItem("teacher_classes");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const hasDemoClass = Array.isArray(parsed) && parsed.some((c) => String(c?.id || "").startsWith("demo-"));
+        if (hasDemoClass) {
+          localStorage.removeItem("teacher_classes");
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    if (window.location.pathname.includes("/teacher/class/demo-")) {
+      window.location.href = "/teacher/classes";
+    }
+  }, []);
+
   const skipTour = useCallback(() => {
     cancelReadinessObserver();
     setIsTourActive(false);
     setIsPreparingTour(false);
     setCurrentStepIndex(0);
+    setHasCompleted(true);
+
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      try {
+        const user = JSON.parse(rawUser);
+        const userId = user.id || user.email || "default";
+        localStorage.setItem(`${TOUR_SKIPPED_KEY}_${userId}`, "true");
+        localStorage.setItem(`${TOUR_COMPLETED_KEY}_${userId}`, "true");
+      } catch {
+        // Ignore
+      }
+    }
     localStorage.setItem(TOUR_SKIPPED_KEY, "true");
-  }, [cancelReadinessObserver]);
+    localStorage.setItem(TOUR_COMPLETED_KEY, "true");
+    cleanupDemoDataAndRedirect();
+  }, [cancelReadinessObserver, cleanupDemoDataAndRedirect]);
 
   const finishTour = useCallback(() => {
     cancelReadinessObserver();
@@ -366,7 +400,8 @@ export function TeacherTourProvider({ children }) {
       }
     }
     localStorage.setItem(TOUR_COMPLETED_KEY, "true");
-  }, [cancelReadinessObserver]);
+    cleanupDemoDataAndRedirect();
+  }, [cancelReadinessObserver, cleanupDemoDataAndRedirect]);
 
   // Restart Tour
   const restartTour = useCallback(

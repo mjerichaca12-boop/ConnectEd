@@ -202,13 +202,50 @@ function Login() {
     };
   }, [navigate]);
 
+  const RATE_LIMIT_KEY_PREFIX = "connected_login_rate_limit_";
+  const MAX_FAILED_ATTEMPTS = 5;
+  const LOCKOUT_DURATION_MS = 60 * 1000;
+
+  const getRateLimitState = (username) => {
+    if (!username) return { attempts: 0, lockoutUntil: 0 };
+    try {
+      const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+      const raw = localStorage.getItem(key);
+      if (!raw) return { attempts: 0, lockoutUntil: 0 };
+      return JSON.parse(raw);
+    } catch {
+      return { attempts: 0, lockoutUntil: 0 };
+    }
+  };
+
+  const recordFailedAttempt = (username) => {
+    if (!username) return;
+    const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+    const current = getRateLimitState(username);
+    const nextAttempts = current.attempts + 1;
+    const lockoutUntil = nextAttempts >= MAX_FAILED_ATTEMPTS ? Date.now() + LOCKOUT_DURATION_MS : 0;
+    localStorage.setItem(key, JSON.stringify({ attempts: nextAttempts, lockoutUntil }));
+  };
+
+  const clearRateLimitState = (username) => {
+    if (!username) return;
+    const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+    localStorage.removeItem(key);
+  };
+
   const validateField = (name, value) => {
     if (name === "username") {
-      if (!value.trim()) return "Username is required.";
+      const val = String(value || "").trim();
+      if (!val) return "Please enter your username or email address.";
+      if (value.includes(" ")) return "Username or email cannot contain spaces.";
+      if (val.length > 100) return "Username or email cannot exceed 100 characters.";
+      if (val.includes("@") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+        return "Please enter a valid email address.";
+      }
     }
     if (name === "password") {
-      if (!value) return "Password is required.";
-      if (value.length < 6) return "Password must be at least 6 characters.";
+      if (!value) return "Please enter your password.";
+      if (value.length > 128) return "Password cannot exceed 128 characters.";
     }
     return "";
   };
@@ -251,6 +288,7 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
 
     const usernameErr = validateField("username", formData.username);
     const passwordErr = validateField("password", formData.password);
@@ -258,16 +296,26 @@ function Login() {
     setFieldErrors({ username: usernameErr, password: passwordErr });
     if (usernameErr || passwordErr) return;
 
-    setLoading(true);
     const normalizedUsername = formData.username.trim().toLowerCase();
+    const rateState = getRateLimitState(normalizedUsername);
+
+    if (rateState.lockoutUntil && rateState.lockoutUntil > Date.now()) {
+      const remainingSec = Math.ceil((rateState.lockoutUntil - Date.now()) / 1000);
+      setError(`Too many failed login attempts. Please wait ${remainingSec} seconds before trying again.`);
+      return;
+    }
+
+    setLoading(true);
 
     if (normalizedUsername === STATIC_ADMIN_EMAIL) {
       const adminValidation = await validateStaticAdminCredentials(normalizedUsername, formData.password);
       if (adminValidation.ok) {
+        clearRateLimitState(normalizedUsername);
         localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
         navigate("/admin/dashboard");
         return;
       }
+      recordFailedAttempt(normalizedUsername);
       setError(adminValidation.message);
       setLoading(false);
       return;
@@ -283,7 +331,13 @@ function Login() {
       const { data: resolvedEmail, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
       
       if (rpcError || !resolvedEmail) {
-        setError("Invalid username or password.");
+        recordFailedAttempt(normalizedUsername);
+        const updatedRate = getRateLimitState(normalizedUsername);
+        if (updatedRate.lockoutUntil > Date.now()) {
+          setError("Too many failed login attempts. Please wait 60 seconds before trying again.");
+        } else {
+          setError("Invalid username or password.");
+        }
         setLoading(false);
         return;
       }
@@ -302,8 +356,6 @@ function Login() {
         authData = primaryData;
       } else {
         authMessage = String(primaryError.message || "").toLowerCase();
-        // If it failed with invalid credentials, it might be because the email change is pending.
-        // In that case, the user's email in auth.users is still their temporary email.
         if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
           const tempEmail = `${normalizedUsername}@temp.local`;
           if (tempEmail !== resolvedEmail) {
@@ -324,8 +376,13 @@ function Login() {
       }
 
       if (authError) {
-        if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
-          setError("Invalid username or password. Please try again.");
+        recordFailedAttempt(normalizedUsername);
+        const updatedRate = getRateLimitState(normalizedUsername);
+        if (updatedRate.lockoutUntil > Date.now()) {
+          setError("Too many failed login attempts. Please wait 60 seconds before trying again.");
+        } else if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
+          const remainingAttempts = Math.max(0, MAX_FAILED_ATTEMPTS - updatedRate.attempts);
+          setError(`Invalid username or password. (${remainingAttempts} attempt(s) remaining)`);
         } else if (authMessage.includes("email not confirmed")) {
           setError("Please confirm your invitation email before logging in.");
         } else if (authMessage.includes("token")) {
@@ -336,6 +393,8 @@ function Login() {
         setLoading(false);
         return;
       }
+
+      clearRateLimitState(normalizedUsername);
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")

@@ -1115,7 +1115,7 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
-    if (isDemoMode || String(id).startsWith("demo-")) {
+    if (isDemoMode) {
       setAnnouncements(MOCK_ANNOUNCEMENTS);
       return;
     }
@@ -1449,7 +1449,12 @@ export function ClassDetail() {
         }
       }
 
-      if (!foundClass && (String(id).startsWith("demo-") || isDemoMode)) {
+      if (!isDemoMode && String(id).startsWith("demo-")) {
+        navigate("/teacher/classes");
+        return;
+      }
+
+      if (!foundClass && isDemoMode) {
         foundClass = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
       }
 
@@ -1462,15 +1467,11 @@ export function ClassDetail() {
         setTeacherProfileId(resolvedTeacherId);
       }
 
-      await resolveMaterialColumns();
-      const assignmentTableName = await resolveAssignmentTable();
-      if (assignmentTableName) {
-        await resolveAssignmentColumns(assignmentTableName);
-      }
-      const announcementTableName = await resolveAnnouncementTable();
-      if (announcementTableName) {
-        await resolveAnnouncementColumns(announcementTableName);
-      }
+      await Promise.all([
+        resolveMaterialColumns(),
+        resolveAssignmentTable().then(tableName => tableName ? resolveAssignmentColumns(tableName) : null),
+        resolveAnnouncementTable().then(tableName => tableName ? resolveAnnouncementColumns(tableName) : null)
+      ]);
 
       await Promise.all([
         loadAvailableStudents(foundClass),
@@ -3610,11 +3611,11 @@ export function ClassDetail() {
     { id: "s3", studentId: "109876543212", name: "John Mark Reyes", yearLevel: "Grade 10", email: "john.reyes@deped.gov.ph", phone: "0919-345-6789", status: "Active" },
   ];
 
-  const activeStudentsList = (isDemoMode || String(id).startsWith("demo-"))
+  const activeStudentsList = isDemoMode
     ? MOCK_STUDENTS
     : assignedStudents;
 
-  const activeAnnouncementsList = (isDemoMode || String(id).startsWith("demo-")) && announcements.length === 0
+  const activeAnnouncementsList = isDemoMode && announcements.length === 0
     ? MOCK_ANNOUNCEMENTS
     : announcements;
 
@@ -3786,7 +3787,7 @@ export function ClassDetail() {
 
 
 
-  const displayMetrics = (isDemoMode || String(id).startsWith("demo-")) ? {
+  const displayMetrics = isDemoMode ? {
     totalLessons: 5,
     publishedLessons: 5,
     activitiesCount: 2,

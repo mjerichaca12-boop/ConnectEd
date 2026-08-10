@@ -540,10 +540,10 @@ function TeacherAnnouncements() {
                     <span className="capitalize">{tab}</span>
                     <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
                       {tab === "announcements"
-                        ? ((isDemoMode || filteredAnnouncements.length === 0) ? MOCK_DEMO_ANNOUNCEMENTS.length : filteredAnnouncements.length)
+                        ? (isDemoMode ? MOCK_DEMO_ANNOUNCEMENTS.length : filteredAnnouncements.length)
                         : tab === "assignments"
-                          ? ((isDemoMode || assignments.length === 0) ? MOCK_DEMO_ASSIGNMENTS.length : assignments.length)
-                          : ((isDemoMode || files.length === 0) ? MOCK_DEMO_FILES.length : files.length)}
+                          ? (isDemoMode ? MOCK_DEMO_ASSIGNMENTS.length : assignments.length)
+                          : (isDemoMode ? MOCK_DEMO_FILES.length : files.length)}
                     </span>
                   </div>
                 </button>)}
@@ -552,7 +552,7 @@ function TeacherAnnouncements() {
             <div data-tour="teacher-announcements-list" className="p-6">
               {/* Announcements Tab */}
               {activeTab === "announcements" && (() => {
-                const activeAnnouncements = (isDemoMode || filteredAnnouncements.length === 0) ? MOCK_DEMO_ANNOUNCEMENTS : filteredAnnouncements;
+                const activeAnnouncements = isDemoMode ? MOCK_DEMO_ANNOUNCEMENTS : filteredAnnouncements;
                 return (
                   <div className="space-y-4">
                     {activeAnnouncements.length === 0 ? (
@@ -608,7 +608,7 @@ function TeacherAnnouncements() {
 
               {/* Assignments Tab */}
               {activeTab === "assignments" && (() => {
-                const activeAssignments = (isDemoMode || assignments.length === 0) ? MOCK_DEMO_ASSIGNMENTS : assignments;
+                const activeAssignments = isDemoMode ? MOCK_DEMO_ASSIGNMENTS : assignments;
                 return (
                   <div className="space-y-4">
                     {activeAssignments.length === 0 ? (
@@ -642,7 +642,7 @@ function TeacherAnnouncements() {
 
               {/* Files Tab */}
               {activeTab === "files" && (() => {
-                const activeFiles = (isDemoMode || files.length === 0) ? MOCK_DEMO_FILES : files;
+                const activeFiles = isDemoMode ? MOCK_DEMO_FILES : files;
                 return (
                   <div className="space-y-4">
                     {activeFiles.length === 0 ? (
