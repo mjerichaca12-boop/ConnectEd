@@ -50,7 +50,9 @@ const buildStudentName = (row) => {
 };
 
 const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
-  const fromTeacher = String(row?.sender_id || "") === String(currentTeacherId || "");
+  const cleanSender = String(row?.sender_id || "").toLowerCase();
+  const cleanCurrent = String(currentTeacherId || "").toLowerCase();
+  const fromTeacher = cleanSender === cleanCurrent;
   const fileType = String(row?.file_type || "").trim();
   const attachmentKind = fileType.startsWith("image/")
     ? "image"
@@ -62,7 +64,7 @@ const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
   return {
     id: String(row?.id || `${Date.now()}_${Math.random()}`),
     from: fromTeacher ? "teacher" : "student",
-    senderName: fromTeacher ? teacherDisplayName : "Student",
+    senderName: fromTeacher ? teacherDisplayName : "Recipient",
     text: String(row?.message_text || "").trim(),
     time: String(row?.timestamp || row?.created_at || new Date().toISOString()),
     fileUrl: String(row?.file_url || "").trim(),
@@ -409,6 +411,9 @@ function TeacherMessages() {
     } catch { return null; }
   }, []);
 
+  const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
+  const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
+
   const fetchProfilesByIds = useCallback(async (ids) => {
     if (!ids || ids.length === 0) return [];
     try {
@@ -416,13 +421,26 @@ function TeacherMessages() {
         .from("profiles")
         .select("id, first_name, middle_name, last_name, email, role")
         .in("id", ids);
-      if (error || !data) return [];
-      return data.map((row) => ({
+      const res = (data || []).map((row) => ({
         id: String(row.id),
         name: buildProfileName(row),
         email: String(row.email || ""),
         role: String(row.role || "student").trim().toLowerCase(),
       }));
+
+      // If hardcoded admin ID was requested but not returned from DB, append default Admin profile
+      if (ids.map(id => String(id).toLowerCase()).includes(HARDCODED_ADMIN_ID.toLowerCase())) {
+        if (!res.some(r => r.id.toLowerCase() === HARDCODED_ADMIN_ID.toLowerCase())) {
+          res.push({
+            id: HARDCODED_ADMIN_ID,
+            name: "System Administrator",
+            email: HARDCODED_ADMIN_EMAIL,
+            role: "admin"
+          });
+        }
+      }
+
+      return res;
     } catch { return []; }
   }, []);
 
@@ -454,7 +472,7 @@ function TeacherMessages() {
 
       const combined = [...(staffData || []), ...(studentData || [])];
 
-      return combined
+      const res = combined
         .filter((row) => {
           if (!row || !row.id) return false;
           if (cleanCurrentId && String(row.id).toLowerCase() === cleanCurrentId) return false;
@@ -471,6 +489,20 @@ function TeacherMessages() {
           classCode: "",
           section: "",
         }));
+
+      // Ensure Admin appears in recipient selection if not already present
+      if (!res.some(r => r.id.toLowerCase() === HARDCODED_ADMIN_ID.toLowerCase() || r.role === "admin")) {
+        res.unshift({
+          id: HARDCODED_ADMIN_ID,
+          name: "System Administrator",
+          email: HARDCODED_ADMIN_EMAIL,
+          role: "admin",
+          classCode: "",
+          section: ""
+        });
+      }
+
+      return res;
     } catch (err) {
       console.error("[TeacherMessages] fetchAllRecipients error:", err);
       return [];
@@ -526,12 +558,13 @@ function TeacherMessages() {
     }
     conversationLoadInFlightRef.current = true;
     try {
-      // Load direct messages (exclude group messages)
+      const cleanTeacherId = String(currentTeacherId || "").trim().toLowerCase();
+
       const { data: messageRows, error: messageError } = await db
         .from(MESSAGE_TABLE)
         .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
         .or(`sender_id.eq.${currentTeacherId},receiver_id.eq.${currentTeacherId}`)
-        .is("conversation_id", null) // Only load direct messages, not group messages
+        .is("conversation_id", null)
         .order("created_at", { ascending: true });
 
       if (messageError) {
@@ -540,23 +573,23 @@ function TeacherMessages() {
       }
 
       const counterpartIds = buildStableIdList((messageRows || []).map((row) => {
-        const senderId = String(row.sender_id || "");
-        const receiverId = String(row.receiver_id || "");
-        return senderId === currentTeacherId ? receiverId : senderId;
+        const senderId = String(row.sender_id || "").toLowerCase();
+        const receiverId = String(row.receiver_id || "").toLowerCase();
+        return senderId === cleanTeacherId ? receiverId : senderId;
       }));
 
       const profileMap = new Map();
       if (counterpartIds.length > 0) {
         const profiles = await fetchProfilesByIds(counterpartIds);
-        profiles.forEach((profile) => profileMap.set(profile.id, profile));
+        profiles.forEach((profile) => profileMap.set(String(profile.id).toLowerCase(), profile));
       }
 
       const conversationsByParticipant = new Map();
 
       (messageRows || []).forEach((row) => {
-        const senderId = String(row.sender_id || "");
-        const receiverId = String(row.receiver_id || "");
-        const counterpartId = senderId === currentTeacherId ? receiverId : senderId;
+        const senderId = String(row.sender_id || "").toLowerCase();
+        const receiverId = String(row.receiver_id || "").toLowerCase();
+        const counterpartId = senderId === cleanTeacherId ? receiverId : senderId;
         if (!counterpartId) return;
 
         const msgObj = toConversationMessage(row, currentTeacherId, teacherDisplayName);
@@ -564,12 +597,14 @@ function TeacherMessages() {
 
         if (!conversationsByParticipant.has(counterpartId)) {
           const profile = profileMap.get(counterpartId) || {};
+          const isAdminCounterpart = counterpartId === HARDCODED_ADMIN_ID.toLowerCase() || String(profile?.role || "").toLowerCase() === "admin" || String(profile?.email || "").toLowerCase().includes("admin");
+
           conversationsByParticipant.set(counterpartId, {
             id: `conv_${counterpartId}`,
             participantId: counterpartId,
-            participantName: String(profile?.name || "User"),
-            participantRole: String(profile?.role || "student"),
-            email: String(profile?.email || ""),
+            participantName: String(profile?.name || (isAdminCounterpart ? "System Administrator" : "User")),
+            participantRole: String(profile?.role || (isAdminCounterpart ? "admin" : "student")).toLowerCase(),
+            email: String(profile?.email || (isAdminCounterpart ? HARDCODED_ADMIN_EMAIL : "")),
             classCode: "",
             section: "",
             messages: [],
@@ -989,6 +1024,22 @@ function TeacherMessages() {
       }
       if (attachmentPayloads.length > 0) {
         await db.from("message_attachments").insert(attachmentPayloads);
+      }
+    }
+
+    if (!error) {
+      for (const rId of recipientIds) {
+        if (rId) {
+          await supabase.from("notifications").insert({
+            user_id: rId,
+            title: `New Message from ${teacherName || "Teacher"}`,
+            type: "message",
+            message: messageText.substring(0, 100) || "Sent an attachment",
+            body: messageText.substring(0, 100) || "Sent an attachment",
+            is_read: false,
+            created_at: now
+          }).catch(err => console.warn("[TeacherMessages] Notification insert error:", err));
+        }
       }
     }
 
