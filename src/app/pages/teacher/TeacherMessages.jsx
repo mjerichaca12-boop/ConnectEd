@@ -39,13 +39,20 @@ const FILTERS = [
   { key: "read",      label: "Read",       icon: CheckCheck },
 ];
 
-const buildStudentName = (row) => {
+const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+
+const buildProfileName = (row) => {
   const fullName = [row?.first_name, row?.middle_name, row?.last_name]
     .map((part) => String(part || "").trim())
     .filter(Boolean)
     .join(" ")
     .trim();
   if (fullName) return fullName;
+  const fallbackName = String(row?.name || row?.full_name || row?.display_name || "").trim();
+  if (fallbackName) return fallbackName;
+  const roleStr = String(row?.role || "").trim().toLowerCase();
+  if (roleStr === "teacher") return "Teacher";
+  if (roleStr === "admin") return "Admin";
   return "Student";
 };
 
