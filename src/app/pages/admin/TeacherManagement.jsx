@@ -221,16 +221,28 @@ function TeacherManagement() {
     if (Array.isArray(value)) {
       rawArray = value;
     } else if (typeof value === "string") {
-      const cleaned = value.replace(/[{}]/g, "");
-      rawArray = cleaned.split(",");
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) rawArray = parsed;
+        else rawArray = value.replace(/[{}]/g, "").split(",");
+      } catch {
+        rawArray = value.replace(/[{}]/g, "").split(",");
+      }
+    } else if (value && typeof value === "object") {
+      rawArray = [value];
     }
 
     return rawArray
-      .map((item) => String(item || "").trim())
+      .map((item) => {
+        if (item && typeof item === "object") {
+          return String(item.value || item.id || item.code || item.name || "").trim();
+        }
+        return String(item || "").trim();
+      })
       .filter((item) => {
         if (!item) return false;
         const low = item.toLowerCase();
-        return low !== "null" && low !== "undefined" && low !== "select teacher" && low !== "select subject";
+        return low !== "null" && low !== "undefined" && low !== "select teacher" && low !== "select subject" && low !== "[object object]";
       });
   };
   const normalizeAssignedClasses = (value) => {
@@ -248,20 +260,42 @@ function TeacherManagement() {
   const hasAssignedClass = (value, className) => normalizeAssignedClasses(value).some((entry) => entry.toLowerCase() === String(className || "").trim().toLowerCase());
   const formatSubjects = (subjects) => normalizeSubjects(subjects).map(getSubjectLabel).filter(Boolean).join(", ");
   const getTeacherAssignments = (teacher) => {
-    const subjectIds = normalizeSubjects(teacher?.subjects);
-    return subjectIds.map((subjectId) => {
-      const subject = availableSubjects.find((item) => String(item.id) === String(subjectId));
-      if (!subject) return null;
+    const assignedClasses = normalizeAssignedClasses(teacher.assigned_class);
+    const teacherGrade = teacher.grade_level || teacher.year_level || "";
+    const teacherSubjects = normalizeSubjects(teacher.subjects);
 
+    const classEntries = assignedClasses.map((className) => ({
+      classLabel: className,
+      gradeLevel: teacherGrade
+    }));
+
+    const subjectEntries = teacherSubjects.map((subjectId) => {
+      const subject = availableSubjects.find((item) => String(item.id) === String(subjectId) || String(item.code || "").toLowerCase() === String(subjectId).toLowerCase());
       return {
-        subjectLabel: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`,
-        classLabel: subject.grade_level || "No grade assigned"
+        subjectLabel: getSubjectLabel(subjectId),
+        gradeLevel: subject?.grade_level || teacherGrade
       };
-    }).filter(Boolean);
+    });
+
+    if (classEntries.length === 0 && subjectEntries.length === 0 && teacherGrade) {
+      return [{ classLabel: "", gradeLevel: teacherGrade, subjectLabel: "" }];
+    }
+
+    const maxLen = Math.max(classEntries.length, subjectEntries.length, 1);
+    const result = [];
+
+    for (let i = 0; i < maxLen; i += 1) {
+      result.push({
+        classLabel: classEntries[i]?.classLabel || "",
+        subjectLabel: subjectEntries[i]?.subjectLabel || "",
+        gradeLevel: classEntries[i]?.gradeLevel || subjectEntries[i]?.gradeLevel || teacherGrade
+      });
+    }
+
+    return result;
   };
   const validateTeacherField = (field, value, formData) => {
-    const nextValue = typeof value === "string" ? value : "";
-
+    const nextValue = String(value ?? "");
     switch (field) {
       case "first_name":
         if (!nextValue.trim()) return "First name is required";
@@ -286,7 +320,7 @@ function TeacherManagement() {
         return "";
       }
       case "subjects":
-        if (normalizeSubjects(nextValue).length === 0) return "At least one subject is required";
+        if (normalizeSubjects(value).length === 0) return "At least one subject is required";
         return "";
       case "status":
         return nextValue ? "" : "Status is required";
@@ -312,16 +346,12 @@ function TeacherManagement() {
 
     setData(nextFormData);
     setErrors((current) => {
-      if (nextError) {
-        return { ...current, [field]: nextError };
-      }
-
-      if (!(field in current)) {
-        return current;
-      }
-
       const updatedErrors = { ...current };
-      delete updatedErrors[field];
+      if (nextError) {
+        updatedErrors[field] = nextError;
+      } else {
+        delete updatedErrors[field];
+      }
       return updatedErrors;
     });
   };
@@ -533,7 +563,13 @@ function TeacherManagement() {
     const trimmedEmail = formData.email.trim().toLowerCase();
     const normalizedPhone = normalizePhone(formData.phone);
     const normalizedSubjects = normalizeSubjects(formData.subjects);
-    const validSubjectIds = new Set(availableSubjects.map((subject) => subject.id));
+    const validSubjectIds = new Set(
+      availableSubjects.flatMap((subject) => [
+        String(subject.id || "").trim(),
+        String(subject.code || "").trim(),
+        `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`
+      ]).filter(Boolean)
+    );
     const assignedClass = formData.assigned_class?.trim() || "";
 
     if (!trimmedFirstName) {
@@ -582,20 +618,16 @@ function TeacherManagement() {
 
     if (formData.grade_level && normalizedSubjects.length > 0) {
       try {
-        const { data: subjectRows, error: subjErr } = await db
-          .from("subjects")
-          .select("*")
-          .in("id", normalizedSubjects);
-
-        if (subjErr) {
-          errors.form = subjErr.message;
-          return errors;
-        }
-
         const teacherGradeNorm = normalizeGradeLevel(formData.grade_level);
-        const mismatch = (subjectRows ?? []).some((s) => {
-          if (String(s?.teacher_id || "") === String(excludeId)) return false;
-          const subjGradeRaw = String(s?.grade_level || "").trim();
+        const mismatch = normalizedSubjects.some((subjRef) => {
+          const subj = availableSubjects.find((s) =>
+            String(s.id) === String(subjRef) ||
+            String(s.code || "").toLowerCase() === String(subjRef).toLowerCase() ||
+            `${s.code} - ${s.name} (${s.section || "All Sections"})`.toLowerCase() === String(subjRef).toLowerCase()
+          );
+          if (!subj) return false;
+          if (excludeId && String(subj.teacher_id || "") === String(excludeId)) return false;
+          const subjGradeRaw = String(subj.grade_level || "").trim();
           return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) !== teacherGradeNorm;
         });
 
@@ -603,8 +635,7 @@ function TeacherManagement() {
           errors.subjects = "One or more selected subjects do not match the teacher's grade level.";
         }
       } catch (err) {
-        errors.form = err instanceof Error ? err.message : "Failed to validate subject grade levels.";
-        return errors;
+        console.warn("Grade mismatch check error:", err);
       }
     }
 
