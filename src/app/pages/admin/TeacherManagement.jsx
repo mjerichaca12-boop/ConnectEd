@@ -2161,21 +2161,6 @@ function TeacherManagement() {
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button 
                 onClick={() => {
-                  const csv = `Name,Username,Temporary Password\n"${createdCredentials.name}","${createdCredentials.username}","${createdCredentials.password}"`;
-                  const blob = new Blob([csv], { type: "text/csv" });
-                  const link = document.createElement("a");
-                  link.href = URL.createObjectURL(blob);
-                  link.download = `credentials_${createdCredentials.name.replace(/\s+/g, '_')}.csv`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }} 
-                className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl transition-all"
-              >
-                Download CSV
-              </button>
-              <button 
-                onClick={() => {
                   setShowCredentialsModal(false);
                   setCreatedCredentials(null);
                 }} 
