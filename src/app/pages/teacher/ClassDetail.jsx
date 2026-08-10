@@ -1306,54 +1306,29 @@ export function ClassDetail() {
     const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
     const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
 
-    if (!supabase || !cleanTeacherId || String(id).startsWith("demo-")) {
+    if (!supabase || String(id).startsWith("demo-")) {
       setMaterials([]);
-      return;
-    }
-
-    if (classMaterialsTableStatus === "missing") {
-      setMaterials([]);
-      setMatError("");
       return;
     }
 
     try {
-
-      const columns = await getMaterialColumns();
-      const ownerColumn = resolveColumnName(columns, ["teacher_id", "created_by"]);
-      const classColumn = resolveColumnName(columns, ["subject_id", "class_id", "course_id"]);
-
       let query = supabase
         .from("class_materials")
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (ownerColumn) {
-        query = query.eq(ownerColumn, cleanTeacherId);
-      }
-
-      if (classColumn && cleanClassId) {
-        query = query.eq(classColumn, cleanClassId);
+      if (cleanClassId) {
+        query = query.or(`subject_id.eq.${cleanClassId},class_id.eq.${cleanClassId}`);
+      } else if (cleanTeacherId) {
+        query = query.eq("teacher_id", cleanTeacherId);
       }
 
       let { data, error } = await query;
 
-      // Handle case where table doesn't exist or permissions issue
-      if (error && (error.code === 'PGRST116' || error.status === 400 || error.status === 404 || error.code === '42P01')) {
-        console.warn("[ClassDetail] class_materials table not accessible, showing empty state:", error);
-        classMaterialsTableStatus = "missing";
-        setMaterials([]);
-        setMatError("");
-        return;
-      }
-
       if (error && isColumnMissingError(error)) {
         query = supabase.from("class_materials").select("*");
-        if (ownerColumn) {
-          query = query.eq(ownerColumn, cleanTeacherId);
-        }
-        if (classColumn && cleanClassId) {
-          query = query.eq(classColumn, cleanClassId);
+        if (cleanClassId) {
+          query = query.eq("subject_id", cleanClassId);
         }
         const fallback = await query;
         data = fallback.data;
@@ -1361,35 +1336,36 @@ export function ClassDetail() {
       }
 
       if (error) {
-        console.error("[ClassDetail] Failed to fetch class materials:", error);
-        setMatError("Unable to load class materials from database.");
-        setMaterials([]);
+        console.warn("[ClassDetail] Failed to fetch class materials:", error);
         return;
       }
 
-      const classCode = String(currentClassData?.code || "").trim();
-      const classSection = String(currentClassData?.section || "").trim();
-
-      const filtered = (data ?? []).filter((row) => {
-        const rowClassId = String(row?.subject_id || row?.class_id || row?.course_id || "").trim();
-        const rowSubject = String(row?.subject || "").trim();
-        const rowSection = String(row?.section || "").trim();
-
-        const subjectMatches = Boolean(classCode && rowSubject && rowSubject === classCode);
-        const sectionMatches = !classSection || (rowSection && rowSection === classSection);
-
-        if (cleanClassId && rowClassId) return rowClassId === cleanClassId;
-        if (cleanClassId && !rowClassId && rowSubject) return subjectMatches && sectionMatches;
-        return false;
-      });
-
-      setMaterials(filtered.map(normalizeMaterialRecord));
+      const normalized = (data ?? []).map(normalizeMaterialRecord);
+      setMaterials(normalized);
     } catch (err) {
       console.error("[ClassDetail] Unexpected error in fetchClassMaterials:", err);
-      setMaterials([]);
-      setMatError("Unexpected error loading materials.");
     }
   };
+
+  useEffect(() => {
+    if (!supabase || !id || String(id).startsWith("demo-")) return;
+
+    const channel = supabase
+      .channel(`class-detail-materials-rt-${id}-${Math.random().toString(36).substring(7)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "class_materials" },
+        () => {
+          fetchClassMaterials(teacherProfileId, classData);
+          fetchDashboardMetrics(teacherProfileId, id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherProfileId, id, classData]);
 
   useEffect(() => {
     let isMounted = true;
@@ -3729,6 +3705,7 @@ export function ClassDetail() {
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
     { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
+    { id: "materials", label: "Materials", icon: <FileText className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
   ];
 
@@ -4107,6 +4084,89 @@ export function ClassDetail() {
                     teacherId={teacherProfileId} 
                     onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
                   />
+                </div>
+              )}
+              {/* MATERIALS TAB */}
+              {activeTab === "materials" && (
+                <div data-tour="class-detail-materials-content">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">Class Materials & Learning Resources</h3>
+                      <p className="text-sm text-gray-500 mt-0.5">Upload, share, and manage reference materials, lecture notes, and media for your students.</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setMatError("");
+                        setMatSuccess("");
+                        setShowMaterialModal(true);
+                      }}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Upload Material
+                    </button>
+                  </div>
+
+                  {materials.length === 0 ? (
+                    <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                      <div className="w-14 h-14 bg-green-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <FileText className="w-6 h-6 text-green-600" />
+                      </div>
+                      <h4 className="font-bold text-gray-900 mb-1">No class materials uploaded yet</h4>
+                      <p className="text-gray-500 text-sm max-w-sm mx-auto mb-5">
+                        Share PDFs, documents, presentations, or reference links with your students.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setMatError("");
+                          setMatSuccess("");
+                          setShowMaterialModal(true);
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Upload Material
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {materials.map((mat) => (
+                        <div key={mat.id} className="p-5 bg-white border border-gray-200 rounded-2xl hover:shadow-md hover:border-green-200 transition-all duration-200 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="p-2.5 bg-green-50 text-green-700 rounded-xl">
+                                <FileText className="w-5 h-5" />
+                              </div>
+                              <button
+                                onClick={() => deleteMaterialRecord(mat)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Delete Material"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <h4 className="font-bold text-gray-900 text-base mb-1 line-clamp-1">{mat.title}</h4>
+                            {mat.description && <p className="text-xs text-gray-600 line-clamp-2 mb-3">{mat.description}</p>}
+                          </div>
+
+                          <div className="pt-3 border-t border-gray-100 flex items-center justify-between mt-3 text-xs text-gray-500">
+                            <span>{mat.createdAt ? new Date(mat.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent"}</span>
+                            {mat.fileUrl && (
+                              <a
+                                href={mat.fileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 font-semibold text-green-600 hover:text-green-700 hover:underline"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                View File
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {/* ANNOUNCEMENTS TAB */}
