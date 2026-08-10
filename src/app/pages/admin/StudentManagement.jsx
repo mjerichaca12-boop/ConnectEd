@@ -668,6 +668,11 @@ function StudentManagement() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.name.endsWith(".csv")) {
+      toast.error("Invalid file format. Please upload a CSV file.");
+      return;
+    }
+
     setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -704,13 +709,23 @@ function StudentManagement() {
           return;
         }
 
-        const { data: existingMasterlist } = db ? await db.from("student_masterlist").select("lrn") : { data: [] };
+        const [{ data: existingMasterlist }, { data: existingGradeSections }] = await Promise.all([
+          db ? db.from("student_masterlist").select("lrn") : { data: [] },
+          adminApi.db("grade_sections", "select", { payload: "*" })
+        ]);
         const dbLrnSet = new Set((existingMasterlist || []).map(r => r.lrn));
+
+        const existingGradeSectionKeySet = new Set(
+          (existingGradeSections || []).map(gs => `${String(gs.grade_level).replace(/\D/g, "")}_${String(gs.section_name).trim().toLowerCase()}`)
+        );
 
         const validRecords = [];
         const invalidRecords = [];
         const duplicateRecords = [];
         const fileLrnSet = new Set();
+        const sectionBreakdown = {};
+        const newGradeSectionsToCreate = [];
+        const addedSectionKeySet = new Set();
 
         for (let i = 1; i < rows.length; i++) {
           const cols = rows[i];
@@ -736,8 +751,11 @@ function StudentManagement() {
             lastName = split.last_name;
           }
 
-          const yearLevel = headerMap.year_level !== undefined ? normalizeYearLevel(cols[headerMap.year_level] || "") : null;
-          const section = headerMap.section !== undefined ? (cols[headerMap.section] || "").trim() : null;
+          const rawYearLevel = headerMap.year_level !== undefined ? (cols[headerMap.year_level] || "").trim() : "";
+          const yearLevel = rawYearLevel ? normalizeYearLevel(rawYearLevel) : null;
+
+          const rawSection = headerMap.section !== undefined ? (cols[headerMap.section] || "").trim() : "";
+          const section = rawSection ? formatSectionName(rawSection) : null;
           const email = headerMap.email !== undefined ? (cols[headerMap.email] || "").trim() : null;
 
           const fullNameDisplay = [firstName, lastName].filter(Boolean).join(" ") || "N/A";
@@ -795,6 +813,22 @@ function StudentManagement() {
             email: email || null,
             account_created: false
           });
+
+          const ylKey = yearLevel || "Unassigned";
+          const secKey = section || "Unassigned";
+          if (!sectionBreakdown[ylKey]) sectionBreakdown[ylKey] = {};
+          sectionBreakdown[ylKey][secKey] = (sectionBreakdown[ylKey][secKey] || 0) + 1;
+
+          if (yearLevel && section) {
+            const key = `${yearLevel}_${section.toLowerCase()}`;
+            if (!existingGradeSectionKeySet.has(key) && !addedSectionKeySet.has(key)) {
+              addedSectionKeySet.add(key);
+              newGradeSectionsToCreate.push({
+                grade_level: yearLevel,
+                section_name: section
+              });
+            }
+          }
         }
 
         const totalRows = validRecords.length + invalidRecords.length + duplicateRecords.length;
@@ -809,7 +843,9 @@ function StudentManagement() {
           total: totalRows,
           valid: validRecords,
           invalid: invalidRecords,
-          duplicates: duplicateRecords
+          duplicates: duplicateRecords,
+          sectionBreakdown,
+          newGradeSectionsToCreate
         });
         setPreviewTab(validRecords.length > 0 ? "valid" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"));
         setShowImportPreviewModal(true);
@@ -833,6 +869,18 @@ function StudentManagement() {
     try {
       if (!db) throw new Error("Supabase client not configured");
 
+      // 1. Auto-create any missing sections in grade_sections table
+      if (importPreviewSummary.newGradeSectionsToCreate && importPreviewSummary.newGradeSectionsToCreate.length > 0) {
+        for (const gs of importPreviewSummary.newGradeSectionsToCreate) {
+          try {
+            await adminApi.db("grade_sections", "insert", { payload: gs });
+          } catch (secErr) {
+            console.warn("[handleConfirmImport] Auto section insertion warning:", secErr);
+          }
+        }
+      }
+
+      // 2. Insert valid student masterlist records
       const recordsToInsert = importPreviewSummary.valid.map(({ rowNum, email, ...record }) => record);
 
       const { error } = await db.from("student_masterlist").insert(recordsToInsert);
@@ -844,6 +892,7 @@ function StudentManagement() {
       if (data) setMasterlist(data);
 
       setShowImportPreviewModal(false);
+      await refreshStudents();
     } catch (err) {
       toast.error(err.message || "Failed to insert masterlist records.");
     } finally {
@@ -2238,6 +2287,43 @@ function StudentManagement() {
                   <p className="text-2xl font-bold text-red-700 mt-1">{importPreviewSummary.invalid.length}</p>
                 </div>
               </div>
+
+              {importPreviewSummary.sectionBreakdown && Object.keys(importPreviewSummary.sectionBreakdown).length > 0 && (
+                <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-blue-900 font-semibold text-sm">
+                    <BookOpen className="w-4 h-4 text-blue-600" />
+                    <span>Detected Grade Level & Section Breakdown</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {Object.entries(importPreviewSummary.sectionBreakdown)
+                      .sort(([a], [b]) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0))
+                      .map(([grade, secs]) => (
+                        <div key={grade} className="bg-white border border-blue-100 rounded-lg p-3 shadow-xs">
+                          <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">
+                            {grade.toLowerCase().includes("grade") || grade === "Unassigned" ? grade : `Grade ${grade}`}
+                          </p>
+                          <ul className="mt-1 space-y-1">
+                            {Object.entries(secs).map(([secName, count]) => (
+                              <li key={secName} className="text-xs text-gray-600 flex justify-between">
+                                <span>{secName}</span>
+                                <span className="font-semibold text-gray-900">{count} student{count !== 1 ? 's' : ''}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                  {importPreviewSummary.newGradeSectionsToCreate?.length > 0 && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        <strong>Notice:</strong> {importPreviewSummary.newGradeSectionsToCreate.length} new section(s) will be automatically registered in Academic Settings (
+                        {importPreviewSummary.newGradeSectionsToCreate.map(gs => `Grade ${gs.grade_level} - ${gs.section_name}`).join(", ")}).
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-2 border-b border-gray-200">
                 <button
