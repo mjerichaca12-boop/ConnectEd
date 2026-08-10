@@ -340,9 +340,27 @@ function TeacherManagement() {
   };
 
   const updateTeacherField = (setData, setErrors, formData, field, value) => {
-    const nextValue = field === "phone" ? normalizePhone(value) : value;
+    let nextValue = field === "phone" ? normalizePhone(value) : value;
+
+    if (field === "subjects") {
+      const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
+      nextValue = normalizeSubjects(value).filter((subjId) => validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase()));
+    }
+
     const nextFormData = { ...formData, [field]: nextValue };
-    const nextError = validateTeacherField(field, nextValue, nextFormData);
+
+    if (field === "grade_level") {
+      const newGradeNorm = normalizeGradeLevel(value);
+      const matchingSubjects = normalizeSubjects(nextFormData.subjects).filter((subjId) => {
+        const subj = availableSubjects.find((s) => String(s.id) === String(subjId) || String(s.code || "").toLowerCase() === String(subjId).toLowerCase());
+        if (!subj) return false;
+        const subjGradeNorm = normalizeGradeLevel(subj.grade_level || "");
+        return !subjGradeNorm || subjGradeNorm === newGradeNorm;
+      });
+      nextFormData.subjects = matchingSubjects;
+    }
+
+    const nextError = validateTeacherField(field, nextFormData[field], nextFormData);
 
     setData(nextFormData);
     setErrors((current) => {
@@ -351,6 +369,12 @@ function TeacherManagement() {
         updatedErrors[field] = nextError;
       } else {
         delete updatedErrors[field];
+      }
+
+      if (field === "grade_level") {
+        const subjErr = validateTeacherField("subjects", nextFormData.subjects, nextFormData);
+        if (subjErr) updatedErrors.subjects = subjErr;
+        else delete updatedErrors.subjects;
       }
       return updatedErrors;
     });
@@ -810,6 +834,11 @@ function TeacherManagement() {
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
     const { first_name, middle_name, last_name } = splitTeacherName(formatTeacherFullName(teacher));
+    const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
+    const initialSubjects = normalizeSubjects(teacher.subjects).filter((subjId) =>
+      validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase())
+    );
+
     setEditFormData({
       first_name,
       middle_name,
@@ -817,7 +846,7 @@ function TeacherManagement() {
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
       grade_level: teacher.grade_level ?? "",
-      subjects: normalizeSubjects(teacher.subjects),
+      subjects: initialSubjects,
       status: teacher.status ?? "Active"
     });
     setEditFormErrors({});
