@@ -169,12 +169,23 @@ export function AIAssistant() {
     }
   }, [activeTeacherId, activeClassObj, loadDbMaterials]);
 
+  const activeClassObjRef = useRef(activeClassObj);
+  useEffect(() => {
+    activeClassObjRef.current = activeClassObj;
+  }, [activeClassObj]);
+
+  const loadDbMaterialsRef = useRef(loadDbMaterials);
+  useEffect(() => {
+    loadDbMaterialsRef.current = loadDbMaterials;
+  }, [loadDbMaterials]);
+
   // Realtime Supabase Subscription on class_materials table
   useEffect(() => {
     if (!supabase || !activeTeacherId) return;
 
+    const channelName = `ai-mat-sync-${activeTeacherId}-${Date.now()}`;
     const channel = supabase
-      .channel(`ai-materials-sync-${activeTeacherId}`)
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -183,15 +194,16 @@ export function AIAssistant() {
           table: "class_materials",
         },
         () => {
-          loadDbMaterials(activeTeacherId, activeClassObj);
+          loadDbMaterialsRef.current(activeTeacherId, activeClassObjRef.current);
         }
-      )
-      .subscribe();
+      );
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeTeacherId, activeClassObj, loadDbMaterials]);
+  }, [activeTeacherId]);
 
   // Fetch subjects, lessons, and materials on mount
   useEffect(() => {

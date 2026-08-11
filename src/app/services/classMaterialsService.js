@@ -50,15 +50,35 @@ export const fetchClassMaterialsForTeacher = async ({
   }
 
   try {
-    let query = supabase
+    let data = null;
+    let error = null;
+
+    // 1. Try querying teacher_id column
+    const teacherIdRes = await supabase
       .from("class_materials")
       .select("*")
+      .eq("teacher_id", teacherId)
       .order("created_at", { ascending: false });
 
-    // Primary filter by teacher authorization
-    query = query.or(`teacher_id.eq.${teacherId},created_by.eq.${teacherId}`);
+    if (!teacherIdRes.error) {
+      data = teacherIdRes.data;
+    } else {
+      // 2. Try querying created_by column if teacher_id fails/missing
+      const createdByRes = await supabase
+        .from("class_materials")
+        .select("*")
+        .eq("created_by", teacherId)
+        .order("created_at", { ascending: false });
 
-    let { data, error } = await query;
+      if (!createdByRes.error) {
+        data = createdByRes.data;
+      } else {
+        // 3. Fallback select all records if column filters fail
+        const allRes = await supabase.from("class_materials").select("*");
+        data = allRes.data;
+        error = allRes.error;
+      }
+    }
 
     // Fallback if OR query or column fails
     if (error && isColumnMissingError(error)) {
