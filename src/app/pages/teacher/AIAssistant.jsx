@@ -508,9 +508,7 @@ export function AIAssistant() {
       },
       onError: (err) => {
         console.error("Groq Error:", err);
-        const errorContent = err?.status === 429
-          ? "⚠️ I'm receiving too many requests right now. Please wait a moment before trying again."
-          : "⚠️ Sorry, I encountered an error while processing your request. Please try again later.";
+        const errorContent = err?.userMessage || "⚠️ Sorry, I encountered an error while processing your request. Please try again later.";
         setMessages([
           ...currentMessages,
           { role: "assistant", content: errorContent, timestamp: Date.now() },
@@ -962,15 +960,29 @@ export function AIAssistant() {
     await sendToAI(queryText, [...messages, userActionMsg]);
   };
 
+  const isSubmittingRef = useRef(false);
+  const lastSendTimeRef = useRef(0);
+  const lastPromptHashRef = useRef("");
+
   const handleSend = async (e) => {
     e?.preventDefault();
-    if (!inputText.trim() || isStreaming || loadingContext) return;
-
     const queryText = inputText.trim();
+    if (!queryText || isStreaming || loadingContext || isSubmittingRef.current) return;
+
+    const now = Date.now();
+    // Guard against exact identical prompt within 2 seconds
+    if (lastPromptHashRef.current === queryText && (now - lastSendTimeRef.current) < 2000) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    lastSendTimeRef.current = now;
+    lastPromptHashRef.current = queryText;
     setInputText("");
 
-    const userMessage = { role: "user", content: queryText, timestamp: Date.now() };
-    lastUserMsgRef.current = userMessage;
+    try {
+      const userMessage = { role: "user", content: queryText, timestamp: Date.now() };
+      lastUserMsgRef.current = userMessage;
 
     // 1. Intercept prompt based on detected intent
     const isAnalytics = isAnalyticsRequest(queryText);
@@ -1089,6 +1101,9 @@ export function AIAssistant() {
     // C. General Conversation Flow
     setMessages((prev) => [...prev, userMessage]);
     await sendToAI(queryText, [...messages, userMessage]);
+    } finally {
+      isSubmittingRef.current = false;
+    }
   };
 
   // Helper when class lessons need evaluation inside handleSend

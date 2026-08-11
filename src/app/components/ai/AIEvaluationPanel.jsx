@@ -7,19 +7,18 @@ import {
 } from "../../services/teacherAiEvaluation";
 import {
   Sparkles,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Play,
-  Loader2,
-  ShieldCheck,
   Award,
   BookOpen,
   Database,
+  ShieldCheck,
   Lock,
+  Play,
+  Loader2,
   Search,
   Check,
-  X
+  X,
+  AlertTriangle,
+  Zap
 } from "lucide-react";
 
 export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
@@ -28,6 +27,7 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [mockMode, setMockMode] = useState(true); // Default to Mock Mode to avoid burning tokens on dev clicks
 
   if (!isOpen) return null;
 
@@ -40,10 +40,10 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
     for (let i = 0; i < AI_TEST_CASES.length; i++) {
       setCurrentIndex(i + 1);
       const testCase = AI_TEST_CASES[i];
-      if (i > 0) {
+      if (i > 0 && !mockMode) {
         await new Promise((r) => setTimeout(r, 1200));
       }
-      const res = await executeSingleTestCase(testCase, callStreamAiFn);
+      const res = await executeSingleTestCase(testCase, callStreamAiFn, mockMode);
       results.push(res);
       setTestResults([...results]);
     }
@@ -51,14 +51,27 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
     setIsRunning(false);
   };
 
+  const handleRunSingleTest = async (testCase) => {
+    const res = await executeSingleTestCase(testCase, callStreamAiFn, mockMode);
+    setTestResults((prev) => {
+      const idx = prev.findIndex((r) => r.testId === testCase.testId);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = res;
+        return next;
+      }
+      return [...prev, res];
+    });
+  };
+
   const metrics = calculateOverallMetrics(testResults);
 
-  const filteredResults = testResults.filter((r) => {
-    const matchesCat = selectedCategory === "ALL" || r.category === selectedCategory;
+  const displayTestList = AI_TEST_CASES.filter((tc) => {
+    const matchesCat = selectedCategory === "ALL" || tc.category === selectedCategory;
     const matchesSearch =
       !searchQuery ||
-      r.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.actualResponse.toLowerCase().includes(searchQuery.toLowerCase());
+      tc.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tc.testId.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
   });
 
@@ -66,29 +79,44 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-5xl h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-gray-200 animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between border-b border-slate-800">
+        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-green-500/20 rounded-xl border border-green-500/30 text-green-400">
-              <Award className="w-6 h-6" />
+            <div className="p-2 bg-green-500/20 rounded-xl border border-green-500/30 text-green-400">
+              <Award className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                Teacher AI Quality & Evaluation Suite
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                ConnectEd AI Quality & Benchmark Suite
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-semibold">
-                  35 Test Cases
+                  {AI_TEST_CASES.length} Test Cases
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Deterministic automated quality benchmarks, grounding assertions, and hallucination resistance checks.
+                Grounding assertions, hallucination resistance, and context accuracy testing.
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* Mock Mode Toggle */}
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mockMode}
+                onChange={(e) => setMockMode(e.target.checked)}
+                className="rounded text-green-500 focus:ring-0"
+              />
+              <Zap className={`w-3.5 h-3.5 ${mockMode ? "text-amber-400" : "text-slate-500"}`} />
+              <span>Offline Mock Mode</span>
+            </label>
+
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -100,7 +128,9 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 mb-1">Execute Evaluation Suite</h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  Run all 35 test cases across 5 categories to generate an objective accuracy score.
+                  {mockMode
+                    ? "Offline Mock Mode active: runs instant assertion checks without consuming Groq API tokens."
+                    : "Live Mode active: streams live completions from Groq models to evaluate actual AI outputs."}
                 </p>
               </div>
 
@@ -117,7 +147,7 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
                 ) : (
                   <>
                     <Play className="w-4 h-4 fill-white" />
-                    Run All 35 AI Tests
+                    Run All {AI_TEST_CASES.length} AI Tests
                   </>
                 )}
               </button>
@@ -189,7 +219,7 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
             </div>
           </div>
 
-          {/* Progress Bar when running */}
+          {/* Progress Bar */}
           {isRunning && (
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex justify-between text-xs font-semibold text-slate-700">
@@ -237,65 +267,68 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
 
           {/* Test Case Breakdown List */}
           <div className="space-y-3">
-            {filteredResults.length === 0 ? (
-              <div className="bg-white rounded-xl p-8 text-center border border-slate-200">
-                <Sparkles className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-600 text-sm font-semibold">No test evaluation results yet</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Click "Run All 35 AI Tests" above to execute the automated benchmark suite.
-                </p>
-              </div>
-            ) : (
-              filteredResults.map((r) => (
+            {displayTestList.map((tc) => {
+              const res = testResults.find((r) => r.testId === tc.testId);
+              return (
                 <div
-                  key={r.testId}
+                  key={tc.testId}
                   className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm space-y-3"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-mono font-bold px-2 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
-                        {r.testId}
+                        {tc.testId}
                       </span>
                       <span className="text-xs font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
-                        {r.category}
+                        {tc.category}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400 font-mono">{r.durationMs}ms</span>
-                      <span
-                        className={`text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
-                          r.status === "PASS"
-                            ? "bg-green-100 text-green-700 border border-green-200"
-                            : r.status === "PARTIAL"
-                            ? "bg-amber-100 text-amber-700 border border-amber-200"
-                            : "bg-red-100 text-red-700 border border-red-200"
-                        }`}
+                      <button
+                        onClick={() => handleRunSingleTest(tc)}
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
                       >
-                        {r.status === "PASS" && <Check className="w-3 h-3" />}
-                        {r.status === "PARTIAL" && <AlertTriangle className="w-3 h-3" />}
-                        {r.status === "FAIL" && <X className="w-3 h-3" />}
-                        {r.status} ({r.score}%)
-                      </span>
+                        <Play className="w-3 h-3" /> Run Test
+                      </button>
+
+                      {res && (
+                        <span
+                          className={`text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                            res.status === "PASS"
+                              ? "bg-green-100 text-green-700 border border-green-200"
+                              : res.status === "PARTIAL"
+                              ? "bg-amber-100 text-amber-700 border border-amber-200"
+                              : "bg-red-100 text-red-700 border border-red-200"
+                          }`}
+                        >
+                          {res.status === "PASS" && <Check className="w-3 h-3" />}
+                          {res.status === "PARTIAL" && <AlertTriangle className="w-3 h-3" />}
+                          {res.status === "FAIL" && <X className="w-3 h-3" />}
+                          {res.status} ({res.score}%)
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <p className="text-xs font-bold text-slate-900">Question: "{r.question}"</p>
+                    <p className="text-xs font-bold text-slate-900">Question: "{tc.question}"</p>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      <span className="font-semibold">Expected Behavior:</span> {r.expectedBehavior}
+                      <span className="font-semibold">Expected Behavior:</span> {tc.expectedBehavior}
                     </p>
                   </div>
 
-                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200/80">
-                    <p className="text-[11px] font-semibold text-slate-600 mb-1">Actual AI Response:</p>
-                    <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed font-sans">
-                      {r.actualResponse}
-                    </p>
-                  </div>
+                  {res && (
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200/80">
+                      <p className="text-[11px] font-semibold text-slate-600 mb-1">Actual AI Response ({res.durationMs}ms):</p>
+                      <p className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed font-sans">
+                        {res.actualResponse}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              ))
-            )}
+              );
+            })}
           </div>
         </div>
       </div>

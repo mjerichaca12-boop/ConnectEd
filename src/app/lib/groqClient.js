@@ -1,22 +1,16 @@
 import Groq from "groq-sdk";
+import { 
+  GROQ_MODELS, 
+  MAX_TOKENS, 
+  MAX_TOTAL_FILE_CHARS, 
+  MAX_HISTORY_MESSAGES,
+  parseGroqError 
+} from "@/app/config/groqConfig";
 
 const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+const groq = apiKey ? new Groq({ apiKey, dangerouslyAllowBrowser: true }) : null;
 
-if (!apiKey) {
-  console.error("Groq API key missing. Add VITE_GROQ_API_KEY to your .env file.");
-}
-
-const groq = apiKey
-  ? new Groq({ apiKey, dangerouslyAllowBrowser: true })
-  : null;
-
-export const isGroqConfigured = () => !!groq;
-
-const MODEL_PRIMARY    = "llama-3.3-70b-versatile";
-const MODEL_FALLBACK_1 = "llama-3.1-8b-instant";
-const MODEL_FALLBACK_2 = "mixtral-8x7b-32768";
-const MAX_TOKENS       = 2048;
-const MAX_TOTAL_FILE_CHARS = 5000;
+export const isGroqConfigured = () => !!groq || true; // Serverless endpoint or client SDK
 
 // Proportional truncation helper to stay under character limits across multiple files
 const truncateFilesToLimit = (files, maxTotalChars) => {
@@ -215,7 +209,7 @@ export const streamMessage = async ({
     }));
 
   if (validatedMessages.length === 0) {
-    onError?.(new Error("No valid messages to send"));
+    onError?.(parseGroqError(new Error("No valid messages to send")));
     return;
   }
 
@@ -230,16 +224,84 @@ export const streamMessage = async ({
     injectedSystemContext
   );
 
-  const callGroq = async (model) => {
+  const payloadMessages = [
+    { role: "system", content: systemPrompt },
+    ...validatedMessages.slice(-MAX_HISTORY_MESSAGES),
+  ];
+
+  // Primary execution via Serverless endpoint with fallback to direct Client SDK
+  const executeCompletionCall = async (model) => {
+    // 1. Try Vercel Serverless Function /api/groq-completion first
+    try {
+      const response = await fetch("/api/groq-completion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: payloadMessages,
+          max_tokens: MAX_TOKENS,
+          temperature: 0.7,
+        }),
+      });
+
+      if (response.ok && response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              if (dataStr === "[DONE]") break;
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.content) {
+                  fullText += parsed.content;
+                  onChunk(parsed.content);
+                } else if (parsed.errorType) {
+                  throw new Error(parsed.errorType);
+                }
+              } catch (parseErr) {
+                // Ignore chunk parse errors
+              }
+            }
+          }
+        }
+
+        onDone?.(fullText);
+        return fullText;
+      }
+
+      // If /api/groq-completion returned a non-200 status, check for JSON error type
+      const errJson = await response.json().catch(() => null);
+      if (errJson) {
+        const errObj = new Error(errJson.error || "Server API Error");
+        errObj.status = response.status;
+        errObj.errorType = errJson.errorType;
+        throw errObj;
+      }
+    } catch (apiError) {
+      // If serverless route is not configured or failed in local dev, fallback to client SDK if available
+      if (!groq) throw apiError;
+    }
+
+    // 2. Direct Groq Client SDK fallback (development mode)
+    if (!groq) {
+      throw new Error("Groq API key not configured.");
+    }
+
     const stream = await groq.chat.completions.create({
       model,
       max_tokens: MAX_TOKENS,
       temperature: 0.7,
       stream: true,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...validatedMessages.slice(-6),
-      ],
+      messages: payloadMessages,
     });
 
     let fullText = "";
@@ -251,32 +313,40 @@ export const streamMessage = async ({
       }
     }
     onDone?.(fullText);
+    return fullText;
   };
 
+  // Attempt 1: Primary Model
   try {
-    await callGroq(MODEL_PRIMARY);
+    await executeCompletionCall(GROQ_MODELS.PRIMARY);
   } catch (error) {
-    console.error(`Groq Primary Model Error (${MODEL_PRIMARY}):`, error);
+    console.error(`Groq Primary Model Error (${GROQ_MODELS.PRIMARY}):`, error);
 
-    const isRateLimit = error?.status === 429 || error?.message?.includes("rate limit");
-    const isOverloaded = error?.status === 503 || error?.message?.includes("overloaded");
+    const parsedErr = parseGroqError(error);
 
-    if (isRateLimit || isOverloaded || error?.status === 400) {
-      console.log(`Attempting fallback to ${MODEL_FALLBACK_1}...`);
+    // CRITICAL REQUIREMENT: If TPD (Daily Token Limit) is reached, DO NOT retry!
+    if (parsedErr.isTPD) {
+      console.warn("TPD (Tokens Per Day) limit exhausted. Stopping further retry attempts.");
+      onError?.(parsedErr);
+      return;
+    }
+
+    // Controlled single attempt fallback for TPM / transient network error
+    if (parsedErr.isRateLimit || error?.status === 503 || error?.status === 400) {
+      console.log(`Attempting controlled fallback to ${GROQ_MODELS.FALLBACK_1}...`);
+      
+      if (parsedErr.isTPM) {
+        await new Promise((res) => setTimeout(res, 1500)); // Controlled 1.5s delay for short-term TPM
+      }
+
       try {
-        await callGroq(MODEL_FALLBACK_1);
+        await executeCompletionCall(GROQ_MODELS.FALLBACK_1);
       } catch (fallbackError) {
-        console.error(`Groq Fallback 1 Error (${MODEL_FALLBACK_1}):`, fallbackError);
-        console.log(`Attempting fallback to ${MODEL_FALLBACK_2}...`);
-        try {
-          await callGroq(MODEL_FALLBACK_2);
-        } catch (fallbackError2) {
-          console.error(`Groq Fallback 2 Error (${MODEL_FALLBACK_2}):`, fallbackError2);
-          onError?.(fallbackError2);
-        }
+        console.error(`Groq Fallback 1 Error (${GROQ_MODELS.FALLBACK_1}):`, fallbackError);
+        onError?.(parseGroqError(fallbackError));
       }
     } else {
-      onError?.(error);
+      onError?.(parsedErr);
     }
   }
 };
