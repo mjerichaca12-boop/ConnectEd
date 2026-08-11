@@ -4,8 +4,8 @@
 
 // Supported production models on Groq
 export const GROQ_MODELS = {
-  PRIMARY: "llama-3.3-70b-versatile",
-  FALLBACK_1: "llama-3.1-8b-instant",
+  PRIMARY: "llama-3.1-8b-instant",
+  FALLBACK_1: "llama-3.3-70b-versatile",
 };
 
 // Maximum retry attempts per user request (Primary -> Fallback 1 -> Stop)

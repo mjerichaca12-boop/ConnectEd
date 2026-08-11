@@ -85,7 +85,52 @@ export function AIAssistant() {
   const inputRef = useRef(null);
   const storedUser = getStoredUser();
 
-  const [messages, setMessages] = useState([WELCOME_MSG]);
+  const CHAT_STORAGE_KEY = useMemo(
+    () => `connected_ai_chat_${storedUser?.id || storedUser?.email || "teacher"}`,
+    [storedUser?.id, storedUser?.email]
+  );
+
+  const getPersistedMessages = useCallback(() => {
+    try {
+      const stored = sessionStorage.getItem(CHAT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn("Failed to load persisted AI chat history:", e);
+    }
+    return [WELCOME_MSG];
+  }, [CHAT_STORAGE_KEY]);
+
+  const [messages, setMessages] = useState(getPersistedMessages);
+
+  // Sync chat messages to sessionStorage whenever they change
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      try {
+        sessionStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+      } catch (e) {
+        console.warn("Failed to persist AI chat history:", e);
+      }
+    }
+  }, [messages, CHAT_STORAGE_KEY]);
+
+  const handleClearHistory = useCallback(() => {
+    try {
+      sessionStorage.removeItem(CHAT_STORAGE_KEY);
+    } catch (e) {
+      console.warn("Failed to clear persisted AI chat history:", e);
+    }
+    setMessages([
+      {
+        role: "assistant",
+        content: "🗑️ Chat cleared. How can I help you?",
+        timestamp: Date.now(),
+      },
+    ]);
+  }, [CHAT_STORAGE_KEY]);
+
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -1485,6 +1530,8 @@ export function AIAssistant() {
           <div data-tour="teacher-ai-chat" className="flex-1 flex flex-col min-w-0 bg-white border border-gray-150 rounded-2xl shadow-sm overflow-hidden">
             <AIChat
               messages={messages}
+              setMessages={setMessages}
+              onClearChat={handleClearHistory}
               inputText={inputText}
               setInputText={setInputText}
               handleSend={handleSend}

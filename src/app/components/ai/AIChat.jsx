@@ -40,6 +40,7 @@ function CopyButton({ text }) {
 export function AIChat({
   messages,
   setMessages,
+  onClearChat,
   inputText,
   setInputText,
   handleSend,
@@ -62,13 +63,17 @@ export function AIChat({
   }, [messages]);
 
   const handleClear = () => {
-    setMessages([
-      {
-        role: "assistant",
-        content: "🗑️ Chat cleared. How can I help you?",
-        timestamp: Date.now(),
-      },
-    ]);
+    if (typeof onClearChat === "function") {
+      onClearChat();
+    } else if (typeof setMessages === "function") {
+      setMessages([
+        {
+          role: "assistant",
+          content: "🗑️ Chat cleared. How can I help you?",
+          timestamp: Date.now(),
+        },
+      ]);
+    }
   };
 
   const lastAssistantIdx = messages.map((m, i) => m.role === "assistant" ? i : -1).filter(i => i >= 0).pop();
