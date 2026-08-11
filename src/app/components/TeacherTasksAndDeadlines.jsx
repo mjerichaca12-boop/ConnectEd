@@ -25,33 +25,24 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
       const subjectIds = assignedSubjects.map(s => s.id);
       
       // 1. Fetch lessons for these subjects
-      let lessonsQuery = supabase
+      const { data: lessonsData } = await supabase
         .from('lessons')
         .select('id, subject_id, status')
-        .in('subject_id', subjectIds)
-        .eq('status', 'Published')
-        .eq('school_year', activeSchoolYear);
+        .in('subject_id', subjectIds);
 
-      if (viewMode === "current") {
-        lessonsQuery = lessonsQuery.eq('term', activeQuarter);
-      }
-
-      const { data: lessonsData } = await lessonsQuery;
       const lessonIds = (lessonsData || []).map(l => String(l.id));
 
-      // 2. Fetch Assignments & Quizzes by lesson_id or subject_id
-      const [{ data: assignmentsByLesson }, { data: quizzesByLesson }, { data: assignmentsBySubject }, { data: quizzesBySubject }] = await Promise.all([
+      // 2. Fetch Assignments & Quizzes by lesson_id
+      const [{ data: assignmentsByLesson }, { data: quizzesByLesson }] = await Promise.all([
         lessonIds.length ? supabase.from('assignments').select('*').in('lesson_id', lessonIds) : Promise.resolve({ data: [] }),
-        lessonIds.length ? supabase.from('quizzes').select('*').in('lesson_id', lessonIds) : Promise.resolve({ data: [] }),
-        subjectIds.length ? supabase.from('assignments').select('*').in('subject_id', subjectIds) : Promise.resolve({ data: [] }),
-        subjectIds.length ? supabase.from('quizzes').select('*').in('subject_id', subjectIds) : Promise.resolve({ data: [] })
+        lessonIds.length ? supabase.from('quizzes').select('*').in('lesson_id', lessonIds) : Promise.resolve({ data: [] })
       ]);
 
       const rawTasksMap = new Map();
       const addRawTask = (task, type) => {
         if (!task || !task.id || rawTasksMap.has(String(task.id))) return;
         const lesson = (lessonsData || []).find(l => String(l.id) === String(task.lesson_id));
-        const courseId = task.subject_id || (lesson ? lesson.subject_id : null);
+        const courseId = lesson ? lesson.subject_id : null;
         rawTasksMap.set(String(task.id), {
           ...task,
           course_id: courseId,
@@ -61,9 +52,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
       };
 
       (assignmentsByLesson || []).forEach(a => addRawTask(a, 'assignment'));
-      (assignmentsBySubject || []).forEach(a => addRawTask(a, 'assignment'));
       (quizzesByLesson || []).forEach(q => addRawTask(q, 'quiz'));
-      (quizzesBySubject || []).forEach(q => addRawTask(q, 'quiz'));
 
       const allTasks = Array.from(rawTasksMap.values());
       setAssessments(allTasks);

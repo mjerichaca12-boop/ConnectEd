@@ -47,7 +47,7 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
-const teacherSelectColumns = "id, first_name, middle_name, last_name, email, phone, grade_level, assigned_class, subjects, status, created_at, role";
+const teacherSelectColumns = "id, first_name, middle_name, last_name, email, phone, year_level, section, subjects, status, created_at, role";
 const subjectSelectColumns = "id, code, name, section, grade_level";
 const emptyTeacherForm = {
   first_name: "",
