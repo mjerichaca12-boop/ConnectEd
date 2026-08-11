@@ -177,7 +177,16 @@ export const getTeacherAssignedClasses = async (storedUser) => {
       const code = String(s.code || "").trim();
       const name = String(s.name || "Untitled Subject").trim();
       const section = String(s.section || "").trim();
-      const gradeLevel = String(s.grade_level || s.year_level || "").trim();
+
+      let rawGrade = String(s.grade_level || s.grade || s.year_level || "").trim();
+      if (!rawGrade) {
+        const gradeMatch = (code.match(/10|11|12|[7-9]/) || name.match(/10|11|12|[7-9]/))?.[0];
+        if (gradeMatch) rawGrade = `Grade ${gradeMatch}`;
+      } else if (!rawGrade.toLowerCase().includes("grade") && /^\d+$/.test(rawGrade)) {
+        rawGrade = `Grade ${rawGrade}`;
+      }
+
+      const gradeLevel = rawGrade;
       const key = `${code}|${name}|${section}|${gradeLevel}`.toLowerCase();
 
       if (key && seen.has(key)) return;

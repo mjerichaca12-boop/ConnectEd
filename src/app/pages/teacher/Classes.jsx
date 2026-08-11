@@ -40,19 +40,31 @@ function Classes() {
   });
 
   const mapSubjectsToCards = (subjectRows, enrollmentBySubject = new Map()) => {
-    return (subjectRows ?? []).map((subject) => ({
-      id: String(subject.id),
-      code: String(subject.code || "").trim(),
-      name: String(subject.name || "Untitled Subject").trim(),
-      section: String(subject.section || "").trim() || "No section assigned",
-      schedule: String(subject.schedule || "").trim(),
-      room: "",
-      semester: "Current School Year",
-      studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
-      capacity: Number(subject.capacity || 0),
-      students: [],
-      gradeLevel: String(subject.grade_level || subject.year_level || "").trim()
-    }));
+    return (subjectRows ?? []).map((subject) => {
+      const code = String(subject.code || "").trim();
+      const name = String(subject.name || "Untitled Subject").trim();
+      let rawGrade = String(subject.gradeLevel || subject.grade_level || subject.grade || subject.year_level || "").trim();
+      if (!rawGrade) {
+        const gradeMatch = (code.match(/10|11|12|[7-9]/) || name.match(/10|11|12|[7-9]/))?.[0];
+        if (gradeMatch) rawGrade = `Grade ${gradeMatch}`;
+      } else if (!rawGrade.toLowerCase().includes("grade") && /^\d+$/.test(rawGrade)) {
+        rawGrade = `Grade ${rawGrade}`;
+      }
+
+      return {
+        id: String(subject.id),
+        code,
+        name,
+        section: String(subject.section || "").trim() || "No section assigned",
+        schedule: String(subject.schedule || "").trim(),
+        room: "",
+        semester: "Current School Year",
+        studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
+        capacity: Number(subject.capacity || 0),
+        students: [],
+        gradeLevel: rawGrade
+      };
+    });
   };
 
   const getSubjectIdentityKey = (subject) => {
@@ -373,7 +385,7 @@ function Classes() {
                     </h3>
                     {(classItem.gradeLevel || classItem.section) && (
                       <p className="text-gray-600 text-sm mt-1">
-                        {classItem.gradeLevel || "No grade"} {classItem.section ? `- ${classItem.section}` : ""}
+                        {classItem.gradeLevel ? classItem.gradeLevel : ""} {classItem.section ? (classItem.gradeLevel ? `- ${classItem.section}` : classItem.section) : ""}
                       </p>
                     )}
                   </div>
