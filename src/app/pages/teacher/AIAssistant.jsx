@@ -12,6 +12,7 @@ import { AIEvaluationPanel } from "@/app/components/ai/AIEvaluationPanel";
 import { parseDocument } from "@/app/lib/documentParser";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
 import { getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
+import { supabase } from "@/app/lib/supabaseClient";
 
 const STORAGE_BUCKET = "class-materials";
 
