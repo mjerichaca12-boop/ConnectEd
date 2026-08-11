@@ -1211,7 +1211,7 @@ export function AIAssistant() {
 
             {/* AI Customization Controls */}
             <div data-tour="teacher-ai-toolbar" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300 flex-1">
-              <AIToolbar settings={settings} setSettings={setSettings} onQuickAction={handleQuickAction} />
+              <AIToolbar settings={settings} setSettings={setSettings} onActionClick={handleQuickActionClick} />
             </div>
 
           </div>
