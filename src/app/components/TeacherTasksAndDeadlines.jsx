@@ -106,7 +106,16 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     
     let isMounted = true;
     
-    const channel = supabase.channel(`teacher-tasks-${teacherId}_${Date.now()}`)
+    const existingChannels = supabase.getChannels ? supabase.getChannels() : [];
+    existingChannels.forEach((c) => {
+      if (c.topic?.includes(`teacher-tasks-${teacherId}`)) {
+        try { supabase.removeChannel(c); } catch {}
+      }
+    });
+
+    const channel = supabase.channel(`teacher-tasks-${teacherId}_${Date.now()}`);
+
+    channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, () => {
         if (isMounted) fetchData();
       })
@@ -129,9 +138,9 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     return () => {
       isMounted = false;
       window.removeEventListener("connected-grade-updated", handleGradeUpdated);
-      supabase.removeChannel(channel);
+      try { supabase.removeChannel(channel); } catch {}
     };
-  }, [teacherId, assignedSubjects]);
+  }, [teacherId]);
 
   const metrics = useMemo(() => {
     const now = new Date();

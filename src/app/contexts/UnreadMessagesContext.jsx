@@ -136,10 +136,20 @@ export const UnreadMessagesProvider = ({ children }) => {
 
   // Real-time subscription to 'messages' table
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.id || !supabase) return;
+
+    // Clean up any existing channels for unread messages sync to prevent channel reuse conflict
+    const existingChannels = supabase.getChannels ? supabase.getChannels() : [];
+    existingChannels.forEach((c) => {
+      if (c.topic?.includes("unread_messages_sync_")) {
+        try { supabase.removeChannel(c); } catch {}
+      }
+    });
 
     const channelName = `unread_messages_sync_${currentUser.id}_${Date.now()}`;
-    const channel = supabase.channel(channelName)
+    const channel = supabase.channel(channelName);
+
+    channel
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async (payload) => {
         const msg = payload.new;
         if (!msg || msg.sender_id === currentUser.id) return; // Ignore own messages
@@ -159,12 +169,12 @@ export const UnreadMessagesProvider = ({ children }) => {
             
           if (pData) {
             isForUs = true;
-            convKey = `group_\${msg.conversation_id}`;
+            convKey = `group_${msg.conversation_id}`;
           }
         } else if (msg.receiver_id === currentUser.id) {
           // Direct message
           isForUs = true;
-          convKey = `dm_\${msg.sender_id}`;
+          convKey = `dm_${msg.sender_id}`;
         }
 
         if (isForUs) {
@@ -183,9 +193,9 @@ export const UnreadMessagesProvider = ({ children }) => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      try { supabase.removeChannel(channel); } catch {}
     };
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Mark conversation as read
   const markAsRead = useCallback(async (conversationId, counterpartId) => {
