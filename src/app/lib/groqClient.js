@@ -14,7 +14,7 @@ export const isGroqConfigured = () => !!groq;
 
 const MODEL_PRIMARY    = "llama-3.3-70b-versatile";
 const MODEL_FALLBACK_1 = "llama-3.1-8b-instant";
-const MODEL_FALLBACK_2 = "gemma2-9b-it";
+const MODEL_FALLBACK_2 = "mixtral-8x7b-32768";
 const MAX_TOKENS       = 2048;
 const MAX_TOTAL_FILE_CHARS = 5000;
 

@@ -313,10 +313,18 @@ export function AIAssistant() {
 
         let analyticsData = [];
         if (studentIds.length > 0) {
-          const { data: acts } = await supabase
-            .from("assignments_activity")
-            .select("*")
-            .eq("subject_id", classId);
+          let acts = [];
+          try {
+            const { data } = await supabase
+              .from("assignments_activity")
+              .select("*");
+            acts = (data || []).filter(row => {
+              const rowId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
+              return !classId || !rowId || rowId === String(classId).trim();
+            });
+          } catch (e) {
+            console.warn("Could not query assignments_activity:", e);
+          }
           
           const assessmentsList = acts || [];
 
