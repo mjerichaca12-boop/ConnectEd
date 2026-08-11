@@ -324,14 +324,7 @@ export const streamMessage = async ({
 
     const parsedErr = parseGroqError(error);
 
-    // CRITICAL REQUIREMENT: If TPD (Daily Token Limit) is reached, DO NOT retry!
-    if (parsedErr.isTPD) {
-      console.warn("TPD (Tokens Per Day) limit exhausted. Stopping further retry attempts.");
-      onError?.(parsedErr);
-      return;
-    }
-
-    // Controlled single attempt fallback for TPM / transient network error
+    // Controlled single fallback to Fallback 1 (llama-3.1-8b-instant has a 5x larger 500k TPD quota)
     if (parsedErr.isRateLimit || error?.status === 503 || error?.status === 400) {
       console.log(`Attempting controlled fallback to ${GROQ_MODELS.FALLBACK_1}...`);
       
@@ -343,7 +336,11 @@ export const streamMessage = async ({
         await executeCompletionCall(GROQ_MODELS.FALLBACK_1);
       } catch (fallbackError) {
         console.error(`Groq Fallback 1 Error (${GROQ_MODELS.FALLBACK_1}):`, fallbackError);
-        onError?.(parseGroqError(fallbackError));
+        const parsedFallbackErr = parseGroqError(fallbackError);
+        if (parsedFallbackErr.isTPD) {
+          console.warn("TPD (Tokens Per Day) limit exhausted across all models. Stopping further attempts.");
+        }
+        onError?.(parsedFallbackErr);
       }
     } else {
       onError?.(parsedErr);
