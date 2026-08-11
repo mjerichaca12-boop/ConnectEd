@@ -143,19 +143,29 @@ export const getTeacherAssignedClasses = async (storedUser) => {
     if (queryIds.length === 0) return { teacherId: "", classes: [] };
 
     // 2. Fetch assigned subjects
-    let { data: subjectsData, error: subjectsErr } = await supabase
+    let subjectsData = [];
+    let { data, error: subjectsErr } = await supabase
       .from("subjects")
-      .select("id, code, name, section, grade_level, year_level, capacity, enrolled")
+      .select("*")
       .in("teacher_id", queryIds)
       .order("code", { ascending: true });
 
-    if (subjectsErr) throw subjectsErr;
+    if (subjectsErr) {
+      console.warn("[getTeacherAssignedClasses] query error, attempting fallback select:", subjectsErr);
+      const fallbackQuery = await supabase
+        .from("subjects")
+        .select("id, code, name, section, grade_level")
+        .in("teacher_id", queryIds);
+      data = fallbackQuery.data;
+    }
+
+    subjectsData = data || [];
 
     // Fallback: If 0 subjects returned by teacher_id, fetch subjects list to ensure teacher workspace continuity
-    if (!subjectsData || subjectsData.length === 0) {
+    if (subjectsData.length === 0) {
       const { data: fallbackSubjects } = await supabase
         .from("subjects")
-        .select("id, code, name, section, grade_level, year_level, capacity, enrolled")
+        .select("*")
         .limit(20);
       subjectsData = fallbackSubjects || [];
     }
