@@ -42,6 +42,7 @@ export function AIChat({
   inputText,
   setInputText,
   handleSend,
+  onSend,
   isStreaming,
   inputRef,
   fileContents,
@@ -53,6 +54,7 @@ export function AIChat({
   onChangeContext,
 }) {
   const bottomRef = useRef(null);
+  const sendHandler = handleSend || onSend;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -232,7 +234,7 @@ export function AIChat({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                handleSend();
+                sendHandler?.();
               }
             }}
             placeholder="Type your request or click a Quick Action..."
@@ -240,7 +242,7 @@ export function AIChat({
             className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50 text-gray-900"
           />
           <button
-            onClick={handleSend}
+            onClick={() => sendHandler?.()}
             disabled={isStreaming || !inputText.trim()}
             className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white rounded-xl text-sm font-semibold transition-colors"
           >

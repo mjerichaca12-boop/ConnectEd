@@ -316,7 +316,7 @@ export function AIAssistant() {
           const { data: acts } = await supabase
             .from("assignments_activity")
             .select("id, title, max_score, activity_type")
-            .or(`course_id.eq.${classId},subject_id.eq.${classId}`);
+            .eq("subject_id", classId);
           
           const assessmentsList = acts || [];
 
@@ -369,30 +369,43 @@ export function AIAssistant() {
       
       if (lessonId) {
         try {
-          const { data: quizzes } = await supabase
-            .from("quizzes")
-            .select("id, title")
-            .eq("lesson_id", lessonId);
-          
-          const quizIds = (quizzes || []).map(q => q.id);
+          let quizTitles = [];
           let quizQuestions = [];
-          if (quizIds.length > 0) {
-            const { data: qq } = await supabase
-              .from("quiz_questions")
-              .select("question_text, question_type")
-              .in("quiz_id", quizIds);
-            quizQuestions = (qq || []).map(q => `[${q.question_type || 'Question'}] ${q.question_text}`);
+          let assignmentTitles = [];
+
+          try {
+            const { data: quizzes } = await supabase
+              .from("quizzes")
+              .select("id, title")
+              .eq("lesson_id", lessonId);
+            
+            quizTitles = (quizzes || []).map(q => q.title);
+            const quizIds = (quizzes || []).map(q => q.id);
+
+            if (quizIds.length > 0) {
+              const { data: qq } = await supabase
+                .from("quiz_questions")
+                .select("question_text, question_type")
+                .in("quiz_id", quizIds);
+              quizQuestions = (qq || []).map(q => `[${q.question_type || 'Question'}] ${q.question_text}`);
+            }
+          } catch {
+            // Ignore optional quiz context failure
           }
 
-          const { data: assignments } = await supabase
-            .from("assignments")
-            .select("id, title, instructions")
-            .eq("lesson_id", lessonId);
-          
-          const assignmentTitles = (assignments || []).map(a => a.title);
+          try {
+            const { data: assignments } = await supabase
+              .from("assignments")
+              .select("id, title")
+              .eq("lesson_id", lessonId);
+            
+            assignmentTitles = (assignments || []).map(a => a.title);
+          } catch {
+            // Ignore optional assignment context failure
+          }
 
           setExistingContentContext({
-            quizzes: (quizzes || []).map(q => q.title),
+            quizzes: quizTitles,
             questions: quizQuestions,
             assignments: assignmentTitles
           });
@@ -800,11 +813,22 @@ export function AIAssistant() {
   };
 
   const handleQuickActionClick = async (action) => {
-    const queryText = action.prompt(settings);
+    let queryText = "";
+    let actionLabel = "Quick Action";
+    if (typeof action === "string") {
+      actionLabel = action;
+      queryText = `Generate content for ${action}`;
+    } else if (action && typeof action.prompt === "function") {
+      actionLabel = action.label || "Quick Action";
+      queryText = action.prompt(settings);
+    } else if (action && typeof action.prompt === "string") {
+      actionLabel = action.label || "Quick Action";
+      queryText = action.prompt;
+    }
     
     const userActionMsg = {
       role: "user",
-      content: `⚡ Triggered Quick Action: **${action.label}**`,
+      content: `⚡ Triggered Quick Action: **${actionLabel}**`,
       timestamp: Date.now()
     };
     
@@ -1284,6 +1308,7 @@ export function AIAssistant() {
               messages={messages}
               inputText={inputText}
               setInputText={setInputText}
+              handleSend={handleSend}
               onSend={handleSend}
               isStreaming={isStreaming || loadingContext}
               fileContents={allFileContents}

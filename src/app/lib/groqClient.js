@@ -14,8 +14,8 @@ export const isGroqConfigured = () => !!groq;
 
 const MODEL_PRIMARY  = "llama-3.3-70b-versatile";
 const MODEL_FALLBACK = "llama-3.1-8b-instant";
-const MAX_TOKENS     = 4096;
-const MAX_TOTAL_FILE_CHARS = 16000; // Limit combined context size to ~4,000 tokens to fit Groq free limits safely
+const MAX_TOKENS     = 2048;
+const MAX_TOTAL_FILE_CHARS = 6000; // Limit combined context size to ~1,500 tokens to stay well within Groq 6000 TPM limit
 
 // Proportional truncation helper to stay under character limits across multiple files
 const truncateFilesToLimit = (files, maxTotalChars) => {
@@ -237,7 +237,7 @@ export const streamMessage = async ({
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },
-        ...validatedMessages,
+        ...validatedMessages.slice(-6),
       ],
     });
 
