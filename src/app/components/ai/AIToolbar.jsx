@@ -18,8 +18,6 @@ import {
 const CATEGORIES = [
   { id: "assessments", label: "Assessments" },
   { id: "lesson_prep", label: "Lesson Prep" },
-  { id: "student_help", label: "Student Help" },
-  { id: "parent_admin", label: "Parent & Admin" }
 ];
 
 const TEACHER_ACTIONS = [
@@ -105,60 +103,6 @@ const TEACHER_ACTIONS = [
     description: "Build discussion guides",
     prompt: (s) =>
       `Generate discussion questions for Grade ${s.gradeLevel} ${s.subject}${s.section ? ` – Section ${s.section}` : ""} based on the uploaded learning materials.`,
-  },
-
-  // Student Help
-  {
-    category: "student_help",
-    icon: HelpCircle,
-    iconColor: "text-blue-500 bg-blue-50 border-blue-100",
-    label: "Explain Topic",
-    action: "explainTopic",
-    description: "Simplify concept meanings",
-    prompt: (s) =>
-      `Explain the main topics in the uploaded materials for Grade ${s.gradeLevel} ${s.subject} students using simple, age-appropriate language.`,
-  },
-  {
-    category: "student_help",
-    icon: ClipboardCheck,
-    iconColor: "text-violet-500 bg-violet-50 border-violet-100",
-    label: "Study Reviewer",
-    action: "generateReviewer",
-    description: "Build comprehensive guides",
-    prompt: (s) =>
-      `Create a study reviewer for Grade ${s.gradeLevel} ${s.subject} from the uploaded materials. Include key concepts, review questions, and flashcards.`,
-  },
-  {
-    category: "student_help",
-    icon: Languages,
-    iconColor: "text-pink-500 bg-pink-50 border-pink-100",
-    label: "Translate content",
-    action: "translate",
-    description: "English / Tagalog translations",
-    prompt: (s) =>
-      `Translate the uploaded content to ${s.language === "English" ? "Filipino" : "English"}.`,
-  },
-
-  // Parent & Admin
-  {
-    category: "parent_admin",
-    icon: Volume2,
-    iconColor: "text-orange-500 bg-orange-50 border-orange-100",
-    label: "Draft Announcement",
-    action: "generateAnnouncement",
-    description: "Draft friendly announcements",
-    prompt: (s) =>
-      `Draft a class announcement for Grade ${s.gradeLevel} ${s.subject}${s.section ? ` – Section ${s.section}` : ""}${s.teacherName ? ` from ${s.teacherName}` : ""}.`,
-  },
-  {
-    category: "parent_admin",
-    icon: MailOpen,
-    iconColor: "text-rose-500 bg-rose-50 border-rose-100",
-    label: "Parent Letter",
-    action: "parentLetter",
-    description: "Write formal school emails",
-    prompt: (s) =>
-      `Write a professional parent communication letter in ${s.language} for Grade ${s.gradeLevel} ${s.subject}.`,
   }
 ];
 
@@ -186,23 +130,7 @@ const STUDENT_ACTIONS = [
     action: "summarizeLesson",
     prompt: () =>
       `Summarize my class materials into the most important points I need to remember.`,
-  },
-  {
-    category: "student_help",
-    icon: ClipboardCheck,
-    label: "Study Guide",
-    action: "generateReviewer",
-    prompt: (s) =>
-      `Create a step-by-step study guide for Grade ${s.gradeLevel} ${s.subject} based on my materials.`,
-  },
-  {
-    category: "student_help",
-    icon: Languages,
-    label: "Translate notes",
-    action: "translate",
-    prompt: (s) =>
-      `Translate my notes/materials to ${s.language === "English" ? "Filipino" : "English"}.`,
-  },
+  }
 ];
 
 export function AIToolbar({ onActionClick, settings, inputRef, role = "teacher", teacherClasses = [] }) {

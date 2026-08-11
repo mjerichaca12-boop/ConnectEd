@@ -430,8 +430,13 @@ export function AIAssistant() {
   const sendToAI = useCallback(async (promptText, historyMessages) => {
     setIsStreaming(true);
 
-    const userMessage = { role: "user", content: promptText, timestamp: Date.now() };
-    const currentMessages = [...historyMessages, userMessage];
+    const lastMsg = historyMessages[historyMessages.length - 1];
+    const isUserAlreadyInHistory = lastMsg?.role === "user" && lastMsg?.content === promptText;
+    
+    const currentMessages = isUserAlreadyInHistory
+      ? historyMessages
+      : [...historyMessages, { role: "user", content: promptText, timestamp: Date.now() }];
+
     setMessages([...currentMessages, { role: "assistant", content: "", timestamp: Date.now() }]);
 
     // Detect Intent and Resolve System Context / Tool Retrieval
