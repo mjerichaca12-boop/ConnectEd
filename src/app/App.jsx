@@ -234,8 +234,11 @@ function ScrollToTop() {
   return null;
 }
 
+import { DataCacheProvider } from "./context/DataCacheContext";
+
 export default function App() {
   return (
+    <DataCacheProvider>
     <AcademicProvider>
     <ActivityProvider>
       <UnreadMessagesProvider>
@@ -318,5 +321,6 @@ export default function App() {
           </UnreadMessagesProvider>
     </ActivityProvider>
     </AcademicProvider>
+    </DataCacheProvider>
   );
 }

@@ -1,4 +1,4 @@
-  import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
@@ -14,8 +14,9 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { isColumnMissingError, resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, resolveTeacherIdByEmail, getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 
 function Classes() {
   const navigate = useNavigate();
@@ -153,6 +154,22 @@ function Classes() {
     setClassesAndPersist(mapSubjectsToCards(uniqueSubjects, enrollmentBySubject));
   };
 
+  const fetchTeacherClassesData = useCallback(async () => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (!rawUser) return null;
+    const user = JSON.parse(rawUser);
+    const { teacherId: resId, classes: resClasses } = await getTeacherAssignedClasses(user);
+    if (resId) setTeacherId(resId);
+
+    return mapSubjectsToCards(resClasses);
+  }, []);
+
+  const { data: cachedClassesCards, loading: isCachedClassesLoading } = useCachedFetch(
+    teacherEmail ? `teacher_classes_${teacherEmail}` : "teacher_classes_default",
+    fetchTeacherClassesData,
+    { deps: [teacherEmail] }
+  );
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
@@ -162,16 +179,16 @@ function Classes() {
     setTeacherName(user.name);
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
     setTeacherEmail(normalizedEmail);
-
-    resolveTeacherIdByEmail(normalizedEmail)
-      .then((id) => {
-        setTeacherId(id);
-        return loadTeacherSubjects(id);
-      })
-      .finally(() => {
-      setLoading(false);
-    });
   }, [navigate]);
+
+  useEffect(() => {
+    if (cachedClassesCards && cachedClassesCards.length > 0) {
+      setClasses(cachedClassesCards);
+      setLoading(false);
+    } else {
+      setLoading(isCachedClassesLoading);
+    }
+  }, [cachedClassesCards, isCachedClassesLoading]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;

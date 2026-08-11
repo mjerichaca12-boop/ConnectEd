@@ -11,6 +11,7 @@ import { detectUserIntent, resolveContextForIntent } from "@/app/services/teache
 import { AIEvaluationPanel } from "@/app/components/ai/AIEvaluationPanel";
 import { parseDocument } from "@/app/lib/documentParser";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
 
 const STORAGE_BUCKET = "class-materials";
 
@@ -123,67 +124,23 @@ export function AIAssistant() {
     classContext: null,
   });
 
+  const [isLoadingClasses, setIsLoadingClasses] = useState(true);
+
   // Fetch subjects, lessons, and materials on mount
   useEffect(() => {
     const fetchTeacherContext = async () => {
-      if (!supabase) return;
+      if (!supabase) {
+        setIsLoadingClasses(false);
+        return;
+      }
+      setIsLoadingClasses(true);
       try {
-        let teacherId = storedUser?.id || "";
-        const email = storedUser?.email ? String(storedUser.email).trim().toLowerCase() : "";
-
-        // 1. Resolve Teacher Profile ID
-        if (email) {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("id, role")
-            .ilike("email", email)
-            .maybeSingle();
-
-          if (profile?.id) {
-            teacherId = profile.id;
-          }
-        }
-
-        if (!teacherId) {
-          const { data: authUser } = await supabase.auth.getUser();
-          if (authUser?.user?.id) {
-            teacherId = authUser.user.id;
-          }
-        }
-
+        const { teacherId, classes: classesList } = await getTeacherAssignedClasses(storedUser);
         if (teacherId) {
           setActiveTeacherId(teacherId);
         }
 
-        // 2. Query assigned subjects for this teacher
-        const queryTeacherIds = [teacherId, storedUser?.id].filter(Boolean);
-        let { data: subjectsData } = await supabase
-          .from("subjects")
-          .select("id, name, grade_level, section, code, capacity, enrolled")
-          .in("teacher_id", queryTeacherIds.length > 0 ? queryTeacherIds : ["__none__"])
-          .order("code", { ascending: true });
-
-        // Fallback: if no subjects found by teacher_id, try fetching all subjects if only a single teacher exists or for demo
-        if (!subjectsData || subjectsData.length === 0) {
-          const { data: allSubjects } = await supabase
-            .from("subjects")
-            .select("id, name, grade_level, section, code, capacity, enrolled")
-            .limit(10);
-          subjectsData = allSubjects || [];
-        }
-
-        const classesList = (subjectsData || []).map((s) => ({
-          id: String(s.id),
-          name: String(s.name || "").trim(),
-          gradeLevel: String(s.grade_level || "").trim(),
-          section: String(s.section || "").trim(),
-          code: String(s.code || "").trim(),
-          capacity: s.capacity || 0,
-          enrolled: s.enrolled || 0,
-          lessons: [],
-        }));
-
-        // 3. Get lessons for these classes
+        // Fetch lessons for these classes
         const subjectIds = classesList.map((c) => c.id);
         let lessonsList = [];
         if (subjectIds.length > 0) {
@@ -202,7 +159,7 @@ export function AIAssistant() {
           }));
         }
 
-        // 4. Get materials for lessons
+        // Fetch materials for lessons
         const lessonIds = lessonsList.map((l) => l.id);
         let materialsList = [];
         if (lessonIds.length > 0) {
@@ -228,7 +185,6 @@ export function AIAssistant() {
           }
         }
 
-        // Map materials & lessons
         lessonsList.forEach((les) => {
           les.materials = materialsList.filter((m) => m.lessonId === les.id);
         });
@@ -259,6 +215,8 @@ export function AIAssistant() {
         }
       } catch (err) {
         console.error("Failed to load teacher classes context:", err);
+      } finally {
+        setIsLoadingClasses(false);
       }
     };
 

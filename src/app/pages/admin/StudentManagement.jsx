@@ -10,7 +10,9 @@ import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen } from "lucide-react";
+
 const db = supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -168,53 +170,41 @@ function StudentManagement() {
     setAdminName(user.name);
   }, [navigate]);
 
-  useEffect(() => {
-    const loadStudents = async ({ showLoading = false } = {}) => {
-      try {
-        if (showLoading) {
-          setLoading(true);
-        }
+  const fetchStudentsData = useCallback(async () => {
+    if (!db) return null;
+    const [profilesRes, masterlistRes] = await Promise.all([
+      adminApi.db("profiles", "select", {
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        eq: { column: "role", value: "student" },
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("student_masterlist", "select", {
+        payload: "*",
+        order: { column: "created_at", options: { ascending: false } }
+      })
+    ]);
 
-        if (!db) {
-          setErrorMessage("Supabase client is not configured.");
-          return;
-        }
+    if (profilesRes.error) {
+      throw new Error(profilesRes.error.message);
+    }
 
-        const [profilesRes, masterlistRes] = await Promise.all([
-          adminApi.db("profiles", "select", {
-            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
-            eq: { column: "role", value: "student" },
-            order: { column: "created_at", options: { ascending: false } }
-          }),
-          adminApi.db("student_masterlist", "select", {
-            payload: "*",
-            order: { column: "created_at", options: { ascending: false } }
-          })
-        ]);
-
-        if (profilesRes.error) {
-          setErrorMessage(profilesRes.error.message);
-          setStudents([]);
-          return;
-        }
-
-        setErrorMessage("");
-        setStudents(profilesRes.data ?? []);
-        if (!masterlistRes.error) {
-          setMasterlist(masterlistRes.data ?? []);
-        }
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Unable to load students.");
-        setStudents([]);
-      } finally {
-        if (showLoading) {
-          setLoading(false);
-        }
-      }
+    return {
+      students: profilesRes.data ?? [],
+      masterlist: masterlistRes.data ?? []
     };
-
-    loadStudents({ showLoading: true });
   }, []);
+
+  const { data: cachedStudentsData, loading: isCachedLoading } = useCachedFetch("admin_students_data", fetchStudentsData);
+
+  useEffect(() => {
+    if (cachedStudentsData) {
+      setStudents(cachedStudentsData.students || []);
+      setMasterlist(cachedStudentsData.masterlist || []);
+      setLoading(false);
+    } else {
+      setLoading(isCachedLoading);
+    }
+  }, [cachedStudentsData, isCachedLoading]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");

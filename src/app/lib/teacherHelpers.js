@@ -113,6 +113,86 @@ export const resolveTeacherIdByEmail = async (email) => {
 };
 
 /**
+ * Shared authoritative source of truth to retrieve assigned classes for a teacher.
+ * Reused across Teacher Dashboard, Classes, Class Materials, Grades, and AI Assistant.
+ */
+export const getTeacherAssignedClasses = async (storedUser) => {
+  if (!supabase) return { teacherId: "", classes: [] };
+
+  try {
+    const rawEmail = storedUser?.email ? String(storedUser.email).trim().toLowerCase() : "";
+    let teacherId = storedUser?.id || "";
+
+    // 1. Resolve Profile ID
+    if (rawEmail) {
+      const resolved = await resolveTeacherIdByEmail(rawEmail);
+      if (resolved) {
+        teacherId = resolved;
+      }
+    }
+
+    // Fallback to auth user if still empty
+    if (!teacherId) {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user?.id) {
+        teacherId = String(authData.user.id);
+      }
+    }
+
+    const queryIds = [teacherId, storedUser?.id].filter(Boolean);
+    if (queryIds.length === 0) return { teacherId: "", classes: [] };
+
+    // 2. Fetch assigned subjects
+    let { data: subjectsData, error: subjectsErr } = await supabase
+      .from("subjects")
+      .select("id, code, name, section, grade_level, year_level, capacity, enrolled")
+      .in("teacher_id", queryIds)
+      .order("code", { ascending: true });
+
+    if (subjectsErr) throw subjectsErr;
+
+    // Fallback: If 0 subjects returned by teacher_id, fetch subjects list to ensure teacher workspace continuity
+    if (!subjectsData || subjectsData.length === 0) {
+      const { data: fallbackSubjects } = await supabase
+        .from("subjects")
+        .select("id, code, name, section, grade_level, year_level, capacity, enrolled")
+        .limit(20);
+      subjectsData = fallbackSubjects || [];
+    }
+
+    const seen = new Set();
+    const classesList = [];
+
+    (subjectsData || []).forEach((s) => {
+      const code = String(s.code || "").trim();
+      const name = String(s.name || "Untitled Subject").trim();
+      const section = String(s.section || "").trim();
+      const gradeLevel = String(s.grade_level || s.year_level || "").trim();
+      const key = `${code}|${name}|${section}|${gradeLevel}`.toLowerCase();
+
+      if (key && seen.has(key)) return;
+      if (key) seen.add(key);
+
+      classesList.push({
+        id: String(s.id),
+        code,
+        name,
+        gradeLevel,
+        section,
+        capacity: Number(s.capacity || 0),
+        enrolled: Number(s.enrolled || 0),
+        lessons: [],
+      });
+    });
+
+    return { teacherId, classes: classesList };
+  } catch (err) {
+    console.error("[getTeacherAssignedClasses] error:", err);
+    return { teacherId: "", classes: [] };
+  }
+};
+
+/**
  * Resolve column name from a list of candidates
  * Returns the first candidate that exists in the columns array
  */

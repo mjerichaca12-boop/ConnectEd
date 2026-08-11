@@ -10,7 +10,9 @@ import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
+import { useCallback } from "react";
 import { useActivity } from "../../lib/ActivityContext";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square } from "lucide-react";
 
 const emptyForm = {
@@ -309,42 +311,75 @@ function SubjectManagement() {
     }));
   };
 
+  const fetchSubjectsData = useCallback(async () => {
+    if (!supabase) return null;
+    const tableName = await getSubjectTableName();
+    const [teachersRes, subjectsRes, enrollmentRes] = await Promise.all([
+      supabase.from("profiles").select("id, first_name, middle_name, last_name, email, role").eq("role", "teacher").order("first_name", { ascending: true }),
+      supabase.from(tableName).select(subjectSelectColumns).order("created_at", { ascending: false }),
+      supabase.from("teacher_student_assignments").select("subject_id")
+    ]);
+
+    if (subjectsRes.error) throw new Error(subjectsRes.error.message);
+
+    const enrollmentCounts = {};
+    if (!enrollmentRes.error && enrollmentRes.data) {
+      enrollmentRes.data.forEach((row) => {
+        enrollmentCounts[row.subject_id] = (enrollmentCounts[row.subject_id] || 0) + 1;
+      });
+    }
+
+    const normalizedSubjects = (subjectsRes.data ?? []).map((s) => ({
+      ...formatSubject(s),
+      enrolled: enrollmentCounts[s.id] || 0
+    }));
+
+    const seen = new Set();
+    const dedupedSubjects = normalizedSubjects.filter((s) => {
+      const key = buildSubjectDedupKey(s);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const mappedTeachers = (teachersRes.data ?? []).map((t) => ({
+      id: t.id,
+      name: formatTeacherName(t),
+      email: t.email ?? ""
+    }));
+
+    return {
+      subjects: dedupedSubjects,
+      teachers: mappedTeachers
+    };
+  }, []);
+
+  const { data: cachedSubjectsData, loading: isCachedSubjectsLoading } = useCachedFetch("admin_subjects_data", fetchSubjectsData);
+
   useEffect(() => {
     let isMounted = true;
+    const userData = localStorage.getItem("currentUser");
+    if (!userData) {
+      navigate("/login");
+      return;
+    }
 
-    const initialize = async () => {
-      try {
-        const userData = localStorage.getItem("currentUser");
-        if (!userData) {
-          navigate("/login");
-          return;
-        }
+    const user = JSON.parse(userData);
+    if (user.role !== "admin") {
+      navigate("/login");
+      return;
+    }
 
-        const user = JSON.parse(userData);
-        if (user.role !== "admin") {
-          navigate("/login");
-          return;
-        }
+    setAdminName(user.name);
+    setNotificationList(adminNotifications);
 
-        setAdminName(user.name);
-        setNotificationList(adminNotifications);
-
-        await resolveSubjectTable();
-        
-        await Promise.all([fetchTeachers(), fetchSubjects()]);
-        setErrorMessage("");
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : "Unable to load subjects.");
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initialize();
+    if (cachedSubjectsData) {
+      setSubjects(cachedSubjectsData.subjects || []);
+      setTeachers(cachedSubjectsData.teachers || []);
+      setLoading(false);
+    } else {
+      setLoading(isCachedSubjectsLoading);
+    }
 
     const subjectChannel = supabase
       ? supabase
@@ -379,7 +414,7 @@ function SubjectManagement() {
       if (subjectChannel) supabase.removeChannel(subjectChannel);
       if (teacherChannel) supabase.removeChannel(teacherChannel);
     };
-  }, [navigate]);
+  }, [navigate, cachedSubjectsData, isCachedSubjectsLoading]);
 
   const validateSubjectForm = async (formData, excludeId = null, setErrors = setFormErrors) => {
     const errors = {};

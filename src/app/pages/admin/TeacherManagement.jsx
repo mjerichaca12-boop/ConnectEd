@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -10,6 +10,7 @@ import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import {
   Search,
 
@@ -738,28 +739,40 @@ function TeacherManagement() {
     setAdminName(user.name);
     setIsAdmin(true);
 
-    const initializeTeachers = async () => {
-      try {
-        if (!db) {
-          setErrorMessage("Supabase client is not configured.");
-          return;
-        }
+  const fetchTeachersData = useCallback(async () => {
+    if (!db) return null;
+    const [teachersRes, subjectsRes] = await Promise.all([
+      db.from("profiles").select(teacherSelectColumns).eq("role", "teacher").order("created_at", { ascending: false }),
+      db.from("subjects").select("*").order("code", { ascending: true })
+    ]);
 
-        await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
-        setErrorMessage("");
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : "Unable to load teachers.");
-          setTeachers([]);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
+    if (teachersRes.error) throw new Error(teachersRes.error.message);
+
+    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => ({
+      ...teacher,
+      display_name: formatTeacherFullName(teacher),
+      status: normalizeTeacherStatus(teacher.status),
+      subjects: normalizeSubjects(teacher.subjects),
+      grade_level: teacher.grade_level || teacher.year_level || ""
+    }));
+
+    return {
+      teachers: formattedTeachers,
+      subjects: subjectsRes.data ?? []
     };
+  }, []);
 
-    initializeTeachers();
+  const { data: cachedTeachersData, loading: isCachedLoading } = useCachedFetch("admin_teachers_data", fetchTeachersData);
+
+  useEffect(() => {
+    if (cachedTeachersData) {
+      setTeachers(cachedTeachersData.teachers || []);
+      setAvailableSubjects(cachedTeachersData.subjects || []);
+      setLoading(false);
+    } else {
+      setLoading(isCachedLoading);
+    }
+  }, [cachedTeachersData, isCachedLoading]);
 
     const channel = supabase
       ? supabase
