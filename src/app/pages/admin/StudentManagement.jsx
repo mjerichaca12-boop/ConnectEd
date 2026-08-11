@@ -250,23 +250,29 @@ function StudentManagement() {
       (async () => {
         const usedUsernames = new Set(fetchedProfiles.map(p => p.username).filter(Boolean));
         let updatedAny = false;
-        for (const s of missingUsernameStudents) {
-          const firstInitial = (s.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
-          const lastNameLow = (s.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
-          const baseUsername = (firstInitial + lastNameLow) || "student";
-          let genUsername = `${baseUsername}01`;
-          let suffix = 1;
-          while (usedUsernames.has(genUsername)) {
-            suffix++;
-            genUsername = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
-          }
-          usedUsernames.add(genUsername);
+        
+        // Process in batches of 5 to avoid sequential N+1 network waterfall
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < missingUsernameStudents.length; i += BATCH_SIZE) {
+          const chunk = missingUsernameStudents.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map(async (s) => {
+            const firstInitial = (s.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+            const lastNameLow = (s.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+            const baseUsername = (firstInitial + lastNameLow) || "student";
+            let genUsername = `${baseUsername}01`;
+            let suffix = 1;
+            while (usedUsernames.has(genUsername)) {
+              suffix++;
+              genUsername = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+            }
+            usedUsernames.add(genUsername);
 
-          const { error: updErr } = await adminApi.db("profiles", "update", {
-            payload: { username: genUsername },
-            eq: { column: "id", value: s.id }
-          });
-          if (!updErr) updatedAny = true;
+            const { error: updErr } = await adminApi.db("profiles", "update", {
+              payload: { username: genUsername },
+              eq: { column: "id", value: s.id }
+            });
+            if (!updErr) updatedAny = true;
+          }));
         }
 
         if (updatedAny) {
@@ -1555,41 +1561,59 @@ function StudentManagement() {
   // Optional course filter
   const [courseFilter, setCourseFilter] = useState("all");
 
-  const allData = [...students, ...masterlist];
-  
-  const availableYearLevels = Array.from(new Set(allData.map(s => s.year_level).filter(Boolean))).sort((a, b) => {
-    const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
-    const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
-    return numA - numB || String(a).localeCompare(String(b));
-  });
-  const availableSections = Array.from(new Set(
-    allData
-      .filter(s => yearLevelFilter === "all" || s.year_level === yearLevelFilter)
-      .map(s => s.section)
-      .filter(Boolean)
-  )).sort();
-  const availableCourses = Array.from(new Set(allData.map(s => s.course).filter(Boolean))).sort();
+  const availableYearLevels = useMemo(() => {
+    return Array.from(new Set([...students, ...masterlist].map(s => s.year_level).filter(Boolean))).sort((a, b) => {
+      const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+      return numA - numB || String(a).localeCompare(String(b));
+    });
+  }, [students, masterlist]);
 
-  const filterStudent = (student, isMasterlist = false) => {
-    const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
-    const search = (searchQuery || "").toLowerCase();
-    
-    const matchesSearch = fullName.includes(search) || 
-      String(student.username || "").toLowerCase().includes(search) || 
-      String(student.lrn || "").toLowerCase().includes(search);
+  const availableSections = useMemo(() => {
+    return Array.from(new Set(
+      [...students, ...masterlist]
+        .filter(s => yearLevelFilter === "all" || s.year_level === yearLevelFilter)
+        .map(s => s.section)
+        .filter(Boolean)
+    )).sort();
+  }, [students, masterlist, yearLevelFilter]);
 
-    const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
-    const matchesSection = sectionFilter === "all" || student.section === sectionFilter;
-    const matchesCourse = courseFilter === "all" || student.course === courseFilter;
-    
-    // Status filter only applies to enrolled profiles
-    const matchesStatus = isMasterlist || statusFilter === "all" || student.status === statusFilter;
+  const availableCourses = useMemo(() => {
+    return Array.from(new Set([...students, ...masterlist].map(s => s.course).filter(Boolean))).sort();
+  }, [students, masterlist]);
 
-    return matchesSearch && matchesYearLevel && matchesSection && matchesCourse && matchesStatus;
-  };
+  const filteredStudents = useMemo(() => {
+    const search = (searchQuery || "").toLowerCase().trim();
+    return students.filter(student => {
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !search || fullName.includes(search) || 
+        String(student.username || "").toLowerCase().includes(search) || 
+        String(student.lrn || "").toLowerCase().includes(search);
 
-  const filteredStudents = students.filter(s => filterStudent(s, false));
-  const filteredMasterlist = masterlist.filter(s => filterStudent(s, true));
+      const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
+      const matchesSection = sectionFilter === "all" || student.section === sectionFilter;
+      const matchesCourse = courseFilter === "all" || student.course === courseFilter;
+      const matchesStatus = statusFilter === "all" || student.status === statusFilter;
+
+      return matchesSearch && matchesYearLevel && matchesSection && matchesCourse && matchesStatus;
+    });
+  }, [students, searchQuery, yearLevelFilter, sectionFilter, courseFilter, statusFilter]);
+
+  const filteredMasterlist = useMemo(() => {
+    const search = (searchQuery || "").toLowerCase().trim();
+    return masterlist.filter(student => {
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !search || fullName.includes(search) || 
+        String(student.username || "").toLowerCase().includes(search) || 
+        String(student.lrn || "").toLowerCase().includes(search);
+
+      const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
+      const matchesSection = sectionFilter === "all" || student.section === sectionFilter;
+      const matchesCourse = courseFilter === "all" || student.course === courseFilter;
+
+      return matchesSearch && matchesYearLevel && matchesSection && matchesCourse;
+    });
+  }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
   const handleExportToCSV = () => {
     if (activeTab === "Profiles") {

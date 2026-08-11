@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
 import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
@@ -6,39 +6,54 @@ import { AcademicProvider } from "./context/AcademicContext";
 import { supabase } from "./lib/supabaseClient";
 import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
-import { LandingPage } from "./pages/LandingPage";
-import { SitePolicy } from "./pages/SitePolicy";
-import { TermsOfService } from "./pages/TermsOfService";
-import { ContactUs } from "./pages/ContactUs";
-import { Support } from "./pages/Support";
-import { Login } from "./pages/Login";
-import { ForgotPassword } from "./pages/ForgotPassword";
-import { ChangePassword } from "./pages/ChangePassword";
-import { ResetPassword } from "./pages/ResetPassword";
-import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
-import { Classes } from "./pages/teacher/Classes";
-import { ClassDetail } from "./pages/teacher/ClassDetail";
-import { GradesManagement } from "./pages/teacher/GradesManagement";
-import { TeacherAnnouncements } from "./pages/teacher/TeacherAnnouncements";
-import { ClassMaterials } from "./pages/teacher/ClassMaterials";
-import { TeacherMessages } from "./pages/teacher/TeacherMessages";
-import { TeacherProfile } from "./pages/teacher/TeacherProfile";
-import { Notifications } from "./pages/teacher/Notifications";
-import { AdminDashboard } from "./pages/admin/AdminDashboard";
-import { StudentManagement } from "./pages/admin/StudentManagement";
-import { TeacherManagement } from "./pages/admin/TeacherManagement";
-import { SubjectManagement } from "./pages/admin/SubjectManagement";
-import { AdminAnnouncements } from "./pages/admin/AdminAnnouncements";
-import { AdminCalendar } from "./pages/admin/AdminCalendar";
-import AdminAcademicSettings from "./pages/admin/AdminAcademicSettings";
+import { Loader2 } from "lucide-react";
 
-import { SystemSettings } from "./pages/admin/SystemSettings";
-import { AdminPasswordResets } from "./pages/admin/AdminPasswordResets";
-import { AdminMessages } from "./pages/admin/AdminMessages";
-import { AIAssistant } from "./pages/teacher/AIAssistant";
-import { TeacherHelpCenter } from "./pages/teacher/TeacherHelpCenter";
-import { AdminNotifications } from "./pages/admin/AdminNotifications";
-import { HelpCenter } from "./pages/admin/HelpCenter";
+// Route-level Code Splitting for Performance
+const LandingPage = lazy(() => import("./pages/LandingPage").then(m => ({ default: m.LandingPage })));
+const SitePolicy = lazy(() => import("./pages/SitePolicy").then(m => ({ default: m.SitePolicy })));
+const TermsOfService = lazy(() => import("./pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
+const ContactUs = lazy(() => import("./pages/ContactUs").then(m => ({ default: m.ContactUs })));
+const Support = lazy(() => import("./pages/Support").then(m => ({ default: m.Support })));
+const Login = lazy(() => import("./pages/Login").then(m => ({ default: m.Login })));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword").then(m => ({ default: m.ForgotPassword })));
+const ChangePassword = lazy(() => import("./pages/ChangePassword").then(m => ({ default: m.ChangePassword })));
+const ResetPassword = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
+
+// Teacher Pages
+const TeacherDashboard = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
+const Classes = lazy(() => import("./pages/teacher/Classes").then(m => ({ default: m.Classes })));
+const ClassDetail = lazy(() => import("./pages/teacher/ClassDetail").then(m => ({ default: m.ClassDetail })));
+const GradesManagement = lazy(() => import("./pages/teacher/GradesManagement").then(m => ({ default: m.GradesManagement })));
+const TeacherAnnouncements = lazy(() => import("./pages/teacher/TeacherAnnouncements").then(m => ({ default: m.TeacherAnnouncements })));
+const ClassMaterials = lazy(() => import("./pages/teacher/ClassMaterials").then(m => ({ default: m.ClassMaterials })));
+const TeacherMessages = lazy(() => import("./pages/teacher/TeacherMessages").then(m => ({ default: m.TeacherMessages })));
+const TeacherProfile = lazy(() => import("./pages/teacher/TeacherProfile").then(m => ({ default: m.TeacherProfile })));
+const Notifications = lazy(() => import("./pages/teacher/Notifications").then(m => ({ default: m.Notifications })));
+const AIAssistant = lazy(() => import("./pages/teacher/AIAssistant").then(m => ({ default: m.AIAssistant })));
+const TeacherHelpCenter = lazy(() => import("./pages/teacher/TeacherHelpCenter").then(m => ({ default: m.TeacherHelpCenter })));
+
+// Admin Pages
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
+const StudentManagement = lazy(() => import("./pages/admin/StudentManagement").then(m => ({ default: m.StudentManagement })));
+const TeacherManagement = lazy(() => import("./pages/admin/TeacherManagement").then(m => ({ default: m.TeacherManagement })));
+const SubjectManagement = lazy(() => import("./pages/admin/SubjectManagement").then(m => ({ default: m.SubjectManagement })));
+const AdminAnnouncements = lazy(() => import("./pages/admin/AdminAnnouncements").then(m => ({ default: m.AdminAnnouncements })));
+const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar").then(m => ({ default: m.AdminCalendar })));
+const AdminAcademicSettings = lazy(() => import("./pages/admin/AdminAcademicSettings"));
+const SystemSettings = lazy(() => import("./pages/admin/SystemSettings").then(m => ({ default: m.SystemSettings })));
+const AdminPasswordResets = lazy(() => import("./pages/admin/AdminPasswordResets").then(m => ({ default: m.AdminPasswordResets })));
+const AdminMessages = lazy(() => import("./pages/admin/AdminMessages").then(m => ({ default: m.AdminMessages })));
+const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications").then(m => ({ default: m.AdminNotifications })));
+const HelpCenter = lazy(() => import("./pages/admin/HelpCenter").then(m => ({ default: m.HelpCenter })));
+
+const PageLoader = () => (
+  <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+    <div className="flex flex-col items-center gap-3">
+      <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+      <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Loading ConnectEd...</p>
+    </div>
+  </div>
+);
 import { TourProvider } from "./context/TourContext";
 import { WelcomeTourModal } from "./components/tour/WelcomeTourModal";
 import { TourSpotlightOverlay } from "./components/tour/TourSpotlightOverlay";
@@ -238,62 +253,64 @@ export default function App() {
         <ModuleTourFinishModal />
         <ResumeTourModal />
         <TourDemoModeBanner />
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/landing" element={<LandingPage />} />
-        <Route path="/privacy-policy" element={<SitePolicy />} />
-        <Route path="/terms-of-service" element={<TermsOfService />} />
-        <Route path="/contact" element={<ContactUs />} />
-        <Route path="/support" element={<Support />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/change-password" element={<ChangePassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/privacy-policy" element={<SitePolicy />} />
+          <Route path="/terms-of-service" element={<TermsOfService />} />
+          <Route path="/contact" element={<ContactUs />} />
+          <Route path="/support" element={<Support />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-        <Route path="/admin" element={<Navigate to="/login" replace />} />
+          <Route path="/admin" element={<Navigate to="/login" replace />} />
 
-        <Route path="/dashboard" element={<Navigate to="/login" replace />} />
-        <Route path="/subjects" element={<Navigate to="/login" replace />} />
-        <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
-        <Route path="/grades" element={<Navigate to="/login" replace />} />
-        <Route path="/announcements" element={<Navigate to="/login" replace />} />
-        <Route path="/content" element={<Navigate to="/login" replace />} />
-        <Route path="/materials" element={<Navigate to="/login" replace />} />
-        <Route path="/messages" element={<Navigate to="/login" replace />} />
-        <Route path="/profile" element={<Navigate to="/login" replace />} />
-        <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
-        <Route path="/notifications" element={<Navigate to="/login" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/login" replace />} />
+          <Route path="/subjects" element={<Navigate to="/login" replace />} />
+          <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
+          <Route path="/grades" element={<Navigate to="/login" replace />} />
+          <Route path="/announcements" element={<Navigate to="/login" replace />} />
+          <Route path="/content" element={<Navigate to="/login" replace />} />
+          <Route path="/materials" element={<Navigate to="/login" replace />} />
+          <Route path="/messages" element={<Navigate to="/login" replace />} />
+          <Route path="/profile" element={<Navigate to="/login" replace />} />
+          <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
+          <Route path="/notifications" element={<Navigate to="/login" replace />} />
 
-        {/* Teacher Routes */}
-        <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />
-        <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
-        <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
-        <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
-        <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
-        <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
-        <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
-        <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
-        <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
-        <Route path="/teacher/help-center" element={<TeacherRouteGuard><TeacherHelpCenter /></TeacherRouteGuard>} />
+          {/* Teacher Routes */}
+          <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />
+          <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
+          <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
+          <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
+          <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
+          <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
+          <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
+          <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
+          <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
+          <Route path="/teacher/help-center" element={<TeacherRouteGuard><TeacherHelpCenter /></TeacherRouteGuard>} />
 
-        {/* Admin Routes */}
-        <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
-        <Route path="/admin/students" element={<AdminRouteGuard><StudentManagement /></AdminRouteGuard>} />
-        <Route path="/admin/teachers" element={<AdminRouteGuard><TeacherManagement /></AdminRouteGuard>} />
-        <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
-        <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
-        <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
-        <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
+          {/* Admin Routes */}
+          <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
+          <Route path="/admin/students" element={<AdminRouteGuard><StudentManagement /></AdminRouteGuard>} />
+          <Route path="/admin/teachers" element={<AdminRouteGuard><TeacherManagement /></AdminRouteGuard>} />
+          <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
+          <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
+          <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
+          <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
 
-        <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
-        <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
-        <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
-        <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
-        <Route path="/admin/help-center" element={<AdminRouteGuard><HelpCenter /></AdminRouteGuard>} />
+          <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
+          <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
+          <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
+          <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
+          <Route path="/admin/help-center" element={<AdminRouteGuard><HelpCenter /></AdminRouteGuard>} />
 
-        {/* Teacher AI */}
-        <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
-      </Routes>
+          {/* Teacher AI */}
+          <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
+        </Routes>
+      </Suspense>
       </Router>
       </ModuleTourProvider>
       </TeacherTourProvider>

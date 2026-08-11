@@ -78,29 +78,8 @@ function SubjectManagement() {
     };
   }, [showAddModal, showViewModal, showEditModal, showDeleteConfirm, showEnrollModal]);
 
-  const resolveSubjectTable = async () => {
-    if (!supabase) throw new Error("Supabase client is not configured.");
-
-    for (const tableName of subjectTableCandidates) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
-
-      if (!error) {
-        setSubjectTable(tableName);
-        return tableName;
-      }
-    }
-
-    throw new Error("Could not find the table 'public.subjects' in the schema cache.");
-  };
-
-  const getSubjectTableName = async () => {
-    if (subjectTable) {
-      const { error } = await supabase.from(subjectTable).select("id", { count: "exact", head: true });
-      if (!error) return subjectTable;
-    }
-
-    return resolveSubjectTable();
-  };
+  const resolveSubjectTable = async () => "subjects";
+  const getSubjectTableName = async () => "subjects";
 
 
   const normalizePositiveInteger = (value) => value.replace(/\D/g, "");

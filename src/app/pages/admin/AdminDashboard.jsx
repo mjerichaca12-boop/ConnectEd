@@ -270,37 +270,17 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const fetchSubjectsCount = async () => {
-      for (const tableName of subjectTableCandidates) {
-        const { data, error: err } = await adminApi.db(tableName, "select", {
-          payload: "id", countOption: "exact", head: true
-        }).catch(() => ({ error: { message: "Failed" } }));
-        if (!err && data?.count !== undefined) {
-          return data.count ?? 0;
-        }
-      }
-      return 0;
-    };
-
-    const [studentsResult, teachersResult, subjectsCount, pendingResetsResult] = await Promise.all([
-      adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "student" } }),
-      adminApi.db("profiles", "select", { payload: "id", countOption: "exact", head: true, eq: { column: "role", value: "teacher" } }),
-      fetchSubjectsCount()
+    const [studentsResult, teachersResult, subjectsResult] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
+      supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher"),
+      supabase.from("subjects").select("id", { count: "exact", head: true })
     ]);
-
-    if (studentsResult.error) {
-      throw new Error(studentsResult.error.message);
-    }
-
-    if (teachersResult.error) {
-      throw new Error(teachersResult.error.message);
-    }
 
     setStats((current) => ({
       ...current,
-      totalStudents: studentsResult.data?.count ?? 0,
-      totalTeachers: teachersResult.data?.count ?? 0,
-      totalSubjects: subjectsCount
+      totalStudents: studentsResult.count ?? 0,
+      totalTeachers: teachersResult.count ?? 0,
+      totalSubjects: subjectsResult.count ?? 0
     }));
   };
 
