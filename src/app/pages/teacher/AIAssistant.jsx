@@ -7,7 +7,8 @@ import { AIChat } from "@/app/components/ai/AIChat";
 import { streamMessage } from "@/app/lib/groqClient";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { supabase } from "@/app/lib/supabaseClient";
+import { detectUserIntent, resolveContextForIntent } from "@/app/services/teacherAiRouter";
+import { AIEvaluationPanel } from "@/app/components/ai/AIEvaluationPanel";
 import { parseDocument } from "@/app/lib/documentParser";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
 
@@ -139,6 +140,7 @@ export function AIAssistant() {
 
         if (!profiles?.length) return;
         const teacherId = profiles[0].id;
+        setActiveTeacherId(teacherId);
 
         // 2. Get assigned subjects
         const { data: subjectsData } = await supabase
@@ -403,12 +405,28 @@ export function AIAssistant() {
     navigate("/login");
   };
 
+  const [activeTeacherId, setActiveTeacherId] = useState(null);
+  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+
   const sendToAI = useCallback(async (promptText, historyMessages) => {
     setIsStreaming(true);
 
     const userMessage = { role: "user", content: promptText, timestamp: Date.now() };
     const currentMessages = [...historyMessages, userMessage];
     setMessages([...currentMessages, { role: "assistant", content: "", timestamp: Date.now() }]);
+
+    // Detect Intent and Resolve System Context / Tool Retrieval
+    const intentResult = detectUserIntent(promptText);
+    const contextResult = await resolveContextForIntent(intentResult, activeTeacherId, promptText);
+
+    if (contextResult.overrideResponse) {
+      setMessages([
+        ...currentMessages,
+        { role: "assistant", content: contextResult.overrideResponse, timestamp: Date.now() }
+      ]);
+      setIsStreaming(false);
+      return;
+    }
 
     // Filter history to exclude guided choices from API context
     const apiMessages = currentMessages
@@ -432,6 +450,7 @@ export function AIAssistant() {
       existingContentContext,
       bloomsLevel: settings.bloomsLevel || "None",
       activeModule: searchParams.get("module") || searchParams.get("page") || "",
+      injectedSystemContext: contextResult.systemContext,
       onChunk: (text) => {
         assistantMessage += text;
         setMessages([
@@ -467,7 +486,28 @@ export function AIAssistant() {
         setIsStreaming(false);
       },
     });
-  }, [allFileContents, settings.classContext]);
+  }, [allFileContents, settings.classContext, activeTeacherId]);
+
+  const callStreamAiFnForEval = useCallback(async (question, injectedContext) => {
+    let resultText = "";
+    return new Promise((resolve, reject) => {
+      streamMessage({
+        messages: [{ role: "user", content: question }],
+        role: "teacher",
+        classContext: settings.classContext,
+        injectedSystemContext: injectedContext,
+        onChunk: (chunk) => {
+          resultText += chunk;
+        },
+        onDone: (fullText) => {
+          resolve(fullText || resultText);
+        },
+        onError: (err) => {
+          reject(err);
+        }
+      });
+    });
+  }, [settings.classContext]);
 
   // Download and parse a list of materials helper
   const loadMaterialsToContext = async (materialsToLoad, userConfirmMsg, readyText) => {
@@ -1105,11 +1145,19 @@ export function AIAssistant() {
                 )}
               </h2>
             </div>
-            <NotificationDropdown
-              notifications={[]}
-              onMarkAsRead={() => {}}
-              onNotificationsChange={() => {}}
-            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsEvalModalOpen(true)}
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+              >
+                <span>🧪</span> AI Evaluation Suite
+              </button>
+              <NotificationDropdown
+                notifications={[]}
+                onMarkAsRead={() => {}}
+                onNotificationsChange={() => {}}
+              />
+            </div>
           </div>
         </div>
 
@@ -1128,35 +1176,53 @@ export function AIAssistant() {
               />
             </div>
 
-            {/* Class Materials from DB */}
-            {settings.selectedClassId && (
-              <div className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
-                <ClassMaterialsLoader
-                  selectedClassId={settings.selectedClassId}
-                  onMaterialsLoaded={setDbMaterialContents}
-                />
-              </div>
-            )}
-
-            {/* Quick Actions */}
-            <div data-tour="teacher-ai-toolbar" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
-              <AIToolbar
-                onActionClick={handleQuickActionClick}
-                settings={settings}
-                inputRef={inputRef}
+            {/* Class & Lesson Context Selector */}
+            <div data-tour="teacher-ai-class-context" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
+              <ClassMaterialsLoader
+                teacherClasses={teacherClasses}
+                selectedClassId={settings.selectedClassId}
+                selectedLesson={selectedContextLesson}
+                selectedMaterial={selectedContextMaterial}
+                onSelectClass={(cls) => {
+                  if (cls) {
+                    setSettings((prev) => ({
+                      ...prev,
+                      selectedClassId: cls.id,
+                      subject: cls.name,
+                      gradeLevel: cls.gradeLevel,
+                      section: cls.section,
+                      classContext: {
+                        className: cls.name,
+                        subject: cls.name,
+                        gradeLevel: cls.gradeLevel,
+                        section: cls.section,
+                        teacherName: storedUser?.name || "",
+                      },
+                    }));
+                  } else {
+                    handleChangeContext();
+                  }
+                }}
+                onSelectLesson={(les) => setSelectedContextLesson(les)}
+                onSelectMaterial={(mat) => setSelectedContextMaterial(mat)}
+                setDbMaterialContents={setDbMaterialContents}
               />
+            </div>
+
+            {/* AI Customization Controls */}
+            <div data-tour="teacher-ai-toolbar" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300 flex-1">
+              <AIToolbar settings={settings} setSettings={setSettings} onQuickAction={handleQuickAction} />
             </div>
 
           </div>
 
-          {/* RIGHT PANEL — chat */}
-          <div data-tour="teacher-ai-chat-workspace" className="flex-1 flex flex-col min-w-0 bg-white border border-gray-150 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+          {/* RIGHT PANEL - CHAT DISPLAY */}
+          <div data-tour="teacher-ai-chat" className="flex-1 flex flex-col min-w-0 bg-white border border-gray-150 rounded-2xl shadow-sm overflow-hidden">
             <AIChat
               messages={messages}
-              setMessages={setMessages}
               inputText={inputText}
               setInputText={setInputText}
-              handleSend={handleSend}
+              onSend={handleSend}
               isStreaming={isStreaming || loadingContext}
               fileContents={allFileContents}
               inputRef={inputRef}
@@ -1171,6 +1237,12 @@ export function AIAssistant() {
 
         </div>
       </div>
+
+      <AIEvaluationPanel
+        isOpen={isEvalModalOpen}
+        onClose={() => setIsEvalModalOpen(false)}
+        callStreamAiFn={callStreamAiFnForEval}
+      />
     </div>
   );
 }

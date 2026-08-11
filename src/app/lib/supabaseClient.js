@@ -2,11 +2,12 @@ import { createClient } from "@supabase/supabase-js";
 
 const BUILD_SOURCE = "root";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : (process.env || {});
+const supabaseUrl = env.VITE_SUPABASE_URL;
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
 
 const SUPABASE_AUTH_STORAGE_KEY = "connected-supabase-auth-token";
-const APP_URL = String(import.meta.env.VITE_APP_URL || "").trim();
+const APP_URL = String(env.VITE_APP_URL || "").trim();
 
 const getAppOrigin = () => {
   if (APP_URL) {
@@ -55,6 +56,7 @@ if (supabaseUrl && !supabaseUrl.startsWith('https://')) {
 // Clean up stale session tokens from URL
 // If URL contains auth parameters that are too old, remove them to prevent 403 errors
 const cleanupStaleUrlSession = () => {
+  if (typeof window === "undefined") return;
   const hash = window.location.hash;
   if (hash && hash.includes('access_token')) {
     const params = new URLSearchParams(hash.substring(1));
