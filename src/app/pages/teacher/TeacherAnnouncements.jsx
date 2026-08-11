@@ -481,9 +481,7 @@ function TeacherAnnouncements() {
   const filteredAnnouncements = sortAnnouncements(
     announcements.filter((announcement) => matchesTeacherAudience(announcement))
   );
-  if (loading) {
-    return <LoadingScreen message="Loading announcements..." />;
-  }
+
   return <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 

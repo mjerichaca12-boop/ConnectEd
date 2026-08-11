@@ -1248,7 +1248,7 @@ function TeacherMessages() {
     videomeet: activeConversationsList.filter((c) => c.isVideoMeet === true).length,
   };
 
-  if (loading) return <LoadingScreen message="Loading messages..." />;
+
 
   return (
     <div className="h-screen overflow-hidden bg-gray-50 flex relative">

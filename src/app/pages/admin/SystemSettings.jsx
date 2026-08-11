@@ -158,20 +158,7 @@ function SystemSettings() {
     setGradingError("");
     await handleSaveGradingSettings(DEPED_DEFAULT_GRADE_SETTINGS);
   };
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
-          </div>
-          <p className="text-gray-500">Loading system settings...</p>
-        </div>
-      </div>
-    );
-  }
+
   return <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />

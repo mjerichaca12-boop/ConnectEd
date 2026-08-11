@@ -352,7 +352,7 @@ function TeacherProfile() {
   const lastLogin = profile.authUser?.last_sign_in_at;
   const lastPasswordChange = profile.authUser?.updated_at;
 
-  if (loading) return <LoadingScreen message="Loading profile..." />;
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

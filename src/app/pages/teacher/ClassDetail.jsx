@@ -3681,9 +3681,7 @@ export function ClassDetail() {
     return <File className="w-5 h-5 text-gray-500" />;
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading class details..." />;
-  }
+
 
   if (!classData) {
     return (

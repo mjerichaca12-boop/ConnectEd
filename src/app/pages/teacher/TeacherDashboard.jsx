@@ -588,9 +588,7 @@ export function TeacherDashboard() {
     return fullName;
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading dashboard..." />;
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex">

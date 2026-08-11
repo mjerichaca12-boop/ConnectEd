@@ -450,20 +450,7 @@ export function AdminCalendar() {
 
   const visibleEvents = useMemo(() => sortEvents(events), [events]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
-          </div>
-          <p className="text-gray-500">Loading calendar...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="h-screen bg-gray-50 flex relative overflow-hidden">

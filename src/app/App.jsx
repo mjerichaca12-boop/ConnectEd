@@ -47,10 +47,10 @@ const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications")
 const HelpCenter = lazy(() => import("./pages/admin/HelpCenter").then(m => ({ default: m.HelpCenter })));
 
 const PageLoader = () => (
-  <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
     <div className="flex flex-col items-center gap-3">
-      <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
-      <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider">Loading ConnectEd...</p>
+      <Loader2 className="w-8 h-8 text-green-600 animate-spin" />
+      <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider">Loading...</p>
     </div>
   </div>
 );

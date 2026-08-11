@@ -262,9 +262,7 @@ function Classes() {
     setForm({ code: "", name: "", section: "", schedule: "", room: "", semester: "First Semester 2026" });
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading classes..." />;
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
