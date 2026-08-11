@@ -203,10 +203,15 @@ export const streamMessage = async ({
 
   const validatedMessages = messages
     .filter(m => m && m.content && m.content.trim() !== "")
-    .map(m => ({
-      role: m.role || "user",
-      content: m.content.toString()
-    }));
+    .map(m => {
+      const text = m.content.toString();
+      // Cap prior history items to 500 characters to keep total prompt under ~1,000 tokens
+      const content = text.length > 500 ? text.substring(0, 500) + "... [truncated]" : text;
+      return {
+        role: m.role || "user",
+        content
+      };
+    });
 
   if (validatedMessages.length === 0) {
     onError?.(parseGroqError(new Error("No valid messages to send")));

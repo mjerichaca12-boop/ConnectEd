@@ -12,9 +12,9 @@ export const GROQ_MODELS = {
 export const MAX_AI_ATTEMPTS = 2;
 
 // Token & Context Budgets
-export const MAX_TOKENS = 2048;
-export const MAX_TOTAL_FILE_CHARS = 5000; // ~1,200 tokens max context for documents
-export const MAX_HISTORY_MESSAGES = 6;    // Keep last 6 messages to limit input tokens
+export const MAX_TOKENS = 1500;
+export const MAX_TOTAL_FILE_CHARS = 3500; // ~800 tokens max context for documents
+export const MAX_HISTORY_MESSAGES = 3;    // Keep last 3 messages to limit input tokens
 
 /**
  * Categorize Groq errors safely without exposing raw API objects
