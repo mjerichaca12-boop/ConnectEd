@@ -1240,12 +1240,6 @@ export function AIAssistant() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsEvalModalOpen(true)}
-                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              >
-                <span>🧪</span> AI Evaluation Suite
-              </button>
               <NotificationDropdown
                 notifications={[]}
                 onMarkAsRead={() => {}}
@@ -1253,26 +1247,6 @@ export function AIAssistant() {
               />
             </div>
           </div>
-
-          {/* Safe Development Context Debug View */}
-          {activeClassObj && (
-            <div className="bg-slate-900 text-slate-100 px-6 py-2 flex flex-wrap items-center justify-between text-xs border-t border-slate-800">
-              <div className="flex items-center gap-4">
-                <span className="font-bold text-green-400">🔍 Safe AI Context Loaded:</span>
-                <span>Teacher: <strong>{storedUser?.name || "Authenticated Teacher"}</strong></span>
-                <span>Subject: <strong>{activeClassObj.name}</strong></span>
-                <span>Grade: <strong>Grade {activeClassObj.gradeLevel}</strong></span>
-                <span>Section: <strong>{activeClassObj.section}</strong></span>
-                <span>Class ID: <code className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-green-300 font-mono">{activeClassObj.id}</code></span>
-              </div>
-              <div className="flex items-center gap-3 font-medium text-slate-300">
-                <span>Enrolled: <strong>{activeClassObj.enrolled || analyticsContext?.length || 30}</strong></span>
-                <span>Lessons: <strong>{activeClassObj.lessons?.length || 0}</strong></span>
-                <span>Materials: <strong>{allFileContents.length}</strong></span>
-                <span>Submissions: <strong>5</strong></span>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Two-panel content */}
