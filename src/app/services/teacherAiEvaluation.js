@@ -152,6 +152,61 @@ export const AI_TEST_CASES = [
   {
     testId: "AI-TC-012",
     category: EVALUATION_CATEGORIES.MATERIALS,
+    question: "How many materials are in my selected class?",
+    expectedBehavior: "Returns exact deterministic material count from class_materials database table for the selected class.",
+    evaluate: (response) => {
+      const lower = response.toLowerCase();
+      return (lower.includes("material") || lower.includes("uploaded")) && /\d+/.test(lower) ? "PASS" : "FAIL";
+    },
+    mockResponse: "There are currently 4 learning materials uploaded for your selected class (Grade 7 Emerald - TLE)."
+  },
+  {
+    testId: "AI-TC-013",
+    category: EVALUATION_CATEGORIES.MATERIALS,
+    question: "What learning materials do I have?",
+    expectedBehavior: "Lists exact material titles from class_materials table without inventing names.",
+    evaluate: (response) => {
+      const lower = response.toLowerCase();
+      return (lower.includes("1.") || lower.includes("module") || lower.includes("lesson")) ? "PASS" : "FAIL";
+    },
+    mockResponse: "Here are the learning materials in your active class:\n1. Module 1 - Introduction to TLE.pdf\n2. Lesson 1 - Safety Practices.pptx\n3. Activity Sheet 1.pdf\n4. Term Reviewer.docx"
+  },
+  {
+    testId: "AI-TC-014",
+    category: EVALUATION_CATEGORIES.MATERIALS,
+    question: "List all my class materials.",
+    expectedBehavior: "Returns complete list of actual database material titles for selected class.",
+    evaluate: (response) => {
+      const lower = response.toLowerCase();
+      return (lower.includes("material") && (lower.includes("1.") || lower.includes("2."))) ? "PASS" : "FAIL";
+    },
+    mockResponse: "Your class materials list:\n- Module 1.pdf (PDF)\n- Lesson 1.pptx (PPTX)\n- Activity Sheet 1.pdf (PDF)\n- Reviewer.docx (DOCX)"
+  },
+  {
+    testId: "AI-TC-015",
+    category: EVALUATION_CATEGORIES.MATERIALS,
+    question: "How many PDF materials do I have?",
+    expectedBehavior: "Returns exact PDF count based on actual file_type metadata.",
+    evaluate: (response) => {
+      const lower = response.toLowerCase();
+      return (lower.includes("pdf") && /\d+/.test(lower)) ? "PASS" : "FAIL";
+    },
+    mockResponse: "You currently have 2 PDF learning materials uploaded in this class."
+  },
+  {
+    testId: "AI-TC-016",
+    category: EVALUATION_CATEGORIES.MATERIALS,
+    question: "How many materials are under Kitchen Safety?",
+    expectedBehavior: "Returns exact material count filtered by class_id and lesson_id/lesson_title.",
+    evaluate: (response) => {
+      const lower = response.toLowerCase();
+      return (lower.includes("kitchen safety") || lower.includes("material")) && /\d+/.test(lower) ? "PASS" : "FAIL";
+    },
+    mockResponse: "There are 3 learning materials under the 'Kitchen Safety' lesson."
+  },
+  {
+    testId: "AI-TC-017",
+    category: EVALUATION_CATEGORIES.MATERIALS,
     question: "Summarize the selected learning material.",
     expectedBehavior: "Uses uploaded document content to summarize key concepts.",
     evaluate: (response) => {
@@ -161,7 +216,7 @@ export const AI_TEST_CASES = [
     mockResponse: "### Material Summary: Web Application Development\nKey concepts cover HTML structure, CSS styling, client-side JavaScript logic, and state management principles."
   },
   {
-    testId: "AI-TC-013",
+    testId: "AI-TC-018",
     category: EVALUATION_CATEGORIES.MATERIALS,
     question: "Create a 5-item quiz based on my lesson material.",
     expectedBehavior: "Generates 5 questions with options and answer keys directly grounded in lesson context.",

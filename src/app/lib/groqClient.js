@@ -57,7 +57,8 @@ const buildSystemPrompt = (
   existingContentContext = null,
   bloomsLevel = "None",
   activeModule = "",
-  injectedSystemContext = ""
+  injectedSystemContext = "",
+  materialsContext = null
 ) => {
   const isStudent = role === "student";
 
@@ -81,10 +82,34 @@ This context MUST anchor all responses. Never use information from a different c
 `;
   }
 
+  // ── Materials Database Metadata Block ─────────────────────────
+  let materialsMetadataBlock = "";
+  if (materialsContext) {
+    const listStr = (materialsContext.materials || []).map((m, i) => 
+      `${i + 1}. "${m.title}" (Type: ${m.fileType}${m.lessonTitle ? `, Lesson: "${m.lessonTitle}"` : ""})`
+    ).join("\n") || "None";
+
+    materialsMetadataBlock = `
+## AUTHORITATIVE CLASS MATERIALS METADATA (FROM DATABASE)
+- **Total Valid Materials Count in Class:** ${materialsContext.totalCount}
+- **PDF Count:** ${materialsContext.fileTypeCounts?.PDF || 0}
+- **PowerPoint (PPTX) Count:** ${materialsContext.fileTypeCounts?.PPTX || 0}
+- **Word (DOCX) Count:** ${materialsContext.fileTypeCounts?.DOCX || 0}
+- **Excel (XLSX) Count:** ${materialsContext.fileTypeCounts?.XLSX || 0}
+- **Image Count:** ${materialsContext.fileTypeCounts?.IMAGE || 0}
+- **Video Count:** ${materialsContext.fileTypeCounts?.VIDEO || 0}
+- **Other Files Count:** ${materialsContext.fileTypeCounts?.OTHER || 0}
+
+### MATERIAL TITLES LIST:
+${listStr}
+`;
+  }
+
   // ── Base prompt ──────────────────────────────────────────────
   const base = `You are ConnectEd's AI ${isStudent ? "Study" : "Teaching"} Assistant — an experienced educational assistant and expert K-12 pedagogical designer for DepEd curriculum in Cavite, Philippines.
 ${contextBlock}
 ${injectedSystemContext}
+${materialsMetadataBlock}
 
 ## GROUNDING & ACCURACY RULES
 1. **Be Grounded & Accurate**: Base answers on actual DepEd pedagogy, uploaded class materials, or retrieved authorized ConnectEd data.
@@ -93,7 +118,7 @@ ${injectedSystemContext}
 4. **No Inventory of Live Data**: Never guess or invent student counts, grade numbers, or submission stats. Only state live data numbers that were explicitly retrieved and passed into your prompt. If data is unavailable, state clearly that you could not retrieve the live data right now.
 5. **Data Privacy**: Never reveal student credentials or passwords. Never display data belonging to unauthorized teachers.
 6. **Active Class Context**: When an active class context is provided above (e.g. Subject, Grade Level, Section), you MUST use this information directly. DO NOT ask the user "What subject?", "What grade?", or "What section?".
-7. **No Hallucinating Lesson Materials**: If asked to create a quiz or content based on an uploaded lesson, but NO material text was provided in the prompt context, you MUST NOT pretend you read a material. State clearly: "I don't currently have an uploaded learning material for this lesson. I can still create a general content quiz based on Grade-level content, or you can upload a lesson material for a more lesson-specific quiz."
+7. **Class Materials Counts**: ALWAYS use the exact numbers from the AUTHORITATIVE CLASS MATERIALS METADATA section above when asked how many materials, PDFs, or PPTs exist. DO NOT guess material counts.
 
 ## OUTPUT STANDARDS
 - **Structured Formatting**: Use bold terms, headers (##, ###), bulleted lists, and tables.
@@ -158,10 +183,10 @@ At the end of your response, always append a short section titled "📋 Suggeste
       return `--- MATERIAL ${i + 1}: ${f.name} ---\n${f.content || ""}`;
     }).join("\n\n");
 
-    return finalBase + `\n\n## UPLOADED CLASS MATERIALS\nThe following materials have been provided (${fileNames}). Base your response STRICTLY on this content:\n\n${formattedContents}\n\n---\nREMINDER: Use ONLY the content from the materials above. State clearly if something is not covered.`;
+    return finalBase + `\n\n## UPLOADED CLASS MATERIALS TEXT\nThe following materials have been provided (${fileNames}). Base your response STRICTLY on this content:\n\n${formattedContents}\n\n---\nREMINDER: Use ONLY the content from the materials above. State clearly if something is not covered.`;
   }
 
-  return finalBase + "\n\n## NOTE: No materials uploaded\nNo learning materials have been uploaded for this session. You may generate content from your general knowledge about the subject and grade level, but remind the user that responses will be more accurate and tailored if they upload their class materials.";
+  return finalBase + "\n\n## NOTE: No material document text uploaded for session\nNo learning material text files have been attached to this prompt session. Use the AUTHORITATIVE CLASS MATERIALS METADATA above if asked about material counts or titles.";
 };
 
 // ── Streaming message sender ─────────────────────────────────────
@@ -175,6 +200,7 @@ export const streamMessage = async ({
   bloomsLevel = "None",
   activeModule = "",
   injectedSystemContext = "",
+  materialsContext = null,
   onChunk,
   onDone,
   onError,
@@ -226,7 +252,8 @@ export const streamMessage = async ({
     existingContentContext, 
     bloomsLevel, 
     activeModule,
-    injectedSystemContext
+    injectedSystemContext,
+    materialsContext
   );
 
   const payloadMessages = [

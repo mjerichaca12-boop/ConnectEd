@@ -12,6 +12,7 @@ import { AIEvaluationPanel } from "@/app/components/ai/AIEvaluationPanel";
 import { parseDocument } from "@/app/lib/documentParser";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
 import { getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
+import { fetchClassMaterialsForTeacher } from "@/app/services/classMaterialsService";
 import { supabase } from "@/app/lib/supabaseClient";
 
 const STORAGE_BUCKET = "class-materials";
@@ -126,6 +127,67 @@ export function AIAssistant() {
   });
 
   const [isLoadingClasses, setIsLoadingClasses] = useState(true);
+
+  // Active Selected Class Object
+  const activeClassObj = useMemo(
+    () => teacherClasses.find((c) => c.id === settings.selectedClassId) || null,
+    [teacherClasses, settings.selectedClassId]
+  );
+
+  // Authoritative Database Class Materials state (from class_materials table)
+  const [dbMaterialsState, setDbMaterialsState] = useState({
+    materials: [],
+    totalCount: 0,
+    fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
+    lessonCounts: {},
+    isError: false,
+    errorMessage: "",
+    isLoading: true,
+  });
+
+  const loadDbMaterials = useCallback(async (tId, selectedCls) => {
+    if (!tId) {
+      setDbMaterialsState((prev) => ({ ...prev, isLoading: false }));
+      return;
+    }
+    setDbMaterialsState((prev) => ({ ...prev, isLoading: true }));
+    const res = await fetchClassMaterialsForTeacher({ teacherId: tId, selectedClass: selectedCls });
+    setDbMaterialsState({
+      ...res,
+      isLoading: false,
+    });
+  }, []);
+
+  // Sync Class Materials from database whenever teacherId or selected class changes
+  useEffect(() => {
+    if (activeTeacherId) {
+      loadDbMaterials(activeTeacherId, activeClassObj);
+    }
+  }, [activeTeacherId, activeClassObj, loadDbMaterials]);
+
+  // Realtime Supabase Subscription on class_materials table
+  useEffect(() => {
+    if (!supabase || !activeTeacherId) return;
+
+    const channel = supabase
+      .channel(`ai-materials-sync-${activeTeacherId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "class_materials",
+        },
+        () => {
+          loadDbMaterials(activeTeacherId, activeClassObj);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTeacherId, activeClassObj, loadDbMaterials]);
 
   // Fetch subjects, lessons, and materials on mount
   useEffect(() => {
@@ -483,6 +545,7 @@ export function AIAssistant() {
       bloomsLevel: settings.bloomsLevel || "None",
       activeModule: searchParams.get("module") || searchParams.get("page") || "",
       injectedSystemContext: contextResult.systemContext,
+      materialsContext: dbMaterialsState,
       onChunk: (text) => {
         assistantMessage += text;
         setMessages([
@@ -984,7 +1047,112 @@ export function AIAssistant() {
       const userMessage = { role: "user", content: queryText, timestamp: Date.now() };
       lastUserMsgRef.current = userMessage;
 
-    // 1. Intercept prompt based on detected intent
+      // Check Material Query Intent (Returns deterministic database results from class_materials table)
+      const isMaterialQuery = (text) => {
+        const lower = text.toLowerCase();
+        return (
+          lower.includes("material") ||
+          lower.includes("learning material") ||
+          lower.includes("how many pdf") ||
+          lower.includes("how many powerpoint") ||
+          lower.includes("how many ppt") ||
+          lower.includes("how many docx") ||
+          lower.includes("how many word") ||
+          lower.includes("how many document") ||
+          lower.includes("how many uploaded") ||
+          lower.includes("what materials do i have") ||
+          lower.includes("list all my class materials") ||
+          lower.includes("list my class materials") ||
+          lower.includes("list class materials") ||
+          lower.includes("show my class materials")
+        );
+      };
+
+      if (isMaterialQuery(queryText)) {
+        if (dbMaterialsState.isLoading) {
+          setMessages((prev) => [
+            ...prev,
+            userMessage,
+            {
+              role: "assistant",
+              content: "⏳ Your class materials are still loading. Please try again in a moment.",
+              timestamp: Date.now() + 10,
+            },
+          ]);
+          return;
+        }
+
+        if (dbMaterialsState.isError) {
+          setMessages((prev) => [
+            ...prev,
+            userMessage,
+            {
+              role: "assistant",
+              content: "⚠️ I couldn't retrieve the class materials right now. Please try again later.",
+              timestamp: Date.now() + 10,
+            },
+          ]);
+          return;
+        }
+
+        if (dbMaterialsState.totalCount === 0) {
+          setMessages((prev) => [
+            ...prev,
+            userMessage,
+            {
+              role: "assistant",
+              content: `There are currently no learning materials uploaded for **${activeClassObj ? `${activeClassObj.name} — Grade ${activeClassObj.gradeLevel} ${activeClassObj.section}` : "this class"}**.`,
+              timestamp: Date.now() + 10,
+            },
+          ]);
+          return;
+        }
+
+        const lower = queryText.toLowerCase();
+        let responseText = "";
+        const classLabel = activeClassObj ? `${activeClassObj.name} — Grade ${activeClassObj.gradeLevel} ${activeClassObj.section}` : "your active class";
+
+        if (lower.includes("pdf")) {
+          const pdfCount = dbMaterialsState.fileTypeCounts.PDF || 0;
+          const pdfList = dbMaterialsState.materials.filter(m => m.fileType === "PDF").map((m, i) => `${i + 1}. **${m.title}**`).join("\n");
+          responseText = `You currently have **${pdfCount}** PDF learning material${pdfCount === 1 ? "" : "s"} uploaded for **${classLabel}**:${pdfList ? `\n\n${pdfList}` : ""}`;
+        } else if (lower.includes("powerpoint") || lower.includes("ppt")) {
+          const pptCount = dbMaterialsState.fileTypeCounts.PPTX || 0;
+          const pptList = dbMaterialsState.materials.filter(m => m.fileType === "PPTX").map((m, i) => `${i + 1}. **${m.title}**`).join("\n");
+          responseText = `You currently have **${pptCount}** PowerPoint material${pptCount === 1 ? "" : "s"} uploaded for **${classLabel}**:${pptList ? `\n\n${pptList}` : ""}`;
+        } else if (lower.includes("docx") || lower.includes("word") || lower.includes("document")) {
+          const docCount = dbMaterialsState.fileTypeCounts.DOCX || 0;
+          const docList = dbMaterialsState.materials.filter(m => m.fileType === "DOCX").map((m, i) => `${i + 1}. **${m.title}**`).join("\n");
+          responseText = `You currently have **${docCount}** Word document material${docCount === 1 ? "" : "s"} uploaded for **${classLabel}**:${docList ? `\n\n${docList}` : ""}`;
+        } else {
+          const typeBreakdown = [];
+          if (dbMaterialsState.fileTypeCounts.PDF > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.PDF} PDF`);
+          if (dbMaterialsState.fileTypeCounts.PPTX > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.PPTX} PowerPoint`);
+          if (dbMaterialsState.fileTypeCounts.DOCX > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.DOCX} Word`);
+          if (dbMaterialsState.fileTypeCounts.XLSX > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.XLSX} Excel`);
+          if (dbMaterialsState.fileTypeCounts.IMAGE > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.IMAGE} Image`);
+          if (dbMaterialsState.fileTypeCounts.VIDEO > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.VIDEO} Video`);
+          if (dbMaterialsState.fileTypeCounts.OTHER > 0) typeBreakdown.push(`${dbMaterialsState.fileTypeCounts.OTHER} Other`);
+          const breakdownStr = typeBreakdown.length > 0 ? ` (${typeBreakdown.join(", ")})` : "";
+
+          const listItems = dbMaterialsState.materials.map((m, i) => `${i + 1}. **${m.title}** (Type: ${m.fileType}${m.lessonTitle ? `, Lesson: ${m.lessonTitle}` : ""})`).join("\n");
+
+          responseText = `There are **${dbMaterialsState.totalCount}** learning material${dbMaterialsState.totalCount === 1 ? "" : "s"} available in your selected class (**${classLabel}**)${breakdownStr}:\n\n${listItems}`;
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          userMessage,
+          {
+            role: "assistant",
+            content: responseText,
+            timestamp: Date.now() + 10,
+          },
+        ]);
+        return;
+      }
+
+      // 1. Intercept prompt based on detected intent
     const isAnalytics = isAnalyticsRequest(queryText);
     const isGen = isGenerationRequest(queryText);
     const hasClass = !!settings.selectedClassId;
@@ -1174,11 +1342,7 @@ export function AIAssistant() {
     });
   }, [isStreaming, sendToAI]);
 
-  // Find class details for active context banner
-  const activeClassObj = useMemo(
-    () => teacherClasses.find((c) => c.id === settings.selectedClassId),
-    [teacherClasses, settings.selectedClassId]
-  );
+  // Find class details for active context banner (activeClassObj defined above)
 
   return (
     <div className="h-screen bg-gradient-to-tr from-gray-50 via-slate-50 to-emerald-50/20 flex overflow-hidden">
