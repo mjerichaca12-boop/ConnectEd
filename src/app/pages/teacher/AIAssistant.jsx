@@ -92,6 +92,10 @@ export function AIAssistant() {
   const [fileContents, setFileContents] = useState([]);
   const [dbMaterialContents, setDbMaterialContents] = useState([]);
 
+  // Active Teacher Profile & Modal State
+  const [activeTeacherId, setActiveTeacherId] = useState(null);
+  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
+
   // Lesson-aware context state
   const [teacherClasses, setTeacherClasses] = useState([]);
   const [selectedContextLesson, setSelectedContextLesson] = useState(null);
@@ -493,9 +497,6 @@ export function AIAssistant() {
   const handleLogout = () => {
     navigate("/login");
   };
-
-  const [activeTeacherId, setActiveTeacherId] = useState(null);
-  const [isEvalModalOpen, setIsEvalModalOpen] = useState(false);
 
   const sendToAI = useCallback(async (promptText, historyMessages) => {
     setIsStreaming(true);
