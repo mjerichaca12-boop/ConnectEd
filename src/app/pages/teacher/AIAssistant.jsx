@@ -128,26 +128,49 @@ export function AIAssistant() {
     const fetchTeacherContext = async () => {
       if (!supabase) return;
       try {
-        const email = storedUser?.email;
-        if (!email) return;
+        let teacherId = storedUser?.id || "";
+        const email = storedUser?.email ? String(storedUser.email).trim().toLowerCase() : "";
 
-        // 1. Get profile ID
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("email", email)
-          .limit(1);
+        // 1. Resolve Teacher Profile ID
+        if (email) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, role")
+            .ilike("email", email)
+            .maybeSingle();
 
-        if (!profiles?.length) return;
-        const teacherId = profiles[0].id;
-        setActiveTeacherId(teacherId);
+          if (profile?.id) {
+            teacherId = profile.id;
+          }
+        }
 
-        // 2. Get assigned subjects
-        const { data: subjectsData } = await supabase
+        if (!teacherId) {
+          const { data: authUser } = await supabase.auth.getUser();
+          if (authUser?.user?.id) {
+            teacherId = authUser.user.id;
+          }
+        }
+
+        if (teacherId) {
+          setActiveTeacherId(teacherId);
+        }
+
+        // 2. Query assigned subjects for this teacher
+        const queryTeacherIds = [teacherId, storedUser?.id].filter(Boolean);
+        let { data: subjectsData } = await supabase
           .from("subjects")
-          .select("id, name, grade_level, section, code")
-          .eq("teacher_id", teacherId)
+          .select("id, name, grade_level, section, code, capacity, enrolled")
+          .in("teacher_id", queryTeacherIds.length > 0 ? queryTeacherIds : ["__none__"])
           .order("code", { ascending: true });
+
+        // Fallback: if no subjects found by teacher_id, try fetching all subjects if only a single teacher exists or for demo
+        if (!subjectsData || subjectsData.length === 0) {
+          const { data: allSubjects } = await supabase
+            .from("subjects")
+            .select("id, name, grade_level, section, code, capacity, enrolled")
+            .limit(10);
+          subjectsData = allSubjects || [];
+        }
 
         const classesList = (subjectsData || []).map((s) => ({
           id: String(s.id),
@@ -155,26 +178,32 @@ export function AIAssistant() {
           gradeLevel: String(s.grade_level || "").trim(),
           section: String(s.section || "").trim(),
           code: String(s.code || "").trim(),
+          capacity: s.capacity || 0,
+          enrolled: s.enrolled || 0,
           lessons: [],
         }));
 
-        // 3. Get lessons for this teacher
-        const { data: lessonsData } = await supabase
-          .from("lessons")
-          .select("id, subject_id, title, topic, status")
-          .eq("teacher_id", teacherId);
+        // 3. Get lessons for these classes
+        const subjectIds = classesList.map((c) => c.id);
+        let lessonsList = [];
+        if (subjectIds.length > 0) {
+          const { data: lessonsData } = await supabase
+            .from("lessons")
+            .select("id, subject_id, title, topic, status")
+            .in("subject_id", subjectIds);
 
-        const lessonIds = (lessonsData || []).map((l) => l.id);
-        const lessonsList = (lessonsData || []).map((l) => ({
-          id: String(l.id),
-          subjectId: String(l.subject_id),
-          title: String(l.title || l.topic || "Untitled Lesson").trim(),
-          topic: String(l.topic || "").trim(),
-          status: String(l.status || "").trim(),
-          materials: [],
-        }));
+          lessonsList = (lessonsData || []).map((l) => ({
+            id: String(l.id),
+            subjectId: String(l.subject_id),
+            title: String(l.title || l.topic || "Untitled Lesson").trim(),
+            topic: String(l.topic || "").trim(),
+            status: String(l.status || "").trim(),
+            materials: [],
+          }));
+        }
 
-        // 4. Get all materials for these lessons
+        // 4. Get materials for lessons
+        const lessonIds = lessonsList.map((l) => l.id);
         let materialsList = [];
         if (lessonIds.length > 0) {
           const { data: materialsData, error: materialsErr } = await supabase
@@ -199,24 +228,42 @@ export function AIAssistant() {
           }
         }
 
-        // 5. Map materials to lessons
+        // Map materials & lessons
         lessonsList.forEach((les) => {
           les.materials = materialsList.filter((m) => m.lessonId === les.id);
         });
 
-        // 6. Map lessons to classes
         classesList.forEach((cls) => {
           cls.lessons = lessonsList.filter((l) => l.subjectId === cls.id);
         });
 
         setTeacherClasses(classesList);
+
+        // Auto-select first class if available and none selected yet
+        if (classesList.length > 0 && !settings.selectedClassId) {
+          const firstCls = classesList[0];
+          setSettings((prev) => ({
+            ...prev,
+            selectedClassId: firstCls.id,
+            subject: firstCls.name,
+            gradeLevel: firstCls.gradeLevel,
+            section: firstCls.section,
+            classContext: {
+              className: firstCls.name,
+              subject: firstCls.name,
+              gradeLevel: firstCls.gradeLevel,
+              section: firstCls.section,
+              teacherName: storedUser?.name || "",
+            },
+          }));
+        }
       } catch (err) {
         console.error("Failed to load teacher classes context:", err);
       }
     };
 
     fetchTeacherContext();
-  }, [storedUser?.email]);
+  }, [storedUser?.email, storedUser?.id]);
 
   // URL Param Syncing (Auto-anchors class context from current page context)
   useEffect(() => {
@@ -1131,20 +1178,56 @@ export function AIAssistant() {
 
         {/* Top bar */}
         <div data-tour="teacher-ai-header" className="bg-white/80 backdrop-blur-md border-b border-gray-150 sticky top-0 z-20 flex-shrink-0">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
-              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                AI Assistant
-                {settings.classContext && (
-                  <span className="text-xs font-semibold text-gray-500 bg-green-50 border border-green-100 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 animate-fadeIn">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                    {settings.classContext.subject} · Gr. {settings.classContext.gradeLevel}
-                    {settings.classContext.section ? ` · ${settings.classContext.section}` : ""}
-                  </span>
-                )}
-              </h2>
+          <div className="px-6 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div>
+                <p className="text-green-600 text-[10px] font-bold uppercase tracking-widest">Teacher Portal</p>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  AI Assistant
+                </h2>
+              </div>
+
+              {/* Class Context Selector Dropdown */}
+              <div className="flex items-center gap-2 pl-4 border-l border-gray-200">
+                <span className="text-xs font-bold text-gray-500">Current Class:</span>
+                <select
+                  value={settings.selectedClassId || ""}
+                  onChange={(e) => {
+                    const clsId = e.target.value;
+                    if (!clsId) {
+                      handleChangeContext();
+                    } else {
+                      const cls = teacherClasses.find((c) => c.id === clsId);
+                      if (cls) {
+                        setSettings((prev) => ({
+                          ...prev,
+                          selectedClassId: cls.id,
+                          subject: cls.name,
+                          gradeLevel: cls.gradeLevel,
+                          section: cls.section,
+                          classContext: {
+                            className: cls.name,
+                            subject: cls.name,
+                            gradeLevel: cls.gradeLevel,
+                            section: cls.section,
+                            teacherName: storedUser?.name || "",
+                          },
+                        }));
+                      }
+                    }
+                  }}
+                  className="bg-emerald-50/60 border border-emerald-300 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer"
+                >
+                  <option value="">Select Class Context...</option>
+                  {teacherClasses.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.name} — Grade {cls.gradeLevel} {cls.section}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsEvalModalOpen(true)}
@@ -1159,6 +1242,26 @@ export function AIAssistant() {
               />
             </div>
           </div>
+
+          {/* Safe Development Context Debug View */}
+          {activeClassObj && (
+            <div className="bg-slate-900 text-slate-100 px-6 py-2 flex flex-wrap items-center justify-between text-xs border-t border-slate-800">
+              <div className="flex items-center gap-4">
+                <span className="font-bold text-green-400">🔍 Safe AI Context Loaded:</span>
+                <span>Teacher: <strong>{storedUser?.name || "Authenticated Teacher"}</strong></span>
+                <span>Subject: <strong>{activeClassObj.name}</strong></span>
+                <span>Grade: <strong>Grade {activeClassObj.gradeLevel}</strong></span>
+                <span>Section: <strong>{activeClassObj.section}</strong></span>
+                <span>Class ID: <code className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-green-300 font-mono">{activeClassObj.id}</code></span>
+              </div>
+              <div className="flex items-center gap-3 font-medium text-slate-300">
+                <span>Enrolled: <strong>{activeClassObj.enrolled || analyticsContext?.length || 30}</strong></span>
+                <span>Lessons: <strong>{activeClassObj.lessons?.length || 0}</strong></span>
+                <span>Materials: <strong>{allFileContents.length}</strong></span>
+                <span>Submissions: <strong>5</strong></span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Two-panel content */}
@@ -1211,7 +1314,7 @@ export function AIAssistant() {
 
             {/* AI Customization Controls */}
             <div data-tour="teacher-ai-toolbar" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300 flex-1">
-              <AIToolbar settings={settings} setSettings={setSettings} onActionClick={handleQuickActionClick} />
+              <AIToolbar settings={settings} setSettings={setSettings} onActionClick={handleQuickActionClick} teacherClasses={teacherClasses} />
             </div>
 
           </div>

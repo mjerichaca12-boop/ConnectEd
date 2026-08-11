@@ -205,11 +205,13 @@ const STUDENT_ACTIONS = [
   },
 ];
 
-export function AIToolbar({ onActionClick, settings, inputRef, role = "teacher" }) {
+export function AIToolbar({ onActionClick, settings, inputRef, role = "teacher", teacherClasses = [] }) {
   const [activeCategory, setActiveCategory] = useState("assessments");
   const actions = role === "student" ? STUDENT_ACTIONS : TEACHER_ACTIONS;
 
   const filteredActions = actions.filter((act) => act.category === activeCategory || role === "student");
+  const hasClass = !!settings?.selectedClassId;
+  const hasZeroClasses = teacherClasses.length === 0;
 
   const handleAction = (action) => {
     if (onActionClick) {
@@ -224,6 +226,19 @@ export function AIToolbar({ onActionClick, settings, inputRef, role = "teacher" 
           <span>⚡</span> Quick Actions
         </h3>
       </div>
+
+      {hasZeroClasses ? (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+          <p className="font-bold flex items-center gap-1">⚠️ No Classes Assigned</p>
+          <p className="text-[11px] text-amber-700">
+            No classes are currently assigned to your account. Please contact your administrator to have a class assigned.
+          </p>
+        </div>
+      ) : !hasClass ? (
+        <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 flex items-center justify-between">
+          <span className="font-semibold text-[11px]">⚠️ Select a class above first to use quick actions.</span>
+        </div>
+      ) : null}
 
       {/* Tabs */}
       {role === "teacher" && (
@@ -248,11 +263,17 @@ export function AIToolbar({ onActionClick, settings, inputRef, role = "teacher" 
       <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-0.5 select-scrollbar">
         {filteredActions.map((action) => {
           const Icon = action.icon || HelpCircle;
+          const isDisabled = role === "teacher" && (!hasClass || hasZeroClasses);
           return (
             <button
               key={action.label}
               onClick={() => handleAction(action)}
-              className="flex items-start gap-3 p-2.5 bg-white border border-gray-150 hover:bg-green-50/40 hover:border-green-300 rounded-xl text-left transition-all group active:scale-[0.98]"
+              disabled={isDisabled}
+              className={`flex items-start gap-3 p-2.5 bg-white border border-gray-150 rounded-xl text-left transition-all group active:scale-[0.98] ${
+                isDisabled
+                  ? "opacity-50 cursor-not-allowed bg-gray-50/50"
+                  : "hover:bg-green-50/40 hover:border-green-300 cursor-pointer"
+              }`}
             >
               <div className={`p-1.5 rounded-lg border flex-shrink-0 flex items-center justify-center ${action.iconColor || "text-green-600 bg-green-50 border-green-100"}`}>
                 <Icon className="w-4 h-4" />

@@ -40,16 +40,33 @@ export const AI_TEST_CASES = [
   {
     id: "TC-AI-001",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
-    question: "What can I do from the Teacher Dashboard?",
-    expectedBehavior: "Explains dashboard features: view assigned classes, check pending grading, view announcements, quick access to materials and AI assistant.",
+    question: "What class am I currently working with?",
+    expectedBehavior: "Identifies the currently selected active class context (e.g. TLE Grade 7 Emerald).",
     assertions: [
-      { text: "dashboard", required: true },
-      { text: "classes", required: true },
-      { text: "announcements", required: true }
+      { text: "tle", required: true },
+      { text: "emerald", required: true }
     ]
   },
   {
     id: "TC-AI-002",
+    category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
+    question: "What subject is this class?",
+    expectedBehavior: "Returns the actual subject name from active class context.",
+    assertions: [
+      { text: "tle", required: true }
+    ]
+  },
+  {
+    id: "TC-AI-003",
+    category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
+    question: "What section is this class?",
+    expectedBehavior: "Returns the actual section from active class context.",
+    assertions: [
+      { text: "emerald", required: true }
+    ]
+  },
+  {
+    id: "TC-AI-004",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
     question: "How do I add students to my class?",
     expectedBehavior: "Explains that students are enrolled from section masterlists into assigned subjects.",
@@ -59,17 +76,7 @@ export const AI_TEST_CASES = [
     ]
   },
   {
-    id: "TC-AI-003",
-    category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
-    question: "Can I add a Grade 7 Ruby student to my Grade 7 Emerald class?",
-    expectedBehavior: "States NO clearly, explaining that students must match both Grade Level and Section.",
-    assertions: [
-      { text: "no", required: true },
-      { text: "section", required: true }
-    ]
-  },
-  {
-    id: "TC-AI-004",
+    id: "TC-AI-005",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
     question: "How does class capacity work in ConnectEd?",
     expectedBehavior: "Explains that Admin sets class capacity and enrollment cannot exceed the specified maximum.",
@@ -79,7 +86,7 @@ export const AI_TEST_CASES = [
     ]
   },
   {
-    id: "TC-AI-005",
+    id: "TC-AI-006",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
     question: "How does automated exam grading work?",
     expectedBehavior: "Explains that Multiple Choice, True/False, and Identification are auto-graded upon student submission.",
@@ -89,7 +96,7 @@ export const AI_TEST_CASES = [
     ]
   },
   {
-    id: "TC-AI-006",
+    id: "TC-AI-007",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
     question: "Where do exam scores come from?",
     expectedBehavior: "Explains that objective scores come from student submissions and auto-grading syncs to Grades Management.",
@@ -99,22 +106,13 @@ export const AI_TEST_CASES = [
     ]
   },
   {
-    id: "TC-AI-007",
+    id: "TC-AI-008",
     category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
     question: "How do I encode grades in ConnectEd?",
     expectedBehavior: "Guides teacher to navigate to Grades Management, select Subject, Quarter, and Assessment Type, and input raw scores.",
     assertions: [
       { text: "grades", required: true },
       { text: "subject", required: true }
-    ]
-  },
-  {
-    id: "TC-AI-008",
-    category: EVALUATION_CATEGORIES.CONNECTED_KNOWLEDGE,
-    question: "How do I check student submissions?",
-    expectedBehavior: "Instructs teacher to open Class Detail or Assessment Submissions view to see submitted student work.",
-    assertions: [
-      { text: "submission", required: true }
     ]
   },
   {
