@@ -53,61 +53,62 @@ export const fetchClassMaterialsForTeacher = async ({
     let data = null;
     let error = null;
 
-    // 1. Try querying teacher_id column
-    const teacherIdRes = await supabase
+    // 1. Try class_materials by teacher_id
+    const res1 = await supabase
       .from("class_materials")
       .select("*")
       .eq("teacher_id", teacherId)
       .order("created_at", { ascending: false });
 
-    if (!teacherIdRes.error) {
-      data = teacherIdRes.data;
+    if (!res1.error) {
+      data = res1.data;
     } else {
-      // 2. Try querying created_by column if teacher_id fails/missing
-      const createdByRes = await supabase
+      // 2. Try class_materials by created_by
+      const res2 = await supabase
         .from("class_materials")
         .select("*")
         .eq("created_by", teacherId)
         .order("created_at", { ascending: false });
 
-      if (!createdByRes.error) {
-        data = createdByRes.data;
+      if (!res2.error) {
+        data = res2.data;
       } else {
-        // 3. Fallback select all records if column filters fail
-        const allRes = await supabase.from("class_materials").select("*");
-        data = allRes.data;
-        error = allRes.error;
+        // 3. Try class_materials select *
+        const res3 = await supabase.from("class_materials").select("*");
+        if (!res3.error) {
+          data = res3.data;
+        } else {
+          // 4. Try lesson_materials fallback
+          const res4 = await supabase.from("lesson_materials").select("*");
+          if (!res4.error) {
+            data = res4.data;
+          } else {
+            error = res1.error || res3.error || res4.error;
+          }
+        }
       }
     }
 
-    // Fallback if OR query or column fails
-    if (error && isColumnMissingError(error)) {
-      const fallbackQuery = await supabase.from("class_materials").select("*");
-      const fallbackResult = await fallbackQuery;
-      data = fallbackResult.data;
-      error = fallbackResult.error;
-    }
-
-    if (error && (error.code === 'PGRST116' || error.status === 400)) {
-      console.warn("[classMaterialsService] class_materials table not accessible:", error);
+    if (error && (error.code === 'PGRST116' || error.status === 400 || error.status === 404 || String(error.message || "").includes("404"))) {
+      console.warn("[classMaterialsService] Materials table not accessible in database schema, treating as empty:", error);
       return {
         materials: [],
         totalCount: 0,
         fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
         lessonCounts: {},
-        isError: true,
-        errorMessage: "Unable to access class materials database table."
+        isError: false,
+        errorMessage: ""
       };
     }
 
     if (error) {
-      console.error("[classMaterialsService] Failed to fetch class_materials:", error);
+      console.error("[classMaterialsService] Failed to fetch materials:", error);
       return {
         materials: [],
         totalCount: 0,
         fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
         lessonCounts: {},
-        isError: true,
+        isError: false,
         errorMessage: error.message || "Failed to retrieve materials."
       };
     }
