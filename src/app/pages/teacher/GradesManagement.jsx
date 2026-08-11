@@ -1753,6 +1753,7 @@ function GradesManagement() {
       setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
       setAutoSaveMessage("Assignment returned successfully.");
       toast.success("Assignment returned successfully.");
+      try { window.dispatchEvent(new CustomEvent("connected-grade-updated", { detail: { teacherId } })); } catch (e) {}
     } finally {
       setSubmissionActionStateMap((prev) => ({ ...prev, [actionKey]: "idle" }));
     }
@@ -1891,6 +1892,7 @@ function GradesManagement() {
       toast.success("Grades successfully saved");
       setSaveSuccess(true);
       setHasUnsavedChanges(false);
+      try { window.dispatchEvent(new CustomEvent("connected-grade-updated", { detail: { teacherId } })); } catch (e) {}
     } catch (error) {
       console.error("Unexpected save error:", error);
       toast.error(error?.message || "Failed to save grades.");

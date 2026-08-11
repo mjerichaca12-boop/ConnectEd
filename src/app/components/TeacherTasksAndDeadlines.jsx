@@ -24,7 +24,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     try {
       const subjectIds = assignedSubjects.map(s => s.id);
       
-      // 1. Fetch lessons for these subjects (only Published ones are considered 'active' classes)
+      // 1. Fetch lessons for these subjects
       let lessonsQuery = supabase
         .from('lessons')
         .select('id, subject_id, status')
@@ -36,49 +36,45 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
         lessonsQuery = lessonsQuery.eq('term', activeQuarter);
       }
 
-      const { data: lessonsData, error: lessonsError } = await lessonsQuery;
-      
+      const { data: lessonsData } = await lessonsQuery;
       const lessonIds = (lessonsData || []).map(l => String(l.id));
 
-      let allTasks = [];
-      if (lessonIds.length > 0) {
-        // Fetch Assignments
-        const { data: assignmentsData } = await supabase
-          .from('assignments')
-          .select('*')
-          .in('lesson_id', lessonIds);
-        
-        // Fetch Quizzes
-        const { data: quizzesData } = await supabase
-          .from('quizzes')
-          .select('*')
-          .in('lesson_id', lessonIds);
+      // 2. Fetch Assignments & Quizzes by lesson_id or subject_id
+      const [{ data: assignmentsByLesson }, { data: quizzesByLesson }, { data: assignmentsBySubject }, { data: quizzesBySubject }] = await Promise.all([
+        lessonIds.length ? supabase.from('assignments').select('*').in('lesson_id', lessonIds) : Promise.resolve({ data: [] }),
+        lessonIds.length ? supabase.from('quizzes').select('*').in('lesson_id', lessonIds) : Promise.resolve({ data: [] }),
+        subjectIds.length ? supabase.from('assignments').select('*').in('subject_id', subjectIds) : Promise.resolve({ data: [] }),
+        subjectIds.length ? supabase.from('quizzes').select('*').in('subject_id', subjectIds) : Promise.resolve({ data: [] })
+      ]);
 
-        const mapTask = (task, type) => {
-          const lesson = (lessonsData || []).find(l => String(l.id) === String(task.lesson_id));
-          return {
-            ...task,
-            course_id: lesson ? lesson.subject_id : null,
-            assessment_type: type,
-            deadline: task.due_date // Map due_date to deadline
-          };
-        };
+      const rawTasksMap = new Map();
+      const addRawTask = (task, type) => {
+        if (!task || !task.id || rawTasksMap.has(String(task.id))) return;
+        const lesson = (lessonsData || []).find(l => String(l.id) === String(task.lesson_id));
+        const courseId = task.subject_id || (lesson ? lesson.subject_id : null);
+        rawTasksMap.set(String(task.id), {
+          ...task,
+          course_id: courseId,
+          assessment_type: type,
+          deadline: task.due_date
+        });
+      };
 
-        allTasks = [
-          ...(assignmentsData || []).map(a => mapTask(a, 'assignment')),
-          ...(quizzesData || []).map(q => mapTask(q, 'quiz'))
-        ];
-      }
+      (assignmentsByLesson || []).forEach(a => addRawTask(a, 'assignment'));
+      (assignmentsBySubject || []).forEach(a => addRawTask(a, 'assignment'));
+      (quizzesByLesson || []).forEach(q => addRawTask(q, 'quiz'));
+      (quizzesBySubject || []).forEach(q => addRawTask(q, 'quiz'));
 
+      const allTasks = Array.from(rawTasksMap.values());
       setAssessments(allTasks);
 
       const assessmentIds = allTasks.map(a => String(a.id));
 
       if (assessmentIds.length > 0) {
-        // 2. Fetch Submissions
+        // Fetch Submissions for these subjects/assessments
         const { data: subsData, error: subsError } = await supabase
           .from('teacher_assessment_submissions')
-          .select('id, assessment_id, student_id, status')
+          .select('id, assessment_id, student_id, status, submitted_at')
           .eq('teacher_id', teacherId)
           .in('assessment_id', assessmentIds);
 
@@ -88,7 +84,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
           setSubmissions(subsData || []);
         }
 
-        // 3. Fetch Grades
+        // Fetch Grades for these subjects/assessments
         const { data: gradesData, error: gradesError } = await supabase
           .from('teacher_assessment_grades')
           .select('id, assessment_id, student_id, status, grade_value')
@@ -115,7 +111,7 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     fetchData();
   }, [teacherId, assignedSubjects, activeSchoolYear, activeQuarter, viewMode]);
 
-  // Real-time Subscriptions
+  // Real-time Subscriptions & Window Event Listener
   useEffect(() => {
     if (!teacherId || !supabase) return;
     
@@ -136,8 +132,14 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
       })
       .subscribe();
 
+    const handleGradeUpdated = () => {
+      if (isMounted) fetchData();
+    };
+    window.addEventListener("connected-grade-updated", handleGradeUpdated);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("connected-grade-updated", handleGradeUpdated);
       supabase.removeChannel(channel);
     };
   }, [teacherId, assignedSubjects]);
@@ -147,8 +149,6 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    const next7DaysEnd = new Date(todayStart);
-    next7DaysEnd.setDate(next7DaysEnd.getDate() + 8); // up to 7 days from tomorrow
 
     let activeTotal = 0;
     let dueToday = 0;
@@ -156,29 +156,29 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     let needsGrading = 0;
 
     assessments.forEach(task => {
-      const isPast = task.deadline ? new Date(task.deadline) < now : false;
-      if (!isPast) activeTotal++;
-
       if (task.deadline) {
         const d = new Date(task.deadline);
+        const isPast = d <= now;
+
+        if (!isPast) {
+          activeTotal++;
+          upcoming++; // Any future due date is an upcoming task/deadline
+        }
+
         if (d >= todayStart && d < tomorrowStart) {
           dueToday++;
-        } else if (d >= tomorrowStart && d < next7DaysEnd) {
-          upcoming++;
         }
+      } else {
+        activeTotal++;
       }
     });
 
-    // Needs grading: Submissions that don't have a returned grade
+    // Needs grading: Real student submissions that have not yet been assigned a returned grade
     submissions.forEach(sub => {
       const grade = grades.find(g => String(g.assessment_id) === String(sub.assessment_id) && String(g.student_id) === String(sub.student_id));
-      const gradeStatus = grade?.status?.toLowerCase() || 'pending';
-      const subStatus = sub?.status?.toLowerCase() || 'pending';
-      const hasGradeValue = grade?.grade_value !== null && grade?.grade_value !== undefined;
+      const hasReturnedGrade = grade && (grade.grade_value !== null && grade.grade_value !== undefined) && String(grade.status).toLowerCase() === 'returned';
       
-      // If the submission is not returned, and it's not graded, it needs grading.
-      // We will count it as needing grading if there is no grade, or if the grade status is pending.
-      if (gradeStatus !== 'returned' && subStatus !== 'returned' && (!hasGradeValue || gradeStatus === 'pending')) {
+      if (!hasReturnedGrade) {
         needsGrading++;
       }
     });

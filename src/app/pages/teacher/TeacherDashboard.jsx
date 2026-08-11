@@ -242,25 +242,44 @@ export function TeacherDashboard() {
     }
   };
 
+  const formatTimeAgo = (dateStr) => {
+    if (!dateStr) return "Just now";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return "Updated just now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Updated ${minutes} min${minutes > 1 ? "s" : ""} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Updated ${hours} hr${hours > 1 ? "s" : ""} ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `Updated ${days} day${days > 1 ? "s" : ""} ago`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
   const fetchRecentGrades = async (id) => {
     if (!supabase || !id) {
       setRecentGrades([]);
       return;
     }
 
-    const { data: gradeRows, error: gradeError } = await supabase
-      .from("teacher_student_grades")
-      .select("id, student_id, subject_id, overall_grade, updated_at")
+    let { data: gradeRows, error: gradeError } = await supabase
+      .from("teacher_assessment_grades")
+      .select("id, student_id, subject_id, assessment_id, assessment_title, assessment_type, grade_value, max_points, updated_at, created_at")
       .eq("teacher_id", id)
-      .eq("school_year", activeSchoolYear)
-      .eq("term", activeQuarter)
       .order("updated_at", { ascending: false })
-      .limit(5);
+      .limit(6);
 
-    if (gradeError) {
-      console.error("Error fetching recent grades:", gradeError);
-      setRecentGrades([]);
-      return;
+    if (gradeError || !gradeRows || gradeRows.length === 0) {
+      const { data: summaryRows } = await supabase
+        .from("teacher_student_grades")
+        .select("id, student_id, subject_id, overall_grade, updated_at")
+        .eq("teacher_id", id)
+        .order("updated_at", { ascending: false })
+        .limit(5);
+
+      gradeRows = summaryRows ?? [];
     }
 
     const rows = gradeRows ?? [];
@@ -282,7 +301,7 @@ export function TeacherDashboard() {
       subjectIds.length
         ? supabase
           .from("subjects")
-          .select("id, code, name")
+          .select("id, code, name, section")
           .in("id", subjectIds)
         : Promise.resolve({ data: [] })
     ]);
@@ -300,20 +319,39 @@ export function TeacherDashboard() {
 
     const subjectMap = new Map(
       (subjects ?? []).map((subject) => {
-        const label = [String(subject.code || "").trim(), String(subject.name || "").trim()]
+        const label = [String(subject.code || "").trim(), String(subject.name || "").trim(), String(subject.section || "").trim()]
           .filter(Boolean)
           .join(" - ") || "Subject";
         return [String(subject.id), label];
       })
     );
 
-    const mapped = rows.map((row) => ({
-      id: String(row.id),
-      studentName: studentMap.get(String(row.student_id || "")) || "Student",
-      subject: subjectMap.get(String(row.subject_id || "")) || "Subject",
-      dateRecorded: row.updated_at,
-      grade: Number(row.overall_grade || 0)
-    }));
+    const mapped = rows.map((row) => {
+      const isAssessment = "assessment_title" in row;
+      const scoreNum = Number(row.grade_value ?? row.overall_grade ?? 0);
+      const maxNum = Number(row.max_points || 0);
+
+      let scoreDisplay = `${scoreNum}%`;
+      if (isAssessment && maxNum > 0) {
+        scoreDisplay = `${scoreNum} / ${maxNum}`;
+      } else if (isAssessment) {
+        scoreDisplay = `${scoreNum}`;
+      }
+
+      const rawType = String(row.assessment_type || "Grade").toLowerCase();
+      const typeLabel = rawType === "quiz" ? "Quiz" : rawType === "assignment" ? "Assignment" : rawType === "activity" ? "Activity" : rawType === "exam" ? "Exam" : "Assessment";
+      const title = row.assessment_title ? `${row.assessment_title} (${typeLabel})` : subjectMap.get(String(row.subject_id || "")) || "Subject";
+
+      return {
+        id: String(row.id),
+        studentName: studentMap.get(String(row.student_id || "")) || "Student",
+        title: title,
+        subject: subjectMap.get(String(row.subject_id || "")) || "Subject",
+        dateRecorded: row.updated_at || row.created_at,
+        timeAgo: formatTimeAgo(row.updated_at || row.created_at),
+        scoreDisplay: scoreDisplay
+      };
+    });
 
     setRecentGrades(mapped);
   };
@@ -436,6 +474,20 @@ export function TeacherDashboard() {
               fetchRecentGrades(teacherId);
             }
           )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "teacher_assessment_grades",
+              filter: `teacher_id=eq.${teacherId}`
+            },
+            () => {
+              if (!isMounted) return;
+              fetchGradesEncodedTotal(teacherId);
+              fetchRecentGrades(teacherId);
+            }
+          )
           .subscribe();
       } catch (error) {
         console.error("Failed to set up real-time subscription:", error);
@@ -444,8 +496,17 @@ export function TeacherDashboard() {
 
     setupSubscription();
 
+    const handleGradeUpdated = () => {
+      if (isMounted && teacherId) {
+        fetchGradesEncodedTotal(teacherId);
+        fetchRecentGrades(teacherId);
+      }
+    };
+    window.addEventListener("connected-grade-updated", handleGradeUpdated);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("connected-grade-updated", handleGradeUpdated);
       if (subjectsChannel) supabase.removeChannel(subjectsChannel);
       if (assignmentsChannel) supabase.removeChannel(assignmentsChannel);
       if (gradesChannel) supabase.removeChannel(gradesChannel);
@@ -627,17 +688,17 @@ export function TeacherDashboard() {
                     ) : (
                       <div className="space-y-3 w-full">
                         {(isDemoMode ? [
-                          { id: "demo-rg-1", studentName: "Juan Dela Cruz", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 91 },
-                          { id: "demo-rg-2", studentName: "Maria Santos", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 96 },
-                          { id: "demo-rg-3", studentName: "John Reyes", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), grade: 87 },
-                          { id: "demo-rg-4", studentName: "Angelica Gonzales", subject: "General Science 8", dateRecorded: new Date().toISOString(), grade: 94 },
+                          { id: "demo-rg-1", studentName: "Juan Dela Cruz", title: "Quiz 1 (Quiz)", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), timeAgo: "Updated 5 mins ago", scoreDisplay: "18 / 20" },
+                          { id: "demo-rg-2", studentName: "Maria Santos", title: "Activity 2 (Activity)", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), timeAgo: "Updated 10 mins ago", scoreDisplay: "9 / 10" },
+                          { id: "demo-rg-3", studentName: "Pedro Reyes", title: "Assignment 1 (Assignment)", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), timeAgo: "Updated 15 mins ago", scoreDisplay: "25 / 30" },
+                          { id: "demo-rg-4", studentName: "Angelica Gonzales", title: "First Quarter Exam (Exam)", subject: "General Science 8", dateRecorded: new Date().toISOString(), timeAgo: "Updated 1 hr ago", scoreDisplay: "45 / 50" },
                         ] : recentGrades).map((grade) => (
-                          <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
-                            <div>
-                              <p className="text-gray-900 text-sm font-bold">{grade.studentName}</p>
-                              <p className="text-gray-500 text-xs mt-0.5">{grade.subject} - {new Date(grade.dateRecorded).toLocaleDateString()}</p>
+                          <div key={grade.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl hover:bg-gray-100/80 transition-colors border border-gray-100">
+                            <div className="min-w-0 flex-1 mr-3">
+                              <p className="text-gray-900 text-xs sm:text-sm font-bold truncate">{grade.studentName}</p>
+                              <p className="text-gray-500 text-[11px] sm:text-xs mt-0.5 truncate">{grade.title} &bull; <span className="text-gray-400 font-medium">{grade.timeAgo}</span></p>
                             </div>
-                            <p className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-200">{grade.grade}%</p>
+                            <p className="text-xs sm:text-sm font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-200 shrink-0 shadow-2xs">{grade.scoreDisplay}</p>
                           </div>
                         ))}
                       </div>

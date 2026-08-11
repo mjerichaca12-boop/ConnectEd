@@ -1853,16 +1853,7 @@ function StudentManagement() {
                   <>
                     {selectedMasterlistIds.size > 0 && (
                       <>
-                        {createdCount > 0 && (
-                          <button
-                            type="button"
-                            onClick={handleOpenBulkAssignSectionModal}
-                            className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
-                          >
-                            <BookOpen className="w-4 h-4" />
-                            Assign Section ({createdCount})
-                          </button>
-                        )}
+              
                         <button
                           type="button"
                           onClick={handleGenerateAccounts}
