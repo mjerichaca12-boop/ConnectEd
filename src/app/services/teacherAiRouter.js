@@ -35,6 +35,7 @@ export function detectUserIntent(promptText) {
   // 1. Data Privacy Violation attempt
   if (
     (t.includes("teacher b") || t.includes("other teacher") || t.includes("another teacher") || t.includes("someone else's student")) ||
+    (t.includes("another school") || t.includes("other school") || t.includes("different school")) ||
     (t.includes("password") || t.includes("student password") || t.includes("credentials"))
   ) {
     return { intent: INTENT_TYPES.DATA_PRIVACY_VIOLATION };

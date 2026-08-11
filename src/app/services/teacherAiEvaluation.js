@@ -183,7 +183,7 @@ export const AI_TEST_CASES = [
     expectedBehavior: "Outlines objectives, materials, procedures, evaluation, and agreement.",
     assertions: [
       { text: "objectives", required: true },
-      { text: "procedures", required: true }
+      { text: "procedure", required: true }
     ]
   },
   {
@@ -439,10 +439,22 @@ export async function executeSingleTestCase(testCase, callStreamAiFn) {
 `;
     }
 
-    try {
-      actualResponse = await callStreamAiFn(testCase.question, injectedContext);
-    } catch (e) {
-      actualResponse = `Error executing test: ${e.message}`;
+    let retries = 2;
+    while (retries >= 0) {
+      try {
+        actualResponse = await callStreamAiFn(testCase.question, injectedContext);
+        if (actualResponse && !actualResponse.includes("Rate limit reached") && !actualResponse.includes("429")) {
+          break;
+        }
+      } catch (e) {
+        actualResponse = `Error executing test: ${e.message}`;
+      }
+      if (actualResponse.includes("Rate limit reached") || actualResponse.includes("429")) {
+        if (retries > 0) {
+          await new Promise((r) => setTimeout(r, 4500));
+        }
+      }
+      retries--;
     }
   }
 

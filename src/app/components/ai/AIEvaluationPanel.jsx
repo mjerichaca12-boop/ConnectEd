@@ -40,6 +40,9 @@ export function AIEvaluationPanel({ isOpen, onClose, callStreamAiFn }) {
     for (let i = 0; i < AI_TEST_CASES.length; i++) {
       setCurrentIndex(i + 1);
       const testCase = AI_TEST_CASES[i];
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 1200));
+      }
       const res = await executeSingleTestCase(testCase, callStreamAiFn);
       results.push(res);
       setTestResults([...results]);
