@@ -12,10 +12,11 @@ const groq = apiKey
 
 export const isGroqConfigured = () => !!groq;
 
-const MODEL_PRIMARY  = "llama-3.3-70b-versatile";
-const MODEL_FALLBACK = "llama-3.1-8b-instant";
-const MAX_TOKENS     = 2048;
-const MAX_TOTAL_FILE_CHARS = 6000; // Limit combined context size to ~1,500 tokens to stay well within Groq 6000 TPM limit
+const MODEL_PRIMARY    = "llama-3.3-70b-versatile";
+const MODEL_FALLBACK_1 = "llama-3.1-8b-instant";
+const MODEL_FALLBACK_2 = "gemma2-9b-it";
+const MAX_TOKENS       = 2048;
+const MAX_TOTAL_FILE_CHARS = 5000;
 
 // Proportional truncation helper to stay under character limits across multiple files
 const truncateFilesToLimit = (files, maxTotalChars) => {
@@ -261,12 +262,18 @@ export const streamMessage = async ({
     const isOverloaded = error?.status === 503 || error?.message?.includes("overloaded");
 
     if (isRateLimit || isOverloaded || error?.status === 400) {
-      console.log(`Attempting fallback to ${MODEL_FALLBACK}...`);
+      console.log(`Attempting fallback to ${MODEL_FALLBACK_1}...`);
       try {
-        await callGroq(MODEL_FALLBACK);
+        await callGroq(MODEL_FALLBACK_1);
       } catch (fallbackError) {
-        console.error(`Groq Fallback Model Error (${MODEL_FALLBACK}):`, fallbackError);
-        onError?.(fallbackError);
+        console.error(`Groq Fallback 1 Error (${MODEL_FALLBACK_1}):`, fallbackError);
+        console.log(`Attempting fallback to ${MODEL_FALLBACK_2}...`);
+        try {
+          await callGroq(MODEL_FALLBACK_2);
+        } catch (fallbackError2) {
+          console.error(`Groq Fallback 2 Error (${MODEL_FALLBACK_2}):`, fallbackError2);
+          onError?.(fallbackError2);
+        }
       }
     } else {
       onError?.(error);

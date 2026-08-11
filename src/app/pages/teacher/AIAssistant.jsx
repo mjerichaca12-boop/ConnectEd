@@ -315,7 +315,7 @@ export function AIAssistant() {
         if (studentIds.length > 0) {
           const { data: acts } = await supabase
             .from("assignments_activity")
-            .select("id, title, max_score, activity_type")
+            .select("*")
             .eq("subject_id", classId);
           
           const assessmentsList = acts || [];
@@ -615,10 +615,10 @@ export function AIAssistant() {
     // 1. Highlight selected option in bubble
     setMessages((prev) => {
       const next = [...prev];
-      if (next[msgIdx]) {
+      if (next[msgIdx] && Array.isArray(next[msgIdx].choices)) {
         next[msgIdx] = {
           ...next[msgIdx],
-          selectedChoiceIndex: next[msgIdx].choices.findIndex((c) => c.value === choice.value),
+          selectedChoiceIndex: next[msgIdx].choices.findIndex((c) => c?.value === choice?.value),
         };
       }
       return next;
