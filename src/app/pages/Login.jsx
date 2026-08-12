@@ -356,23 +356,7 @@ function Login() {
         authData = primaryData;
       } else {
         authMessage = String(primaryError.message || "").toLowerCase();
-        if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
-          const tempEmail = `${normalizedUsername}@temp.local`;
-          if (tempEmail !== resolvedEmail) {
-            const { data: fallbackData, error: fallbackError } = await supabase.auth.signInWithPassword({
-              email: tempEmail,
-              password: formData.password
-            });
-            
-            if (!fallbackError) {
-              authData = fallbackData;
-            }
-          }
-        }
-        
-        if (!authData) {
-          authError = primaryError;
-        }
+        authError = primaryError;
       }
 
       if (authError) {
