@@ -50,47 +50,16 @@ export const fetchClassMaterialsForTeacher = async ({
   }
 
   try {
-    let data = null;
-    let error = null;
-
-    // 1. Try class_materials by teacher_id
-    const res1 = await supabase
-      .from("class_materials")
-      .select("*")
-      .eq("teacher_id", teacherId)
-      .order("created_at", { ascending: false });
-
-    if (!res1.error) {
-      data = res1.data;
-    } else {
-      // 2. Try class_materials by created_by
-      const res2 = await supabase
-        .from("class_materials")
-        .select("*")
-        .eq("created_by", teacherId)
-        .order("created_at", { ascending: false });
-
-      if (!res2.error) {
-        data = res2.data;
-      } else {
-        // 3. Try class_materials select *
-        const res3 = await supabase.from("class_materials").select("*");
-        if (!res3.error) {
-          data = res3.data;
-        } else {
-          // 4. Try lesson_materials fallback
-          const res4 = await supabase.from("lesson_materials").select("*");
-          if (!res4.error) {
-            data = res4.data;
-          } else {
-            error = res1.error || res3.error || res4.error;
-          }
-        }
-      }
+    // 1. Fetch lessons for teacher's selected class (or all assigned subjects)
+    let lessonsQuery = supabase.from("lessons").select("id, subject_id, title, topic");
+    if (selectedClass && selectedClass.id) {
+      lessonsQuery = lessonsQuery.eq("subject_id", selectedClass.id);
     }
 
-    if (error && (error.code === 'PGRST116' || error.status === 400 || error.status === 404 || String(error.message || "").includes("404"))) {
-      console.warn("[classMaterialsService] Materials table not accessible in database schema, treating as empty:", error);
+    const { data: lessonsData, error: lessonsErr } = await lessonsQuery;
+
+    if (lessonsErr) {
+      console.warn("[classMaterialsService] Lessons query notice:", lessonsErr);
       return {
         materials: [],
         totalCount: 0,
@@ -101,19 +70,46 @@ export const fetchClassMaterialsForTeacher = async ({
       };
     }
 
-    if (error) {
-      console.error("[classMaterialsService] Failed to fetch materials:", error);
+    const lessonMap = new Map();
+    (lessonsData || []).forEach((l) => {
+      lessonMap.set(String(l.id), String(l.title || l.topic || "Untitled Lesson").trim());
+    });
+
+    const lessonIds = Array.from(lessonMap.keys());
+    if (lessonIds.length === 0) {
       return {
         materials: [],
         totalCount: 0,
         fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
         lessonCounts: {},
         isError: false,
-        errorMessage: error.message || "Failed to retrieve materials."
+        errorMessage: ""
       };
     }
 
-    const rawRows = data || [];
+    // 2. Fetch materials from lesson_materials table (verified table in Supabase schema)
+    const { data: materialsData, error: materialsErr } = await supabase
+      .from("lesson_materials")
+      .select("*")
+      .in("lesson_id", lessonIds)
+      .order("created_at", { ascending: false });
+
+    if (materialsErr) {
+      console.warn("[classMaterialsService] lesson_materials query notice:", materialsErr);
+      return {
+        materials: [],
+        totalCount: 0,
+        fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
+        lessonCounts: {},
+        isError: false,
+        errorMessage: ""
+      };
+    }
+
+    const rawRows = (materialsData || []).map(row => ({
+      ...row,
+      lesson_title: lessonMap.get(String(row.lesson_id)) || "General"
+    }));
 
     // Filter by selectedClass if provided
     let filteredRows = rawRows;

@@ -236,7 +236,7 @@ export function AIAssistant() {
         {
           event: "*",
           schema: "public",
-          table: "class_materials",
+          table: "lesson_materials",
         },
         () => {
           loadDbMaterialsRef.current(activeTeacherId, activeClassObjRef.current);
