@@ -286,9 +286,11 @@ function Login() {
     }
   };
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return;
+    if (loading || isSubmittingRef.current) return;
 
     const usernameErr = validateField("username", formData.username);
     const passwordErr = validateField("password", formData.password);
@@ -305,6 +307,7 @@ function Login() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
 
     if (normalizedUsername === STATIC_ADMIN_EMAIL) {
@@ -313,11 +316,13 @@ function Login() {
         clearRateLimitState(normalizedUsername);
         localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
         navigate("/admin/dashboard");
+        isSubmittingRef.current = false;
         return;
       }
       recordFailedAttempt(normalizedUsername);
       setError(adminValidation.message);
       setLoading(false);
+      isSubmittingRef.current = false;
       return;
     }
 
@@ -334,7 +339,7 @@ function Login() {
       } else {
         const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
         if (rpcEmail) {
-          resolvedEmail = rpcEmail;
+          resolvedEmail = String(rpcEmail).trim().toLowerCase();
         } else {
           const { data: profData } = await supabase
             .from("profiles")
@@ -342,33 +347,43 @@ function Login() {
             .or(`username.ilike.${normalizedUsername},email.ilike.${normalizedUsername},employee_id.ilike.${normalizedUsername}`)
             .maybeSingle();
           if (profData?.email) {
-            resolvedEmail = profData.email;
+            resolvedEmail = String(profData.email).trim().toLowerCase();
           }
         }
       }
 
-      if (!resolvedEmail) {
-        resolvedEmail = normalizedUsername.includes("@") ? normalizedUsername : `${normalizedUsername}@temp.local`;
+      const candidateEmails = [];
+      if (resolvedEmail) candidateEmails.push(resolvedEmail);
+      if (normalizedUsername.includes("@") && !candidateEmails.includes(normalizedUsername)) {
+        candidateEmails.push(normalizedUsername);
+      }
+      if (!normalizedUsername.includes("@")) {
+        const tempEmail = `${normalizedUsername}@temp.local`;
+        if (!candidateEmails.includes(tempEmail)) candidateEmails.push(tempEmail);
+        if (!candidateEmails.includes(normalizedUsername)) candidateEmails.push(normalizedUsername);
       }
 
       let authData = null;
       let authError = null;
       let authMessage = "";
 
-      // Try with the resolved email from profiles
-      const { data: primaryData, error: primaryError } = await supabase.auth.signInWithPassword({
-        email: resolvedEmail,
-        password: formData.password
-      });
+      for (const candidateEmail of candidateEmails) {
+        const { data: sData, error: sErr } = await supabase.auth.signInWithPassword({
+          email: candidateEmail,
+          password: formData.password
+        });
 
-      if (!primaryError) {
-        authData = primaryData;
-      } else {
-        authMessage = String(primaryError.message || "").toLowerCase();
-        authError = primaryError;
+        if (!sErr && sData?.session) {
+          authData = sData;
+          authError = null;
+          break;
+        } else {
+          authError = sErr;
+          authMessage = String(sErr?.message || "").toLowerCase();
+        }
       }
 
-      if (authError) {
+      if (authError || !authData) {
         recordFailedAttempt(normalizedUsername);
         const updatedRate = getRateLimitState(normalizedUsername);
         if (updatedRate.lockoutUntil > Date.now()) {
@@ -381,24 +396,41 @@ function Login() {
         } else if (authMessage.includes("token")) {
           setError("Login session could not be created. Please refresh the page and try again.");
         } else {
-          setError(authError.message || "Invalid username or password. Please try again.");
+          setError(authError?.message || "Invalid username or password. Please try again.");
         }
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
       clearRateLimitState(normalizedUsername);
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .ilike("email", resolvedEmail)
-        .maybeSingle();
+      // Fetch profile by auth user ID first, fallback to resolved email
+      let profile = null;
+      const userId = authData.session?.user?.id;
+      if (userId) {
+        const { data: pById } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+        profile = pById;
+      }
 
-      if (profileError || !profile) {
+      if (!profile && resolvedEmail) {
+        const { data: pByEmail } = await supabase
+          .from("profiles")
+          .select("*")
+          .ilike("email", resolvedEmail)
+          .maybeSingle();
+        profile = pByEmail;
+      }
+
+      if (!profile) {
         await supabase.auth.signOut();
         setError("Account not found. Please sign up first.");
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
@@ -406,6 +438,7 @@ function Login() {
         await supabase.auth.signOut();
         setError("Your account is still pending admin approval.");
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
@@ -462,6 +495,7 @@ function Login() {
       console.error("LOGIN CATCH ERROR:", err);
       setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.");
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
