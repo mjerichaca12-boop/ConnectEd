@@ -328,18 +328,27 @@ function Login() {
         console.warn("LOGIN signOut cleanup warning:", signOutError);
       }
 
-      const { data: resolvedEmail, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
-      
-      if (rpcError || !resolvedEmail) {
-        recordFailedAttempt(normalizedUsername);
-        const updatedRate = getRateLimitState(normalizedUsername);
-        if (updatedRate.lockoutUntil > Date.now()) {
-          setError("Too many failed login attempts. Please wait 60 seconds before trying again.");
+      let resolvedEmail = null;
+      if (normalizedUsername.includes("@")) {
+        resolvedEmail = normalizedUsername;
+      } else {
+        const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
+        if (rpcEmail) {
+          resolvedEmail = rpcEmail;
         } else {
-          setError("Invalid username or password.");
+          const { data: profData } = await supabase
+            .from("profiles")
+            .select("email")
+            .or(`username.ilike.${normalizedUsername},email.ilike.${normalizedUsername},employee_id.ilike.${normalizedUsername}`)
+            .maybeSingle();
+          if (profData?.email) {
+            resolvedEmail = profData.email;
+          }
         }
-        setLoading(false);
-        return;
+      }
+
+      if (!resolvedEmail) {
+        resolvedEmail = normalizedUsername.includes("@") ? normalizedUsername : `${normalizedUsername}@temp.local`;
       }
 
       let authData = null;
