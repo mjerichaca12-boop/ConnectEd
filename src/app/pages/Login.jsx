@@ -387,16 +387,16 @@ function Login() {
         recordFailedAttempt(normalizedUsername);
         const updatedRate = getRateLimitState(normalizedUsername);
         if (updatedRate.lockoutUntil > Date.now()) {
-          setError("Too many failed login attempts. Please wait 60 seconds before trying again.");
+          setError("Too many login attempts. Please wait and try again later.");
         } else if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
           const remainingAttempts = Math.max(0, MAX_FAILED_ATTEMPTS - updatedRate.attempts);
-          setError(`Invalid username or password. (${remainingAttempts} attempt(s) remaining)`);
+          setError(`Incorrect email or password. (${remainingAttempts} attempt(s) remaining)`);
         } else if (authMessage.includes("email not confirmed")) {
-          setError("Please confirm your invitation email before logging in.");
-        } else if (authMessage.includes("token")) {
-          setError("Login session could not be created. Please refresh the page and try again.");
+          setError("Please verify your email before signing in.");
+        } else if (authMessage.includes("fetch") || authMessage.includes("network") || authMessage.includes("failed to fetch")) {
+          setError("Unable to connect to the authentication service. Please check your internet connection.");
         } else {
-          setError(authError?.message || "Invalid username or password. Please try again.");
+          setError("We couldn't sign you in right now. Please try again.");
         }
         setLoading(false);
         isSubmittingRef.current = false;

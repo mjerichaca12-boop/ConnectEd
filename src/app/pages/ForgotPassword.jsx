@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Mail, CheckCircle, AlertCircle } from "lucide-react";
 import { motion } from "motion/react";
@@ -11,8 +11,12 @@ function ForgotPassword() {
   const [requestSent, setRequestSent] = useState(false);
   const navigate = useNavigate();
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading || isSubmittingRef.current) return;
+
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) {
       setError("Please enter your email address.");
@@ -23,13 +27,14 @@ function ForgotPassword() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
     setError("");
 
     try {
       const redirectTo = getAuthRedirectUrl("reset-password");
 
-      // Step 1: Attempt to send password reset via serverless API (uses Resend)
+      // Attempt to send password reset via serverless API
       let apiSuccess = false;
       try {
         const response = await fetch("/api/public/send-password-reset", {
@@ -42,36 +47,43 @@ function ForgotPassword() {
             redirectTo
           })
         });
+
+        const resData = await response.json().catch(() => ({}));
+
         if (response.ok) {
           apiSuccess = true;
+        } else if (response.status === 400) {
+          setError(resData.error || "Please enter a valid email address.");
+          setLoading(false);
+          isSubmittingRef.current = false;
+          return;
+        } else if (response.status === 429) {
+          setError("Too many password reset attempts. Please wait and try again later.");
+          setLoading(false);
+          isSubmittingRef.current = false;
+          return;
+        } else {
+          console.warn("Serverless reset response notice:", response.status, resData);
         }
       } catch (apiErr) {
-        console.warn("Serverless password reset endpoint call failed, falling back:", apiErr);
+        console.warn("Serverless password reset endpoint call failed, falling back to client reset:", apiErr);
       }
 
-      // Step 2: Fallback to client-side Supabase auth reset if serverless API call didn't succeed
+      // Fallback to client-side Supabase auth reset if serverless API call didn't succeed
       if (!apiSuccess) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username")
-          .ilike("email", trimmedEmail)
-          .maybeSingle();
-
-        if (profile?.username) {
-          const tempEmail = `${profile.username}@temp.local`;
-          const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo });
-          if (resetError) {
-            await supabase.auth.resetPasswordForEmail(tempEmail, { redirectTo });
-          }
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo });
+        if (resetError) {
+          console.warn("Client fallback reset error:", resetError.message);
         }
       }
 
       setRequestSent(true);
     } catch (err) {
       console.error("Forgot password request failed:", err);
-      setError("Unable to send request right now. Please try again.");
+      setError("Unable to send password reset request right now. Please try again.");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
