@@ -581,7 +581,7 @@ export function ClassDetail() {
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, grade_level, section, phone, status")
+      .select("id, first_name, middle_name, last_name, email, lrn, grade_level, section, phone, status")
       .eq("role", "student")
       .in("id", studentIds);
 
@@ -1302,48 +1302,57 @@ export function ClassDetail() {
     });
   };
 
-  const fetchClassMaterials = async (resolvedTeacherId, currentClassData) => {
-    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
-    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+  const fetchClassMaterials = async (cleanTeacherId, targetClass) => {
+    if (!supabase) {
+      setMaterials([]);
+      return;
+    }
 
-    if (!supabase || String(id).startsWith("demo-")) {
+    const cleanClassId = targetClass?.id || id;
+    if (!cleanClassId || String(cleanClassId).startsWith("demo-")) {
       setMaterials([]);
       return;
     }
 
     try {
-      let query = supabase
-        .from("class_materials")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // 1. Fetch lessons for subject
+      const { data: lessonsData } = await supabase
+        .from("lessons")
+        .select("id, title, topic")
+        .eq("subject_id", cleanClassId);
 
-      if (cleanClassId) {
-        query = query.or(`subject_id.eq.${cleanClassId},class_id.eq.${cleanClassId}`);
-      } else if (cleanTeacherId) {
-        query = query.eq("teacher_id", cleanTeacherId);
-      }
+      const lessonMap = new Map();
+      (lessonsData || []).forEach(l => {
+        lessonMap.set(String(l.id), String(l.title || l.topic || "Untitled Lesson").trim());
+      });
 
-      let { data, error } = await query;
-
-      if (error && isColumnMissingError(error)) {
-        query = supabase.from("class_materials").select("*");
-        if (cleanClassId) {
-          query = query.eq("subject_id", cleanClassId);
-        }
-        const fallback = await query;
-        data = fallback.data;
-        error = fallback.error;
-      }
-
-      if (error) {
-        console.warn("[ClassDetail] Failed to fetch class materials:", error);
+      const lessonIds = Array.from(lessonMap.keys());
+      if (lessonIds.length === 0) {
+        setMaterials([]);
         return;
       }
 
-      const normalized = (data ?? []).map(normalizeMaterialRecord);
+      // 2. Fetch materials from lesson_materials table
+      const { data: matData, error: matErr } = await supabase
+        .from("lesson_materials")
+        .select("*")
+        .in("lesson_id", lessonIds)
+        .order("created_at", { ascending: false });
+
+      if (matErr) {
+        console.warn("[ClassDetail] Lesson materials notice:", matErr);
+        setMaterials([]);
+        return;
+      }
+
+      const normalized = (matData ?? []).map(row => normalizeMaterialRecord({
+        ...row,
+        lesson_title: lessonMap.get(String(row.lesson_id)) || "General"
+      }));
       setMaterials(normalized);
     } catch (err) {
-      console.error("[ClassDetail] Unexpected error in fetchClassMaterials:", err);
+      console.warn("[ClassDetail] fetchClassMaterials notice:", err);
+      setMaterials([]);
     }
   };
 
@@ -1354,7 +1363,7 @@ export function ClassDetail() {
       .channel(`class-detail-materials-rt-${id}-${Math.random().toString(36).substring(7)}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "class_materials" },
+        { event: "*", schema: "public", table: "lesson_materials" },
         () => {
           fetchClassMaterials(teacherProfileId, classData);
           fetchDashboardMetrics(teacherProfileId, id);
@@ -1497,7 +1506,7 @@ export function ClassDetail() {
     const config = {
       event: "*",
       schema: "public",
-      table: "class_materials"
+      table: "lesson_materials"
     };
 
     if (ownerColumn) {

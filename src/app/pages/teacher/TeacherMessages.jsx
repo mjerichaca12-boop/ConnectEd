@@ -708,59 +708,69 @@ function TeacherMessages() {
 
   useEffect(() => {
     const initialize = async () => {
-      const userData = localStorage.getItem("currentUser");
-      if (!userData) { navigate("/login"); return; }
-      const user = JSON.parse(userData);
-      if (user.role !== "teacher") { navigate("/login"); return; }
-      const teacherDisplayName = String(user.name || "Teacher");
-      setTeacherName(teacherDisplayName);
-      setPageError("");
-      const resolvedTeacherId = await resolveTeacherId(user.email);
-      if (!resolvedTeacherId) {
-        setPageError("Unable to resolve teacher account.");
+      try {
+        const userData = localStorage.getItem("currentUser");
+        if (!userData) { navigate("/login"); return; }
+        const user = JSON.parse(userData);
+        if (user.role !== "teacher") { navigate("/login"); return; }
+        const teacherDisplayName = String(user.name || "Teacher");
+        setTeacherName(teacherDisplayName);
+        setPageError("");
+        const resolvedTeacherId = await resolveTeacherId(user.email);
+        if (!resolvedTeacherId) {
+          setPageError("Unable to resolve teacher account.");
+          setLoading(false);
+          return;
+        }
+        setTeacherId(resolvedTeacherId);
+        await loadConversations(resolvedTeacherId, teacherDisplayName);
+      } catch (err) {
+        console.warn("[TeacherMessages] Initialize error:", err);
+        setPageError("Failed to load messaging context.");
+      } finally {
         setLoading(false);
-        return;
       }
-      setTeacherId(resolvedTeacherId);
-      await loadConversations(resolvedTeacherId, teacherDisplayName);
-      setLoading(false);
     };
-    initialize();
+    initialize().catch(err => console.warn("[TeacherMessages] Uncaught initialize:", err));
   }, [navigate, resolveTeacherId, loadConversations]);
 
   // Real-time subscription for new messages
   useEffect(() => {
     if (!supabase || !teacherId) return;
     const channel = supabase
-      .channel("global-chat")
+      .channel(`global-chat-${teacherId}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: MESSAGE_TABLE }, async (payload) => {
-        if (payload.eventType === "UPDATE") {
-          const updatedMsg = payload.new;
-          setConversations(current => current.map(conv => {
-            const hasMsg = (conv.messages || []).some(m => String(m.id) === String(updatedMsg.id));
-            if (!hasMsg) return conv;
-            return {
-              ...conv,
-              messages: conv.messages.map(m => String(m.id) === String(updatedMsg.id) ? { ...m, status: updatedMsg.status, isRead: updatedMsg.is_read } : m)
-            };
-          }));
-          return;
-        }
-        // Handle INSERT
-        const newMsg = payload.new;
-        if (!newMsg) return;
-        
-        // Fetch attachments for this new message to show immediately in real-time
-        const { data: attData } = await supabase
-          .from("message_attachments")
-          .select("id, file_url, file_name, file_type, file_size")
-          .eq("message_id", newMsg.id);
+        try {
+          if (payload.eventType === "UPDATE") {
+            const updatedMsg = payload.new;
+            setConversations(current => current.map(conv => {
+              const hasMsg = (conv.messages || []).some(m => String(m.id) === String(updatedMsg.id));
+              if (!hasMsg) return conv;
+              return {
+                ...conv,
+                messages: conv.messages.map(m => String(m.id) === String(updatedMsg.id) ? { ...m, status: updatedMsg.status, isRead: updatedMsg.is_read } : m)
+              };
+            }));
+            return;
+          }
+          // Handle INSERT
+          const newMsg = payload.new;
+          if (!newMsg) return;
           
-        if (attData && attData.length > 0) {
-          newMsg.message_attachments = attData;
-        }
+          // Fetch attachments for this new message to show immediately in real-time
+          const { data: attData } = await supabase
+            .from("message_attachments")
+            .select("id, file_url, file_name, file_type, file_size")
+            .eq("message_id", newMsg.id);
+            
+          if (attData && attData.length > 0) {
+            newMsg.message_attachments = attData;
+          }
 
-        appendIncomingMessage(newMsg, teacherId, teacherName || "Teacher");
+          appendIncomingMessage(newMsg, teacherId, teacherName || "Teacher");
+        } catch (rtErr) {
+          console.warn("[TeacherMessages] Realtime handler warning:", rtErr);
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
