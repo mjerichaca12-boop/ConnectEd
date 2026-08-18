@@ -168,7 +168,11 @@ export default function SecureAccountScreen() {
             Alert.alert("OTP Verification", "Please enter the OTP code to verify your account.\n\nFor testing/development, your OTP is: " + otpCode);
         } catch (err: any) {
             console.error("Forced password change error:", err);
-            Alert.alert("Error", err.message || "An error occurred while setting your password.");
+            let errorMessage = err.message || "An error occurred while setting your password.";
+            if (errorMessage === "Error updating user" || errorMessage.toLowerCase().includes("email already exists")) {
+                errorMessage = "Please Use Different Email";
+            }
+            Alert.alert("Error", errorMessage);
         } finally {
             setIsLoading(false);
         }
