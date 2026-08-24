@@ -105,66 +105,30 @@ function TeacherRouteGuard({ children }) {
       return;
     }
 
-    let isMounted = true;
-
-    const verifyAccess = async () => {
-      try {
-        const rawUser = localStorage.getItem("currentUser");
-        if (!rawUser) {
-          if (isMounted) setStatus("denied");
-          return;
-        }
-
-        const parsedUser = JSON.parse(rawUser);
-        const email = String(parsedUser?.email || "").trim().toLowerCase();
-        
-        if (parsedUser?.must_change_password === true) {
-          if (isMounted) setStatus("force-change");
-          return;
-        }
-
-        if (parsedUser?.role !== "teacher" || !email) {
-          if (isMounted) setStatus("denied");
-          return;
-        }
-
-        if (!supabase) {
-          if (isMounted) setStatus("allowed");
-          return;
-        }
-
-        const profileLookup = await supabase
-          .from("profiles")
-          .select("id, role")
-          .ilike("email", email)
-          .limit(1)
-          .maybeSingle();
-
-        if (!profileLookup.error && profileLookup.data?.id) {
-          const profileRole = String(profileLookup.data.role || "").trim().toLowerCase();
-          if (profileRole === "teacher") {
-            if (isMounted) setStatus("allowed");
-            return;
-          }
-        }
-
-        if (isMounted) {
-          localStorage.removeItem("currentUser");
-          setStatus("denied");
-        }
-      } catch {
-        if (isMounted) {
-          localStorage.removeItem("currentUser");
-          setStatus("denied");
-        }
+    try {
+      const rawUser = localStorage.getItem("currentUser");
+      if (!rawUser) {
+        setStatus("denied");
+        return;
       }
-    };
 
-    verifyAccess();
+      const parsedUser = JSON.parse(rawUser);
+      const email = String(parsedUser?.email || "").trim().toLowerCase();
 
-    return () => {
-      isMounted = false;
-    };
+      if (parsedUser?.must_change_password === true) {
+        setStatus("force-change");
+        return;
+      }
+
+      if (parsedUser?.role !== "teacher" || !email) {
+        setStatus("denied");
+        return;
+      }
+
+      setStatus("allowed");
+    } catch {
+      setStatus("denied");
+    }
   }, []);
 
   if (status === "checking") {
