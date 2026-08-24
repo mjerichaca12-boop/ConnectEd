@@ -16,6 +16,7 @@ import {
 import { useTeacherTour } from "../../context/TeacherTourContext";
 import { useModuleTour } from "../../context/ModuleTourContext";
 import { useTour } from "../../context/TourContext";
+import { TEACHER_TOUR_STEPS } from "../../config/teacherTourSteps";
 
 export function TeacherTourSpotlightOverlay() {
   const navigate = useNavigate();
