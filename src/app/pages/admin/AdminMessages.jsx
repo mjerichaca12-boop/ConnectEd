@@ -919,17 +919,22 @@ export function AdminMessages() {
     if (!error) {
       for (const rId of recipientIds) {
         if (rId) {
-          await adminApi.db("notifications", "insert", {
-            payload: {
-              user_id: rId,
-              title: `New Message from ${adminName || "System Administrator"}`,
-              type: "message",
-              message: messageText.substring(0, 100) || "Sent an attachment",
-              body: messageText.substring(0, 100) || "Sent an attachment",
-              is_read: false,
-              created_at: now
-            }
-          }).catch(err => console.warn("[AdminMessages] Notification insert error:", err));
+          try {
+            const { error: notifError } = await adminApi.db("notifications", "insert", {
+              payload: {
+                user_id: rId,
+                title: `New Message from ${adminName || "System Administrator"}`,
+                type: "message",
+                message: messageText.substring(0, 100) || "Sent an attachment",
+                body: messageText.substring(0, 100) || "Sent an attachment",
+                is_read: false,
+                created_at: now
+              }
+            });
+            if (notifError) console.warn("[AdminMessages] Notification insert error:", notifError);
+          } catch (err) {
+            console.warn("[AdminMessages] Notification insert error:", err);
+          }
         }
       }
     }

@@ -1047,15 +1047,20 @@ function TeacherMessages() {
     if (!error) {
       for (const rId of recipientIds) {
         if (rId) {
-          await supabase.from("notifications").insert({
-            user_id: rId,
-            title: `New Message from ${teacherName || "Teacher"}`,
-            type: "message",
-            message: messageText.substring(0, 100) || "Sent an attachment",
-            body: messageText.substring(0, 100) || "Sent an attachment",
-            is_read: false,
-            created_at: now
-          }).catch(err => console.warn("[TeacherMessages] Notification insert error:", err));
+          try {
+            const { error: notifError } = await supabase.from("notifications").insert({
+              user_id: rId,
+              title: `New Message from ${teacherName || "Teacher"}`,
+              type: "message",
+              message: messageText.substring(0, 100) || "Sent an attachment",
+              body: messageText.substring(0, 100) || "Sent an attachment",
+              is_read: false,
+              created_at: now
+            });
+            if (notifError) console.warn("[TeacherMessages] Notification insert error:", notifError);
+          } catch (err) {
+            console.warn("[TeacherMessages] Notification insert error:", err);
+          }
         }
       }
     }
