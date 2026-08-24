@@ -33,21 +33,6 @@ function Login() {
   const oauthSessionProcessingRef = useRef(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const rawUser = localStorage.getItem("currentUser");
-    if (!rawUser) return;
-    try {
-      const user = JSON.parse(rawUser);
-      if (user?.role === "admin") {
-        navigate("/admin/dashboard", { replace: true });
-      } else if (user?.role === "teacher") {
-        navigate("/teacher/dashboard", { replace: true });
-      }
-    } catch {
-      // ignore
-    }
-  }, [navigate]);
-
   const isMobileDevice = () => window.innerWidth < 1024;
 
   const getGoogleUserDisplayName = (sessionUser, email) => {

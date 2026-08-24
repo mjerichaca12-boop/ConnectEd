@@ -163,15 +163,13 @@ function AdminRouteGuard({ children }) {
       }
 
       const parsedUser = JSON.parse(rawUser);
-      if (!isStaticAdminUser(parsedUser)) {
-        localStorage.removeItem("currentUser");
+      if (parsedUser?.role !== "admin") {
         setStatus("denied");
         return;
       }
 
       setStatus("allowed");
     } catch {
-      localStorage.removeItem("currentUser");
       setStatus("denied");
     }
   }, []);

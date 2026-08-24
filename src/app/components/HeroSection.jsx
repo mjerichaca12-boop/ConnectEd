@@ -19,13 +19,7 @@ function HeroSection() {
   }, []);
 
   const handleAuthClick = () => {
-    if (user?.role === "admin") {
-      navigate("/admin/dashboard");
-    } else if (user?.role === "teacher") {
-      navigate("/teacher/dashboard");
-    } else {
-      navigate("/login");
-    }
+    navigate("/login");
   };
 
   const scrollToFeatures = () => {
