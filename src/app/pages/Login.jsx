@@ -33,6 +33,21 @@ function Login() {
   const oauthSessionProcessingRef = useRef(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (!rawUser) return;
+    try {
+      const user = JSON.parse(rawUser);
+      if (user?.role === "admin") {
+        navigate("/admin/dashboard", { replace: true });
+      } else if (user?.role === "teacher") {
+        navigate("/teacher/dashboard", { replace: true });
+      }
+    } catch {
+      // ignore
+    }
+  }, [navigate]);
+
   const isMobileDevice = () => window.innerWidth < 1024;
 
   const getGoogleUserDisplayName = (sessionUser, email) => {
@@ -176,8 +191,8 @@ function Login() {
 
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
         
-        if (role === "admin") navigate("/admin/dashboard");
-        else if (role === "teacher") navigate("/teacher/dashboard");
+        if (role === "admin") navigate("/admin/dashboard", { replace: true });
+        else if (role === "teacher") navigate("/teacher/dashboard", { replace: true });
         else throw new Error("Unsupported account role. Please contact an administrator.");
 
       } catch (err) {
@@ -315,7 +330,7 @@ function Login() {
       if (adminValidation.ok) {
         clearRateLimitState(normalizedUsername);
         localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
-        navigate("/admin/dashboard");
+        navigate("/admin/dashboard", { replace: true });
         isSubmittingRef.current = false;
         return;
       }
@@ -482,11 +497,11 @@ function Login() {
       }));
 
       if (profile.must_change_password === true) {
-        navigate("/change-password");
+        navigate("/change-password", { replace: true });
       } else if (role === "admin") {
-        navigate("/admin/dashboard");
+        navigate("/admin/dashboard", { replace: true });
       } else if (role === "teacher") {
-        navigate("/teacher/dashboard");
+        navigate("/teacher/dashboard", { replace: true });
       } else {
         throw new Error("Unsupported account role. Please contact an administrator.");
       }
