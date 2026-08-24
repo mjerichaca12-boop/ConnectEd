@@ -391,31 +391,31 @@ function TeacherMessages() {
 
     return true;
   }, []);
-  const resolveTeacherId = useCallback(async (email) => {
+  const resolveTeacherId = useCallback(async (userOrEmail) => {
     try {
-      const cleanEmail = String(email || "").trim();
-      if (!cleanEmail) return null;
+      if (!userOrEmail) return null;
+      if (typeof userOrEmail === "object") {
+        const rawId = userOrEmail.id || userOrEmail.teacherId || userOrEmail.profile_id;
+        if (rawId && isUuid(rawId)) return String(rawId);
+      } else if (isUuid(userOrEmail)) {
+        return String(userOrEmail);
+      }
+
+      const cleanEmail = String((typeof userOrEmail === "object" ? userOrEmail.email : userOrEmail) || "").trim();
+      if (!cleanEmail) return typeof userOrEmail === "object" && userOrEmail.id ? String(userOrEmail.id) : null;
 
       let { data, error } = await supabase
         .from("profiles")
         .select("id")
-        .eq("email", cleanEmail)
-        .eq("role", "teacher")
-        .order("is_verified", { ascending: false })
+        .ilike("email", cleanEmail)
         .limit(1)
         .maybeSingle();
-      if (!error && data) return String(data.id);
+      if (!error && data?.id) return String(data.id);
 
-      ({ data, error } = await supabase
-        .from("profiles")
-        .select("id")
-        .ilike("email", cleanEmail)
-        .order("is_verified", { ascending: false })
-        .limit(1)
-        .maybeSingle());
-      if (!error && data) return String(data.id);
-      return null;
-    } catch { return null; }
+      return typeof userOrEmail === "object" && userOrEmail.id ? String(userOrEmail.id) : null;
+    } catch {
+      return typeof userOrEmail === "object" && userOrEmail?.id ? String(userOrEmail.id) : null;
+    }
   }, []);
 
   const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
@@ -567,16 +567,28 @@ function TeacherMessages() {
     try {
       const cleanTeacherId = String(currentTeacherId || "").trim().toLowerCase();
 
-      const { data: messageRows, error: messageError } = await db
+      let messageRows = [];
+      let { data: rawRows, error: messageError } = await db
         .from(MESSAGE_TABLE)
-        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
+        .select("id, sender_id, receiver_id, conversation_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
         .or(`sender_id.eq.${currentTeacherId},receiver_id.eq.${currentTeacherId}`)
-        .is("conversation_id", null)
         .order("created_at", { ascending: true });
 
       if (messageError) {
-        console.error("Failed to load messages:", messageError);
-        setPageError("Unable to load message history.");
+        console.warn("[TeacherMessages] Direct query with attachments failed, retrying without join:", messageError);
+        const { data: fallbackRows, error: fallbackError } = await db
+          .from(MESSAGE_TABLE)
+          .select("id, sender_id, receiver_id, conversation_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+          .or(`sender_id.eq.${currentTeacherId},receiver_id.eq.${currentTeacherId}`)
+          .order("created_at", { ascending: true });
+
+        if (!fallbackError && fallbackRows) {
+          messageRows = fallbackRows;
+        } else {
+          console.error("Failed to load messages:", fallbackError || messageError);
+        }
+      } else if (rawRows) {
+        messageRows = rawRows;
       }
 
       const counterpartIds = buildStableIdList((messageRows || []).map((row) => {
@@ -644,7 +656,6 @@ function TeacherMessages() {
 
         if (!convError && conversationData) {
           for (const conv of conversationData) {
-            // Load participants for this group
             const { data: groupParticipants, error: groupPartError } = await db
               .from("conversation_participants")
               .select("profile_id")
@@ -652,20 +663,30 @@ function TeacherMessages() {
 
             if (!groupPartError && groupParticipants) {
               const participantIds = buildStableIdList(groupParticipants.map((p) => p.profile_id));
-              const participantProfiles = await fetchProfilesByIds(participantIds);
 
-              // Load messages for this group conversation
+              let groupMsgRows = [];
               const { data: groupMessages, error: groupMsgError } = await db
                 .from(MESSAGE_TABLE)
                 .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
                 .eq("conversation_id", conv.id)
                 .order("created_at", { ascending: true });
 
-              const groupMsgObjs = (groupMessages || []).map((row) => 
+              if (groupMsgError) {
+                const { data: groupFallback } = await db
+                  .from(MESSAGE_TABLE)
+                  .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+                  .eq("conversation_id", conv.id)
+                  .order("created_at", { ascending: true });
+                groupMsgRows = groupFallback || [];
+              } else {
+                groupMsgRows = groupMessages || [];
+              }
+
+              const groupMsgObjs = groupMsgRows.map((row) => 
                 toConversationMessage(row, currentTeacherId, teacherDisplayName)
               );
 
-              (groupMessages || []).forEach((row) => markMessageSeen(row.id));
+              groupMsgRows.forEach((row) => markMessageSeen(row.id));
 
               conversationsByParticipant.set(conv.id, {
                 id: conv.id,
@@ -687,7 +708,18 @@ function TeacherMessages() {
         }
       }
 
-      const mapped = Array.from(conversationsByParticipant.values()).sort(
+      // Merge cached local draft conversations if any
+      const allLoaded = Array.from(conversationsByParticipant.values());
+      try {
+        const cached = JSON.parse(localStorage.getItem(`teacher_conversations_${currentTeacherId}`) || "[]");
+        cached.forEach((c) => {
+          if (!allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+            allLoaded.push(c);
+          }
+        });
+      } catch (e) {}
+
+      const mapped = allLoaded.sort(
         (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       );
 
@@ -713,10 +745,10 @@ function TeacherMessages() {
         if (!userData) { navigate("/login"); return; }
         const user = JSON.parse(userData);
         if (user.role !== "teacher") { navigate("/login"); return; }
-        const teacherDisplayName = String(user.name || "Teacher");
+        const teacherDisplayName = String(user.name || [user.first_name, user.last_name].filter(Boolean).join(" ") || "Teacher");
         setTeacherName(teacherDisplayName);
         setPageError("");
-        const resolvedTeacherId = await resolveTeacherId(user.email);
+        const resolvedTeacherId = await resolveTeacherId(user);
         if (!resolvedTeacherId) {
           setPageError("Unable to resolve teacher account.");
           setLoading(false);
