@@ -581,7 +581,7 @@ export function ClassDetail() {
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, grade_level, section, phone, status")
+      .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, phone, status")
       .eq("role", "student")
       .in("id", studentIds);
 
