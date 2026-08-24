@@ -330,9 +330,9 @@ function TeacherMessages() {
     const senderId = String(row.sender_id || "");
     const receiverId = String(row.receiver_id || "");
     const conversationId = String(row.conversation_id || "").trim();
-    const isRelevant = conversationId
-      ? conversationsRef.current.some((conversation) => String(conversation.id) === conversationId)
-      : senderId === String(currentTeacherId) || receiverId === String(currentTeacherId);
+    const isRelevant = senderId === String(currentTeacherId) ||
+                       receiverId === String(currentTeacherId) ||
+                       (conversationId && conversationsRef.current.some((conversation) => String(conversation.id) === conversationId));
 
     if (!isRelevant) return false;
 

@@ -48,29 +48,26 @@ export async function getMessages(id: string) {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
-    // Try room first
-    const { data: roomData, error: roomError } = await supabase
+    // Try group / conversation first
+    const { data: convData, error: convError } = await supabase
         .from('messages')
         .select('*')
-        .eq('room_id', id)
+        .eq('conversation_id', id)
         .order('created_at', { ascending: true });
 
-    if (!roomError && roomData && roomData.length > 0) {
-        return roomData.map(normalizeMessage);
+    if (!convError && convData && convData.length > 0) {
+        return convData.map(normalizeMessage);
     }
 
-    // fallback to one-to-one
-    // We remove the strict 'room_id is null' filter to allow visibility even if column is missing or schema is in transition
+    // Fallback to direct messages (one-to-one)
     const { data: directData, error: directError } = await supabase
         .from('messages')
         .select('*')
-        .or(`sender_id.eq.${userData.user.id},receiver_id.eq.${userData.user.id}`)
-        .or(`sender_id.eq.${id},receiver_id.eq.${id}`)
+        .or(`and(sender_id.eq.${userData.user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${userData.user.id})`)
         .order('created_at', { ascending: true });
 
     if (directError) {
         console.error('[messages] Direct fetch error:', directError);
-        // If it fails because of missing room_id in previous tries, we at least return what we got
         return [];
     }
     return (directData || []).map(normalizeMessage);
@@ -92,9 +89,10 @@ export async function sendMessage(targetId: string, content: string, fileUrl?: s
     };
 
     if (isRoom) {
-        insertData.room_id = targetId;
+        insertData.conversation_id = targetId;
     } else {
         insertData.receiver_id = targetId;
+        insertData.conversation_id = null;
     }
 
     const { data, error } = await supabase

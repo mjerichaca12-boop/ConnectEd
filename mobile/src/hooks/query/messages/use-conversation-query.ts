@@ -31,10 +31,11 @@ export function useConversationQuery(partnerId: string) {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (!user) return;
 
-                    // Match if it's the current room OR a direct message with the partner
+                    // Match if it's the current room/conversation OR a direct message with the partner
                     const isRelevant = 
+                        (newMessage.conversation_id === partnerId) || 
                         (newMessage.room_id === partnerId) || 
-                        ((!newMessage.room_id || newMessage.room_id === 'null') && (
+                        ((!newMessage.conversation_id && (!newMessage.room_id || newMessage.room_id === 'null')) && (
                             (newMessage.sender_id === partnerId && newMessage.receiver_id === user.id) ||
                             (newMessage.sender_id === user.id && newMessage.receiver_id === partnerId)
                         ));

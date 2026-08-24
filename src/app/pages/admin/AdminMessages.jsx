@@ -235,9 +235,9 @@ export function AdminMessages() {
     const receiverId = String(row.receiver_id || "");
     const conversationId = String(row.conversation_id || "").trim();
     const targetConversationId = conversationId || `conv_${senderId === String(currentAdminId) ? receiverId : senderId}`;
-    const isRelevant = conversationId
-      ? conversationsRef.current.some((conversation) => String(conversation.id) === conversationId)
-      : senderId === String(currentAdminId) || receiverId === String(currentAdminId);
+    const isRelevant = senderId === String(currentAdminId) ||
+                       receiverId === String(currentAdminId) ||
+                       (conversationId && conversationsRef.current.some((conversation) => String(conversation.id) === conversationId));
 
     if (!isRelevant) return false;
 
@@ -312,7 +312,29 @@ export function AdminMessages() {
         };
       });
 
-      if (!updated) return current;
+      if (!updated) {
+        if (conversationId) return current;
+
+        const participantId = senderId === String(currentAdminId) ? receiverId : senderId;
+        if (!participantId) return current;
+
+        const fallbackConversation = {
+          id: targetConversationId,
+          participantId,
+          participantName: senderProfile?.name || (senderId === String(currentAdminId) ? "User" : "User"),
+          participantRole: senderProfile?.role || "student",
+          email: senderProfile?.email || "",
+          messages: [message],
+          lastMessageTime: message.time,
+          unreadCount: isAdminSender ? 0 : 1,
+          isVideoMeet: false,
+          isGroup: false,
+        };
+
+        return [fallbackConversation, ...current].sort(
+          (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+        );
+      }
 
       return next.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
     });
