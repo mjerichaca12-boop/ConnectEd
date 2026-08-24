@@ -717,28 +717,6 @@ function TeacherManagement() {
     return errors;
   };
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const userData = localStorage.getItem("currentUser");
-    if (!userData) {
-      navigate("/login");
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    const user = JSON.parse(userData);
-    if (user.role !== "admin") {
-      navigate("/login");
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    setAdminName(user.name);
-    setIsAdmin(true);
-
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
     const [teachersRes, subjectsRes] = await Promise.all([
@@ -773,6 +751,28 @@ function TeacherManagement() {
       setLoading(isCachedLoading);
     }
   }, [cachedTeachersData, isCachedLoading]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const userData = localStorage.getItem("currentUser");
+    if (!userData) {
+      navigate("/login");
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const user = JSON.parse(userData);
+    if (user.role !== "admin") {
+      navigate("/login");
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setAdminName(user.name);
+    setIsAdmin(true);
 
     const channel = supabase
       ? supabase
