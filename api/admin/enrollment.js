@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     if (/^[0-9a-fA-F-]{36}$/.test(rawSubjectId)) {
       const { data, error } = await supabaseAdmin
         .from("subjects")
-        .select("id, capacity, enrolled, name, code, section, grade_level")
+        .select("id, capacity, enrolled, name, code, section, grade_level, teacher_id")
         .eq("id", rawSubjectId)
         .maybeSingle();
       subject = data;
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
     if (!subject) {
       const { data, error } = await supabaseAdmin
         .from("subjects")
-        .select("id, capacity, enrolled, name, code, section, grade_level")
+        .select("id, capacity, enrolled, name, code, section, grade_level, teacher_id")
         .ilike("code", rawSubjectId)
         .maybeSingle();
       if (data) {
@@ -107,12 +107,46 @@ export default async function handler(req, res) {
 
     const resolvedSubjectId = subject.id;
 
+    const isInvalidTeacherId = (id) => !id || String(id).toLowerCase() === "null" || String(id).toLowerCase() === "undefined";
+
+    let effectiveTeacherId = teacher_id;
+    if (isInvalidTeacherId(effectiveTeacherId)) {
+      effectiveTeacherId = subject.teacher_id;
+    }
+    if (isInvalidTeacherId(effectiveTeacherId)) {
+      const { data: teacherProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id")
+        .ilike("role", "teacher")
+        .limit(1)
+        .maybeSingle();
+      if (teacherProfile?.id) {
+        effectiveTeacherId = teacherProfile.id;
+      } else {
+        const { data: anyProfile } = await supabaseAdmin
+          .from("profiles")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        if (anyProfile?.id) {
+          effectiveTeacherId = anyProfile.id;
+        }
+      }
+    }
+
+    if (isInvalidTeacherId(subject.teacher_id) && effectiveTeacherId) {
+      await supabaseAdmin
+        .from("subjects")
+        .update({ teacher_id: effectiveTeacherId })
+        .eq("id", resolvedSubjectId);
+    }
+
     // 1. Try atomic PostgreSQL RPC function if available
     try {
       const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc("enroll_students_atomic", {
         p_subject_id: resolvedSubjectId,
         p_student_ids: student_ids,
-        p_teacher_id: teacher_id || null,
+        p_teacher_id: effectiveTeacherId,
         p_section: section || null
       });
 
@@ -211,7 +245,7 @@ export default async function handler(req, res) {
     }
 
     const payload = newStudentIdsToEnroll.map(sid => ({
-      teacher_id: teacher_id || null,
+      teacher_id: effectiveTeacherId,
       student_id: sid,
       subject_id: resolvedSubjectId,
       section: section || subject.section || null,

@@ -105,7 +105,7 @@ export const adminApi = {
       if (/^[0-9a-fA-F-]{36}$/.test(rawSubjectId)) {
         const { data } = await supabase
           .from("subjects")
-          .select("id, capacity, enrolled, name, code, section, grade_level")
+          .select("id, capacity, enrolled, name, code, section, grade_level, teacher_id")
           .eq("id", rawSubjectId)
           .maybeSingle();
         subject = data;
@@ -114,7 +114,7 @@ export const adminApi = {
       if (!subject) {
         const { data } = await supabase
           .from("subjects")
-          .select("id, capacity, enrolled, name, code, section, grade_level")
+          .select("id, capacity, enrolled, name, code, section, grade_level, teacher_id")
           .ilike("code", rawSubjectId)
           .maybeSingle();
         subject = data;
@@ -125,6 +125,33 @@ export const adminApi = {
       }
 
       const resolvedSubjectId = subject.id;
+
+      const isInvalidTeacherId = (id) => !id || String(id).toLowerCase() === "null" || String(id).toLowerCase() === "undefined";
+
+      let effectiveTeacherId = teacher_id;
+      if (isInvalidTeacherId(effectiveTeacherId)) {
+        effectiveTeacherId = subject.teacher_id;
+      }
+      if (isInvalidTeacherId(effectiveTeacherId)) {
+        const { data: teacherProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .ilike("role", "teacher")
+          .limit(1)
+          .maybeSingle();
+        if (teacherProfile?.id) {
+          effectiveTeacherId = teacherProfile.id;
+        } else {
+          const { data: anyProfile } = await supabase
+            .from("profiles")
+            .select("id")
+            .limit(1)
+            .maybeSingle();
+          if (anyProfile?.id) {
+            effectiveTeacherId = anyProfile.id;
+          }
+        }
+      }
 
       const normalizeGrade = (val) => {
         if (!val) return "";
@@ -184,7 +211,7 @@ export const adminApi = {
       }
 
       const insertRows = newStudentIds.map(sid => ({
-        teacher_id: teacher_id || null,
+        teacher_id: effectiveTeacherId,
         student_id: sid,
         subject_id: resolvedSubjectId,
         section: section || subject.section || null,
@@ -200,7 +227,11 @@ export const adminApi = {
       }
 
       const newTotal = currentEnrolled + insertRows.length;
-      await supabase.from("subjects").update({ enrolled: newTotal }).eq("id", resolvedSubjectId);
+      if (isInvalidTeacherId(subject.teacher_id) && effectiveTeacherId) {
+        await supabase.from("subjects").update({ teacher_id: effectiveTeacherId, enrolled: newTotal }).eq("id", resolvedSubjectId);
+      } else {
+        await supabase.from("subjects").update({ enrolled: newTotal }).eq("id", resolvedSubjectId);
+      }
 
       return {
         data: {

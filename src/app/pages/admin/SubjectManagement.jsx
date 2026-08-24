@@ -809,7 +809,7 @@ function SubjectManagement() {
     try {
       const subject = selectedSubjectForEnroll;
       const tIdVal = String(subject.teacher_id || "").trim();
-      const currentTeacherId = (!tIdVal || tIdVal.toLowerCase() === "null" || tIdVal.toLowerCase() === "undefined") ? null : tIdVal;
+      const currentTeacherId = (!tIdVal || tIdVal.toLowerCase() === "null" || tIdVal.toLowerCase() === "undefined") ? (subject.teacher_id || null) : tIdVal;
 
       const normalizeGradeLevel = (value) => {
         const v = String(value || "").trim();
