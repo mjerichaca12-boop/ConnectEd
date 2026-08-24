@@ -1315,7 +1315,18 @@ export function ClassDetail() {
     }
 
     try {
-      // 1. Fetch lessons for subject
+      // 1. Fetch materials from class_materials table for this subject
+      let classMats = [];
+      const { data: cmData, error: cmErr } = await supabase
+        .from("class_materials")
+        .select("*")
+        .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
+
+      if (!cmErr && cmData) {
+        classMats = cmData;
+      }
+
+      // 2. Fetch lessons for subject
       const { data: lessonsData } = await supabase
         .from("lessons")
         .select("id, title, topic")
@@ -1327,28 +1338,32 @@ export function ClassDetail() {
       });
 
       const lessonIds = Array.from(lessonMap.keys());
-      if (lessonIds.length === 0) {
-        setMaterials([]);
-        return;
+      let lessonMats = [];
+      if (lessonIds.length > 0) {
+        const { data: lmData } = await supabase
+          .from("lesson_materials")
+          .select("*")
+          .in("lesson_id", lessonIds)
+          .order("created_at", { ascending: false });
+        if (lmData) lessonMats = lmData;
       }
 
-      // 2. Fetch materials from lesson_materials table
-      const { data: matData, error: matErr } = await supabase
-        .from("lesson_materials")
-        .select("*")
-        .in("lesson_id", lessonIds)
-        .order("created_at", { ascending: false });
-
-      if (matErr) {
-        console.warn("[ClassDetail] Lesson materials notice:", matErr);
-        setMaterials([]);
-        return;
+      const combined = [...classMats, ...lessonMats];
+      const seenIds = new Set();
+      const uniqueMats = [];
+      for (const row of combined) {
+        const rowId = String(row.id || "");
+        if (rowId && !seenIds.has(rowId)) {
+          seenIds.add(rowId);
+          uniqueMats.push(row);
+        }
       }
 
-      const normalized = (matData ?? []).map(row => normalizeMaterialRecord({
+      const normalized = uniqueMats.map(row => normalizeMaterialRecord({
         ...row,
-        lesson_title: lessonMap.get(String(row.lesson_id)) || "General"
+        lesson_title: row.lesson_id ? (lessonMap.get(String(row.lesson_id)) || "General") : (row.lesson_title || "General")
       }));
+
       setMaterials(normalized);
     } catch (err) {
       console.warn("[ClassDetail] fetchClassMaterials notice:", err);
@@ -3784,7 +3799,7 @@ export function ClassDetail() {
   } : {
     ...metrics,
     studentCount: assignedStudents.length,
-    materialsCount: metrics.materialsCount + materials.length,
+    materialsCount: materials.length > 0 ? materials.length : metrics.materialsCount,
     announcementsCount: announcements.length,
   };
 

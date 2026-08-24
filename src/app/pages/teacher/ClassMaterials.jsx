@@ -134,10 +134,10 @@ function ClassMaterials() {
 
       if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
         query = query.eq("teacher_id", resolvedTeacherId);
-      }
-
-      if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+      } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
         query = query.eq("created_by", resolvedTeacherId);
+      } else if (resolvedTeacherId) {
+        query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
       }
 
       let { data, error } = await query;
@@ -157,10 +157,10 @@ function ClassMaterials() {
 
         if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
           query = query.eq("teacher_id", resolvedTeacherId);
-        }
-
-        if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+        } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
           query = query.eq("created_by", resolvedTeacherId);
+        } else if (resolvedTeacherId) {
+          query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
         }
 
         const fallbackResult = await query;
