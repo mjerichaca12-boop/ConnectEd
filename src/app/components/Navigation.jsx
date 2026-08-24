@@ -42,6 +42,32 @@ function Navigation() {
     window.scrollTo({ top: Math.max(targetTop, 0), behavior: "smooth" });
   };
 
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      try {
+        setUser(JSON.parse(rawUser));
+      } catch {
+        setUser(null);
+      }
+    } else {
+      setUser(null);
+    }
+  }, [location]);
+
+  const handleAuthClick = () => {
+    setMobileOpen(false);
+    if (user?.role === "admin") {
+      navigate("/admin/dashboard");
+    } else if (user?.role === "teacher") {
+      navigate("/teacher/dashboard");
+    } else {
+      navigate("/login");
+    }
+  };
+
   const navLinks = [
     { label: "Platform", id: "features" },
     { label: "Solutions", id: "roles" },
@@ -64,6 +90,12 @@ function Navigation() {
               {l.label}
             </button>
           ))}
+          <button
+            onClick={handleAuthClick}
+            className="bg-green-600 hover:bg-green-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-all shadow-sm cursor-pointer"
+          >
+            {user ? "Go to Dashboard" : "Sign In"}
+          </button>
         </div>
 
         {/* Mobile toggle */}
@@ -78,6 +110,12 @@ function Navigation() {
           {navLinks.map((l) => (
             <button key={l.id} onClick={() => handleNavClick(l.id)} className="block w-full text-left text-gray-700 font-medium py-2 text-sm hover:text-green-600 transition-colors">{l.label}</button>
           ))}
+          <button
+            onClick={handleAuthClick}
+            className="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors mt-2"
+          >
+            {user ? "Go to Dashboard" : "Sign In"}
+          </button>
         </div>
       )}
     </nav>

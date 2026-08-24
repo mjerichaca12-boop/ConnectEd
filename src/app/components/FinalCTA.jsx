@@ -1,8 +1,32 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 
 function FinalCTA() {
   const navigate = useNavigate();
+
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      try {
+        setUser(JSON.parse(rawUser));
+      } catch {
+        setUser(null);
+      }
+    }
+  }, []);
+
+  const handleAuthClick = () => {
+    if (user?.role === "admin") {
+      navigate("/admin/dashboard");
+    } else if (user?.role === "teacher") {
+      navigate("/teacher/dashboard");
+    } else {
+      navigate("/login");
+    }
+  };
 
   return (
     <section className="relative w-full bg-white py-8 px-6 overflow-hidden border-t border-gray-200">
@@ -24,10 +48,10 @@ function FinalCTA() {
         </p>
 
         <button
-          onClick={() => navigate("/login")}
+          onClick={handleAuthClick}
           className="group inline-flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg shadow-green-600/20 text-sm cursor-pointer"
         >
-          Login to Portal
+          {user ? "Go to Dashboard" : "Login to Portal"}
           <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
