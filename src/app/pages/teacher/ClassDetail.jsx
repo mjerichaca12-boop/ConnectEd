@@ -601,9 +601,10 @@ export function ClassDetail() {
 
     syncStudentsIntoClassData(mapped);
 
-    if (supabase && subjectId && !String(subjectId).startsWith("demo-") && !isNaN(Number(subjectId))) {
+    if (supabase && subjectId && !String(subjectId).startsWith("demo-")) {
       try {
-        const { data: sub } = await supabase.from("subjects").select("capacity, enrolled").eq("id", Number(subjectId)).maybeSingle();
+        const queryId = !isNaN(Number(subjectId)) ? Number(subjectId) : subjectId;
+        const { data: sub } = await supabase.from("subjects").select("capacity, enrolled").eq("id", queryId).maybeSingle();
         if (sub && sub.capacity !== undefined) {
           setClassData(prev => prev ? ({ ...prev, capacity: Number(sub.capacity || 0), enrolled: mapped.length }) : prev);
         }
@@ -1399,19 +1400,19 @@ export function ClassDetail() {
       if (saved) {
         try {
           const all = JSON.parse(saved);
-          const found = all.find((c) => String(c.id) === String(id));
-          foundClass = found || all[0] || null;
+          foundClass = all.find((c) => String(c.id) === String(id)) || null;
         } catch {
           foundClass = null;
         }
       }
 
-      if (supabase && id && !String(id).startsWith("demo-") && !isNaN(Number(id))) {
+      if (supabase && id && !String(id).startsWith("demo-")) {
         try {
-          const { data: subData } = await supabase.from("subjects").select("*").eq("id", Number(id)).maybeSingle();
+          const queryId = !isNaN(Number(id)) ? Number(id) : id;
+          const { data: subData } = await supabase.from("subjects").select("*").eq("id", queryId).maybeSingle();
           if (subData) {
             foundClass = {
-              ...foundClass,
+              ...(foundClass || {}),
               id: String(subData.id),
               code: String(subData.code || ""),
               name: String(subData.name || "Untitled Class"),
@@ -1421,7 +1422,7 @@ export function ClassDetail() {
               semester: "Current School Year",
               studentCount: Number(subData.enrolled || 0),
               capacity: Number(subData.capacity || 0),
-              gradeLevel: String(subData.grade_level || subData.year_level || "")
+              gradeLevel: String(subData.grade_level || "")
             };
           }
         } catch (err) {
