@@ -447,6 +447,31 @@ function StudentManagement() {
     });
   };
 
+  const handleEditFieldChange = (field, value) => {
+    setEditFormData((current) => {
+      const nextValue = field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
+      const nextFormData = { ...current, [field]: nextValue };
+      if (field === "year_level") {
+        nextFormData.section = "";
+      }
+      const fieldError = validateAddField(field, nextValue, nextFormData);
+
+      setEditFormErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors };
+
+        if (fieldError) {
+          nextErrors[field] = fieldError;
+        } else {
+          delete nextErrors[field];
+        }
+
+        return nextErrors;
+      });
+
+      return nextFormData;
+    });
+  };
+
   const buildPayload = (formData) => ({
     first_name: formData.first_name.trim(),
     middle_name: formData.middle_name.trim() || null,
