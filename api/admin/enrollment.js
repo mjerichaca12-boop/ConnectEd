@@ -145,7 +145,7 @@ export default async function handler(req, res) {
     // Validate Grade Level + Section for every student
     const { data: studentProfiles, error: profilesError } = await supabaseAdmin
       .from("profiles")
-      .select("id, year_level, grade_level, section, first_name, last_name")
+      .select("id, year_level, section, first_name, last_name")
       .in("id", student_ids);
 
     if (profilesError || !studentProfiles) {
@@ -153,18 +153,14 @@ export default async function handler(req, res) {
     }
 
     for (const student of studentProfiles) {
-      const studentGradeNorm = normalizeGradeLevel(student.grade_level || student.year_level || "");
+      const studentGradeNorm = normalizeGradeLevel(student.year_level || "");
       const studentSectionNorm = normalizeSection(student.section || "");
-
-      if (!studentSectionNorm) {
-        return res.status(400).json({ error: "Student does not belong to this class section." });
-      }
 
       if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
         return res.status(400).json({ error: "Student does not belong to this class section." });
       }
 
-      if (classSectionNorm && studentSectionNorm !== classSectionNorm) {
+      if (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm) {
         return res.status(400).json({ error: "Student does not belong to this class section." });
       }
     }

@@ -142,21 +142,18 @@ export const adminApi = {
 
       const { data: studentProfiles } = await supabase
         .from("profiles")
-        .select("id, year_level, grade_level, section")
+        .select("id, year_level, section")
         .in("id", student_ids);
 
       if (studentProfiles) {
         for (const student of studentProfiles) {
-          const studentGradeNorm = normalizeGrade(student.grade_level || student.year_level);
+          const studentGradeNorm = normalizeGrade(student.year_level);
           const studentSecNorm = normalizeSec(student.section);
 
-          if (!studentSecNorm) {
-            return { data: null, error: new Error("Student does not belong to this class section.") };
-          }
           if (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) {
             return { data: null, error: new Error("Student does not belong to this class section.") };
           }
-          if (classSecNorm && studentSecNorm !== classSecNorm) {
+          if (classSecNorm && studentSecNorm && studentSecNorm !== classSecNorm) {
             return { data: null, error: new Error("Student does not belong to this class section.") };
           }
         }
