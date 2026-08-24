@@ -3795,7 +3795,7 @@ export function ClassDetail() {
   } : {
     ...metrics,
     studentCount: assignedStudents.length,
-    materialsCount: materials.length > 0 ? materials.length : metrics.materialsCount,
+    materialsCount: materials.length,
     announcementsCount: announcements.length,
   };
 
