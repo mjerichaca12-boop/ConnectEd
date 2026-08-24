@@ -860,7 +860,7 @@ function SubjectManagement() {
         throw new Error(res.error.message || res.error);
       }
 
-      const { enrolled_count, skipped_capacity, already_enrolled_count } = res.data;
+      const { enrolled_count, skipped_capacity, already_enrolled_count, new_total_enrolled } = res.data || {};
 
       // Sync student profile section and grade level if missing in profiles
       if (subject.section || subject.grade_level) {
@@ -891,7 +891,7 @@ function SubjectManagement() {
         entityName: `${subject.code} - ${subject.name}`,
         details: { 
           studentCount: selectedStudents.size,
-          newTotal: newEnrollmentCount
+          newTotal: new_total_enrolled ?? ((subject.enrolled || 0) + (enrolled_count || selectedStudents.size))
         },
         timestamp: new Date().toISOString()
       });
