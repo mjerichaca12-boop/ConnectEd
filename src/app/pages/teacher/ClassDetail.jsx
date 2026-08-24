@@ -1315,15 +1315,21 @@ export function ClassDetail() {
     }
 
     try {
-      // 1. Fetch materials from class_materials table for this subject
+      // 1. Fetch materials from class_materials table for this subject if available
       let classMats = [];
-      const { data: cmData, error: cmErr } = await supabase
-        .from("class_materials")
-        .select("*")
-        .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
+      if (classMaterialsTableStatus !== "missing") {
+        const { data: cmData, error: cmErr } = await supabase
+          .from("class_materials")
+          .select("*")
+          .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
 
-      if (!cmErr && cmData) {
-        classMats = cmData;
+        if (cmErr) {
+          if (cmErr.status === 404 || cmErr.code === "PGRST205" || cmErr.code === "42P01" || cmErr.status === 400) {
+            classMaterialsTableStatus = "missing";
+          }
+        } else if (cmData) {
+          classMats = cmData;
+        }
       }
 
       // 2. Fetch lessons for subject
