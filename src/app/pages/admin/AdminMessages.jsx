@@ -128,77 +128,91 @@ export function AdminMessages() {
       }
     };
     loadAllUsers();
+  }, [navigate]);
 
-    // Resolve admin's profile id
-    const ensureHardcodedAdminProfileExists = async () => {
-      try {
-        const { data: existingAdmin, error: selectError } = await db
-          .from("profiles")
-          .select("id")
-          .eq("id", HARDCODED_ADMIN_ID)
-          .maybeSingle();
+  const ensureHardcodedAdminProfileExists = async () => {
+    try {
+      const { data: existingAdmin, error: selectError } = await db
+        .from("profiles")
+        .select("id")
+        .eq("id", HARDCODED_ADMIN_ID)
+        .maybeSingle();
 
-        if (selectError) {
-          console.error("[AdminMessages] Failed to check hardcoded admin profile:", selectError);
-          return;
-        }
-
-        if (!existingAdmin) {
-          const { error: insertError } = await adminApi.db("profiles", "insert", {
-            payload: {
-              id: HARDCODED_ADMIN_ID,
-              first_name: "Connected",
-              last_name: "Admin",
-              email: HARDCODED_ADMIN_EMAIL,
-              role: "admin",
-              status: "Active",
-              is_verified: true,
-              created_at: new Date().toISOString(),
-            }
-          });
-          if (insertError) {
-            console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
-          } else {
-            console.log("[AdminMessages] Hardcoded admin profile created successfully");
-          }
-        }
-      } catch (err) {
-        console.error("[AdminMessages] Error ensuring hardcoded admin profile exists:", err);
+      if (selectError) {
+        console.error("[AdminMessages] Failed to check hardcoded admin profile:", selectError);
+        return;
       }
-    };
 
+      if (!existingAdmin) {
+        const { error: insertError } = await adminApi.db("profiles", "insert", {
+          payload: {
+            id: HARDCODED_ADMIN_ID,
+            first_name: "Connected",
+            last_name: "Admin",
+            email: HARDCODED_ADMIN_EMAIL,
+            role: "admin",
+            status: "Active",
+            is_verified: true,
+            created_at: new Date().toISOString(),
+          }
+        });
+        if (insertError) {
+          console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
+        } else {
+          console.log("[AdminMessages] Hardcoded admin profile created successfully");
+        }
+      }
+    } catch (err) {
+      console.error("[AdminMessages] Error ensuring hardcoded admin profile exists:", err);
+    }
+  };
+
+  const adminIdsSetRef = useRef(new Set([HARDCODED_ADMIN_ID]));
+
+  useEffect(() => {
     const resolveAdmin = async () => {
       try {
-        console.log("[AdminMessages] Resolving admin for email:", user.email);
+        const userData = localStorage.getItem("currentUser");
+        const user = userData ? JSON.parse(userData) : null;
+        console.log("[AdminMessages] Resolving admin for email:", user?.email);
         
-        // For hardcoded admin, use hardcoded UUID instead of database lookup
-        if (user.email === HARDCODED_ADMIN_EMAIL) {
-          adminIdRef.current = HARDCODED_ADMIN_ID;
-          setAdminId(HARDCODED_ADMIN_ID);
-          await ensureHardcodedAdminProfileExists();
-          await loadConversationsFromDB();
-          return;
-        }
+        await ensureHardcodedAdminProfileExists();
 
-        const { data } = await db
+        // Fetch all admin profile IDs from database
+        const { data: adminProfiles } = await db
           .from("profiles")
           .select("id")
-          .ilike("email", user.email)
-          .maybeSingle();
-        if (data?.id) {
-          const resolvedId = String(data.id);
-          adminIdRef.current = resolvedId;
-          setAdminId(resolvedId);
-          await loadConversationsFromDB();
-        } else {
-          console.warn("[AdminMessages] No admin profile found for email:", user.email);
+          .ilike("role", "admin");
+
+        const allAdminIds = new Set([
+          HARDCODED_ADMIN_ID,
+          ...(adminProfiles || []).map((p) => String(p.id))
+        ]);
+
+        let resolvedId = HARDCODED_ADMIN_ID;
+
+        if (user?.email && user.email !== HARDCODED_ADMIN_EMAIL) {
+          const { data } = await db
+            .from("profiles")
+            .select("id")
+            .ilike("email", user.email)
+            .maybeSingle();
+          if (data?.id) {
+            resolvedId = String(data.id);
+            allAdminIds.add(resolvedId);
+          }
         }
+
+        adminIdRef.current = resolvedId;
+        adminIdsSetRef.current = allAdminIds;
+        setAdminId(resolvedId);
+        await loadConversationsFromDB(allAdminIds);
       } catch (err) {
         console.error("[AdminMessages] Failed to resolve admin id:", err);
       }
     };
     resolveAdmin();
-  }, [navigate]);
+  }, []);
 
   const saveConversations = (updated) => {
     const sorted = [...updated].sort(
@@ -226,7 +240,7 @@ export function AdminMessages() {
   }, []);
 
   const appendIncomingMessage = useCallback((row, currentAdminId) => {
-    if (!row?.id || !currentAdminId) return false;
+    if (!row?.id) return false;
 
     const messageId = String(row.id);
     if (seenMessageIdsRef.current.has(messageId)) return false;
@@ -234,9 +248,10 @@ export function AdminMessages() {
     const senderId = String(row.sender_id || "");
     const receiverId = String(row.receiver_id || "");
     const conversationId = String(row.conversation_id || "").trim();
-    const targetConversationId = conversationId || `conv_${senderId === String(currentAdminId) ? receiverId : senderId}`;
-    const isRelevant = senderId === String(currentAdminId) ||
-                       receiverId === String(currentAdminId) ||
+    const adminSet = adminIdsSetRef.current || new Set([HARDCODED_ADMIN_ID, currentAdminId]);
+    const isAdminTarget = adminSet.has(senderId) || adminSet.has(receiverId);
+
+    const isRelevant = isAdminTarget ||
                        (conversationId && conversationsRef.current.some((conversation) => String(conversation.id) === conversationId));
 
     if (!isRelevant) return false;
@@ -264,7 +279,8 @@ export function AdminMessages() {
 
     const senderProfile = allTeachers.find((person) => String(person.id) === senderId);
     const fileTypeValue = fileType;
-    const isAdminSender = senderId === String(currentAdminId);
+    const isAdminSender = adminSet.has(senderId);
+    const targetConversationId = conversationId || `conv_${isAdminSender ? receiverId : senderId}`;
     const message = {
       id: messageId,
       from: isAdminSender ? "admin" : "other",
@@ -315,13 +331,13 @@ export function AdminMessages() {
       if (!updated) {
         if (conversationId) return current;
 
-        const participantId = senderId === String(currentAdminId) ? receiverId : senderId;
+        const participantId = isAdminSender ? receiverId : senderId;
         if (!participantId) return current;
 
         const fallbackConversation = {
           id: targetConversationId,
           participantId,
-          participantName: senderProfile?.name || (senderId === String(currentAdminId) ? "User" : "User"),
+          participantName: senderProfile?.name || "User",
           participantRole: senderProfile?.role || "student",
           email: senderProfile?.email || "",
           messages: [message],
@@ -367,10 +383,13 @@ export function AdminMessages() {
     return () => { supabase.removeChannel(channel); };
   }, [adminId, appendIncomingMessage]);
 
-  const loadConversationsFromDB = async () => {
+  const loadConversationsFromDB = async (adminIdsSet) => {
     try {
+      const adminSet = adminIdsSet || adminIdsSetRef.current || new Set([HARDCODED_ADMIN_ID]);
       const effectiveAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
-      const adminFilter = `sender_id.eq.${effectiveAdminId},receiver_id.eq.${effectiveAdminId}`;
+      const idsList = Array.from(adminSet);
+      
+      const adminFilter = idsList.flatMap(id => [`sender_id.eq.${id}`, `receiver_id.eq.${id}`]).join(",");
 
       // Load direct messages (exclude group messages)
       const { data: messageRows, error } = await adminApi.db("messages", "select", {
@@ -387,8 +406,9 @@ export function AdminMessages() {
       const counterpartIds = [...new Set((messageRows || []).map((row) => {
         const senderId = String(row.sender_id || "");
         const receiverId = String(row.receiver_id || "");
-        return senderId === effectiveAdminId ? receiverId : senderId;
-      }).filter(Boolean))];
+        const isAdminSender = adminSet.has(senderId);
+        return isAdminSender ? receiverId : senderId;
+      }).filter((id) => Boolean(id) && !adminSet.has(id)))];
       
       // Fetch profiles for all counterparts
       const profileMap = new Map();
@@ -416,7 +436,8 @@ export function AdminMessages() {
       (messageRows || []).forEach((row) => {
         const senderId = String(row.sender_id || "");
         const receiverId = String(row.receiver_id || "");
-        const counterpartId = senderId === effectiveAdminId ? receiverId : senderId;
+        const isAdminSender = adminSet.has(senderId);
+        const counterpartId = isAdminSender ? receiverId : senderId;
         if (!counterpartId) return;
         
         const profile = profileMap.get(counterpartId) || { name: "Unknown User", role: "student" };

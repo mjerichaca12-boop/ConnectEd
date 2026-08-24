@@ -978,9 +978,25 @@ function TeacherMessages() {
     const currentTeacherId = typeof teacherId !== 'undefined' ? teacherId : (typeof adminId !== 'undefined' ? adminId : null);
     if ((!text && attachmentFiles.length === 0) || !activeConversation || !currentTeacherId || !supabase) return;
 
-    const recipientIds = activeConversation.isGroup
+    let recipientIds = activeConversation.isGroup
       ? buildStableIdList(activeConversation.participantIds)
       : [String(activeConversation.participantId || "").trim()].filter(Boolean);
+
+    // If target is Admin, ensure message includes all admin profile IDs
+    if (!activeConversation.isGroup && (
+      recipientIds.includes(HARDCODED_ADMIN_ID) || 
+      activeConversation.participantRole === "admin" ||
+      String(activeConversation.participantName || "").toLowerCase().includes("admin")
+    )) {
+      const { data: adminProfiles } = await supabase
+        .from("profiles")
+        .select("id")
+        .ilike("role", "admin");
+      
+      const adminIdSet = new Set([HARDCODED_ADMIN_ID, ...recipientIds]);
+      (adminProfiles || []).forEach(p => { if (p?.id) adminIdSet.add(String(p.id)); });
+      recipientIds = Array.from(adminIdSet);
+    }
 
     if (recipientIds.length === 0) { setPageError("No recipients found."); return; }
 
