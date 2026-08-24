@@ -94,7 +94,7 @@ function Navigation() {
             onClick={handleAuthClick}
             className="bg-green-600 hover:bg-green-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-all shadow-sm cursor-pointer"
           >
-            {user ? "Go to Dashboard" : "Sign In"}
+            Sign In
           </button>
         </div>
 
@@ -114,7 +114,7 @@ function Navigation() {
             onClick={handleAuthClick}
             className="block w-full text-center bg-green-600 hover:bg-green-700 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors mt-2"
           >
-            {user ? "Go to Dashboard" : "Sign In"}
+            Sign In
           </button>
         </div>
       )}
