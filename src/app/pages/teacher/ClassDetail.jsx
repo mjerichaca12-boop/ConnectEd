@@ -249,7 +249,7 @@ const getAnnouncementAttachmentKind = (announcement) => {
   return fileUrl ? "document" : "";
 };
 
-let classMaterialsTableStatus = "unknown";
+let classMaterialsTableStatus = "missing";
 
 export function ClassDetail() {
   const { id } = useParams();
@@ -498,19 +498,9 @@ export function ClassDetail() {
 
     let { data, error } = await supabase
       .from("subjects")
-      .select("grade_level, year_level")
+      .select("grade_level")
       .eq("id", id)
       .maybeSingle();
-
-    if (error && isColumnMissingError(error)) {
-      const fallback = await supabase
-        .from("subjects")
-        .select("year_level")
-        .eq("id", id)
-        .maybeSingle();
-      data = fallback.data;
-      error = fallback.error;
-    }
 
     if (error) {
       console.warn("[ClassDetail] Unable to resolve subject grade level:", error);
