@@ -717,12 +717,9 @@ export function ClassDetail() {
           continue;
         }
 
-        const normalizedRows = (data ?? [])
+        loadedRows = (data ?? [])
           .map(normalizeStudentRecord)
           .filter((student) => String(student.id || "").trim());
-
-        console.log(`[ClassDetail] Raw fetched student data from ${tableName}:`, normalizedRows);
-        loadedRows = normalizedRows;
         break;
       }
 

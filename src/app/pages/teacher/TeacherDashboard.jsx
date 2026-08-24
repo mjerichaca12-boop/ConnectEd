@@ -164,13 +164,6 @@ export function TeacherDashboard() {
       return true;
     });
 
-    console.log("[TeacherDashboard] fetched teacher subjects", {
-      teacherId: id,
-      fetched: (data ?? []).length,
-      unique: uniqueSubjects.length,
-      fetchedSubjectIds: (data ?? []).map((subject) => String(subject.id || "")).filter(Boolean)
-    });
-
     if (uniqueSubjects.length !== (data ?? []).length) {
       console.warn("[TeacherDashboard] duplicate teacher subjects detected and removed", {
         teacherId: id,
@@ -733,7 +726,6 @@ export function TeacherDashboard() {
                           onClick={() => setSelectedAnnouncement(announcement)}
                           className="w-full text-left px-4 py-3 bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 hover:bg-gray-100 transition-colors"
                         >
-                          {console.log("Announcement data:", announcement)}
                           {announcement.imageUrl ? (
                             <div className="mb-3 rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
                               <img
