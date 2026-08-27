@@ -605,7 +605,7 @@ function TeacherMessages() {
       setIsUploadingAttachment(true);
       const cleanedName = sanitizeAttachmentFileName(attachmentFile.name);
       const filePath = `${teacherId}/${activeConversation.id}/${Date.now()}_${cleanedName}`;
-      const uploadResult = await supabase.storage
+      const uploadResult = await db.storage
         .from(MESSAGE_ATTACHMENT_BUCKET)
         .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
       if (uploadResult.error) {
@@ -613,7 +613,7 @@ function TeacherMessages() {
         // Proceed without file attachment rather than blocking the whole message
         setIsUploadingAttachment(false);
       } else {
-        const publicUrlResult = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
         uploadedFileUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
         uploadedFileName = cleanedName;
         uploadedFileType = String(attachmentFile.type || "application/octet-stream").trim();

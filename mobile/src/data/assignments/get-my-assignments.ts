@@ -294,7 +294,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         
         if (rawStatus === 'returned') {
             status = 'returned';
-        } else if (rawStatus === 'graded' || rawStatus === 'passed' || rawStatus === 'failed' || (myResult?.grade_value !== undefined && myResult?.grade_value !== null)) {
+        } else if (rawStatus === 'graded' || rawStatus === 'passed' || rawStatus === 'failed' || (rawStatus !== 'pending' && myResult?.grade_value !== undefined && myResult?.grade_value !== null)) {
             status = 'graded';
         } else if (rawStatus === 'submitted' || myAssessmentSub) {
             status = 'submitted';
@@ -380,7 +380,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             submission: (myResult || myAssessmentSub) ? {
                 id: myResult?.id || myAssessmentSub?.id || row.id, // Fallback to assignment id if not graded yet
                 file_url: myAssessmentSub?.file_url || null,
-                grade: myResult?.grade_value,
+                grade: rawStatus === 'pending' ? null : (myResult?.grade_value !== undefined ? myResult.grade_value : null),
                 teacher_comment: feedbackMap.get(row.id) || myResult?.feedback || null,
                 status: myResult?.status || 'submitted',
                 response_text: myAssessmentSub?.response_text || null,

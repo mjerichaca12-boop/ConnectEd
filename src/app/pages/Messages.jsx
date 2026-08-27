@@ -482,14 +482,14 @@ export function Messages() {
       const cleanedName = sanitizeAttachmentFileName(attachmentFile.name);
       const destId = selectedConversation.isGroup ? selectedConversation.id : selectedConversation.participantId;
       const filePath = `${studentId}/${destId}/${Date.now()}_${cleanedName}`;
-      const uploadResult = await supabase.storage
+      const uploadResult = await db.storage
         .from(MESSAGE_ATTACHMENT_BUCKET)
         .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
 
       if (uploadResult.error) {
         console.error("[Messages] Attachment upload failed:", uploadResult.error);
       } else {
-        const publicUrlResult = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
         uploadedFileUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
         uploadedFileType = String(attachmentFile.type || "application/octet-stream").trim();
         uploadedFileName = cleanedName;

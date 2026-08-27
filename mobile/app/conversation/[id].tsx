@@ -20,6 +20,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as WebBrowser from 'expo-web-browser';
 import { decode } from 'base64-arraybuffer';
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -262,6 +263,56 @@ export default function ConversationScreen() {
         }
     };
 
+    const isImageAttachment = (fileUrl: string, fileType?: string) => {
+        if (!fileUrl) return false;
+        if (fileType === 'image' || fileType?.startsWith('image/')) return true;
+        const cleanUrl = fileUrl.split('?')[0].toLowerCase();
+        return cleanUrl.endsWith('.jpg') || 
+               cleanUrl.endsWith('.jpeg') || 
+               cleanUrl.endsWith('.png') || 
+               cleanUrl.endsWith('.gif') || 
+               cleanUrl.endsWith('.webp') || 
+               cleanUrl.endsWith('.heic');
+    };
+
+    const isImageFileName = (name: string) => {
+        const cleanName = name.toLowerCase();
+        return cleanName.endsWith('.jpg') || 
+               cleanName.endsWith('.jpeg') || 
+               cleanName.endsWith('.png') || 
+               cleanName.endsWith('.gif') || 
+               cleanName.endsWith('.webp') || 
+               cleanName.endsWith('.heic');
+    };
+
+    const getAttachmentFileName = (fileUrl: string, content?: string) => {
+        if (content && content.startsWith('Sent a document: ')) {
+            return content.replace('Sent a document: ', '');
+        }
+        if (fileUrl) {
+            try {
+                const decoded = decodeURIComponent(fileUrl);
+                const parts = decoded.split('/');
+                const filenameWithQuery = parts[parts.length - 1];
+                const rawFilename = filenameWithQuery.split('?')[0];
+                // Strip timestamps e.g. 1787718518717- from storage filename
+                return rawFilename.replace(/^\d+-/, '');
+            } catch (e) {
+                // Fallback
+            }
+        }
+        return 'View Attachment';
+    };
+
+    const handleOpenFile = async (url: string, fileName?: string) => {
+        try {
+            await WebBrowser.openBrowserAsync(url);
+        } catch (error) {
+            console.error('Failed to open WebBrowser, falling back to download:', error);
+            handleSaveFile(url, fileName);
+        }
+    };
+
     const handlePickDocument = async () => {
         console.log('handlePickDocument called');
         if (isPickingRef.current) return;
@@ -332,19 +383,19 @@ export default function ConversationScreen() {
         return (
             <View style={styles.messageWrapper}>
                 <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
-                    {item.file_url && (item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
+                    {item.file_url && isImageAttachment(item.file_url, item.file_type) && (
                         <TouchableOpacity onPress={() => handleSaveImage(item.file_url)}>
                             <Image source={{ uri: item.file_url }} style={styles.messageImage} resizeMode="cover" />
                         </TouchableOpacity>
                     )}
-                    {item.file_url && !(item.file_type === 'image' || item.file_type?.startsWith('image/')) && (
+                    {item.file_url && !isImageAttachment(item.file_url, item.file_type) && (
                         <TouchableOpacity 
                             style={styles.fileContainer} 
-                            onPress={() => handleSaveFile(item.file_url, item.content?.replace('Sent a document: ', '') || 'attachment')}
+                            onPress={() => handleOpenFile(item.file_url, getAttachmentFileName(item.file_url, item.content))}
                         >
                             <Ionicons name="document-attach" size={24} color={isMe ? "#FFF" : Colors.light.primary} />
                             <Text style={[styles.fileText, { color: isMe ? "#FFF" : Colors.light.text }]} numberOfLines={1}>
-                                {item.content?.replace('Sent a document: ', '') || 'View Attachment'}
+                                {getAttachmentFileName(item.file_url, item.content)}
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -352,6 +403,15 @@ export default function ConversationScreen() {
                         <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
                             {item.content || item.message_text || (item.file_type === 'image' ? 'Photo' : 'Document')}
                         </Text>
+                        {(!item.file_url && (
+                            String(item.content || item.message_text || '').toLowerCase().includes('attachment') || 
+                            String(item.content || item.message_text || '').toLowerCase().includes('document:') || 
+                            String(item.content || item.message_text || '').toLowerCase().includes('photo')
+                        )) && (
+                            <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, fontStyle: 'italic', fontWeight: 'bold' }}>
+                                ⚠️ Attachment upload failed on sender's device
+                            </Text>
+                        )}
                         <Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText]}>
                             {formatTime(item.created_at)}
                         </Text>
@@ -399,7 +459,7 @@ export default function ConversationScreen() {
                     {attachment && (
                         <View style={styles.previewContainer}>
                             <View style={styles.previewContent}>
-                                {attachment.type === 'image' ? (
+                                {(attachment.type === 'image' || isImageFileName(attachment.name)) ? (
                                     <Image source={{ uri: attachment.uri }} style={styles.previewImage} />
                                 ) : (
                                     <View style={styles.previewFile}>
