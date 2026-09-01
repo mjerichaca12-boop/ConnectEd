@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
+
+const db = supabase;
 import { useActivity } from "../../lib/ActivityContext";
 import {
   Users,
@@ -12,11 +15,8 @@ import {
   Megaphone,
   AlertTriangle,
   Loader2,
-  Zap,
   Sparkles,
-  UserPlus,
-  BarChart2,
-  Shield
+  Key
 } from "lucide-react";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
@@ -27,7 +27,7 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const { activities: contextActivities, logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [teacherOptions, setTeacherOptions] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +35,6 @@ export function AdminDashboard() {
     totalStudents: 0,
     totalTeachers: 0,
     totalSubjects: 0,
-    totalEnrollments: 0,
     activeAnnouncements: 0,
     newStudentsThisMonth: 0,
     newTeachersThisMonth: 0
@@ -45,6 +44,7 @@ export function AdminDashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState("");
+  const [academicSettings, setAcademicSettings] = useState({ schoolYear: "Loading...", quarter: "Loading..." });
 
   const normalizeRecentActivity = (source) => {
     const seenKeys = new Set();
@@ -79,7 +79,7 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("subjects")
       .select("id, code, name")
       .order("code", { ascending: true });
@@ -96,7 +96,7 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("profiles")
       .select("id, first_name, middle_name, last_name, email, role")
       .eq("role", "teacher")
@@ -270,36 +270,17 @@ export function AdminDashboard() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const fetchSubjectsCount = async () => {
-      for (const tableName of subjectTableCandidates) {
-        const result = await supabase.from(tableName).select("id", { count: "exact", head: true });
-        if (!result.error) {
-          return result.count ?? 0;
-        }
-      }
-
-      return 0;
-    };
-
-    const [studentsResult, teachersResult, subjectsCount] = await Promise.all([
+    const [studentsResult, teachersResult, subjectsResult] = await Promise.all([
       supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "student"),
       supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "teacher"),
-      fetchSubjectsCount()
+      supabase.from("subjects").select("id", { count: "exact", head: true })
     ]);
-
-    if (studentsResult.error) {
-      throw new Error(studentsResult.error.message);
-    }
-
-    if (teachersResult.error) {
-      throw new Error(teachersResult.error.message);
-    }
 
     setStats((current) => ({
       ...current,
       totalStudents: studentsResult.count ?? 0,
       totalTeachers: teachersResult.count ?? 0,
-      totalSubjects: subjectsCount
+      totalSubjects: subjectsResult.count ?? 0
     }));
   };
 
@@ -325,6 +306,15 @@ export function AdminDashboard() {
       return;
     }
 
+    const fetchAcademicSettings = async () => {
+      const { data, error } = await supabase.from("academic_settings").select("*").eq("id", 1).maybeSingle();
+      if (!error && data) {
+        setAcademicSettings({ schoolYear: data.current_school_year, quarter: data.current_quarter });
+      } else {
+        setAcademicSettings({ schoolYear: "2026-2027", quarter: "1st Quarter" });
+      }
+    };
+
     const initializeDashboard = async () => {
       try {
         setAdminName(user.name);
@@ -332,7 +322,7 @@ export function AdminDashboard() {
         setActivityLoading(true);
         setStatsError("");
         setActivityError("");
-        await Promise.all([fetchDashboardCounts(), fetchSubjectOptions(), fetchTeacherOptions()]);
+        await Promise.all([fetchDashboardCounts(), fetchSubjectOptions(), fetchTeacherOptions(), fetchAcademicSettings()]);
         await fetchRecentActivity();
       } catch (error) {
         if (isMounted) {
@@ -402,6 +392,17 @@ export function AdminDashboard() {
           .subscribe()
       : null;
 
+    const academicChannel = supabase
+      ? supabase
+          .channel("admin-dashboard-academic")
+          .on("postgres_changes", { event: "*", schema: "public", table: "academic_settings" }, (payload) => {
+            if (payload.new) {
+              setAcademicSettings({ schoolYear: payload.new.current_school_year, quarter: payload.new.current_quarter });
+            }
+          })
+          .subscribe()
+      : null;
+
     return () => {
       isMounted = false;
       if (profilesChannel) {
@@ -409,6 +410,9 @@ export function AdminDashboard() {
       }
       if (subjectChannel) {
         supabase.removeChannel(subjectChannel);
+      }
+      if (academicChannel) {
+        supabase.removeChannel(academicChannel);
       }
     };
   }, [navigate]);
@@ -514,20 +518,7 @@ export function AdminDashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
-          </div>
-          <p className="text-gray-500 text-sm">Loading admin dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
@@ -539,15 +530,11 @@ export function AdminDashboard() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top Bar */}
         <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative shadow-sm">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-gray-900">Admin Dashboard</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) =>
@@ -564,7 +551,7 @@ export function AdminDashboard() {
         {/* Content */}
         <div className="p-6 space-y-6">
           {/* Welcome Section */}
-          <div className="relative rounded-2xl p-8 shadow-sm overflow-hidden bg-white border border-gray-200">
+          <div data-tour="dashboard-overview" className="relative rounded-2xl p-8 shadow-sm overflow-hidden bg-white border border-gray-200">
             {/* Tri-color left accent */}
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
@@ -573,13 +560,29 @@ export function AdminDashboard() {
             </div>
             {/* Subtle glow */}
             <div className="absolute inset-0 bg-gradient-to-r from-green-50 via-blue-50/30 to-red-50/30 pointer-events-none" />
-            <div className="relative pl-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
+            <div className="relative pl-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-green-600 text-xs font-semibold uppercase tracking-widest">Admin Portal</span>
+                </div>
+                <h1 className="text-3xl font-bold mb-1 text-gray-900">{JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {adminName}!</h1>
+                <p className="text-gray-600">ConnectEd system overview and management center</p>
               </div>
-              <h1 className="text-3xl font-bold mb-1 text-gray-900">Welcome back, {adminName}!</h1>
-              <p className="text-gray-600">ConnectEd system overview and management center</p>
+              <div className="flex items-center gap-4 bg-white/50 backdrop-blur border border-green-100 p-4 rounded-xl shadow-sm">
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Academic Year</p>
+                  <p className="text-sm font-bold text-gray-900">{academicSettings.schoolYear}</p>
+                </div>
+                <div className="w-px h-8 bg-green-200"></div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wider mb-1">Current Quarter</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                    <p className="text-sm font-bold text-green-700">{academicSettings.quarter}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -594,7 +597,7 @@ export function AdminDashboard() {
               )}
 
               {/* Primary Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div data-tour="dashboard-stats" className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:border-blue-300 transition-colors">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
@@ -633,7 +636,7 @@ export function AdminDashboard() {
               </div>
 
               {/* Recent Activity */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div data-tour="dashboard-activity" className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-100 bg-gray-50">
                   <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                     <Activity className="w-5 h-5 text-green-500" />
@@ -681,45 +684,10 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-                <h3 className="text-gray-900 font-semibold mb-4 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-green-500" />
-                  Quick Actions
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { icon: UserPlus, label: "Add Student", path: "/admin/students" },
-                    { icon: Megaphone, label: "Post Announcement", path: "/admin/announcements" },
-                    { icon: BarChart2, label: "View Reports", path: "/admin/reports" },
-                    { icon: Shield, label: "Manage Access", path: "/admin/access-requests" },
-                  ].map((action) => {
-                    const ActionIcon = action.icon;
-                    return (
-                      <button
-                        key={action.label}
-                        onClick={() => navigate(action.path)}
-                        className="bg-gray-50 hover:bg-gray-100 border border-gray-200 hover:border-green-300 rounded-xl p-4 text-center transition-all duration-200 cursor-pointer"
-                      >
-                        <ActionIcon className="w-6 h-6 text-green-500 mx-auto mb-2" />
-                        <p className="text-gray-700 text-sm font-medium">{action.label}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+
             </div>
           </div>
         </div>
-        
-        {/* Floating AI Assistant Button */}
-        <button 
-          onClick={() => navigate("/admin/ai-assistant")}
-          className="fixed bottom-6 right-6 z-50 bg-green-600 hover:bg-green-700 text-white rounded-2xl px-4 py-3 flex items-center gap-2 shadow-lg shadow-green-600/20 transition-all"
-        >
-          <Sparkles className="w-5 h-5" />
-          Ask AI Assistant
-        </button>
       </main>
     </div>
   );

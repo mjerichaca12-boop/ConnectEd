@@ -1,10 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useUnreadMessages } from "../../contexts/UnreadMessagesContext";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { supabase, supabaseAdmin } from "@/app/lib/supabaseClient";
+import { adminNotifications } from "@/app/components/NotificationDefault";
+import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
+import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
-const db = supabaseAdmin || supabase;
+const db = supabase;
 import {
   Search,
   ArrowLeft,
@@ -22,11 +26,15 @@ import {
   Shield,
   UserCog,
   Paperclip,
-  Download,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
-const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+
+const sanitizeAttachmentFileName = (fileName) =>
+  String(fileName)
+    .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+    .replace(/_+/g, "_");
 const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
@@ -35,18 +43,21 @@ const FILTERS = [
   { key: "all",       label: "All",        icon: MessageSquare },
   { key: "unread",    label: "Unread",     icon: Circle },
   { key: "read",      label: "Read",       icon: CheckCheck },
-  { key: "mentions",  label: "Mentions",   icon: AtSign },
-  { key: "videomeet", label: "Video Meet", icon: Video },
 ];
 
 export function AdminMessages() {
+  const { unreadConversations, markAsRead } = useUnreadMessages();
+  const getUnreadCount = (conv) => unreadConversations[conv.isGroup ? `group_${conv.id}` : `dm_${conv.id}`] || 0;
   const navigate = useNavigate();
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const adminIdRef = useRef("");
+  const seenMessageIdsRef = useRef(new Set());
+  const conversationsRef = useRef([]);
+  const selectedConvIdRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
@@ -62,7 +73,7 @@ export function AdminMessages() {
   const [allTeachers, setAllTeachers] = useState([]);
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
-  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -75,50 +86,68 @@ export function AdminMessages() {
     // Load all teachers and students from Supabase
     const loadAllUsers = async () => {
       try {
-        const { data, error } = await db
+        const { data: staffData } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role")
-          .order("role", { ascending: true })
+          .select("id, first_name, middle_name, last_name, email, role, status")
+          .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"])
           .limit(100);
-        if (!error && data) {
-          const users = data
-            .filter((row) => row.role && ["teacher", "student", "admin"].includes(row.role))
-            .map((row) => ({
+
+        const { data: studentData } = await db
+          .from("profiles")
+          .select("id, first_name, middle_name, last_name, email, role, status")
+          .in("role", ["student", "Student", "STUDENT"])
+          .limit(200);
+
+        const combined = [...(staffData || []), ...(studentData || [])];
+
+        const users = combined
+          .filter((row) => {
+            if (!row || !row.id) return false;
+            const statusStr = String(row.status || "").trim().toLowerCase();
+            if (statusStr === "disabled" || statusStr === "inactive") return false;
+            const roleStr = String(row.role || "").trim().toLowerCase();
+            return ["student", "teacher", "admin"].includes(roleStr);
+          })
+          .map((row) => {
+            const fullName = [row.first_name, row.middle_name, row.last_name].map(p => String(p || "").trim()).filter(Boolean).join(" ");
+            const fallback = String(row.name || row.full_name || row.display_name || "").trim();
+            const roleStr = String(row.role || "student").trim().toLowerCase();
+            const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
+            return {
               id: String(row.id),
-              name: [row.first_name, row.middle_name, row.last_name].filter(Boolean).join(" ") || "User",
+              name: fullName || fallback || defaultName,
               email: String(row.email || ""),
-              role: String(row.role || "student"),
-            }));
-          setAllTeachers(users);
-          console.log("[AdminMessages] Loaded users:", users.length, users);
-        } else {
-          console.error("[AdminMessages] Error loading users:", error);
-        }
+              role: roleStr,
+            };
+          });
+
+        setAllTeachers(users);
+        console.log("[AdminMessages] Loaded users:", users.length, users);
       } catch (err) {
         console.error("[AdminMessages] Failed to load users:", err);
-        // Fallback to localStorage cache
         const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
         setAllTeachers(cached);
       }
     };
     loadAllUsers();
+  }, [navigate]);
 
-    // Resolve admin's profile id
-    const ensureHardcodedAdminProfileExists = async () => {
-      try {
-        const { data: existingAdmin, error: selectError } = await db
-          .from("profiles")
-          .select("id")
-          .eq("id", HARDCODED_ADMIN_ID)
-          .maybeSingle();
+  const ensureHardcodedAdminProfileExists = async () => {
+    try {
+      const { data: existingAdmin, error: selectError } = await db
+        .from("profiles")
+        .select("id")
+        .eq("id", HARDCODED_ADMIN_ID)
+        .maybeSingle();
 
-        if (selectError) {
-          console.error("[AdminMessages] Failed to check hardcoded admin profile:", selectError);
-          return;
-        }
+      if (selectError) {
+        console.error("[AdminMessages] Failed to check hardcoded admin profile:", selectError);
+        return;
+      }
 
-        if (!existingAdmin) {
-          const { error: insertError } = await db.from("profiles").insert({
+      if (!existingAdmin) {
+        const { error: insertError } = await adminApi.db("profiles", "insert", {
+          payload: {
             id: HARDCODED_ADMIN_ID,
             first_name: "Connected",
             last_name: "Admin",
@@ -127,84 +156,250 @@ export function AdminMessages() {
             status: "Active",
             is_verified: true,
             created_at: new Date().toISOString(),
-          });
-          if (insertError) {
-            console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
-          } else {
-            console.log("[AdminMessages] Hardcoded admin profile created successfully");
           }
+        });
+        if (insertError) {
+          console.error("[AdminMessages] Failed to create hardcoded admin profile:", insertError);
+        } else {
+          console.log("[AdminMessages] Hardcoded admin profile created successfully");
         }
-      } catch (err) {
-        console.error("[AdminMessages] Error ensuring hardcoded admin profile exists:", err);
       }
-    };
+    } catch (err) {
+      console.error("[AdminMessages] Error ensuring hardcoded admin profile exists:", err);
+    }
+  };
 
+  const adminIdsSetRef = useRef(new Set([HARDCODED_ADMIN_ID]));
+
+  useEffect(() => {
     const resolveAdmin = async () => {
       try {
-        console.log("[AdminMessages] Resolving admin for email:", user.email);
+        const userData = localStorage.getItem("currentUser");
+        const user = userData ? JSON.parse(userData) : null;
+        console.log("[AdminMessages] Resolving admin for email:", user?.email);
         
-        // For hardcoded admin, use hardcoded UUID instead of database lookup
-        if (user.email === HARDCODED_ADMIN_EMAIL) {
-          adminIdRef.current = HARDCODED_ADMIN_ID;
-          setAdminId(HARDCODED_ADMIN_ID);
-          await ensureHardcodedAdminProfileExists();
-          await loadConversationsFromDB();
-          return;
-        }
+        await ensureHardcodedAdminProfileExists();
 
-        const { data } = await db
+        // Fetch all admin profile IDs from database
+        const { data: adminProfiles } = await db
           .from("profiles")
           .select("id")
-          .ilike("email", user.email)
-          .maybeSingle();
-        if (data?.id) {
-          const resolvedId = String(data.id);
-          adminIdRef.current = resolvedId;
-          setAdminId(resolvedId);
-          await loadConversationsFromDB();
-        } else {
-          console.warn("[AdminMessages] No admin profile found for email:", user.email);
+          .ilike("role", "admin");
+
+        const allAdminIds = new Set([
+          HARDCODED_ADMIN_ID,
+          ...(adminProfiles || []).map((p) => String(p.id))
+        ]);
+
+        let resolvedId = HARDCODED_ADMIN_ID;
+
+        if (user?.email && user.email !== HARDCODED_ADMIN_EMAIL) {
+          const { data } = await db
+            .from("profiles")
+            .select("id")
+            .ilike("email", user.email)
+            .maybeSingle();
+          if (data?.id) {
+            resolvedId = String(data.id);
+            allAdminIds.add(resolvedId);
+          }
         }
+
+        adminIdRef.current = resolvedId;
+        adminIdsSetRef.current = allAdminIds;
+        setAdminId(resolvedId);
+        await loadConversationsFromDB(allAdminIds);
       } catch (err) {
         console.error("[AdminMessages] Failed to resolve admin id:", err);
       }
     };
     resolveAdmin();
-  }, [navigate]);
+  }, []);
+
+  const saveConversations = (updated) => {
+    const sorted = [...updated].sort(
+      (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+    );
+    setConversations(sorted);
+    try {
+      localStorage.setItem("admin_conversations", JSON.stringify(sorted));
+    } catch(e) {}
+  };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [selectedConvId, conversations]);
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConvId;
+  }, [selectedConvId]);
+
+  const markMessageSeen = useCallback((messageId) => {
+    const id = String(messageId || "").trim();
+    if (id) {
+      seenMessageIdsRef.current.add(id);
+    }
+  }, []);
+
+  const appendIncomingMessage = useCallback((row, currentAdminId) => {
+    if (!row?.id) return false;
+
+    const messageId = String(row.id);
+    if (seenMessageIdsRef.current.has(messageId)) return false;
+
+    const senderId = String(row.sender_id || "");
+    const receiverId = String(row.receiver_id || "");
+    const conversationId = String(row.conversation_id || "").trim();
+    const adminSet = adminIdsSetRef.current || new Set([HARDCODED_ADMIN_ID, currentAdminId]);
+    const isAdminTarget = adminSet.has(senderId) || adminSet.has(receiverId);
+
+    const isRelevant = isAdminTarget ||
+                       (conversationId && conversationsRef.current.some((conversation) => String(conversation.id) === conversationId));
+
+    if (!isRelevant) return false;
+
+    let fileUrl = String(row.file_url || "").trim();
+    let fileName = String(row.file_name || "").trim();
+    let fileType = String(row.file_type || "").trim();
+    let fileSize = Number(row.file_size || 0);
+    let text = String(row.message_text || "").trim();
+
+    if (!fileUrl && row.content) {
+      try {
+        const contentObj = JSON.parse(row.content);
+        if (contentObj.file_url) {
+          fileUrl = String(contentObj.file_url || "").trim();
+          fileName = String(contentObj.file_name || "").trim();
+          fileType = String(contentObj.file_type || "").trim();
+          fileSize = Number(contentObj.file_size || 0);
+          text = String(contentObj.message_text || "").trim();
+        }
+      } catch (error) {
+        text = String(row.content || "").trim();
+      }
+    }
+
+    const senderProfile = allTeachers.find((person) => String(person.id) === senderId);
+    const fileTypeValue = fileType;
+    const isAdminSender = adminSet.has(senderId);
+    const targetConversationId = conversationId || `conv_${isAdminSender ? receiverId : senderId}`;
+    const message = {
+      id: messageId,
+      from: isAdminSender ? "admin" : "other",
+      senderName: isAdminSender ? adminName || "Admin" : senderProfile?.name || "User",
+      text,
+      time: String(row.timestamp || row.created_at || new Date().toISOString()),
+      fileUrl,
+      fileName,
+      fileType: fileTypeValue,
+      fileSize,
+      attachmentKind: fileTypeValue ? (fileTypeValue.startsWith("image/") ? "image" : fileTypeValue.startsWith("video/") ? "video" : "document") : "",
+      attachments: Array.isArray(row?.message_attachments) 
+        ? row.message_attachments.map(a => ({
+            id: a.id,
+            url: a.file_url,
+            name: a.file_name,
+            type: a.file_type,
+            size: a.file_size,
+            kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+          }))
+        : [],
+      isRead: Boolean(row.is_read),
+      isSeen: isAdminSender || Boolean(row.is_read),
+    };
+
+    seenMessageIdsRef.current.add(messageId);
+
+    setConversations((current) => {
+      let updated = false;
+
+      const next = current.map((conversation) => {
+        if (String(conversation.id) !== String(targetConversationId)) return conversation;
+
+        const alreadyExists = (conversation.messages || []).some((item) => String(item.id) === messageId);
+        if (alreadyExists) return conversation;
+
+        updated = true;
+        const isActiveConversation = String(selectedConvIdRef.current || "") === String(conversation.id);
+
+        return {
+          ...conversation,
+          messages: [...(conversation.messages || []), message],
+          lastMessageTime: message.time,
+          unreadCount: isActiveConversation ? 0 : (conversation.unreadCount || 0) + (isAdminSender ? 0 : 1),
+        };
+      });
+
+      if (!updated) {
+        if (conversationId) return current;
+
+        const participantId = isAdminSender ? receiverId : senderId;
+        if (!participantId) return current;
+
+        const fallbackConversation = {
+          id: targetConversationId,
+          participantId,
+          participantName: senderProfile?.name || "User",
+          participantRole: senderProfile?.role || "student",
+          email: senderProfile?.email || "",
+          messages: [message],
+          lastMessageTime: message.time,
+          unreadCount: isAdminSender ? 0 : 1,
+          isVideoMeet: false,
+          isGroup: false,
+        };
+
+        return [fallbackConversation, ...current].sort(
+          (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+        );
+      }
+
+      return next.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+    });
+
+    return true;
+  }, [adminName, allTeachers]);
 
   // Real-time subscription for new messages
   useEffect(() => {
     if (!supabase || !adminId) return;
     const channel = supabase
-      .channel(`admin-messages-${adminId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async () => {
-        console.log("[AdminMessages] New message received, reloading...");
-        await loadConversationsFromDB();
+      .channel(`global-chat-${Math.random().toString(36).substring(7)}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
+        const newMsg = payload.new;
+        if (!newMsg) return;
+        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+
+        // Fetch attachments for real-time messages (not present in the INSERT payload)
+        const { data: attData } = await supabase
+          .from("message_attachments")
+          .select("id, file_url, file_name, file_type, file_size")
+          .eq("message_id", newMsg.id);
+        if (attData && attData.length > 0) {
+          newMsg.message_attachments = attData;
+        }
+
+        appendIncomingMessage(newMsg, currentAdminId);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [adminId]);
+  }, [adminId, appendIncomingMessage]);
 
-  const saveConversations = (updated) => {
-    setConversations(updated);
-  };
-
-  const loadConversationsFromDB = async () => {
+  const loadConversationsFromDB = async (adminIdsSet) => {
     try {
+      const adminSet = adminIdsSet || adminIdsSetRef.current || new Set([HARDCODED_ADMIN_ID]);
       const effectiveAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
-      const adminFilter = `sender_id.eq.${effectiveAdminId},receiver_id.eq.${effectiveAdminId}`;
+      const idsList = Array.from(adminSet);
+      
+      const adminFilter = idsList.flatMap(id => [`sender_id.eq.${id}`, `receiver_id.eq.${id}`]).join(",");
 
       // Load direct messages (exclude group messages)
-      const { data: messageRows, error } = await db
-        .from("messages")
-        .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size")
-        .or(adminFilter)
-        .is("conversation_id", null)
-        .order("created_at", { ascending: true });
+      const { data: messageRows, error } = await adminApi.db("messages", "select", {
+        select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
+        or: adminFilter,
+        is: { column: "conversation_id", value: null },
+        order: { column: "created_at", options: { ascending: true } }
+      });
 
       if (error) {
         console.error("[AdminMessages] Failed to load messages from DB:", error);
@@ -213,8 +408,9 @@ export function AdminMessages() {
       const counterpartIds = [...new Set((messageRows || []).map((row) => {
         const senderId = String(row.sender_id || "");
         const receiverId = String(row.receiver_id || "");
-        return senderId === effectiveAdminId ? receiverId : senderId;
-      }).filter(Boolean))];
+        const isAdminSender = adminSet.has(senderId);
+        return isAdminSender ? receiverId : senderId;
+      }).filter((id) => Boolean(id) && !adminSet.has(id)))];
       
       // Fetch profiles for all counterparts
       const profileMap = new Map();
@@ -242,7 +438,8 @@ export function AdminMessages() {
       (messageRows || []).forEach((row) => {
         const senderId = String(row.sender_id || "");
         const receiverId = String(row.receiver_id || "");
-        const counterpartId = senderId === effectiveAdminId ? receiverId : senderId;
+        const isAdminSender = adminSet.has(senderId);
+        const counterpartId = isAdminSender ? receiverId : senderId;
         if (!counterpartId) return;
         
         const profile = profileMap.get(counterpartId) || { name: "Unknown User", role: "student" };
@@ -300,10 +497,22 @@ export function AdminMessages() {
           fileType: fileType,
           fileSize: fileSize,
           attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
         });
         
         // Update last message time
         conversation.lastMessageTime = row.timestamp || row.created_at || conversation.lastMessageTime;
+        markMessageSeen(row.id);
       });
       
       // Load group conversations
@@ -340,11 +549,11 @@ export function AdminMessages() {
               const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
               
               // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await db
-                .from("messages")
-                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read")
-                .eq("conversation_id", conv.id)
-                .order("created_at", { ascending: true });
+              const { data: groupMessages, error: groupMsgError } = await adminApi.db("messages", "select", {
+                select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
+                eq: { column: "conversation_id", value: conv.id },
+                order: { column: "created_at", options: { ascending: true } }
+              });
 
               console.log("[AdminMessages] Group messages loaded for conversation", conv.id, ":", {
                 count: groupMessages?.length || 0,
@@ -382,6 +591,17 @@ export function AdminMessages() {
                   fileName: fileName,
                   fileType: fileType,
                   attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
                   rawRow: row
                 });
                 return {
@@ -395,10 +615,23 @@ export function AdminMessages() {
                   fileType: fileType,
                   fileSize: fileSize,
                   attachmentKind: attachmentKind,
+            status: String(row?.status || "sent").trim(),
+            attachments: Array.isArray(row?.message_attachments) 
+              ? row.message_attachments.map(a => ({
+                  id: a.id,
+                  url: a.file_url,
+                  name: a.file_name,
+                  type: a.file_type,
+                  size: a.file_size,
+                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+                }))
+              : [],
                   isRead: Boolean(row.is_read),
                   isSeen: String(row.sender_id || "") === currentAdminId,
                 };
               });
+
+              (groupMessages || []).forEach((row) => markMessageSeen(row.id));
 
               groupConversations.push({
                 id: conv.id,
@@ -421,6 +654,18 @@ export function AdminMessages() {
       
       // Combine direct messages and group conversations
       const allConversations = [...conversationsByParticipant.values(), ...groupConversations];
+      
+      try {
+        const local = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
+        local.forEach(lc => {
+          if (!allConversations.find(c => c.id === lc.id || c.participantId === lc.participantId)) {
+            if (lc.messages && lc.messages.length === 0) {
+              allConversations.push(lc);
+            }
+          }
+        });
+      } catch(e) {}
+
       saveConversations(allConversations);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
@@ -445,7 +690,7 @@ export function AdminMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
+      const { error } = await adminApi.db("conversations", "update", { payload: { name: newName }, eq: { column: "id", value: selectedConv.id } });
       if (error) throw error;
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       setConversations(updated);
@@ -483,7 +728,7 @@ export function AdminMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
-      const { error } = await db.from("groupchats").delete().eq("id", selectedConv.id);
+      const { error } = await adminApi.db("conversations", "delete", { eq: { column: "id", value: selectedConv.id } });
       if (error) throw error;
       
       const remaining = conversations.filter((c) => c.id !== selectedConv.id);
@@ -504,6 +749,11 @@ export function AdminMessages() {
   };
 
   const selectedConv = conversations.find((c) => c.id === selectedConvId) || null;
+  const activeMessagesLength = selectedConv?.messages?.length || 0;
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [selectedConvId, activeMessagesLength]);
 
   // ── Filtering logic ──
   const applyFilter = (convList) => {
@@ -520,10 +770,10 @@ export function AdminMessages() {
 
     switch (activeFilter) {
       case "unread":
-        filtered = filtered.filter((c) => (c.unreadCount || 0) > 0);
+        filtered = filtered.filter((c) => (getUnreadCount(c) || 0) > 0);
         break;
       case "read":
-        filtered = filtered.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet);
+        filtered = filtered.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet);
         break;
       case "mentions":
         filtered = filtered.filter((c) =>
@@ -554,7 +804,7 @@ export function AdminMessages() {
       return;
     }
     const newConv = {
-      id: Date.now().toString(),
+      id: `conv_${person.id}`,
       participantId: person.id,
       participantName: person.name,
       participantRole: person.role || "teacher",
@@ -572,116 +822,239 @@ export function AdminMessages() {
   };
 
   const handleAttachmentChange = (e) => {
-    const file = e.target.files?.[0] || null;
-    if (!file) { setAttachmentFile(null); return; }
-    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
-      setPageError("File too large. Max 50 MB.");
-      setAttachmentFile(null);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    if (attachmentFiles.length + files.length > 10) {
+      setPageError("Maximum 10 attachments allowed per message.");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    setAttachmentFile(file);
+    const validFiles = [];
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+        setPageError("One or more files exceed the 10MB limit.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+      validFiles.push(file);
+    }
+    setAttachmentFiles(prev => [...prev, ...validFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setPageError("");
   };
 
-  const clearAttachment = () => {
-    setAttachmentFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const removeAttachment = (index) => {
+    setAttachmentFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-
-    // Validation checks
-    if (!messageInput.trim() && !attachmentFile) {
-      console.warn("[AdminMessages] Cannot send empty message");
-      return;
-    }
-    if (!selectedConv) {
-      console.warn("[AdminMessages] No conversation selected");
-      return;
-    }
-    // Admin ID can be null for the hardcoded login, so we use a fixed sender_id instead
-    
-    const now = new Date().toISOString();
+    const text = String(messageInput || "").trim();
+    const activeConversation = selectedConv;
     const adminSenderId = adminId || HARDCODED_ADMIN_ID;
+    if ((!text && attachmentFiles.length === 0) || !activeConversation || !adminSenderId || !supabase) return;
+
     setIsUploading(true);
 
-    // Upload attachment if present
-    let uploadedFileUrl = "";
-    let uploadedFileName = "";
-    let uploadedFileType = "";
-    let uploadedFileSize = 0;
+    const recipientIds = activeConversation.isGroup
+      ? buildStableIdList(activeConversation.participantIds)
+      : [String(activeConversation.participantId || "").trim()].filter(Boolean);
 
-    if (attachmentFile) {
-      const safeName = String(attachmentFile.name)
-        .replace(/[^a-zA-Z0-9._-]/g, "_")
-        .replace(/_+/g, "_");
-      const filePath = `${adminSenderId}/${selectedConv.participantId || "group"}/${Date.now()}_${safeName}`;
-      const { error: uploadError } = await supabase.storage
-        .from(MESSAGE_ATTACHMENT_BUCKET)
-        .upload(filePath, attachmentFile, { cacheControl: "3600", upsert: false });
+    if (recipientIds.length === 0) { setPageError("No recipients found."); setIsUploading(false); return; }
 
-      if (uploadError) {
-        console.error("[AdminMessages] Attachment upload failed:", uploadError);
-        setPageError("File upload failed. Message not sent.");
-        setIsUploading(false);
-        return;
+    const now = new Date().toISOString();
+    let uploadedAttachments = [];
+
+    if (attachmentFiles.length > 0) {
+      for (const file of attachmentFiles) {
+        if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+          setPageError("File too large. Max 10MB.");
+          setIsUploading(false);
+          return;
+        }
+        const cleanedName = sanitizeAttachmentFileName(file.name);
+        const filePath = `${adminSenderId}/${activeConversation.participantId || "group"}/${Date.now()}_${cleanedName}`;
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+        });
+        const base64File = await toBase64(file);
+        
+        const uploadResult = await adminApi.db("storage", "storage_upload", {
+          payload: {
+            bucket: MESSAGE_ATTACHMENT_BUCKET,
+            path: filePath,
+            base64File,
+            contentType: file.type || "application/octet-stream"
+          }
+        });
+          
+        if (uploadResult.error) {
+          console.error("Upload error:", uploadResult.error);
+          setPageError(`File upload failed: ${uploadResult.error.message}`);
+          setIsUploading(false);
+          return;
+        }
+        
+        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        uploadedAttachments.push({
+          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_name: cleanedName,
+          file_type: String(file.type || "application/octet-stream").trim(),
+          file_size: Number(file.size || 0),
+        });
       }
-
-      const { data: urlData } = supabase.storage
-        .from(MESSAGE_ATTACHMENT_BUCKET)
-        .getPublicUrl(filePath);
-      uploadedFileUrl = String(urlData?.publicUrl || "").trim();
-      uploadedFileName = safeName;
-      uploadedFileType = String(attachmentFile.type || "application/octet-stream");
-      uploadedFileSize = attachmentFile.size;
     }
 
-    const textContent = messageInput.trim() || (attachmentFile ? "Sent an attachment" : "");
-
-    try {
-      const base = {
+    const messageText = text || (uploadedAttachments.length > 0 ? `Sent ${uploadedAttachments.length} attachment(s)` : "");
+    
+    let insertPayload;
+    if (activeConversation.isGroup) {
+      insertPayload = [{
         sender_id: adminSenderId,
-        message_text: textContent,
-        content: textContent,
+        receiver_id: null,
+        conversation_id: activeConversation.id,
+        message_text: messageText,
+        content: messageText,
         timestamp: now,
-        file_url: uploadedFileUrl || null,
-        file_name: uploadedFileName || null,
-        file_type: uploadedFileType || null,
-        file_size: uploadedFileSize || null,
+        status: "sent"
+      }];
+    } else {
+      insertPayload = recipientIds.map((recipientId) => ({
+        sender_id: adminSenderId,
+        receiver_id: recipientId,
+        conversation_id: null,
+        message_text: messageText,
+        content: messageText,
+        timestamp: now,
+        status: "sent"
+      }));
+    }
+
+    let data, error;
+    try {
+      const result = await adminApi.db("messages", "insert", {
+        payload: insertPayload,
+        select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status"
+      });
+      data = result.data;
+      error = result.error;
+    } catch (err) {
+      error = err;
+    }
+
+    if (error) {
+      console.error("[AdminMessages] Supabase insert failed:", JSON.stringify(error, null, 2), error);
+      setPageError(`Failed to send: ${error.message}`);
+    } else if (data && uploadedAttachments.length > 0) {
+      const attachmentPayloads = [];
+      for (const msgRow of data) {
+        for (const att of uploadedAttachments) {
+          attachmentPayloads.push({
+            message_id: msgRow.id,
+            ...att
+          });
+        }
+      }
+      if (attachmentPayloads.length > 0) {
+        await adminApi.db("message_attachments", "insert", { payload: attachmentPayloads });
+      }
+    }
+
+    if (!error) {
+      for (const rId of recipientIds) {
+        if (rId) {
+          try {
+            const { error: notifError } = await adminApi.db("notifications", "insert", {
+              payload: {
+                user_id: rId,
+                title: `New Message from ${adminName || "System Administrator"}`,
+                type: "message",
+                message: messageText.substring(0, 100) || "Sent an attachment",
+                body: messageText.substring(0, 100) || "Sent an attachment",
+                is_read: false,
+                created_at: now
+              }
+            });
+            if (notifError) console.warn("[AdminMessages] Notification insert error:", notifError);
+          } catch (err) {
+            console.warn("[AdminMessages] Notification insert error:", err);
+          }
+        }
+      }
+    }
+
+    if (data && data.length > 0) {
+      const msg = {
+        id: String(data[0].id || `${Date.now()}_${Math.random()}`),
+        from: "admin",
+        senderName: adminName || 'Admin',
+        text: messageText,
+        time: String(data[0].timestamp || now),
+        status: "sent",
+        attachments: uploadedAttachments.map(a => ({
+          id: Math.random().toString(),
+          url: a.file_url,
+          name: a.file_name,
+          type: a.file_type,
+          size: a.file_size,
+          kind: a.file_type.startsWith('image/') ? 'image' : a.file_type.startsWith('video/') ? 'video' : 'document'
+        }))
       };
 
-      const insertPayload = selectedConv.isGroup
-        ? { ...base, receiver_id: null, conversation_id: selectedConv.id }
-        : { ...base, receiver_id: selectedConv.participantId, conversation_id: null };
+      markMessageSeen(msg.id);
 
-      const { data, error } = await db.from("messages").insert(insertPayload).select();
-
-      if (error) {
-        console.error("[AdminMessages] Supabase insert failed:", error);
-        setPageError(`Failed to send: ${error.message}`);
-      } else {
-        console.log("[AdminMessages] Message saved to database:", data);
-        await loadConversationsFromDB();
-      }
-    } catch (err) {
-      console.error("[AdminMessages] Supabase send error:", err);
-      setPageError("Failed to send message. Please try again.");
-    }
-
-    setMessageInput("");
-    clearAttachment();
-    setIsUploading(false);
-  };
-
-  const handleSelectConv = (conv) => {
-    if (conv.unreadCount > 0) {
       const updated = conversations.map((c) =>
-        c.id === conv.id ? { ...c, unreadCount: 0 } : c
+        c.id === activeConversation.id
+          ? { ...c, messages: [...(c.messages || []), msg], lastMessageTime: msg.time }
+          : c
       );
       saveConversations(updated);
     }
+
+    setMessageInput("");
+    setAttachmentFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setPageError("");
+    setIsUploading(false);
+  };
+
+  const handleSelectConv = async (conv) => {
+    markAsRead(conv.isGroup ? conv.id : null, conv.isGroup ? null : conv.participantId);
+    
+    // Local sync: mark all messages as read
+    const updatedConvs = conversations.map(c => {
+      if (c.id === conv.id) {
+        return {
+          ...c,
+          messages: c.messages?.map(m => ({ ...m, isSeen: true, isRead: true })) || []
+        };
+      }
+      return c;
+    });
+    setConversations(updatedConvs);
+    
+    // DB sync: mark messages as read
+    try {
+      const effectiveAdminId = adminId || HARDCODED_ADMIN_ID;
+      if (conv.isGroup) {
+        await adminApi.db("messages", "update", {
+          payload: { is_read: true, status: 'read' },
+          match: { conversation_id: conv.id, is_read: false },
+          neq: { column: "sender_id", value: effectiveAdminId }
+        });
+      } else {
+        await adminApi.db("messages", "update", {
+          payload: { is_read: true, status: 'read' },
+          match: { sender_id: conv.participantId, receiver_id: effectiveAdminId, is_read: false }
+        });
+      }
+    } catch (err) {
+      console.error("[AdminMessages] DB mark read error:", err);
+    }
+    
     setSelectedConvId(conv.id);
     setShowThread(true);
   };
@@ -705,12 +1078,12 @@ export function AdminMessages() {
     }
   );
 
-  const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
   const filterCounts = {
     all: conversations.length,
-    unread: conversations.filter((c) => (c.unreadCount || 0) > 0).length,
-    read: conversations.filter((c) => (c.unreadCount || 0) === 0 && !c.isVideoMeet).length,
+    unread: conversations.filter((c) => (getUnreadCount(c) || 0) > 0).length,
+    read: conversations.filter((c) => (getUnreadCount(c) || 0) === 0 && !c.isVideoMeet).length,
     mentions: conversations.filter((c) =>
       (c.messages || []).some((m) => m.from !== "admin" && m.text?.includes(`@${adminName}`))
     ).length,
@@ -718,7 +1091,7 @@ export function AdminMessages() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
+    <div className="h-screen overflow-hidden bg-gray-50 flex relative">
       {/* Background glow */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[150px]" />
@@ -727,7 +1100,7 @@ export function AdminMessages() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-hidden flex flex-col relative z-10 lg:pl-64">
+      <main className="flex-1 h-full overflow-hidden flex flex-col relative z-10 lg:pl-64">
         {/* Top Bar */}
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -747,9 +1120,9 @@ export function AdminMessages() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex flex-col p-6 gap-4">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
+          <div data-tour="messages-header" className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white/15 rounded-xl">
@@ -764,6 +1137,7 @@ export function AdminMessages() {
                 </div>
               </div>
               <button
+                data-tour="messages-compose-btn"
                 onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
                 className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
               >
@@ -774,9 +1148,9 @@ export function AdminMessages() {
           </div>
 
           {/* Main chat layout */}
-          <div className="flex-1 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
+          <div className="flex-1 min-h-0 overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm grid grid-cols-1 lg:grid-cols-3">
             {/* ══ Left: Conversations List ══ */}
-            <div className={`lg:col-span-1 border-r border-gray-200 flex flex-col ${showThread ? "hidden lg:flex" : "flex"}`}>
+            <div data-tour="messages-threads-list" className={`lg:col-span-1 border-r border-gray-200 flex flex-col min-h-0 h-full overflow-hidden ${showThread ? "hidden lg:flex" : "flex"}`}>
 
               {/* Search + New */}
               <div className="p-3 border-b border-gray-100 flex gap-2">
@@ -811,7 +1185,7 @@ export function AdminMessages() {
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
                           ? "bg-blue-600 text-gray-900 shadow-sm"
-                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-200"
+                          : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                     >
                       <Icon className="w-3 h-3" />
@@ -897,10 +1271,10 @@ export function AdminMessages() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
-                              <p className={`text-sm font-semibold truncate ${conv.unreadCount > 0 ? "text-gray-900" : "text-gray-700"}`}>
+                              <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
                                 {getTimeLabel(conv.lastMessageTime)}
                               </span>
                             </div>
@@ -910,14 +1284,12 @@ export function AdminMessages() {
                                   ? <span className="text-purple-400 font-medium">Video Meet</span>
                                   : conv.participantRole || "Teacher"}
                               </p>
-                              {conv.unreadCount > 0 && (
-                                <span className="w-5 h-5 bg-blue-600 text-gray-900 text-xs rounded-full flex items-center justify-center flex-shrink-0 ml-2">
-                                  {conv.unreadCount}
-                                </span>
+                              {getUnreadCount(conv) > 0 && (
+                                <span className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
-                              <p className="text-xs text-gray-600 truncate mt-0.5">
+                              <p className={`text-xs truncate mt-0.5 ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "text-gray-600"}`}>
                                 {conv.messages[conv.messages.length - 1].text}
                               </p>
                             )}
@@ -931,7 +1303,7 @@ export function AdminMessages() {
             </div>
 
             {/* ══ Right: Chat Window ══ */}
-            <div className={`lg:col-span-2 flex flex-col ${showThread ? "flex" : "hidden lg:flex"}`}>
+            <div className={`lg:col-span-2 flex flex-col min-h-0 h-full overflow-hidden ${showThread ? "flex" : "hidden lg:flex"}`}>
               {selectedConv ? (
                 <>
                   {/* Chat Header */}
@@ -1009,71 +1381,45 @@ export function AdminMessages() {
                         <p className="text-sm text-gray-500">No messages yet. Start the conversation!</p>
                       </div>
                     ) : (
-                      (selectedConv.messages || []).map((msg) => {
-                        const isAdmin = msg.from === "admin";
-                        const hasMention = !isAdmin && msg.text?.includes(`@${adminName}`);
-                        return (
-                          <div key={msg.id} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
-                            <div
-                              className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                      (selectedConv.messages || []).map((msg, msgIndex) => {
+                          const isAdmin = msg.from === "admin";
+                          const hasMention = !isAdmin && msg.text?.includes(`@${adminName}`);
+                          return (
+                            <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
+                              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                                 isAdmin
-                                  ? "bg-blue-600 text-gray-900 rounded-br-sm"
+                                  ? "bg-blue-600 text-white rounded-br-sm"
                                   : hasMention
-                                  ? "bg-yellow-500/15 border border-yellow-500/30 text-gray-900 rounded-bl-sm"
-                                  : "bg-gray-50 text-gray-900 rounded-bl-sm"
-                              }`}
-                            >
-                              {hasMention && (
-                                <p className="text-[10px] text-yellow-400 font-semibold mb-1 flex items-center gap-1">
-                                  <AtSign className="w-2.5 h-2.5" /> Mentioned you
-                                </p>
-                              )}
-                              <p className="leading-relaxed">{msg.text}</p>
-                              {msg.fileUrl && (
-                                <div className="mt-2">
-                                  {msg.attachmentKind === "image" ? (
-                                    <img
-                                      src={msg.fileUrl}
-                                      alt={msg.fileName || "attachment"}
-                                      className="max-w-full rounded-lg border border-white/20"
-                                      style={{ maxHeight: "200px" }}
-                                    />
-                                  ) : msg.attachmentKind === "video" ? (
-                                    <video
-                                      controls
-                                      src={msg.fileUrl}
-                                      className="max-w-full rounded-lg"
-                                      style={{ maxHeight: "200px" }}
-                                    />
-                                  ) : (
-                                    <a
-                                      href={msg.fileUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-                                        isAdmin
-                                          ? "bg-blue-500/30 text-blue-100 hover:bg-blue-500/40"
-                                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                      }`}
-                                    >
-                                      <Download className="w-4 h-4 flex-shrink-0" />
-                                      <span className="truncate max-w-[200px]">{msg.fileName || "Download file"}</span>
-                                      {msg.fileSize > 0 && (
-                                        <span className="text-xs opacity-70 flex-shrink-0">
-                                          ({(msg.fileSize / 1024).toFixed(1)} KB)
-                                        </span>
+                                  ? "bg-yellow-50 border border-yellow-200 text-gray-900 rounded-bl-sm"
+                                  : "bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm"
+                              }`}>
+                                {hasMention && (
+                                  <p className="text-[10px] text-yellow-600 font-semibold mb-1 flex items-center gap-1">
+                                    <AtSign className="w-2.5 h-2.5" /> Mentioned you
+                                  </p>
+                                )}
+                                {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
+                                    <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
+                                  )}
+                                {msg.text && <p className="leading-relaxed">{msg.text}</p>}
+                                <div className={`flex items-center justify-end gap-1 mt-1`}>
+                                  <p className={`text-xs ${isAdmin ? "text-blue-100" : "text-gray-500"}`}>
+                                    {getTimeLabel(msg.time)}
+                                  </p>
+                                  {isAdmin && (
+                                    <span className="flex-shrink-0" title={msg.isSeen ? "Seen" : "Sent"}>
+                                      {msg.isSeen ? (
+                                        <CheckCheck className="w-3 h-3 text-blue-200" />
+                                      ) : (
+                                        <CheckCheck className="w-3 h-3 text-blue-300/50" />
                                       )}
-                                    </a>
+                                    </span>
                                   )}
                                 </div>
-                              )}
-                              <p className={`text-xs mt-1 ${isAdmin ? "text-blue-100" : "text-gray-600"} text-right`}>
-                                {getTimeLabel(msg.time)}
-                              </p>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })
                     )}
                     <div ref={bottomRef} />
                   </div>
@@ -1086,24 +1432,19 @@ export function AdminMessages() {
                     {pageError && (
                       <p className="text-xs text-red-500 mb-2">{pageError}</p>
                     )}
-                    {attachmentFile && (
-                      <div className="flex items-center justify-between gap-3 px-3 py-2 mb-2 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Paperclip className="w-4 h-4 flex-shrink-0 text-blue-500" />
-                          <span className="truncate">{attachmentFile.name}</span>
-                          <span className="text-xs text-blue-400 flex-shrink-0">
-                            ({(attachmentFile.size / 1024).toFixed(1)} KB)
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={clearAttachment}
-                          className="text-blue-400 hover:text-red-500 flex-shrink-0"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
+                    {attachmentFiles.length > 0 && (
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-2">
+              {attachmentFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-md border border-gray-200 shadow-sm">
+                  <Paperclip className="w-4 h-4 text-emerald-500" />
+                  <span className="text-sm text-gray-700 max-w-[150px] truncate">{file.name}</span>
+                  <button type="button" onClick={() => removeAttachment(idx)} className="p-1 hover:bg-gray-100 rounded-full text-gray-500">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
                     <div className="flex items-center gap-3">
                       <label className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer flex-shrink-0 group">
                         <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
@@ -1126,7 +1467,7 @@ export function AdminMessages() {
                       />
                       <button
                         type="submit"
-                        disabled={(!messageInput.trim() && !attachmentFile) || isUploading}
+                        disabled={(!messageInput.trim() && attachmentFiles.length === 0) || isUploading}
                         className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                       >
                         {isUploading

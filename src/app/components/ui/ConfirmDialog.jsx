@@ -6,9 +6,11 @@ function ConfirmDialog({
   onConfirm,
   title,
   message,
+  description,
   confirmText = "Confirm",
   cancelText = "Cancel",
-  type = "warning"
+  type = "warning",
+  variant
 }) {
   if (!isOpen) return null;
 
@@ -17,9 +19,12 @@ function ConfirmDialog({
     onClose();
   };
 
-  const iconColor = type === "danger" || type === "warning" ? "text-red-500" : "text-green-500";
-  const iconBg = type === "danger" || type === "warning" ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200";
-  const confirmButtonClass = type === "danger" || type === "warning"
+  const activeType = variant || type;
+  const activeMessage = message || description;
+
+  const iconColor = activeType === "danger" || activeType === "warning" ? "text-red-500" : "text-green-500";
+  const iconBg = activeType === "danger" || activeType === "warning" ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200";
+  const confirmButtonClass = activeType === "danger" || activeType === "warning"
     ? "bg-red-600 hover:bg-red-700 text-white"
     : "bg-green-600 hover:bg-green-700 text-white";
 
@@ -46,20 +51,20 @@ function ConfirmDialog({
 
         {/* Body */}
         <div className="px-6 py-5 flex-1 overflow-y-auto">
-          <p className="text-sm text-gray-700 leading-relaxed">{message}</p>
+          <p className="text-sm text-gray-700 leading-relaxed">{activeMessage}</p>
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-650 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
           >
             {cancelText}
           </button>
           <button
             onClick={handleConfirm}
-            className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors shadow-sm ${confirmButtonClass}`}
+            className={`px-4 py-2 text-sm font-semibold rounded-xl transition-colors shadow-sm cursor-pointer ${confirmButtonClass}`}
           >
             {confirmText}
           </button>

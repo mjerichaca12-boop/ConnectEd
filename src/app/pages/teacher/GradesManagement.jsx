@@ -7,6 +7,11 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { StudentGradebookModal } from "./components/StudentGradebookModal";
+import { useAcademic } from "@/app/context/AcademicContext";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { useModuleTour } from "@/app/context/ModuleTourContext";
+import { useTeacherTour } from "@/app/context/TeacherTourContext";
 import * as LucideIcons from "lucide-react";
 import {
   createDefaultGradeRecord,
@@ -16,18 +21,26 @@ import {
   resolveTeacherIdByEmail
 } from "@/app/lib/teacherHelpers";
 import {
-  TrendingUp,
-  TrendingDown,
+  DEPED_DEFAULT_GRADE_SETTINGS,
+  DEPED_SUBJECT_CATEGORIES,
+  computeDepEdStudentComputation,
+  inferAssessmentComponent,
+  normalizeSubjectCategory,
+  resolveQuarterFromTerm,
+  serializeDepEdComputation,
+} from "@/app/lib/depedGrading";
+import {
   Save,
   Filter,
   Search,
   CheckCircle,
   Award,
-  Target,
   Users,
   Download,
   ChevronDown,
   ChevronUp,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 
 const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
@@ -43,13 +56,14 @@ const exportToExcel = (studentGrades, className) => {
     [`Class: ${className}`],
     [`Generated: ${new Date().toLocaleString()}`],
     [],
-    ["Student Name", "LRN", "Term 1", "Term 2", "Term 3", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
+    ["Student Name", "LRN", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
     ...studentGrades.map((s) => [
       s.studentName,
       s.studentId,
       s.term1Grade,
       s.term2Grade,
       s.term3Grade,
+      s.term4Grade,
       s.quizAverage,
       s.activityGrade,
       s.assignmentGrade,
@@ -77,8 +91,18 @@ const exportToExcel = (studentGrades, className) => {
 const normalizeAssessment = (row) => {
   const assessmentType = String(row?.assessment_type || row?.type || row?.task_type || "assignment").trim().toLowerCase();
   const designation = String(row?.designation || (assessmentType === 'quiz' ? 'Quiz' : 'Activity')).trim();
-  const term = String(row?.term || "Term 1").trim();
+  const term = String(row?.term || "1st Quarter").trim();
   const maxPoints = Number(row?.max_points ?? row?.total_points ?? row?.maxPoints ?? 100) || 100;
+  const gradingComponent = inferAssessmentComponent({
+    gradingComponent: row?.grading_component,
+    grading_component: row?.grading_component,
+    component: row?.component,
+    designation,
+    type: assessmentType,
+    assessment_type: assessmentType,
+    title: row?.title,
+  });
+  const gradingTerm = term;
   
   // Parse attachments
   const attachments = [];
@@ -97,6 +121,8 @@ const normalizeAssessment = (row) => {
     type: assessmentType || "assignment",
     designation: designation,
     term: term,
+    gradingTerm,
+    gradingComponent,
     dueDate: String(row?.due_date || row?.dueDate || row?.deadline || "").trim(),
     maxPoints: Math.max(1, maxPoints),
     attachments: attachments,
@@ -224,6 +250,7 @@ const calculateStudentAssessmentAverages = (studentId, assessmentGradesMap, asse
 };
 
 const normalizeSubmission = (row) => ({
+  id: row?.id ? String(row.id).trim() : undefined,
   assessmentId: String(row?.assessment_id || "").trim(),
   studentId: String(row?.student_id || "").trim(),
   responseText: String(row?.response_text || row?.answer_text || row?.response || "").trim(),
@@ -231,27 +258,229 @@ const normalizeSubmission = (row) => ({
   fileName: String(row?.file_name || "").trim(),
   filePath: String(row?.file_path || "").trim(),
   submittedAt: row?.submitted_at || row?.updated_at || row?.created_at || null,
+  status: String(row?.status || "Submitted").trim(),
 });
 
 /* ΓöÇΓöÇΓöÇ component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
+const MOCK_DEMO_STUDENTS = [
+  {
+    id: "demo-stu-1",
+    studentName: "Juan Dela Cruz",
+    studentId: "108234910012",
+    quarter1Grade: 88,
+    quarter2Grade: 91,
+    quarter3Grade: 90,
+    quarter4Grade: 93,
+    overallGrade: 91,
+    quizAverage: 92,
+    activityGrade: 89,
+    assignmentGrade: 90,
+    examGrade: 91,
+    remarks: "Passed (Promoted)",
+  },
+  {
+    id: "demo-stu-2",
+    studentName: "Maria Santos",
+    studentId: "108234910013",
+    quarter1Grade: 94,
+    quarter2Grade: 96,
+    quarter3Grade: 95,
+    quarter4Grade: 97,
+    overallGrade: 96,
+    quizAverage: 96,
+    activityGrade: 95,
+    assignmentGrade: 96,
+    examGrade: 96,
+    remarks: "Passed (With Honors)",
+  },
+  {
+    id: "demo-stu-3",
+    studentName: "John Reyes",
+    studentId: "108234910014",
+    quarter1Grade: 84,
+    quarter2Grade: 86,
+    quarter3Grade: 88,
+    quarter4Grade: 89,
+    overallGrade: 87,
+    quizAverage: 86,
+    activityGrade: 85,
+    assignmentGrade: 88,
+    examGrade: 87,
+    remarks: "Passed",
+  },
+  {
+    id: "demo-stu-4",
+    studentName: "Angelica Gonzales",
+    studentId: "108234910015",
+    quarter1Grade: 92,
+    quarter2Grade: 93,
+    quarter3Grade: 94,
+    quarter4Grade: 95,
+    overallGrade: 94,
+    quizAverage: 94,
+    activityGrade: 93,
+    assignmentGrade: 94,
+    examGrade: 95,
+    remarks: "Passed (With Honors)",
+  },
+  {
+    id: "demo-stu-5",
+    studentName: "Carlos Mendoza",
+    studentId: "108234910016",
+    quarter1Grade: 76,
+    quarter2Grade: 78,
+    quarter3Grade: 80,
+    quarter4Grade: 82,
+    overallGrade: 79,
+    quizAverage: 78,
+    activityGrade: 80,
+    assignmentGrade: 77,
+    examGrade: 81,
+    remarks: "Passed",
+  },
+];
+
+const MOCK_DEMO_ASSESSMENTS = [
+  {
+    id: "demo-asg-1",
+    title: "Written Work 1 - Pag-aaral ng mga Kontinente",
+    displayName: "Written Work 1 - Pag-aaral ng mga Kontinente",
+    type: "assignment",
+    designation: "Assignment",
+    totalPoints: 30,
+    maxScore: 30,
+    dueDate: "2026-08-15",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-quiz-1",
+    title: "Quiz 1 - Kasaysayan at Lipunan",
+    displayName: "Quiz 1 - Kasaysayan at Lipunan",
+    type: "quiz",
+    designation: "Quiz",
+    totalPoints: 20,
+    maxScore: 20,
+    dueDate: "2026-08-20",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-act-1",
+    title: "Performance Task - Environmental Action Plan Poster",
+    displayName: "Performance Task - Environmental Action Plan Poster",
+    type: "activity",
+    designation: "Activity",
+    totalPoints: 50,
+    maxScore: 50,
+    dueDate: "2026-08-28",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+  {
+    id: "demo-exam-1",
+    title: "1st Periodical Examination - AP10",
+    displayName: "1st Periodical Examination - AP10",
+    type: "exam",
+    designation: "Exam",
+    totalPoints: 100,
+    maxScore: 100,
+    dueDate: "2026-09-10",
+    schoolYear: "2026-2027",
+    term: "1st Quarter",
+  },
+];
+
+const MOCK_DEMO_GRADES_MAP = {
+  "demo-asg-1": {
+    "demo-stu-1": 27,
+    "demo-stu-2": 29,
+    "demo-stu-3": 25,
+    "demo-stu-4": 28,
+    "demo-stu-5": 23,
+  },
+  "demo-quiz-1": {
+    "demo-stu-1": 18,
+    "demo-stu-2": 20,
+    "demo-stu-3": 16,
+    "demo-stu-4": 19,
+    "demo-stu-5": 14,
+  },
+  "demo-act-1": {
+    "demo-stu-1": 45,
+    "demo-stu-2": 48,
+    "demo-stu-3": 42,
+    "demo-stu-4": 47,
+    "demo-stu-5": 38,
+  },
+  "demo-exam-1": {
+    "demo-stu-1": 91,
+    "demo-stu-2": 96,
+    "demo-stu-3": 87,
+    "demo-stu-4": 95,
+    "demo-stu-5": 81,
+  },
+};
+
+const MOCK_DEMO_STATUS_MAP = {
+  "demo-asg-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-quiz-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-act-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+  "demo-exam-1": { "demo-stu-1": "Returned", "demo-stu-2": "Returned", "demo-stu-3": "Returned", "demo-stu-4": "Returned", "demo-stu-5": "Returned" },
+};
+
 function GradesManagement() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isDemoMode, mockData } = useTourPreview();
+
+  let moduleTour = null;
+  let teacherTour = null;
+  try { moduleTour = useModuleTour(); } catch {}
+  try { teacherTour = useTeacherTour(); } catch {}
+
+  const activeStepId = moduleTour?.currentStep?.id || teacherTour?.currentStep?.id || "";
+  const isClassSelectStepActive = activeStepId === "grades-class-select" || activeStepId === "teacher-grades-class-select";
+
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
+  const [isSwitchingTerm, setIsSwitchingTerm] = useState(false);
   const [teacherId, setTeacherId] = useState("");
   const [classes, setClasses] = useState([]);
+  const activeClassesList = isDemoMode ? mockData.classes : classes;
   const [selectedClass, setSelectedClass] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [gradingSettingsByCategory, setGradingSettingsByCategory] = useState(DEPED_DEFAULT_GRADE_SETTINGS);
   const [studentGrades, setStudentGrades] = useState([]);
   const [gradesCache, setGradesCache] = useState({});
   const gradesCacheRef = useRef({});
+  const gradingSettingsRef = useRef(DEPED_DEFAULT_GRADE_SETTINGS);
   const [activeView, setActiveView] = useState("all"); // "all" | "passed" | "failed"
-  const [activeTerm, setActiveTerm] = useState("all"); // "all" | "term1" | "term2" | "term3"
+  const [activeTerm, setActiveTerm] = useState("all"); // "all" | "term1" | "term2" | "term3" | "term4"
+  const hasInitializedTerm = useRef(false);
+  const { activeSchoolYear, activeQuarter, viewMode, setViewMode } = useAcademic();
+  const [academicSettings, setAcademicSettings] = useState({ schoolYear: "2026-2027", quarter: "1st Quarter" });
+
+  useEffect(() => {
+    setAcademicSettings({ schoolYear: activeSchoolYear, quarter: activeQuarter });
+    
+    // Auto-select term based on activeQuarter ONLY once
+    if (activeQuarter && !hasInitializedTerm.current) {
+      const quarterMap = {
+        "1st Quarter": "term1",
+        "2nd Quarter": "term2",
+        "3rd Quarter": "term3",
+        "4th Quarter": "term4"
+      };
+      setActiveTerm(quarterMap[activeQuarter] || "all");
+      hasInitializedTerm.current = true;
+    }
+  }, [activeSchoolYear, activeQuarter]);
+
   const [activeDesignation, setActiveDesignation] = useState("all"); // "all" | "Quiz" | "Activity" | "Assignment" | "Exam"
   const [assessmentItems, setAssessmentItems] = useState([]);
   const [assessmentGradesMap, setAssessmentGradesMap] = useState({});
@@ -262,15 +491,52 @@ function GradesManagement() {
   const [hasViewedSubmission, setHasViewedSubmission] = useState(false);
   const [assessmentSubmissionsMap, setAssessmentSubmissionsMap] = useState({});
   const [submittedStudentProfiles, setSubmittedStudentProfiles] = useState({});
+  const assessmentSubmissionsMapRef = useRef({});
+  const submittedStudentProfilesRef = useRef({});
   const [assessmentStatusMap, setAssessmentStatusMap] = useState({});
   const [assessmentFeedbackMap, setAssessmentFeedbackMap] = useState({});
+  const [submissionActionStateMap, setSubmissionActionStateMap] = useState({});
+  const assessmentGradesMapRef = useRef({});
+  const assessmentItemsRef = useRef([]);
   const [autoSaveStateMap, setAutoSaveStateMap] = useState({});
   const [autoSaveMessage, setAutoSaveMessage] = useState("");
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState(null);
   const autoSaveTimersRef = useRef({});
 
   useEffect(() => {
     gradesCacheRef.current = gradesCache;
   }, [gradesCache]);
+
+  useEffect(() => {
+    gradingSettingsRef.current = gradingSettingsByCategory;
+  }, [gradingSettingsByCategory]);
+
+  useEffect(() => {
+    assessmentGradesMapRef.current = assessmentGradesMap;
+  }, [assessmentGradesMap]);
+
+  useEffect(() => {
+    assessmentSubmissionsMapRef.current = assessmentSubmissionsMap;
+  }, [assessmentSubmissionsMap]);
+
+  useEffect(() => {
+    submittedStudentProfilesRef.current = submittedStudentProfiles;
+  }, [submittedStudentProfiles]);
+
+  useEffect(() => {
+    assessmentItemsRef.current = assessmentItems;
+  }, [assessmentItems]);
+
+  const mergeNestedMaps = (currentMap, incomingMap) => {
+    const next = { ...(currentMap || {}) };
+    Object.entries(incomingMap || {}).forEach(([outerKey, value]) => {
+      next[outerKey] = {
+        ...(next[outerKey] || {}),
+        ...(value || {}),
+      };
+    });
+    return next;
+  };
 
   const requestedContext = useMemo(() => {
     const query = new URLSearchParams(location.search || "");
@@ -287,7 +553,7 @@ function GradesManagement() {
     if (!supabase || !id) { setClasses([]); return; }
     const { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section")
+      .select("id, code, name, section, grade_level, subject_category")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
     if (error) { console.error("Failed to load classes:", error); setClasses([]); return; }
@@ -295,42 +561,189 @@ function GradesManagement() {
       id: String(item.id),
       code: String(item.code || "").trim(),
       name: String(item.name || "Untitled Subject").trim(),
-      section: String(item.section || "").trim() || "No section assigned",
+      section: String(item.section || item.grade_level || "").trim() || "No section assigned",
+      subjectCategory: normalizeSubjectCategory(item.subject_category || "", item.name || item.code || ""),
     })));
   }, []);
 
-  const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId) => {
-    if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
-
-    let tableName = "";
-    for (const t of ASSIGNMENT_TABLE_CANDIDATES) {
-      const { error } = await supabase.from(t).select("id", { count: "exact", head: true });
-      if (!error) { tableName = t; break; }
+  const fetchGradingSettings = useCallback(async () => {
+    if (!supabase) {
+      setGradingSettingsByCategory(DEPED_DEFAULT_GRADE_SETTINGS);
+      return;
     }
 
-    if (!tableName) {
-      setAssessmentItems([]);
-      return [];
+    const { data, error } = await supabase
+      .from("grading_settings")
+      .select("subject_category, written_works_weight, performance_tasks_weight, written_works_enabled, performance_tasks_enabled");
+
+    if (error || !data) {
+      console.warn("Failed to load grading settings, falling back to defaults:", error);
+      setGradingSettingsByCategory(DEPED_DEFAULT_GRADE_SETTINGS);
+      return;
     }
 
-    const { data, error } = await supabase.from(tableName).select("*");
-    if (error) {
-      console.error("Failed to load assessments:", error);
-      setAssessmentItems([]);
-      return [];
-    }
-
-    const rows = (data ?? []).filter((row) => {
-      const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-      const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
-      const classMatches = !classId || !rowCourseId || rowCourseId === classId;
-      const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
-      return classMatches && teacherMatches;
+    const mapped = { ...DEPED_DEFAULT_GRADE_SETTINGS };
+    (data ?? []).forEach((row) => {
+      const category = normalizeSubjectCategory(row.subject_category || "", row.subject_category || "");
+      mapped[category] = {
+        writtenWorksWeight: Number(row.written_works_weight ?? 0) || 0,
+        performanceTasksWeight: Number(row.performance_tasks_weight ?? 0) || 0,
+        writtenWorksEnabled: row.written_works_enabled !== false,
+        performanceTasksEnabled: row.performance_tasks_enabled !== false,
+      };
     });
 
-    const mapped = rows
-      .map(normalizeAssessment)
-      .filter((assessment) => assessment.id)
+    setGradingSettingsByCategory(mapped);
+  }, []);
+
+  const fetchAssessmentsForClass = useCallback(async (currentTeacherId, classId, schoolYear, quarter) => {
+    if (isDemoMode) {
+      return MOCK_DEMO_ASSESSMENTS;
+    }
+    if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
+
+    const allAssessments = [];
+
+    // 1. Try to fetch from assignments_activity
+    try {
+      let query = supabase
+        .from("assignments_activity")
+        .select("*")
+        .eq("school_year", schoolYear);
+      if (quarter) {
+        query = query.eq("term", quarter);
+      }
+      const { data, error } = await query;
+      if (!error && data) {
+        const rows = (data ?? []).filter((row) => {
+          const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
+          const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
+          const classMatches = !classId || !rowCourseId || rowCourseId === classId;
+          const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
+          return classMatches && teacherMatches;
+        });
+        rows.forEach(row => {
+          allAssessments.push(normalizeAssessment(row));
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to fetch from assignments_activity:", e);
+    }
+
+    // 2. Fetch lessons of this class to resolve LMS assignments and quizzes
+    let lessonIds = [];
+    try {
+      let lQuery = supabase
+        .from("lessons")
+        .select("id")
+        .eq("subject_id", classId)
+        .eq("school_year", schoolYear);
+      if (quarter) {
+        lQuery = lQuery.eq("term", quarter);
+      }
+      const { data: lessons, error: lessonsError } = await lQuery;
+      
+      if (!lessonsError && lessons) {
+        lessonIds = lessons.map(l => l.id);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch lessons:", e);
+    }
+
+    if (lessonIds.length > 0) {
+      // 3. Try to fetch LMS assignments + their lesson_activities category
+      try {
+        let asgQuery = supabase
+          .from("assignments")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (quarter) {
+          asgQuery = asgQuery.eq("term", quarter);
+        }
+        
+        const { data, error } = await asgQuery;
+        
+        if (!error && data && data.length > 0) {
+          // Fetch lesson_activities to determine activity_type (Assignment vs Assessment/Seatwork)
+          const assignmentIds = data.map(r => r.id);
+          let activityTypeMap = {};
+          try {
+            const { data: laData, error: laError } = await supabase
+              .from("lesson_activities")
+              .select("activity_id, activity_type")
+              .in("activity_id", assignmentIds);
+            if (!laError && laData) {
+              laData.forEach(la => {
+                activityTypeMap[la.activity_id] = la.activity_type;
+              });
+            }
+          } catch (e) {
+            console.warn("Failed to fetch lesson_activities for assignments:", e);
+          }
+
+          data.forEach(row => {
+            const normalized = normalizeAssessment(row);
+            const isQuiz = String(row.assignment_type || "").trim().toLowerCase() === "quiz" || String(row.title || "").toLowerCase().includes("quiz");
+            // Use lesson_activities.activity_type to determine grading category
+            const laType = activityTypeMap[row.id]; // "Assignment", "Assessment", "Activity", etc.
+            let resolvedType;
+            if (isQuiz) {
+              resolvedType = "quiz";
+            } else if (laType === "Assessment" || laType === "Activity") {
+              // Seatwork / Activity → maps to "activity" grading component
+              resolvedType = "activity";
+            } else {
+              resolvedType = "assignment";
+            }
+            const resolvedDesignation = isQuiz ? "Quiz" : (resolvedType === "activity" ? "Activity" : "Assignment");
+            allAssessments.push({
+              ...normalized,
+              type: resolvedType,
+              designation: resolvedDesignation,
+            });
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS assignments:", e);
+      }
+
+      // 4. Try to fetch LMS quizzes
+      try {
+        let quizQuery = supabase
+          .from("quizzes")
+          .select("*")
+          .in("lesson_id", lessonIds);
+          
+        if (quarter) {
+          quizQuery = quizQuery.eq("term", quarter);
+        }
+        
+        const { data, error } = await quizQuery;
+        
+        if (!error && data) {
+          data.forEach(row => {
+            allAssessments.push(normalizeAssessment({
+              ...row,
+              assessment_type: "quiz",
+              designation: "Quiz"
+            }));
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS quizzes:", e);
+      }
+    }
+
+    // Deduplicate assessments by ID
+    const uniqueMap = new Map();
+    allAssessments.forEach(item => {
+      if (item.id) {
+        uniqueMap.set(item.id, item);
+      }
+    });
+
+    const mapped = Array.from(uniqueMap.values())
       .sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
 
     // Add quiz ordering for dynamic naming
@@ -352,20 +765,15 @@ function GradesManagement() {
       };
     });
 
-    setAssessmentItems(assessmentsWithNames);
-    setExpandedAssessments((prev) => {
-      const next = { ...prev };
-      assessmentsWithNames.forEach((assessment) => {
-        if (typeof next[assessment.id] === "undefined") {
-          next[assessment.id] = true;
-        }
-      });
-      return next;
-    });
     return assessmentsWithNames;
   }, []);
 
   const fetchAssessmentGrades = useCallback(async (currentTeacherId, classId, assessments, studentIds) => {
+    if (isDemoMode) {
+      setAssessmentGradesMap(MOCK_DEMO_GRADES_MAP);
+      setAssessmentStatusMap(MOCK_DEMO_STATUS_MAP);
+      return;
+    }
     if (!supabase || !currentTeacherId || !classId || assessments.length === 0 || studentIds.length === 0) {
       setAssessmentGradesMap({});
       setAssessmentStatusMap({});
@@ -376,7 +784,7 @@ function GradesManagement() {
 
     let gradeResult = await supabase
       .from("teacher_assessment_grades")
-      .select("assessment_id, student_id, grade_value, status, feedback")
+      .select("assessment_id, student_id, grade_value, status, feedback, grading_component, grading_term")
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId)
       .in("assessment_id", assessmentIds)
@@ -401,36 +809,42 @@ function GradesManagement() {
     }
 
     const assessmentLookup = new Map(assessments.map((item) => [item.id, item]));
-    const mapped = {};
-    const statusMapped = {};
+    const gradesMap = {};
+    const statusMap = {};
     const feedbackMapped = {};
+
     (data ?? []).forEach((row) => {
-      const assessmentId = String(row.assessment_id || "");
-      const studentId = String(row.student_id || "");
-      if (!assessmentId || !studentId) return;
-      const assessment = assessmentLookup.get(assessmentId);
-      const score = clampAssessmentScore(row.grade_value, assessment?.maxPoints ?? 100);
-      if (!mapped[assessmentId]) mapped[assessmentId] = {};
-      mapped[assessmentId][studentId] = score;
+      const aid = String(row.assessment_id || "").trim();
+      const sid = String(row.student_id || "").trim();
+      if (!aid || !sid) return;
 
-      if (!statusMapped[assessmentId]) statusMapped[assessmentId] = {};
-      const rowStatus = String(row.status || row.grading_status || "").trim();
-      statusMapped[assessmentId][studentId] = rowStatus || (typeof score === "number" ? "Graded" : "Pending");
+      if (!gradesMap[aid]) gradesMap[aid] = {};
+      gradesMap[aid][sid] = typeof row.grade_value === "number" ? row.grade_value : Number(row.grade_value || 0);
+      if (!gradesMap[aid].meta) gradesMap[aid].meta = {};
+      gradesMap[aid].meta[sid] = {
+        gradingComponent: String(row.grading_component || "").trim(),
+        gradingTerm: String(row.grading_term || "").trim(),
+      };
 
-      if (!feedbackMapped[assessmentId]) feedbackMapped[assessmentId] = {};
-      feedbackMapped[assessmentId][studentId] = String(row.feedback || "").trim();
+      if (!statusMap[aid]) statusMap[aid] = {};
+      statusMap[aid][sid] = String(row.status || "Pending");
+
+      const fb = String(row.feedback || row.feedback_text || row.comments || "").trim();
+      if (fb) {
+        if (!feedbackMapped[aid]) feedbackMapped[aid] = {};
+        feedbackMapped[aid][sid] = fb;
+      }
     });
 
-    setAssessmentGradesMap(mapped);
-    setAssessmentStatusMap(statusMapped);
-    setAssessmentFeedbackMap(feedbackMapped);
+    setAssessmentGradesMap((prev) => mergeNestedMaps(prev, gradesMap));
+    setAssessmentStatusMap((prev) => mergeNestedMaps(prev, statusMap));
+    setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMapped));
   }, []);
 
   const fetchAssessmentSubmissions = useCallback(async (currentTeacherId, classId, assessments, enrolledStudentIds) => {
     if (!supabase || !currentTeacherId || !classId || assessments.length === 0) {
       setAssessmentSubmissionsMap({});
       setSubmittedStudentProfiles({});
-      setAssessmentFeedbackMap({});
       return;
     }
 
@@ -446,7 +860,6 @@ function GradesManagement() {
       console.error("Failed to load assessment submissions:", error);
       setAssessmentSubmissionsMap({});
       setSubmittedStudentProfiles({});
-      setAssessmentFeedbackMap({});
       return;
     }
 
@@ -469,19 +882,17 @@ function GradesManagement() {
     });
 
     setAssessmentSubmissionsMap(mapped);
+    assessmentSubmissionsMapRef.current = mapped;
 
     const submissionIds = (data ?? []).map((row) => String(row.id || "")).filter(Boolean);
     if (submissionIds.length > 0) {
       const { data: feedbackRows, error: feedbackError } = await supabase
         .from("submission_feedback")
-        .select("submission_id, comments, feedback_text, teacher_id")
+        .select("submission_id, comments, teacher_id")
         .eq("teacher_id", currentTeacherId)
         .in("submission_id", submissionIds);
 
-      if (feedbackError) {
-        console.error("Failed to load submission feedback:", feedbackError);
-        setAssessmentFeedbackMap({});
-      } else {
+      if (!feedbackError && feedbackRows) {
         const feedbackMap = {};
         (feedbackRows ?? []).forEach((row) => {
           const submissionId = String(row.submission_id || "");
@@ -491,13 +902,15 @@ function GradesManagement() {
           const assessmentId = String(submission.assessment_id || "");
           const studentId = String(submission.student_id || "");
           if (!assessmentId || !studentId) return;
-          if (!feedbackMap[assessmentId]) feedbackMap[assessmentId] = {};
-          feedbackMap[assessmentId][studentId] = String(row.feedback_text || row.comments || "").trim();
+          
+          const fb = String(row.comments || "").trim();
+          if (fb) {
+            if (!feedbackMap[assessmentId]) feedbackMap[assessmentId] = {};
+            feedbackMap[assessmentId][studentId] = fb;
+          }
         });
-        setAssessmentFeedbackMap(feedbackMap);
+        setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMap));
       }
-    } else {
-      setAssessmentFeedbackMap({});
     }
 
     if (submittedOnlyIds.size === 0) {
@@ -540,7 +953,17 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ fetch students + grades ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const fetchStudentsForClass = useCallback(async (currentTeacherId, classId) => {
-    if (!supabase || !currentTeacherId || !classId) { setStudentGrades([]); return []; }
+    if (isDemoMode) {
+      return {
+        studentIds: MOCK_DEMO_STUDENTS.map((s) => s.id),
+        mapped: MOCK_DEMO_STUDENTS,
+        persistedGradeMap: {},
+      };
+    }
+    if (!supabase || !currentTeacherId || !classId) { return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
+
+    const currentClass = activeClassesList.find((item) => item.id === classId) || null;
+    const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
 
     const { data: assignments, error: assignmentError } = await supabase
       .from("teacher_student_assignments")
@@ -548,10 +971,10 @@ function GradesManagement() {
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId);
 
-    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); setStudentGrades([]); return []; }
+    if (assignmentError) { console.error("Failed to load class assignments:", assignmentError); return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const studentIds = [...new Set((assignments ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
-    if (studentIds.length === 0) { setStudentGrades([]); return []; }
+    if (studentIds.length === 0) { return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
@@ -559,11 +982,11 @@ function GradesManagement() {
       .eq("role", "student")
       .in("id", studentIds);
 
-    if (studentError) { console.error("Failed to load students:", studentError); setStudentGrades([]); return []; }
+    if (studentError) { console.error("Failed to load students:", studentError); return { studentIds: [], mapped: [], persistedGradeMap: {} }; }
 
     const { data: gradeRows } = await supabase
       .from("teacher_student_grades")
-      .select("*")
+      .select("quarter1_grade, quarter2_grade, quarter3_grade, quarter4_grade, overall_grade, grade_computation, subject_category, student_id")
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId)
       .in("student_id", studentIds);
@@ -572,58 +995,61 @@ function GradesManagement() {
     (gradeRows ?? []).forEach((row) => {
       const id = String(row.student_id || "");
       if (!id) return;
+
+      let gradeComputation = null;
+      try {
+        gradeComputation = row.grade_computation ? (typeof row.grade_computation === "string" ? JSON.parse(row.grade_computation) : row.grade_computation) : null;
+      } catch {
+        gradeComputation = null;
+      }
+
       persistedGradeMap[id] = {
-        term1Grade: clampGradeValue(row.term1_grade),
-        term2Grade: clampGradeValue(row.term2_grade),
-        term3Grade: clampGradeValue(row.term3_grade),
-        quizAverage: clampGradeValue(row.quiz_average),
-        activityGrade: clampGradeValue(row.activity_grade ?? 0),
-        assignmentGrade: clampGradeValue(row.assignment_grade ?? 0),
-        examGrade: clampGradeValue(row.exam_grade ?? 0),
+        quarter1Grade: clampGradeValue(row.quarter1_grade),
+        quarter2Grade: clampGradeValue(row.quarter2_grade),
+        quarter3Grade: clampGradeValue(row.quarter3_grade),
+        quarter4Grade: clampGradeValue(row.quarter4_grade),
         overallGrade: clampGradeValue(row.overall_grade ?? 0),
+        gradeComputation,
+        subjectCategory: normalizeSubjectCategory(row.subject_category || subjectCategory, currentClass?.name || currentClass?.code || ""),
       };
     });
 
     const cacheForClass = gradesCacheRef.current[classId] || {};
     const mapped = (studentRows ?? []).map((student) => {
       const studentId = String(student.id);
-      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || { ...createDefaultGradeRecord(), activityGrade: 0, assignmentGrade: 0, examGrade: 0 };
+      const cached = cacheForClass[studentId] || persistedGradeMap[studentId] || { ...createDefaultGradeRecord(), quarter1Grade: 0, quarter2Grade: 0, quarter3Grade: 0, quarter4Grade: 0 };
       const studentName = [student.first_name, student.middle_name, student.last_name]
         .map((part) => String(part || "").trim())
         .filter(Boolean)
         .join(" ")
         .trim() || "Student";
 
-      // Calculate assessment-based averages for this student
-      const assessmentAverages = calculateStudentAssessmentAverages(studentId, assessmentGradesMap, assessmentItems);
+      const computation = computeDepEdStudentComputation({
+        assessmentItems: assessmentItemsRef.current,
+        assessmentGradesMap: assessmentGradesMapRef.current,
+        studentId,
+        subjectCategory,
+        gradingSettingsByCategory: gradingSettingsRef.current,
+      });
 
       const current = {
         id: studentId,
         studentName,
         studentId: String(student.lrn || "N/A"),
-        term1Grade: clampGradeValue(cached.term1Grade),
-        term2Grade: clampGradeValue(cached.term2Grade),
-        term3Grade: clampGradeValue(cached.term3Grade),
-        // Use calculated averages from assessments if available, otherwise use cached values
-        quizAverage: assessmentAverages.quizAverage > 0 ? assessmentAverages.quizAverage : clampGradeValue(cached.quizAverage),
-        activityGrade: assessmentAverages.activityGrade > 0 ? assessmentAverages.activityGrade : clampGradeValue(cached.activityGrade ?? 0),
-        assignmentGrade: assessmentAverages.assignmentGrade > 0 ? assessmentAverages.assignmentGrade : (cached.assignmentGrade ?? 0),
-        examGrade: assessmentAverages.examGrade > 0 ? assessmentAverages.examGrade : (cached.examGrade ?? 0),
-        overallGrade: assessmentAverages.overallGrade > 0 ? assessmentAverages.overallGrade : clampGradeValue(cached.overallGrade ?? 0),
-        projectGrade: cached.projectGrade ?? "",
+        quarter1Grade: clampGradeValue(computation.quarters.quarter1.quarterlyGrade || cached.quarter1Grade || 0),
+        quarter2Grade: clampGradeValue(computation.quarters.quarter2.quarterlyGrade || cached.quarter2Grade || 0),
+        quarter3Grade: clampGradeValue(computation.quarters.quarter3.quarterlyGrade || cached.quarter3Grade || 0),
+        quarter4Grade: clampGradeValue(computation.quarters.quarter4.quarterlyGrade || cached.quarter4Grade || 0),
+        gradeComputation: computation,
+        overallGrade: computation.finalGrade > 0 ? computation.finalGrade : clampGradeValue(cached.overallGrade ?? 0),
       };
 
-      const overallGrade = calculateOverallGrade(current);
-      return { ...current, overallGrade, remarks: getGradeRemarks(overallGrade) };
+      const overallGrade = current.overallGrade;
+      return { ...current, overallGrade, remarks: computation.remarks || getGradeRemarks(overallGrade) };
     });
 
-    setGradesCache((prev) => ({
-      ...prev,
-      [classId]: { ...(prev[classId] || {}), ...persistedGradeMap },
-    }));
-    setStudentGrades(mapped);
-    return studentIds;
-  }, [assessmentGradesMap, assessmentItems]);
+    return { studentIds, mapped, persistedGradeMap };
+  }, []);
 
   /* ΓöÇΓöÇΓöÇ init ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   useEffect(() => {
@@ -636,10 +1062,11 @@ function GradesManagement() {
       const resolvedTeacherId = await resolveTeacherIdByEmail(user.email);
       setTeacherId(resolvedTeacherId);
       await fetchClasses(resolvedTeacherId);
+      await fetchGradingSettings();
       setLoading(false);
     };
     initialize();
-  }, [navigate, fetchClasses]);
+  }, [navigate, fetchClasses, fetchGradingSettings]);
 
   useEffect(() => {
     if (!requestedContext.classId) return;
@@ -682,7 +1109,26 @@ function GradesManagement() {
   }, [assessmentItems, selectedAssessmentId, focusedAssessmentId]);
 
   useEffect(() => {
-    if (!teacherId || !selectedClass) {
+    if ((isDemoMode || activeClassesList.length > 0) && (!selectedClass || !activeClassesList.some(c => c.id === selectedClass))) {
+      if (activeClassesList[0]?.id) {
+        setSelectedClass(activeClassesList[0].id);
+      }
+    }
+  }, [isDemoMode, activeClassesList, selectedClass]);
+
+  useEffect(() => {
+    if (isDemoMode) {
+      if (assessmentItems.length > 0 && !selectedAssessmentId) {
+        setSelectedAssessmentId(assessmentItems[0].id);
+      }
+      if (!selectedStudentId) {
+        setSelectedStudentId("demo-stu-1");
+      }
+    }
+  }, [isDemoMode, assessmentItems, selectedAssessmentId, selectedStudentId]);
+
+  useEffect(() => {
+    if ((!teacherId && !isDemoMode) || !selectedClass) {
       setStudentGrades([]);
       setAssessmentItems([]);
       setAssessmentGradesMap({});
@@ -692,11 +1138,37 @@ function GradesManagement() {
     let isMounted = true;
 
     const loadData = async () => {
-      const studentIds = await fetchStudentsForClass(teacherId, selectedClass);
+      setIsSwitchingTerm(true);
+      const { studentIds, mapped, persistedGradeMap } = await fetchStudentsForClass(teacherId, selectedClass);
       if (!isMounted) return;
 
-      const assessments = await fetchAssessmentsForClass(teacherId, selectedClass);
+      const termMap = {
+        "term1": "1st Quarter",
+        "term2": "2nd Quarter",
+        "term3": "3rd Quarter",
+        "term4": "4th Quarter"
+      };
+      const targetQuarter = activeTerm === "all" ? null : termMap[activeTerm];
+
+      const assessments = await fetchAssessmentsForClass(teacherId, selectedClass, activeSchoolYear, targetQuarter);
       if (!isMounted) return;
+
+      // Set everything together to avoid race conditions and UI flashing
+      setGradesCache((prev) => ({
+        ...prev,
+        [selectedClass]: { ...(prev[selectedClass] || {}), ...persistedGradeMap },
+      }));
+      setStudentGrades(mapped);
+      setAssessmentItems(assessments);
+      setExpandedAssessments((prev) => {
+        const next = { ...prev };
+        assessments.forEach((assessment) => {
+          if (typeof next[assessment.id] === "undefined") {
+            next[assessment.id] = true;
+          }
+        });
+        return next;
+      });
 
       if (requestedContext.assessmentId) {
         const hasTarget = assessments.some((item) => item.id === requestedContext.assessmentId);
@@ -713,6 +1185,10 @@ function GradesManagement() {
       }
 
       await fetchAssessmentSubmissions(teacherId, selectedClass, assessments, studentIds);
+      
+      if (isMounted) {
+        setIsSwitchingTerm(false);
+      }
     };
 
     loadData();
@@ -720,13 +1196,252 @@ function GradesManagement() {
     return () => {
       isMounted = false;
     };
-  }, [teacherId, selectedClass, fetchStudentsForClass, fetchAssessmentsForClass, fetchAssessmentGrades, fetchAssessmentSubmissions, requestedContext.assessmentId]);
+  }, [teacherId, selectedClass, activeSchoolYear, activeQuarter, viewMode, activeTerm, fetchStudentsForClass, fetchAssessmentsForClass, fetchAssessmentGrades, fetchAssessmentSubmissions, requestedContext.assessmentId]);
 
   useEffect(() => {
     if (!saveSuccess) return;
     const timer = window.setTimeout(() => setSaveSuccess(false), 3000);
     return () => window.clearTimeout(timer);
   }, [saveSuccess]);
+
+  // Sync studentGrades in real-time when assessment scores or settings change.
+  useEffect(() => {
+    if (studentGrades.length === 0 || !selectedClass) return;
+
+    const classItem = activeClassesList.find((item) => item.id === selectedClass) || null;
+    const subjectCategory = normalizeSubjectCategory(classItem?.subjectCategory || "", classItem?.name || classItem?.code || "");
+
+    setStudentGrades((prev) => {
+      let isDifferent = false;
+      const nextGrades = prev.map((student) => {
+        const computation = computeDepEdStudentComputation({
+          assessmentItems,
+          assessmentGradesMap,
+          assessmentStatusMap,
+          studentId: student.id,
+          subjectCategory,
+          gradingSettingsByCategory,
+        });
+
+        // Compute per-category averages (Quiz, Activity, Assignment, Exam)
+        const categoryAverages = calculateStudentAssessmentAverages(
+          student.id,
+          assessmentGradesMap,
+          assessmentItems
+        );
+
+        const next = {
+          ...student,
+          quarter1Grade: computation.quarters.quarter1.quarterlyGrade,
+          quarter2Grade: computation.quarters.quarter2.quarterlyGrade,
+          quarter3Grade: computation.quarters.quarter3.quarterlyGrade,
+          quarter4Grade: computation.quarters.quarter4.quarterlyGrade,
+          gradeComputation: computation,
+          overallGrade: computation.finalGrade,
+          remarks: computation.remarks,
+          // Per-category averages shown in the grade table columns
+          quizAverage: categoryAverages.quizAverage,
+          activityGrade: categoryAverages.activityGrade,
+          assignmentGrade: categoryAverages.assignmentGrade,
+          examGrade: categoryAverages.examGrade,
+        };
+
+        if (
+          student.quarter1Grade !== next.quarter1Grade ||
+          student.quarter2Grade !== next.quarter2Grade ||
+          student.quarter3Grade !== next.quarter3Grade ||
+          student.quarter4Grade !== next.quarter4Grade ||
+          student.overallGrade !== next.overallGrade ||
+          student.quizAverage !== next.quizAverage ||
+          student.activityGrade !== next.activityGrade ||
+          student.assignmentGrade !== next.assignmentGrade ||
+          student.examGrade !== next.examGrade
+        ) {
+          isDifferent = true;
+        }
+
+        return next;
+      });
+
+      if (isDifferent) {
+        // Trigger a separate state update for unsaved changes to avoid side-effects inside setter
+        setTimeout(() => setHasUnsavedChanges(true), 0);
+        return nextGrades;
+      }
+      return prev;
+    });
+  }, [assessmentGradesMap, assessmentStatusMap, assessmentItems, gradingSettingsByCategory, selectedClass, classes, studentGrades.length]);
+
+  // Real-time subscription: update submissions map when students submit
+  useEffect(() => {
+    if (!supabase || !teacherId || !selectedClass) return;
+
+    const channel = supabase
+      .channel(`teacher-submissions-${teacherId}-${selectedClass}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        // ensure it's for the current class and teacher
+        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        // Merge into submissions map
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+
+        // Fetch and cache submitter profile if missing
+        let studentName = "Student";
+        try {
+          if (!submittedStudentProfilesRef.current[normalized.studentId]) {
+            const { data: profile } = await supabase
+              .from("profiles")
+              .select("id, first_name, middle_name, last_name, lrn")
+              .eq("id", normalized.studentId)
+              .maybeSingle();
+            if (profile && profile.id) {
+              const fullName = [profile.first_name, profile.middle_name, profile.last_name]
+                .map((p) => String(p || "").trim())
+                .filter(Boolean)
+                .join(" ") || "Student";
+              const profileObj = { id: String(profile.id), studentName: fullName, studentId: String(profile.lrn || "N/A") };
+              setSubmittedStudentProfiles((prev) => {
+                const next = { ...(prev || {}) };
+                next[profileObj.id] = profileObj;
+                submittedStudentProfilesRef.current = next;
+                return next;
+              });
+              studentName = profileObj.studentName;
+            }
+          } else {
+            studentName = submittedStudentProfilesRef.current[normalized.studentId]?.studentName || studentName;
+          }
+        } catch (e) {
+          console.error("Failed to fetch submitted student profile:", e);
+        }
+
+        // Find assessment title if available
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        const assessmentTitle = assessment ? (assessment.displayName || assessment.title) : "an assessment";
+
+        // Show toast to teacher
+        try {
+          toast.success(`${studentName} submitted ${assessmentTitle}`);
+        } catch {}
+
+        // Create a notification row so NotificationDropdown picks it up in realtime
+        try {
+          await supabase.from("notifications").insert([{
+            user_id: teacherId,
+            type: "assignments",
+            title: `New submission: ${assessmentTitle}`,
+            body: `${studentName} submitted ${assessmentTitle}`,
+            related_id: normalized.assessmentId,
+            class_id: selectedClass,
+          }]);
+        } catch (err) {
+          console.error("Failed to insert notification for new submission:", err);
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "teacher_assessment_submissions" }, (payload) => {
+        const oldRow = payload.old;
+        if (!oldRow) return;
+        if (String(oldRow.subject_id || "") !== String(selectedClass)) return;
+        if (String(oldRow.teacher_id || "") !== String(teacherId)) return;
+
+        const normalized = normalizeSubmission(oldRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (next[normalized.assessmentId]) {
+            delete next[normalized.assessmentId][normalized.studentId];
+            if (Object.keys(next[normalized.assessmentId]).length === 0) delete next[normalized.assessmentId];
+          }
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+      })
+      // Also listen to legacy/general `submissions` table
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "submissions" }, async (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        // check whether this assessment belongs to the currently-loaded class
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+
+        setAssessmentSubmissionsMap((prev) => {
+          const next = { ...(prev || {}) };
+          if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {};
+          next[normalized.assessmentId][normalized.studentId] = normalized;
+          assessmentSubmissionsMapRef.current = next;
+          return next;
+        });
+
+        // fetch profile if missing
+        try {
+          if (!submittedStudentProfilesRef.current[normalized.studentId]) {
+            const { data: profile } = await supabase.from("profiles").select("id, first_name, middle_name, last_name, lrn").eq("id", normalized.studentId).maybeSingle();
+            if (profile && profile.id) {
+              const fullName = [profile.first_name, profile.middle_name, profile.last_name].map((p)=>String(p||"").trim()).filter(Boolean).join(" ")||"Student";
+              const profileObj = { id: String(profile.id), studentName: fullName, studentId: String(profile.lrn||"N/A") };
+              setSubmittedStudentProfiles((prev) => { const next = { ...(prev||{}) }; next[profileObj.id]=profileObj; submittedStudentProfilesRef.current = next; return next; });
+            }
+          }
+        } catch (e) { console.error("Failed to fetch profile for submission:", e); }
+
+        const assessmentTitle = assessment.displayName || assessment.title || "an assessment";
+        try { toast.success(`${submittedStudentProfilesRef.current[normalized.studentId]?.studentName || 'Student'} submitted ${assessmentTitle}`); } catch {}
+        try { await supabase.from("notifications").insert([{ user_id: teacherId, type: "assignments", title: `New submission: ${assessmentTitle}`, body: `${submittedStudentProfilesRef.current[normalized.studentId]?.studentName || 'Student'} submitted ${assessmentTitle}`, related_id: normalized.assessmentId, class_id: selectedClass }]); } catch (e) { console.error("Failed to create notification from submissions table:", e); }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "submissions" }, (payload) => {
+        const newRow = payload.new;
+        if (!newRow) return;
+        const normalized = normalizeSubmission(newRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+        setAssessmentSubmissionsMap((prev) => { const next = { ...(prev||{}) }; if (!next[normalized.assessmentId]) next[normalized.assessmentId] = {}; next[normalized.assessmentId][normalized.studentId] = normalized; assessmentSubmissionsMapRef.current = next; return next; });
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "submissions" }, (payload) => {
+        const oldRow = payload.old;
+        if (!oldRow) return;
+        const normalized = normalizeSubmission(oldRow);
+        if (!normalized.assessmentId || !normalized.studentId) return;
+        const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
+        if (!assessment) return;
+        setAssessmentSubmissionsMap((prev) => { const next = { ...(prev||{}) }; if (next[normalized.assessmentId]) { delete next[normalized.assessmentId][normalized.studentId]; if (Object.keys(next[normalized.assessmentId]).length===0) delete next[normalized.assessmentId]; } assessmentSubmissionsMapRef.current = next; return next; });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [teacherId, selectedClass]);
 
   useEffect(() => {
     if (!autoSaveMessage) return;
@@ -771,11 +1486,8 @@ function GradesManagement() {
 
     const scoreValue = rawValue === "" ? 0 : Number(clampAssessmentScore(rawValue, assessment.maxPoints));
     const percentage = calculateQuizPercentage(scoreValue, assessment.maxPoints);
-    const passFailStatus = determinePassFailStatus(percentage);
-    
-    // For quizzes, use pass/fail status; for other assessments, use Graded/Pending
-    const isQuiz = assessment.type === 'quiz';
-    const statusValue = rawValue === "" ? "Pending" : (isQuiz ? passFailStatus : "Graded");
+    determinePassFailStatus(percentage);
+    const statusValue = rawValue === "" ? "Pending" : "Graded";
     
     const key = `${assessmentId}:${studentId}`;
 
@@ -791,7 +1503,6 @@ function GradesManagement() {
       student_id: studentId,
       grade_value: scoreValue,
       status: statusValue,
-      feedback: String(assessmentFeedbackMap?.[assessmentId]?.[studentId] || "").trim(),
       updated_at: new Date().toISOString(),
     };
 
@@ -825,7 +1536,7 @@ function GradesManagement() {
       },
     }));
     setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
-    setAutoSaveMessage(`Saved grade for ${assessment.title}. ${isQuiz ? `(${percentage}%)` : ''}`);
+    setAutoSaveMessage(`Saved grade for ${assessment.title}.`);
 
     const clearTimer = autoSaveTimersRef.current[`clear:${key}`];
     if (clearTimer) {
@@ -852,6 +1563,7 @@ function GradesManagement() {
 
   const handleAssessmentGradeChange = (assessmentId, studentId, maxPoints, value) => {
     const nextValue = value === "" ? "" : clampAssessmentScore(value, maxPoints);
+    console.log("Grade input:", value);
 
     setAssessmentGradesMap((prev) => ({
       ...prev,
@@ -865,6 +1577,7 @@ function GradesManagement() {
   };
 
   const handleAssessmentFeedbackChange = (assessmentId, studentId, value) => {
+    console.log("Feedback input:", value);
     setAssessmentFeedbackMap((prev) => ({
       ...prev,
       [assessmentId]: {
@@ -876,115 +1589,287 @@ function GradesManagement() {
 
   const handleReturnAssignment = useCallback(async () => {
     const currentAssessment = assessmentItems.find((item) => item.id === selectedAssessmentId) || null;
-    const currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
+    let currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
     const currentFeedback = assessmentFeedbackMap?.[selectedAssessmentId]?.[selectedStudentId] || "";
+    const actionKey = `${selectedAssessmentId}:${selectedStudentId}`;
 
-    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) return;
-
-    const currentGrade = assessmentGradesMap?.[selectedAssessmentId]?.[selectedStudentId] ?? "";
-
-    const gradePayload = {
-      teacher_id: teacherId,
-      subject_id: selectedClass,
-      assessment_id: currentAssessment.id,
-      student_id: selectedStudentId,
-      grade_value: Number(currentGrade || 0),
-      feedback: currentFeedback,
-      status: "returned",
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error: gradeError } = await supabase
-      .from("teacher_assessment_grades")
-      .upsert(gradePayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
-
-    if (gradeError) {
-      console.error("Failed to return assignment:", gradeError);
+    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) {
+      console.warn("[GradesManagement] Return action aborted due to missing context:", {
+        teacherId,
+        selectedClass,
+        currentAssessmentExists: !!currentAssessment,
+        selectedStudentId,
+      });
       return;
     }
 
-    if (currentSubmission?.id) {
-      // Update submission status to 'done' when assignment is returned
-      let { error: submissionUpdateError } = await supabase
-        .from("teacher_assessment_submissions")
-        .update({ 
-          status: 'done',
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", currentSubmission.id);
+    const currentGrade = assessmentGradesMap?.[selectedAssessmentId]?.[selectedStudentId] ?? "";
 
-      if (submissionUpdateError && submissionUpdateError.code === 'PGRST204') {
-        const { error: fallbackError } = await supabase
+    console.log("[GradesManagement] Manual grading process initiated:", {
+      teacherId,
+      subjectId: selectedClass,
+      studentId: selectedStudentId,
+      assessmentId: currentAssessment.id,
+      gradeValue: currentGrade,
+      feedback: currentFeedback,
+      hasSubmission: !!currentSubmission,
+    });
+
+    // Check if duplicate grade exists with status Returned to prevent duplicate creation
+    const currentStatus = assessmentStatusMap?.[selectedAssessmentId]?.[selectedStudentId];
+    if (currentStatus === "Returned") {
+      console.log("[GradesManagement] Grade already returned. Preventing duplicate grade action.");
+      toast.info("This assignment has already been returned.");
+      return;
+    }
+
+    setSubmissionActionStateMap((prev) => ({ ...prev, [actionKey]: "returning" }));
+
+    // 1. If student did not submit anything, create a placeholder submission so feedback & grades track correctly.
+    try {
+      if (!currentSubmission) {
+        console.log("[GradesManagement] Missing submission handling: Creating placeholder submission...");
+        const placeholderSubmission = {
+          teacher_id: teacherId,
+          subject_id: selectedClass,
+          assessment_id: currentAssessment.id,
+          student_id: selectedStudentId,
+          response_text: "Placeholder submission (Teacher Graded / Missing Submission)",
+          submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: newSubData, error: submissionInsertError } = await supabase
           .from("teacher_assessment_submissions")
-          .update({ 
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", currentSubmission.id);
-        submissionUpdateError = fallbackError;
-      }
+          .upsert(placeholderSubmission, { onConflict: "teacher_id,subject_id,assessment_id,student_id" })
+          .select("*")
+          .maybeSingle();
 
-      if (submissionUpdateError) {
-        console.error("Failed to update submission status:", submissionUpdateError);
-      } else {
-        // Update local state to reflect the status change
-        setAssessmentSubmissionsMap((prev) => ({
-          ...prev,
-          [currentAssessment.id]: {
-            ...(prev[currentAssessment.id] || {}),
-            [selectedStudentId]: {
-              ...(prev[currentAssessment.id]?.[selectedStudentId] || currentSubmission || {}),
-              status: 'done'
+        if (submissionInsertError) {
+          console.error("[GradesManagement] Failed to create placeholder submission. RLS failure or DB error:", submissionInsertError);
+          toast.error("Failed to initialize submission record for grading.");
+          return;
+        }
+
+        if (newSubData) {
+          currentSubmission = normalizeSubmission(newSubData);
+          console.log("[GradesManagement] Placeholder submission created successfully:", currentSubmission);
+
+          setAssessmentSubmissionsMap((prev) => ({
+            ...prev,
+            [currentAssessment.id]: {
+              ...(prev[currentAssessment.id] || {}),
+              [selectedStudentId]: currentSubmission,
             },
-          },
-        }));
+          }));
+        }
       }
 
-      const feedbackPayload = {
-        submission_id: currentSubmission.id,
+      const gradePayload = {
         teacher_id: teacherId,
-        comments: currentFeedback,
+        subject_id: selectedClass,
+        assessment_id: currentAssessment.id,
+        assessment_title: currentAssessment.title || "Assessment",
+        assessment_type: currentAssessment.type || "assignment",
+        max_points: currentAssessment.maxPoints || 100,
+        student_id: selectedStudentId,
+        grade_value: Number(currentGrade || 0),
+        status: "Returned",
         updated_at: new Date().toISOString(),
       };
 
-      const { error: feedbackError } = await supabase
-        .from("submission_feedback")
-        .upsert(feedbackPayload, { onConflict: "submission_id,teacher_id" });
+      console.log("[GradesManagement] Upserting into teacher_assessment_grades:", gradePayload);
 
-      if (feedbackError) {
-        console.error("Failed to sync submission feedback:", feedbackError);
+      const { error: gradeError } = await supabase
+        .from("teacher_assessment_grades")
+        .upsert(gradePayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+
+      if (gradeError) {
+        console.error("[GradesManagement] Database write error on teacher_assessment_grades:", gradeError);
+        toast.error("Failed to save grade in gradebook.");
+        return;
       }
+
+      console.log("[GradesManagement] Gradebook insertion/update success.");
+
+      if (currentSubmission?.id) {
+        console.log("[GradesManagement] Updating submission record for ID:", currentSubmission.id);
+        const { error: submissionUpdateError } = await supabase
+          .from("teacher_assessment_submissions")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", currentSubmission.id);
+
+        if (submissionUpdateError) {
+          console.error("[GradesManagement] Failed to update submission status:", submissionUpdateError);
+        } else {
+          setAssessmentSubmissionsMap((prev) => ({
+            ...prev,
+            [currentAssessment.id]: {
+              ...(prev[currentAssessment.id] || {}),
+              [selectedStudentId]: {
+                ...(prev[currentAssessment.id]?.[selectedStudentId] || currentSubmission || {}),
+                status: 'Submitted'
+              },
+            },
+          }));
+        }
+
+        const feedbackPayload = {
+          submission_id: currentSubmission.id,
+          teacher_id: teacherId,
+          comments: currentFeedback,
+          updated_at: new Date().toISOString(),
+        };
+
+        console.log("[GradesManagement] Syncing submission feedback:", feedbackPayload);
+        const { error: feedbackError } = await supabase
+          .from("submission_feedback")
+          .upsert(feedbackPayload, { onConflict: "submission_id,teacher_id" });
+
+        if (feedbackError) {
+          console.error("[GradesManagement] Failed to sync submission feedback:", feedbackError);
+        } else {
+          console.log("[GradesManagement] Synchronized submission feedback success.");
+        }
+      }
+
+      const key = `${currentAssessment.id}:${selectedStudentId}`;
+      setAssessmentStatusMap((prev) => ({
+        ...prev,
+        [currentAssessment.id]: {
+          ...(prev[currentAssessment.id] || {}),
+          [selectedStudentId]: "Returned",
+        },
+      }));
+
+      setAssessmentGradesMap((prev) => ({
+        ...prev,
+        [currentAssessment.id]: {
+          ...(prev[currentAssessment.id] || {}),
+          [selectedStudentId]: Number(currentGrade || 0),
+        },
+      }));
+
+      setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
+      setAutoSaveMessage("Assignment returned successfully.");
+      toast.success("Assignment returned successfully.");
+      try { window.dispatchEvent(new CustomEvent("connected-grade-updated", { detail: { teacherId } })); } catch (e) {}
+    } finally {
+      setSubmissionActionStateMap((prev) => ({ ...prev, [actionKey]: "idle" }));
+    }
+  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId, assessmentStatusMap]);
+
+  const handleUndoReturn = useCallback(async () => {
+    const currentAssessment = assessmentItems.find((item) => item.id === selectedAssessmentId) || null;
+    let currentSubmission = assessmentSubmissionsMap?.[selectedAssessmentId]?.[selectedStudentId] || null;
+    const currentFeedback = assessmentFeedbackMap?.[selectedAssessmentId]?.[selectedStudentId] || "";
+    const currentGrade = assessmentGradesMap?.[selectedAssessmentId]?.[selectedStudentId] ?? "";
+    const actionKey = `${selectedAssessmentId}:${selectedStudentId}`;
+
+    if (!supabase || !teacherId || !selectedClass || !currentAssessment || !selectedStudentId) {
+      console.warn("[GradesManagement] Undo Return action aborted due to missing context:", {
+        teacherId,
+        selectedClass,
+        currentAssessmentExists: !!currentAssessment,
+        selectedStudentId,
+      });
+      return;
     }
 
-    const key = `${selectedAssessment.id}:${selectedStudentId}`;
-    setAssessmentStatusMap((prev) => ({
-      ...prev,
-      [currentAssessment.id]: {
-        ...(prev[currentAssessment.id] || {}),
-        [selectedStudentId]: "Returned",
-      },
-    }));
+    console.log("[GradesManagement] Undo Return process initiated:", {
+      teacherId,
+      subjectId: selectedClass,
+      studentId: selectedStudentId,
+      assessmentId: currentAssessment.id,
+    });
 
-    setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
-    setAutoSaveMessage("Assignment returned successfully.");
-    toast.success("Assignment returned successfully.");
-  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId]);
+    setSubmissionActionStateMap((prev) => ({ ...prev, [actionKey]: "undoing" }));
+
+    try {
+      const revertedGradeStatus = currentGrade === "" ? "Pending" : "Graded";
+
+      const gradePayload = {
+        teacher_id: teacherId,
+        subject_id: selectedClass,
+        assessment_id: currentAssessment.id,
+        assessment_title: currentAssessment.title || "Assessment",
+        assessment_type: currentAssessment.type || "assignment",
+        max_points: currentAssessment.maxPoints || 100,
+        student_id: selectedStudentId,
+        grade_value: currentGrade !== "" ? Number(currentGrade) : 0,
+        status: revertedGradeStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      console.log("[GradesManagement] Reverting status in teacher_assessment_grades:", gradePayload);
+      const { error: gradeError } = await supabase
+        .from("teacher_assessment_grades")
+        .upsert(gradePayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" });
+
+      if (gradeError) {
+        console.error("[GradesManagement] Failed to update grade status on Undo Return:", gradeError);
+        toast.error("Failed to undo return.");
+        return;
+      }
+
+      if (currentSubmission?.id) {
+        console.log("[GradesManagement] Updating submission record for ID:", currentSubmission.id);
+        const { error: submissionUpdateError } = await supabase
+          .from("teacher_assessment_submissions")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", currentSubmission.id);
+
+        if (submissionUpdateError) {
+          console.error("[GradesManagement] Failed to revert submission status:", submissionUpdateError);
+        } else {
+          setAssessmentSubmissionsMap((prev) => ({
+            ...prev,
+            [currentAssessment.id]: {
+              ...(prev[currentAssessment.id] || {}),
+              [selectedStudentId]: {
+                ...(prev[currentAssessment.id]?.[selectedStudentId] || currentSubmission || {}),
+                status: 'Submitted'
+              },
+            },
+          }));
+        }
+      }
+
+      const key = `${currentAssessment.id}:${selectedStudentId}`;
+      setAssessmentStatusMap((prev) => ({
+        ...prev,
+        [currentAssessment.id]: {
+          ...(prev[currentAssessment.id] || {}),
+          [selectedStudentId]: revertedGradeStatus,
+        },
+      }));
+
+      setAutoSaveStateMap((prev) => ({ ...prev, [key]: "saved" }));
+      setAutoSaveMessage("Return undone successfully.");
+      toast.success("Return undone successfully.");
+    } finally {
+      setSubmissionActionStateMap((prev) => ({ ...prev, [actionKey]: "idle" }));
+    }
+  }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId, assessmentStatusMap]);
 
   const handleSave = async () => {
     if (!selectedClass || studentGrades.length === 0 || !teacherId || !supabase) return;
     try {
       setSaving(true);
+      const currentClass = activeClassesList.find((item) => item.id === selectedClass) || null;
+      const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
+
       const gradesPayload = studentGrades.map((student) => ({
         teacher_id: teacherId,
         subject_id: selectedClass,
         student_id: student.id,
-        term1_grade: clampGradeValue(student.term1Grade),
-        term2_grade: clampGradeValue(student.term2Grade),
-        term3_grade: clampGradeValue(student.term3Grade),
-        quiz_average: clampGradeValue(student.quizAverage),
-        activity_grade: clampGradeValue(student.activityGrade ?? 0),
-        assignment_grade: clampGradeValue(student.assignmentGrade ?? 0),
-        exam_grade: clampGradeValue(student.examGrade ?? 0),
+        quarter1_grade: clampGradeValue(student.quarter1Grade),
+        quarter2_grade: clampGradeValue(student.quarter2Grade),
+        quarter3_grade: clampGradeValue(student.quarter3Grade),
+        quarter4_grade: clampGradeValue(student.quarter4Grade),
         overall_grade: clampGradeValue(student.overallGrade),
+        grade_computation: student.gradeComputation ? JSON.parse(serializeDepEdComputation(student.gradeComputation)) : {},
+        subject_category: subjectCategory,
         updated_at: new Date().toISOString(),
       }));
 
@@ -1007,6 +1892,7 @@ function GradesManagement() {
       toast.success("Grades successfully saved");
       setSaveSuccess(true);
       setHasUnsavedChanges(false);
+      try { window.dispatchEvent(new CustomEvent("connected-grade-updated", { detail: { teacherId } })); } catch (e) {}
     } catch (error) {
       console.error("Unexpected save error:", error);
       toast.error(error?.message || "Failed to save grades.");
@@ -1017,10 +1903,10 @@ function GradesManagement() {
 
   /* ΓöÇΓöÇΓöÇ derived ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const selectedClassName = useMemo(() => {
-    const classItem = classes.find((item) => item.id === selectedClass);
+    const classItem = activeClassesList.find((item) => item.id === selectedClass);
     if (!classItem) return "";
     return `${classItem.code} - ${classItem.name} (${classItem.section})`;
-  }, [classes, selectedClass]);
+  }, [activeClassesList, selectedClass]);
 
   const filteredByView = useMemo(() => {
     let base = studentGrades;
@@ -1092,21 +1978,16 @@ function GradesManagement() {
 
 
   /* ΓöÇΓöÇΓöÇ render ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
-  if (loading) return <LoadingScreen message="Loading grades..." />;
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
-
-      <main className="flex-1 overflow-y-auto scrollbar-hide lg:pl-64">
+<main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <h2 className="text-xl font-semibold text-green-900">Grades Management</h2>
-                {hasUnsavedChanges && <span className="text-sm text-amber-600 font-medium animate-pulse">⚠ Unsaved changes</span>}
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
@@ -1114,43 +1995,21 @@ function GradesManagement() {
               />
             </div>
           </div>
+          
         </div>
 
         <div className="p-6 space-y-6">
           {/* Hero */}
-          <div className="bg-green-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
+          <div data-tour="teacher-grades-header" className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Grade Management</h1>
-                <p className="text-green-50 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
+                <p className="text-white/90 text-sm">Grades auto-consolidate from class activities, quizzes &amp; assignments</p>
               </div>
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: "Class Average", value: `${classAverage}%`, icon: <TrendingUp className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
-              { label: "Highest Grade", value: `${highestGrade}%`, icon: <Award className="w-5 h-5" />, color: "text-green-600", bg: "bg-white border-gray-200" },
-              { label: "Lowest Grade", value: `${lowestGrade}%`, icon: <TrendingDown className="w-5 h-5" />, color: "text-red-600", bg: "bg-white border-gray-200" },
-              { label: "Passing Rate", value: `${passingRate}%`, icon: <Target className="w-5 h-5" />, color: "text-purple-600", bg: "bg-white border-gray-200" },
-            ].map(({ label, value, icon, color, bg }) => (
-              <div key={label} className={`rounded-2xl p-5 border ${bg} shadow-sm`}>
-                <div className={`${color} mb-2`}>{icon}</div>
-                <p className="text-gray-600 text-xs mb-1">{label}</p>
-                <p className={`text-2xl font-bold ${color}`}>{value}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Success banner */}
-          {saveSuccess && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="text-green-700 font-medium">Grades saved successfully!</p>
-            </div>
-          )}
 
           {autoSaveMessage && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
@@ -1162,24 +2021,25 @@ function GradesManagement() {
           {/* Filters */}
           <div className="bg-white rounded-2xl p-5 border border-gray-200 shadow-sm space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div data-tour="teacher-grades-class-select">
                 <label className="block text-sm font-bold text-green-700 mb-3 uppercase tracking-widest flex items-center gap-2">
                   <Filter className="w-4 h-4" />
                   Select Subject / Section
                 </label>
-                {classes.length === 0 ? (
-                  <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">No classes available</div>
+                {activeClassesList.length === 0 ? (
+                  <div className="w-full h-12 px-4 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm flex items-center">No classes available</div>
                 ) : (
                   <CustomSelect
-                    value={selectedClass}
+                    value={selectedClass || activeClassesList[0]?.id}
                     onChange={(value) => { setSelectedClass(value); setHasUnsavedChanges(false); setActiveView("all"); }}
                     placeholder="Select a class"
-                    className="w-full"
-                    options={classes.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))}
+                    className="w-full [&>button]:h-12 [&>button]:py-0"
+                    options={activeClassesList.map((c) => ({ value: c.id, label: `${c.code} - ${c.name} (${c.section})` }))}
+                    forceOpen={isClassSelectStepActive}
                   />
                 )}
               </div>
-              <div>
+              <div data-tour="teacher-grades-search">
                 <label className="block text-xs font-medium text-green-600 mb-2 uppercase tracking-wider">
                   <Search className="w-3.5 h-3.5 inline mr-1.5" />
                   Search Student
@@ -1189,7 +2049,7 @@ function GradesManagement() {
                   placeholder="Search by name or LRN..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-50 text-green-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  className="w-full h-12 px-4 bg-gray-50 text-green-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                 />
               </div>
             </div>
@@ -1198,7 +2058,7 @@ function GradesManagement() {
           {/* Grade Table */}
           {selectedClass && (
             <>
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div data-tour="teacher-grades-table" className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Table header row */}
               <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -1206,14 +2066,15 @@ function GradesManagement() {
                   <p className="text-xs text-gray-600 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* Term tabs */}
+                <div data-tour="teacher-grades-filters" className="flex items-center gap-3 flex-wrap">
+                  {/* Quarter tabs */}
                   <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
                     {[
-                      { key: "all", label: "All Terms" },
-                      { key: "term1", label: "T1" },
-                      { key: "term2", label: "T2" },
-                      { key: "term3", label: "T3" },
+                      { key: "all", label: "All Quarters" },
+                      { key: "term1", label: "Q1" },
+                      { key: "term2", label: "Q2" },
+                      { key: "term3", label: "Q3" },
+                      { key: "term4", label: "Q4" },
                     ].map(({ key, label }) => (
                       <button
                         key={key}
@@ -1261,14 +2122,7 @@ function GradesManagement() {
                     ))}
                   </div>
 
-                  <button
-                    onClick={handleSave}
-                    disabled={!hasUnsavedChanges || !selectedClass || saving}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Save className="w-4 h-4" />
-                    {saving ? "Saving..." : "Save All"}
-                  </button>
+
                 </div>
               </div>
 
@@ -1283,23 +2137,29 @@ function GradesManagement() {
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                        {/* Term columns - conditionally shown by term filter */}
+                        {/* Quarter columns - conditionally shown by term filter */}
                         {(activeTerm === "all" || activeTerm === "term1") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>T1</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 1</div>
+                            <div>Q1</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">1st Quarter</div>
                           </th>
                         )}
                         {(activeTerm === "all" || activeTerm === "term2") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>T2</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 2</div>
+                            <div>Q2</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">2nd Quarter</div>
                           </th>
                         )}
                         {(activeTerm === "all" || activeTerm === "term3") && (
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>T3</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">Term 3</div>
+                            <div>Q3</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">3rd Quarter</div>
+                          </th>
+                        )}
+                        {(activeTerm === "all" || activeTerm === "term4") && (
+                          <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
+                            <div>Q4</div>
+                            <div className="text-[10px] font-normal text-gray-400 normal-case">4th Quarter</div>
                           </th>
                         )}
                         {(activeDesignation === "all" || activeDesignation === "Quiz") && (
@@ -1327,101 +2187,116 @@ function GradesManagement() {
                           </th>
                         )}
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Overall</th>
+                        <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Completion</th>
+                        <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Last Activity</th>
                         <th className="px-5 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filteredByView.map((student) => {
                         const isPassed = student.overallGrade >= 75;
+                        const studentSubmissions = assessmentItems.filter(a => assessmentSubmissionsMap[a.id]?.[student.id]);
+                        const completionRate = assessmentItems.length > 0 ? Math.round((studentSubmissions.length / assessmentItems.length) * 100) : 0;
+                        const quarterOne = student.gradeComputation?.quarters?.quarter1 || null;
+                        const fallbackWrittenWorks = quarterOne?.writtenWorks?.percentageScore ?? 0;
+                        const fallbackPerformanceTasks = quarterOne?.performanceTasks?.percentageScore ?? 0;
+                        const fallbackInitialGrade = quarterOne?.initialGrade ?? 0;
+                        const fallbackQuarterlyGrade = quarterOne?.quarterlyGrade ?? student.overallGrade ?? 0;
+                        // Use computed activityGrade if available, fall back to DepEd performanceTasks percentageScore
+                        const activityDisplay = (student.activityGrade != null && student.activityGrade > 0)
+                          ? student.activityGrade
+                          : (fallbackPerformanceTasks > 0 ? fallbackPerformanceTasks : "Not yet graded");
+                        let lastActivityDate = null;
+                        studentSubmissions.forEach(a => {
+                          const sub = assessmentSubmissionsMap[a.id]?.[student.id];
+                          if (sub && sub.submittedAt) {
+                            const date = new Date(sub.submittedAt);
+                            if (!lastActivityDate || date > lastActivityDate) {
+                              lastActivityDate = date;
+                            }
+                          }
+                        });
                         return (
-                          <tr key={student.id} className={`hover:bg-green-50 transition-colors ${!isPassed ? "bg-red-50" : "bg-white"}`}>
+                          <tr 
+                            key={student.id} 
+                            onClick={() => setSelectedStudentForModal(student)}
+                            className={`cursor-pointer hover:bg-green-50 transition-colors ${!isPassed ? "bg-red-50" : "bg-white"}`}
+                          >
                             <td className="px-5 py-4">
                               <div className="flex items-center gap-3">
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white ${isPassed ? "bg-green-600" : "bg-red-600"}`}>
                                   {student.studentName.charAt(0)}
                                 </div>
                                 <div>
-                                  <p className="font-medium text-green-900">{student.studentName}</p>
+                                  <p className="font-medium text-green-900 group-hover:text-green-700">{student.studentName}</p>
                                   <p className="text-xs text-gray-500">{student.studentId}</p>
                                 </div>
                               </div>
                             </td>
-                            {/* Term grade inputs - conditionally shown */}
+                            {/* Quarter grade inputs - conditionally shown */}
                             {(activeTerm === "all" || activeTerm === "term1") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.term1Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "term1Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
-                                />
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
+                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
+                                  {student.quarter1Grade ?? 0}
+                                </span>
                               </td>
                             )}
                             {(activeTerm === "all" || activeTerm === "term2") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.term2Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "term2Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
-                                />
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
+                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
+                                  {student.quarter2Grade ?? 0}
+                                </span>
                               </td>
                             )}
                             {(activeTerm === "all" || activeTerm === "term3") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.term3Grade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "term3Grade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-green-200 rounded-lg focus:outline-none focus:ring-2 ring-green-500 text-sm"
-                                />
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
+                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
+                                  {student.quarter3Grade ?? 0}
+                                </span>
+                              </td>
+                            )}
+                            {(activeTerm === "all" || activeTerm === "term4") && (
+                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
+                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
+                                  {student.quarter4Grade ?? 0}
+                                </span>
                               </td>
                             )}
                             {/* Designation Averages - conditionally shown */}
                             {(activeDesignation === "all" || activeDesignation === "Quiz") && (
                               <td className="px-3 py-4 text-center bg-violet-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.quizAverage ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "quizAverage", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-violet-200 rounded-lg focus:outline-none focus:ring-2 ring-violet-500 text-sm"
-                                />
+                                <span className="font-semibold text-violet-700">{student.quizAverage ?? fallbackWrittenWorks}</span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Activity") && (
                               <td className="px-3 py-4 text-center bg-orange-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.activityGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "activityGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 ring-orange-500 text-sm"
-                                />
+                                <span className={`font-semibold ${activityDisplay === "Not yet graded" ? "text-gray-500" : "text-orange-700"}`}>
+                                  {activityDisplay}
+                                </span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Assignment") && (
                               <td className="px-3 py-4 text-center bg-sky-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.assignmentGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "assignmentGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-sky-200 rounded-lg focus:outline-none focus:ring-2 ring-sky-500 text-sm"
-                                />
+                                <span className="font-semibold text-sky-700">{student.assignmentGrade ?? fallbackInitialGrade}</span>
                               </td>
                             )}
                             {(activeDesignation === "all" || activeDesignation === "Exam") && (
                               <td className="px-3 py-4 text-center bg-red-50/30">
-                                <input
-                                  type="number" min="0" max="100"
-                                  value={student.examGrade ?? ""}
-                                  onChange={(e) => handleGradeChange(student.id, "examGrade", e.target.value || "")}
-                                  className="w-16 px-2 py-1.5 text-center bg-white text-green-900 border border-red-200 rounded-lg focus:outline-none focus:ring-2 ring-red-500 text-sm"
-                                />
+                                <span className="font-semibold text-red-700">{student.examGrade ?? fallbackQuarterlyGrade}</span>
                               </td>
                             )}
                             <td className="px-5 py-4 text-center">
                               <span className={`inline-block px-3 py-1.5 rounded-full text-sm font-bold ${isPassed ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                                 {student.overallGrade}%
                               </span>
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <span className="text-xs font-semibold text-gray-700">
+                                {completionRate}% <span className="text-[10px] text-gray-400">({studentSubmissions.length}/{assessmentItems.length})</span>
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-center text-xs text-gray-500">
+                              {lastActivityDate ? lastActivityDate.toLocaleDateString() : "Never"}
                             </td>
                             <td className="px-5 py-4 text-center">
                               <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${isPassed ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
@@ -1453,37 +2328,48 @@ function GradesManagement() {
                       <span className="text-gray-600">Total: <span className="text-green-900 font-semibold">{studentGrades.length}</span></span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => exportToExcel(studentGrades, selectedClassName)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 rounded-lg text-sm transition-all"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download Excel Report
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => exportToExcel(studentGrades, selectedClassName)}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 rounded-lg text-sm transition-all"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Excel Report
+                    </button>
+                    
+                    <button
+                      onClick={handleSave}
+                      disabled={!hasUnsavedChanges || !selectedClass || saving}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Save className="w-4 h-4" />
+                      {saving ? "Saving..." : "Save All"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-gray-100">
-                <h3 className="text-base font-semibold text-green-900">Assessment-Based Grading</h3>
+              <div data-tour="teacher-grades-seatworks-header" className="p-5 border-b border-gray-100">
+                <h3 className="text-base font-semibold text-green-900">Activity-Based Performance Evaluation</h3>
                 <p className="text-xs text-gray-600 mt-0.5">
-                  Review student submissions and assign grades for each assessment.
+                  Review student submissions and assign grades across all activities.
                 </p>
               </div>
 
               {assessmentItems.length === 0 ? (
                 <div className="p-8 text-center">
                   <EmptyStateIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm">No assessments found for this class yet.</p>
+                  <p className="text-gray-400 text-sm">No seatworks found for this class yet.</p>
                 </div>
               ) : (
                 <div className="p-4">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     {/* Left: Assessment List */}
-                    <div className="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
+                    <div data-tour="teacher-grades-seatworks-eval" className="lg:col-span-3 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Assessments</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Seatworks</p>
                       </div>
                       <div className="flex-1 max-h-[600px] overflow-y-auto scrollbar-hide p-2 space-y-2">
                         {assessmentItems.map((assessment) => {
@@ -1516,7 +2402,7 @@ function GradesManagement() {
                       {selectedAssessment ? (
                         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Assessment Details</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Seatwork Details</p>
                             <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${selectedAssessment.type === "activity" ? "bg-purple-100 text-purple-700" : selectedAssessment.type === "quiz" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
                               {selectedAssessment.type === "activity" ? "Activity" : selectedAssessment.type === "quiz" ? "Quiz" : "Assignment"}
                             </span>
@@ -1572,7 +2458,7 @@ function GradesManagement() {
                         </div>
                       ) : (
                         <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-                          <p className="text-sm text-gray-500">Select an assessment to view details</p>
+                          <p className="text-sm text-gray-500">Select a seatwork to view details</p>
                         </div>
                       )}
 
@@ -1627,7 +2513,7 @@ function GradesManagement() {
 
                       {/* Submission & Grade Section (only when student selected) */}
                       {selectedAssessment && selectedStudentId && (
-                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+                        <div data-tour="teacher-grades-submission-detail" className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
                           <div className="px-4 py-3 border-b border-gray-100">
                             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Submission & Grade</p>
                           </div>
@@ -1635,36 +2521,43 @@ function GradesManagement() {
                             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                               <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Submission Output</p>
 
-                              {selectedStudentSubmission ? (
-                                <div className="space-y-3">
-                                  {selectedStudentSubmission.responseText ? (
-                                    <div>
-                                      <p className="text-[11px] text-gray-500 mb-1">Response</p>
-                                      <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedStudentSubmission.responseText}</p>
-                                    </div>
-                                  ) : null}
+                              {selectedStudentSubmission ? (() => {
+                                const isPlaceholder = selectedStudentSubmission.responseText?.startsWith("Placeholder submission");
+                                return (
+                                  <div className="space-y-3">
+                                    {!isPlaceholder && selectedStudentSubmission.responseText ? (
+                                      <div>
+                                        <p className="text-[11px] text-gray-500 mb-1">Response</p>
+                                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedStudentSubmission.responseText}</p>
+                                      </div>
+                                    ) : null}
 
-                                  {selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath ? (
-                                    <div>
-                                      <p className="text-[11px] text-gray-500 mb-1">Attachment</p>
-                                      <a
-                                        href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-xs border border-green-200 hover:bg-green-100"
-                                      >
-                                        {selectedStudentSubmission.fileName || "Open submitted file"}
-                                      </a>
-                                    </div>
-                                  ) : null}
+                                    {selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath ? (
+                                      <div>
+                                        <p className="text-[11px] text-gray-500 mb-1">Attachment</p>
+                                        <a
+                                          href={selectedStudentSubmission.fileUrl || selectedStudentSubmission.filePath}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-xs border border-green-200 hover:bg-green-100"
+                                        >
+                                          {selectedStudentSubmission.fileName || "Open submitted file"}
+                                        </a>
+                                      </div>
+                                    ) : null}
 
-                                  {selectedStudentSubmission.submittedAt ? (
-                                    <p className="text-[11px] text-gray-500">
-                                      Submitted: {new Date(selectedStudentSubmission.submittedAt).toLocaleString()}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              ) : (
+                                    {!isPlaceholder && selectedStudentSubmission.submittedAt ? (
+                                      <p className="text-[11px] text-gray-500">
+                                        Submitted: {new Date(selectedStudentSubmission.submittedAt).toLocaleString()}
+                                      </p>
+                                    ) : null}
+
+                                    {isPlaceholder && !selectedStudentSubmission.fileUrl && !selectedStudentSubmission.filePath ? (
+                                      <p className="text-sm text-amber-600">No submission from this student.</p>
+                                    ) : null}
+                                  </div>
+                                );
+                              })() : (
                                 <p className="text-sm text-amber-600">No submission found for this student yet.</p>
                               )}
                             </div>
@@ -1679,11 +2572,18 @@ function GradesManagement() {
                                   step="0.01"
                                   value={assessmentGradesMap?.[selectedAssessment.id]?.[selectedStudentId] ?? ""}
                                   onChange={(e) => handleAssessmentGradeChange(selectedAssessment.id, selectedStudentId, selectedAssessment.maxPoints, e.target.value)}
-                                  className="w-full px-3 py-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  disabled={assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" || (academicSettings.quarter && selectedAssessment.term !== academicSettings.quarter)}
+                                  className="w-full px-3 py-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-200 disabled:cursor-not-allowed"
                                   placeholder="Enter grade"
                                 />
                                 <span className="text-xs text-gray-400 whitespace-nowrap">/ {selectedAssessment.maxPoints}</span>
                               </div>
+                              
+                              {academicSettings.quarter && selectedAssessment.term !== academicSettings.quarter && (
+                                <p className="text-[11px] text-red-500 mt-2">
+                                  This assessment belongs to a past quarter and is read-only.
+                                </p>
+                              )}
                               
                               {/* Show percentage and pass/fail status for quizzes */}
                               {selectedAssessment.type === 'quiz' && (
@@ -1714,7 +2614,9 @@ function GradesManagement() {
                               <p className="text-[11px] text-gray-400 mt-2">
                                 Grade Status: <span className="text-green-900 font-medium">{assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] || "Pending"}</span>
                               </p>
-                              {!hasViewedSubmission ? (
+                              {assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" ? (
+                                <p className="text-[11px] text-amber-600 mt-2">This grade is locked after return. Click Undo Return to edit it again.</p>
+                              ) : !hasViewedSubmission ? (
                                 <p className="text-[11px] text-amber-600 mt-2">View student submission first before grading.</p>
                               ) : null}
                             </div>
@@ -1722,10 +2624,9 @@ function GradesManagement() {
                             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                               <div className="flex items-center justify-between mb-3">
                                 <p className="text-xs text-gray-500 uppercase tracking-wider">Teacher Feedback</p>
-                                <p className="text-xs text-gray-500">Visible to student</p>
                               </div>
 
-                              <div className="space-y-3">
+                              <div className={`space-y-3 ${assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" ? "opacity-80" : ""}`}>
                                 <div>
                                   <label className="text-[11px] text-gray-400 block mb-2">Comments</label>
                                   <textarea
@@ -1733,18 +2634,47 @@ function GradesManagement() {
                                     value={selectedStudentFeedback}
                                     onChange={(e) => handleAssessmentFeedbackChange(selectedAssessment.id, selectedStudentId, e.target.value)}
                                     placeholder="Enter feedback for the student..."
-                                    className="w-full p-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    disabled={assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned" || (academicSettings.quarter && selectedAssessment.term !== academicSettings.quarter)}
+                                    className="w-full p-2 text-sm bg-white text-green-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-200 disabled:cursor-not-allowed"
                                   />
                                 </div>
 
+                                {(() => {
+                                  const actionKey = `${selectedAssessment.id}:${selectedStudentId}`;
+                                  const actionState = submissionActionStateMap[actionKey] || "idle";
+                                  const isReturned = assessmentStatusMap?.[selectedAssessment.id]?.[selectedStudentId] === "Returned";
+                                  const isPastQuarter = academicSettings.quarter && selectedAssessment.term !== academicSettings.quarter;
+                                  const isBusy = actionState === "returning" || actionState === "undoing";
+                                  return (
                                 <button
                                   type="button"
-                                  onClick={handleReturnAssignment}
-                                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-yellow-600 text-white rounded-full hover:bg-yellow-700 transition-colors font-semibold text-sm"
+                                  onClick={isBusy || isPastQuarter ? undefined : (isReturned ? handleUndoReturn : handleReturnAssignment)}
+                                  disabled={isBusy || isPastQuarter}
+                                  className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-white rounded-full transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    isReturned
+                                      ? "bg-red-600 hover:bg-red-700"
+                                      : "bg-yellow-600 hover:bg-yellow-700"
+                                  }`}
                                 >
-                                  <ChevronUp className="w-4 h-4" />
-                                  Return Assignment
+                                  {isBusy ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                      {actionState === "undoing" ? "Undoing..." : "Returning..."}
+                                    </>
+                                  ) : isReturned ? (
+                                    <>
+                                      <RotateCcw className="w-4 h-4" />
+                                      Undo Return
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ChevronUp className="w-4 h-4" />
+                                      Return Assignment
+                                    </>
+                                  )}
                                 </button>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -1771,6 +2701,22 @@ function GradesManagement() {
           )}
         </div>
       </main>
+
+      {/* Gradebook Modal */}
+      {selectedStudentForModal && (
+        <StudentGradebookModal
+          student={selectedStudentForModal}
+          assessmentItems={assessmentItems}
+          submissions={assessmentSubmissionsMap}
+          grades={assessmentGradesMap}
+          statusMap={assessmentStatusMap}
+          feedbackMap={assessmentFeedbackMap}
+            subjectCategory={activeClassesList.find((item) => item.id === selectedClass)?.subjectCategory || DEPED_SUBJECT_CATEGORIES[0]}
+            gradingSettingsByCategory={gradingSettingsByCategory}
+          studentOverallGrades={studentGrades.find((student) => student.id === selectedStudentForModal.id) || gradesCache?.[selectedClass]?.[selectedStudentForModal.id]}
+          onClose={() => setSelectedStudentForModal(null)}
+        />
+      )}
     </div>
   );
 }

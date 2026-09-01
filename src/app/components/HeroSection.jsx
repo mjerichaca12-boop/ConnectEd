@@ -1,8 +1,26 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Shield, Smartphone, Lock, Eye } from "lucide-react";
 
 function HeroSection() {
   const navigate = useNavigate();
+
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      try {
+        setUser(JSON.parse(rawUser));
+      } catch {
+        setUser(null);
+      }
+    }
+  }, []);
+
+  const handleAuthClick = () => {
+    navigate("/login");
+  };
 
   const scrollToFeatures = () => {
     const target = document.getElementById("features");
@@ -56,7 +74,7 @@ function HeroSection() {
           className="text-gray-600 text-lg md:text-xl leading-relaxed mb-8 max-w-2xl mx-auto"
           style={{ animation: "fadeSlideUp 0.9s ease-out 0.3s both" }}
         >
-          ConnectEd unifies classroom management, grading, attendance, announcements,
+          ConnectEd unifies classroom management, grading, announcements,
           and messaging — built specifically for DepEd public schools in Dasmariñas, Cavite.
         </p>
 
@@ -66,8 +84,8 @@ function HeroSection() {
           style={{ animation: "fadeSlideUp 0.9s ease-out 0.45s both" }}
         >
           <button
-            onClick={() => navigate("/login")}
-            className="group relative flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-gray-900 font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg shadow-green-600/20 text-sm"
+            onClick={handleAuthClick}
+            className="group relative flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-8 py-3.5 rounded-xl transition-all duration-200 shadow-lg shadow-green-600/20 text-sm cursor-pointer"
           >
             Sign In
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

@@ -12,7 +12,6 @@ export interface ClassStudent {
     email: string;
     phone: string;
     grades: Record<string, any>;
-    attendance: Record<string, any>;
     status: string;
 }
 
@@ -25,7 +24,6 @@ export async function getClassStudents({ subjectId }: GetClassStudentsArgs): Pro
             id,
             status,
             grade,
-            attendance,
             student_id,
             profiles:student_id (
                 id,
@@ -55,7 +53,6 @@ export async function getClassStudents({ subjectId }: GetClassStudentsArgs): Pro
             email: "student@example.com", // Placeholder since auth.users isn't joinable safely
             phone: "N/A",
             grades: enrollment.grade || {},
-            attendance: enrollment.attendance || {},
             status: enrollment.status === "accepted" ? "Active" : 
                     enrollment.status === "pending" ? "Pending" : "Inactive"
         };

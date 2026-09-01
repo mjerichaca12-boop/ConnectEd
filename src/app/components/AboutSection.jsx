@@ -66,7 +66,7 @@ function AboutSection() {
                 <div className="space-y-2.5">
                   {[
                     { icon: Shield, label: "Governance & Access", desc: "Role-based system control", color: "bg-green-50 text-green-600 border border-green-100" },
-                    { icon: Calendar, label: "Scheduling", desc: "Weekly class structure", color: "bg-blue-50 text-blue-600 border border-blue-100" },
+                    { icon: Calendar, label: "Learning Management", desc: "Assignments, materials, and classroom activities", color: "bg-blue-50 text-blue-600 border border-blue-100" },
                     { icon: Bell, label: "Updates & Alerts", desc: "Real-time notifications", color: "bg-amber-50 text-amber-600 border border-amber-100" },
                   ].map((item) => {
                     const Icon = item.icon;

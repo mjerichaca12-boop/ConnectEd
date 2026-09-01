@@ -14,7 +14,7 @@ const MONTHS = [
 const EVENTS = [
     { id: "1", date: "2026-05-01", title: "Labor Day", type: "Holiday", color: "#EF4444" },
     { id: "2", date: "2026-05-15", title: "Mid-term Exams", type: "Academic", color: "#3B82F6" },
-    { id: "3", date: "2026-05-20", title: "Faculty Meeting", type: "Meeting", color: "#10B981" },
+    { id: "3", date: "2026-05-20", title: "Faculty Assembly", type: "School Event", color: "#10B981" },
     { id: "4", date: "2026-05-25", title: "Foundation Day", type: "Event", color: "#F59E0B" },
 ];
 

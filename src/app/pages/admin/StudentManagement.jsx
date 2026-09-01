@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { CustomSelect } from "../../components/admin/CustomSelect";
+import { SectionDropdown } from "../../components/admin/SectionDropdown";
+import { toast } from "sonner";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, ChevronDown, CheckCircle2, Sparkles } from "lucide-react";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen } from "lucide-react";
 
-const db = supabaseAdmin || supabase;
+const db = supabase;
 const generateUUID = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -19,6 +24,33 @@ const generateUUID = () => {
 const generateTempPassword = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+};
+
+const formatSectionName = (secStr) => {
+  const clean = String(secStr || "").trim();
+  if (!clean || clean.toLowerCase() === "unassigned" || clean.toLowerCase() === "unassigned section" || clean.toLowerCase() === "unknown") return null;
+  return clean.split(/\s+/).map(w => {
+    if (/^[a-z]/.test(w)) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }
+    return w;
+  }).join(" ");
+};
+
+const normalizeYearLevel = (rawVal) => {
+  if (!rawVal) return null;
+  const str = String(rawVal).trim();
+  const numMatch = str.match(/\d+/);
+  return numMatch ? numMatch[0] : str;
+};
+
+const splitFullName = (fullNameStr) => {
+  const parts = String(fullNameStr || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: parts[0] };
+  const last_name = parts.pop();
+  const first_name = parts.join(" ");
+  return { first_name, last_name };
 };
 
 function StudentManagement() {
@@ -33,15 +65,10 @@ function StudentManagement() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentToDelete, setStudentToDelete] = useState(null);
-  
-  // Masterlist Sync States
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [masterListPending, setMasterListPending] = useState([]);
-  const [importing, setImporting] = useState(false);
-  const [importSummary, setImportSummary] = useState(null);
-
+  const [resetSettings, setResetSettings] = useState({ forceChange: true, tempPassword: "" });
   const [studentFormData, setStudentFormData] = useState({
     first_name: "",
     middle_name: "",
@@ -49,7 +76,6 @@ function StudentManagement() {
     email: "",
     lrn: "",
     year_level: "",
-    phone: "",
     section: "",
     status: "Active",
     password: ""
@@ -61,7 +87,6 @@ function StudentManagement() {
     email: "",
     lrn: "",
     year_level: "",
-    phone: "",
     section: "",
     status: "Active"
   });
@@ -69,7 +94,65 @@ function StudentManagement() {
   const [editFormErrors, setEditFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [gradeSectionsMap, setGradeSectionsMap] = useState({});
+
+  // New state variables for Masterlist
+  const [masterlist, setMasterlist] = useState([]);
+  const [activeTab, setActiveTab] = useState("Profiles"); // "Profiles" or "Masterlist"
+  const [selectedMasterlistIds, setSelectedMasterlistIds] = useState(new Set());
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showClearMasterlistConfirm, setShowClearMasterlistConfirm] = useState(false);
+  const [isClearingMasterlist, setIsClearingMasterlist] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showImportPreviewModal, setShowImportPreviewModal] = useState(false);
+  const [importPreviewSummary, setImportPreviewSummary] = useState({
+    total: 0,
+    valid: [],
+    invalid: [],
+    duplicates: []
+  });
+  const [previewTab, setPreviewTab] = useState("valid");
+  const [isSavingImport, setIsSavingImport] = useState(false);
+
+  // Batch account generation progress & results states
+  const [showGenerationProgressModal, setShowGenerationProgressModal] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState({
+    total: 0,
+    current: 0,
+    percentage: 0,
+    currentBatch: 0,
+    totalBatches: 0
+  });
+
+  const [showGenerationResultsModal, setShowGenerationResultsModal] = useState(false);
+  const [generationResultsSummary, setGenerationResultsSummary] = useState({
+    total: 0,
+    success: [],
+    alreadyExists: [],
+    failed: []
+  });
+  const [resultsTab, setResultsTab] = useState("success");
+
+  // Bulk section assignment states
+  const [showBulkAssignSectionModal, setShowBulkAssignSectionModal] = useState(false);
+  const [targetBulkSection, setTargetBulkSection] = useState("");
+  const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal, showBulkAssignSectionModal]);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -87,50 +170,41 @@ function StudentManagement() {
     setAdminName(user.name);
   }, [navigate]);
 
-  useEffect(() => {
-    const loadStudents = async ({ showLoading = false } = {}) => {
-      try {
-        if (showLoading) {
-          setLoading(true);
-        }
+  const fetchStudentsData = useCallback(async () => {
+    if (!db) return null;
+    const [profilesRes, masterlistRes] = await Promise.all([
+      adminApi.db("profiles", "select", {
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        eq: { column: "role", value: "student" },
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("student_masterlist", "select", {
+        payload: "*",
+        order: { column: "created_at", options: { ascending: false } }
+      })
+    ]);
 
-        if (!db) {
-          setErrorMessage("Supabase client is not configured.");
-          return;
-        }
+    if (profilesRes.error) {
+      throw new Error(profilesRes.error.message);
+    }
 
-        const { data, error } = await db
-          .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-          .eq("role", "student")
-          .order("created_at", { ascending: false });
-
-        if (error) {
-          setErrorMessage(error.message);
-          setStudents([]);
-          return;
-        }
-
-        setErrorMessage("");
-        setStudents(data ?? []);
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Unable to load students.");
-        setStudents([]);
-      } finally {
-        if (showLoading) {
-          setLoading(false);
-        }
-      }
+    return {
+      students: profilesRes.data ?? [],
+      masterlist: masterlistRes.data ?? []
     };
-
-    loadStudents({ showLoading: true });
   }, []);
 
+  const { data: cachedStudentsData, loading: isCachedLoading } = useCachedFetch("admin_students_data", fetchStudentsData);
+
   useEffect(() => {
-    if (!successMessage) return;
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
+    if (cachedStudentsData) {
+      setStudents(cachedStudentsData.students || []);
+      setMasterlist(cachedStudentsData.masterlist || []);
+      setLoading(false);
+    } else {
+      setLoading(isCachedLoading);
+    }
+  }, [cachedStudentsData, isCachedLoading]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -140,20 +214,151 @@ function StudentManagement() {
   const refreshStudents = async () => {
     if (!db) return;
 
-    const { data, error } = await db
-      .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-      .eq("role", "student")
-      .order("created_at", { ascending: false });
+    const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
+      adminApi.db("profiles", "select", {
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        eq: { column: "role", value: "student" },
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("student_masterlist", "select", {
+        payload: "*",
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      adminApi.db("grade_sections", "select", { payload: "*" })
+    ]);
 
-    if (error) {
-      throw new Error(error.message);
+    if (profilesRes.error) {
+      throw new Error(profilesRes.error.message);
     }
 
-    setStudents(data ?? []);
+    const fetchedProfiles = profilesRes.data ?? [];
+    setStudents(fetchedProfiles);
+
+    // Auto-backfill missing usernames for existing student profiles efficiently
+    const missingUsernameStudents = fetchedProfiles.filter(s => !s.username);
+    if (missingUsernameStudents.length > 0) {
+      (async () => {
+        const usedUsernames = new Set(fetchedProfiles.map(p => p.username).filter(Boolean));
+        let updatedAny = false;
+        
+        // Process in batches of 5 to avoid sequential N+1 network waterfall
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < missingUsernameStudents.length; i += BATCH_SIZE) {
+          const chunk = missingUsernameStudents.slice(i, i + BATCH_SIZE);
+          await Promise.all(chunk.map(async (s) => {
+            const firstInitial = (s.first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+            const lastNameLow = (s.last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+            const baseUsername = (firstInitial + lastNameLow) || "student";
+            let genUsername = `${baseUsername}01`;
+            let suffix = 1;
+            while (usedUsernames.has(genUsername)) {
+              suffix++;
+              genUsername = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+            }
+            usedUsernames.add(genUsername);
+
+            const { error: updErr } = await adminApi.db("profiles", "update", {
+              payload: { username: genUsername },
+              eq: { column: "id", value: s.id }
+            });
+            if (!updErr) updatedAny = true;
+          }));
+        }
+
+        if (updatedAny) {
+          const { data: updatedProfiles } = await adminApi.db("profiles", "select", {
+            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+            eq: { column: "role", value: "student" },
+            order: { column: "created_at", options: { ascending: false } }
+          });
+          if (updatedProfiles) setStudents(updatedProfiles);
+        }
+      })();
+    }
+
+    // Auto-backfill missing sections/year_levels from masterlist or teacher_student_assignments
+    const missingSectionStudents = fetchedProfiles.filter(s => !s.section || !s.year_level);
+    if (missingSectionStudents.length > 0) {
+      (async () => {
+        let updatedSectionAny = false;
+        const masterlistData = masterlistRes.data ?? [];
+        const masterlistByLrn = new Map((masterlistData).filter(m => m.lrn).map(m => [m.lrn, m]));
+
+        const missingIds = missingSectionStudents.map(s => s.id);
+        const { data: assignData } = db ? await db
+          .from("teacher_student_assignments")
+          .select("student_id, section, subjects(grade_level, section)")
+          .in("student_id", missingIds) : { data: [] };
+
+        const assignByStudentId = new Map();
+        (assignData || []).forEach(a => {
+          const sec = a.section || a.subjects?.section;
+          const gr = a.subjects?.grade_level;
+          if (sec && !assignByStudentId.has(a.student_id)) {
+            assignByStudentId.set(a.student_id, { section: sec, grade_level: gr });
+          }
+        });
+
+        for (const s of missingSectionStudents) {
+          const mRecord = s.lrn ? masterlistByLrn.get(s.lrn) : null;
+          const aRecord = assignByStudentId.get(s.id);
+
+          const targetSection = (mRecord?.section || aRecord?.section) ? formatSectionName(mRecord?.section || aRecord?.section) : null;
+          const targetGrade = (mRecord?.year_level || aRecord?.grade_level) ? normalizeYearLevel(mRecord?.year_level || aRecord?.grade_level) : null;
+
+          const pPayload = {};
+          if (!s.section && targetSection) pPayload.section = targetSection;
+          if (!s.year_level && targetGrade) pPayload.year_level = targetGrade;
+
+          if (Object.keys(pPayload).length > 0) {
+            const { error: updErr } = await adminApi.db("profiles", "update", {
+              payload: pPayload,
+              eq: { column: "id", value: s.id }
+            });
+            if (!updErr) updatedSectionAny = true;
+          }
+        }
+
+        if (updatedSectionAny) {
+          const { data: updatedProfiles } = await adminApi.db("profiles", "select", {
+            payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+            eq: { column: "role", value: "student" },
+            order: { column: "created_at", options: { ascending: false } }
+          });
+          if (updatedProfiles) setStudents(updatedProfiles);
+        }
+      })();
+    }
+
+    if (!masterlistRes.error) {
+      setMasterlist(masterlistRes.data ?? []);
+    }
+    
+    if (!gradeSectionsRes.error && gradeSectionsRes.data) {
+      const map = {};
+      gradeSectionsRes.data.forEach(row => {
+        if (!map[row.grade_level]) map[row.grade_level] = [];
+        map[row.grade_level].push(row.section_name);
+      });
+      setGradeSectionsMap(map);
+    }
   };
 
   const getFullName = (student) => [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ");
+
+  const getDisplayUsername = (student) => {
+    if (student?.username) return student.username;
+    if (student?.email && !student.email.endsWith("@students.connected") && !student.email.endsWith("@temp.local")) {
+      const prefix = student.email.split("@")[0];
+      if (prefix && !/^\d+$/.test(prefix)) return prefix;
+    }
+    const firstInitial = (student?.first_name || "").charAt(0).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const lastNameClean = (student?.last_name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (firstInitial && lastNameClean) {
+      return `${firstInitial}${lastNameClean}01`;
+    }
+    return "student01";
+  };
 
   const formatDate = (value) => {
     if (!value) return "-";
@@ -164,21 +369,21 @@ function StudentManagement() {
     });
   };
 
-  const normalizePhone = (value) => value.replace(/\D/g, "").slice(0, 11);
+
   const normalizeLrn = (value) => value.replace(/\D/g, "").slice(0, 12);
   const normalizeYearLevel = (value) => value.replace(/\D/g, "").slice(0, 2);
 
-  const validateAddField = (field, value) => {
+  const validateAddField = (field, value, formData) => {
     const trimmedValue = typeof value === "string" ? value.trim() : value;
 
     switch (field) {
       case "first_name":
         if (!trimmedValue) return "First name is required";
-        if (!/^[A-Za-z]+$/.test(trimmedValue)) return "First name must contain letters only";
+        if (!/^[A-Za-z\s.\-]+$/.test(trimmedValue)) return "First name must contain letters only";
         return "";
       case "last_name":
         if (!trimmedValue) return "Last name is required";
-        if (!/^[A-Za-z]+$/.test(trimmedValue)) return "Last name must contain letters only";
+        if (!/^[A-Za-z\s.\-]+$/.test(trimmedValue)) return "Last name must contain letters only";
         return "";
       case "email":
         if (!trimmedValue) return "Email is required";
@@ -194,12 +399,7 @@ function StudentManagement() {
         if (!/^\d+$/.test(String(trimmedValue))) return "Year level must be a valid number";
         if (String(trimmedValue).length > 2) return "Year level must be at most 2 digits";
         return "";
-      case "phone": {
-        if (!trimmedValue) return "Phone number is required";
-        const normalizedPhone = normalizePhone(String(trimmedValue));
-        if (!/^\d{11}$/.test(normalizedPhone)) return "Phone number must be exactly 11 digits";
-        return "";
-      }
+
       case "section":
         return "";
       case "status":
@@ -212,11 +412,51 @@ function StudentManagement() {
 
   const handleAddStudentFieldChange = (field, value) => {
     setStudentFormData((current) => {
-      const nextValue = field === "phone" ? normalizePhone(value) : field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
+      const nextValue = field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
       const nextFormData = { ...current, [field]: nextValue };
+      if (field === "year_level") {
+        nextFormData.section = ""; // Automatically clear the selected Section if the Grade Level changes.
+      }
+      if (field === "lrn") {
+        nextFormData.email = `${nextValue.toLowerCase()}@students.connected`;
+      }
       const fieldError = validateAddField(field, nextValue, nextFormData);
 
       setFormErrors((currentErrors) => {
+        const nextErrors = { ...currentErrors };
+
+        if (fieldError) {
+          nextErrors[field] = fieldError;
+        } else {
+          delete nextErrors[field];
+        }
+
+        if (field === "lrn") {
+          const emailError = validateAddField("email", nextFormData.email, nextFormData);
+          if (emailError) {
+            nextErrors.email = emailError;
+          } else {
+            delete nextErrors.email;
+          }
+        }
+
+        return nextErrors;
+      });
+
+      return nextFormData;
+    });
+  };
+
+  const handleEditFieldChange = (field, value) => {
+    setEditFormData((current) => {
+      const nextValue = field === "lrn" ? normalizeLrn(value) : field === "year_level" ? normalizeYearLevel(value) : value;
+      const nextFormData = { ...current, [field]: nextValue };
+      if (field === "year_level") {
+        nextFormData.section = "";
+      }
+      const fieldError = validateAddField(field, nextValue, nextFormData);
+
+      setEditFormErrors((currentErrors) => {
         const nextErrors = { ...currentErrors };
 
         if (fieldError) {
@@ -239,7 +479,7 @@ function StudentManagement() {
     email: formData.email.trim().toLowerCase(),
     lrn: normalizeLrn(formData.lrn),
     year_level: normalizeYearLevel(formData.year_level),
-    phone: formData.phone.trim(),
+
     section: formData.section?.trim() || null,
     status: formData.status,
     role: "student"
@@ -248,10 +488,10 @@ function StudentManagement() {
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};
 
-    const fieldNames = ["first_name", "last_name", "email", "lrn", "year_level", "phone", "section", "status"];
+    const fieldNames = ["first_name", "last_name", "lrn", "year_level", "section", "status"];
 
     fieldNames.forEach((field) => {
-      const fieldError = validateAddField(field, formData[field]);
+      const fieldError = validateAddField(field, formData[field], formData);
       if (fieldError) errors[field] = fieldError;
     });
 
@@ -264,26 +504,20 @@ function StudentManagement() {
       return errors;
     }
 
-    const emailQuery = db.from("profiles").select("id").eq("email", formData.email.trim().toLowerCase()).limit(1);
-    const lrnQuery = db.from("profiles").select("id").eq("lrn", normalizeLrn(formData.lrn)).limit(1);
+    let lrnQuery = db
+      .from("profiles")
+      .select("id")
+      .eq("lrn", formData.lrn);
 
-    const [emailResult, lrnResult] = await Promise.all([
-      excludeId ? emailQuery.neq("id", excludeId) : emailQuery,
-      excludeId ? lrnQuery.neq("id", excludeId) : lrnQuery
-    ]);
-
-    if (emailResult.error) {
-      errors.form = emailResult.error.message;
-      return errors;
+    if (excludeId) {
+      lrnQuery = lrnQuery.neq("id", excludeId);
     }
+
+    const lrnResult = await lrnQuery;
 
     if (lrnResult.error) {
       errors.form = lrnResult.error.message;
       return errors;
-    }
-
-    if ((emailResult.data ?? []).length > 0) {
-      errors.email = "Email already exists";
     }
 
     if ((lrnResult.data ?? []).length > 0) {
@@ -296,7 +530,6 @@ function StudentManagement() {
   const handleAddStudent = async (e) => {
     e.preventDefault();
     setErrorMessage("");
-    setSuccessMessage("");
 
     const validationErrors = await validateStudentForm(studentFormData);
     setFormErrors(validationErrors);
@@ -309,45 +542,55 @@ function StudentManagement() {
 
     setIsSubmitting(true);
 
-    let createdAuthId = null;
-
     try {
-      const tempPassword = studentFormData.password || generateTempPassword();
-      const studentEmail = studentFormData.email.trim().toLowerCase();
+      const firstInitial = studentFormData.first_name.charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+      const lastNameLow = studentFormData.last_name.trim().toLowerCase().replace(/[^a-z]/g, "");
+      let baseUsername = (firstInitial + lastNameLow) || "student";
+      let username = `${baseUsername}01`;
+      let suffix = 1;
 
-      // 1. Create Auth user
-      const { data: authData, error: authError } = await db.auth.admin.createUser({
-        email: studentEmail,
+      while (true) {
+        const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: username }, single: true });
+        if (!existing || existing.error) break;
+        suffix++;
+        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+      }
+
+      const tempEmail = `${username}@temp.local`;
+      const tempPassword = studentFormData.password || generateUUID().slice(0, 8);
+      
+      let userId = generateUUID();
+      
+      const { data: authData, error: authError } = await adminApi.createUser({
+        email: tempEmail,
         password: tempPassword,
         email_confirm: true
       });
-
+      
       if (authError) {
-        throw authError;
+         if (authError.message?.includes("already exists") || authError.status === 422) {
+            const { data: retryList } = await adminApi.listUsers();
+            const retryUser = retryList?.users?.find(u => u.email === tempEmail);
+            if (!retryUser) throw new Error("Email exists but user not found in fallback query.");
+            userId = retryUser.id;
+         } else {
+            throw authError;
+         }
+      } else if (authData?.user) {
+         userId = authData.user.id;
       }
 
-      createdAuthId = authData.user.id;
-
-      // 2. Insert profile record
-      const payload = {
-        id: createdAuthId,
-        ...buildPayload(studentFormData),
-        email: studentEmail,
-        must_change_password: true
-      };
-
-      const { data, error } = await db
-        .from("profiles")
-        .insert(payload)
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-        .single();
+      const { data, error } = await adminApi.db("profiles", "insert", {
+        payload: { id: userId, username: username, email: tempEmail, ...buildPayload(studentFormData) },
+        select: "id, first_name, middle_name, last_name, username, lrn, year_level, section, status, role, created_at",
+        single: true
+      });
 
       if (error) {
-        // cleanup auth user
-        await db.auth.admin.deleteUser(createdAuthId).catch(() => {});
         throw error;
       }
 
+      const savedPassword = studentFormData.password;
       if (data) {
         setStudents((current) => [data, ...current.filter((student) => student.id !== data.id)]);
         const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
@@ -356,7 +599,7 @@ function StudentManagement() {
           entityType: "student",
           entityId: data.id,
           entityName: studentName,
-          details: { email: data.email, lrn: data.lrn, section: data.section },
+          details: { username: username, lrn: data.lrn, section: data.section },
           timestamp: data.created_at
         });
       }
@@ -365,140 +608,29 @@ function StudentManagement() {
         first_name: "",
         middle_name: "",
         last_name: "",
-        email: "",
         lrn: "",
         year_level: "",
-        phone: "",
+
         section: "",
         status: "Active",
         password: ""
       });
       setFormErrors({});
       setShowAddModal(false);
-      setSuccessMessage(`Student account added successfully. Temporary password: ${tempPassword}`);
+      const tempMsg = savedPassword ? ` Temporary password: ${savedPassword}` : "";
+      toast.success(`Student account added successfully.${tempMsg}`, { duration: 6000 });
     } catch (error) {
       console.error("Add student error:", error);
-      setErrorMessage(error?.message || (typeof error === 'string' ? error : "Unable to add student."));
+      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to add student.");
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  // Masterlist Sync Methods
-  const handleFetchMasterlist = async () => {
-    setErrorMessage("");
-    setSuccessMessage("");
-    setImportSummary(null);
-    try {
-      const { data, error } = await db
-        .from("student_masterlist")
-        .select("*")
-        .eq("account_created", false);
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        setSuccessMessage("No pending student records found in student_masterlist.");
-        return;
-      }
-
-      setMasterListPending(data);
-      setShowImportModal(true);
-    } catch (err) {
-      console.error("Fetch masterlist error:", err);
-      setErrorMessage(err.message || "Failed to load student masterlist.");
-    }
-  };
-
-  const handleImportMasterlist = async () => {
-    setImporting(true);
-    setErrorMessage("");
-    const succeeded = [];
-    const failed = [];
-
-    for (const record of masterListPending) {
-      try {
-        const studentLrn = String(record.lrn).trim();
-        const studentEmail = `${studentLrn}@student.connected`;
-        const tempPassword = generateTempPassword();
-
-        // 1. Create Auth user
-        const { data: authData, error: authError } = await db.auth.admin.createUser({
-          email: studentEmail,
-          password: tempPassword,
-          email_confirm: true
-        });
-
-        if (authError) {
-          throw new Error(`Auth Error: ${authError.message}`);
-        }
-
-        const authUserId = authData.user.id;
-
-        // 2. Insert profile record
-        const { error: insertError } = await db.from("profiles").insert({
-          id: authUserId,
-          first_name: record.first_name.trim(),
-          middle_name: record.middle_name?.trim() || null,
-          last_name: record.last_name.trim(),
-          email: studentEmail,
-          lrn: studentLrn,
-          year_level: String(record.year_level || "7").trim(),
-          section: record.section?.trim() || null,
-          status: "Active",
-          role: "student",
-          must_change_password: true
-        });
-
-        if (insertError) {
-          await db.auth.admin.deleteUser(authUserId).catch(() => {});
-          throw new Error(`Profile Error: ${insertError.message}`);
-        }
-
-        // 3. Mark as account_created = true in student_masterlist
-        const { error: updateError } = await db
-          .from("student_masterlist")
-          .update({ account_created: true })
-          .eq("id", record.id);
-
-        if (updateError) {
-          console.warn("Failed to mark masterlist record as account_created:", updateError);
-        }
-
-        succeeded.push({
-          name: `${record.first_name} ${record.last_name}`,
-          email: studentEmail,
-          password: tempPassword,
-          lrn: studentLrn
-        });
-      } catch (err) {
-        console.error(`Failed to import student LRN ${record.lrn}:`, err);
-        failed.push({
-          name: `${record.first_name} ${record.last_name}`,
-          lrn: record.lrn,
-          reason: err.message || "Unknown error"
-        });
-      }
-    }
-
-    setImportSummary({ succeeded, failed });
-    setMasterListPending([]);
-    setImporting(false);
-    
-    if (succeeded.length > 0) {
-      const { data } = await db
-        .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-        .eq("role", "student")
-        .order("created_at", { ascending: false });
-      if (data) setStudents(data);
     }
   };
 
   const handleUpdateStudent = async (e) => {
     e.preventDefault();
     setErrorMessage("");
-    setSuccessMessage("");
 
     if (!selectedStudent) return;
 
@@ -514,12 +646,10 @@ function StudentManagement() {
     setIsSubmitting(true);
 
     try {
-      const { data, error } = await db
-        .from("profiles")
-        .update(buildPayload(editFormData))
-        .eq("id", selectedStudent.id)
-        .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, section, status, role, created_at")
-        .single();
+      const { data, error } = await adminApi.updateProfile(
+        selectedStudent.id,
+        buildPayload(editFormData)
+      );
 
       if (error) {
         throw error;
@@ -546,18 +676,574 @@ function StudentManagement() {
         email: "",
         lrn: "",
         year_level: "",
-        phone: "",
+
         section: "",
         status: "Active"
       });
       setEditFormErrors({});
       setShowEditModal(false);
-      setSuccessMessage("Student account updated successfully.");
+      toast.success("Student account updated successfully.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update student.");
+      const errMsg = error instanceof Error ? error.message : "Unable to update student.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // --- CSV Import Helpers & Dictionary Mapping ---
+  const HEADER_MAPPINGS = {
+    lrn: ["lrn", "student_lrn", "student lrn", "id_number", "id number"],
+    first_name: ["first_name", "first name", "firstname", "first", "given_name", "given name"],
+    last_name: ["last_name", "last name", "lastname", "last", "surname", "family_name", "family name"],
+    middle_name: ["middle_name", "middle name", "middlename", "middle", "middle_initial", "middle initial"],
+    full_name: ["full_name", "full name", "fullname", "student name", "student_name", "name"],
+    year_level: ["year_level", "year level", "yearlevel", "year", "grade", "grade_level", "grade level", "level"],
+    section: ["section", "section_name", "section name", "class_section", "class section"],
+    email: ["email", "email_address", "email address"]
+  };
+
+  const normalizeHeaderKey = (headerStr) => {
+    return String(headerStr || "").toLowerCase().trim().replace(/[\s\-_]+/g, "");
+  };
+
+  const matchHeaderField = (rawHeader) => {
+    const norm = normalizeHeaderKey(rawHeader);
+    for (const [field, aliases] of Object.entries(HEADER_MAPPINGS)) {
+      if (aliases.some(alias => normalizeHeaderKey(alias) === norm)) {
+        return field;
+      }
+    }
+    return null;
+  };
+
+  const splitFullName = (fullNameStr) => {
+    const clean = String(fullNameStr || "").trim();
+    if (!clean) return { first_name: "", last_name: "" };
+    const parts = clean.split(/\s+/);
+    if (parts.length === 1) {
+      return { first_name: parts[0], last_name: parts[0] };
+    }
+    return {
+      first_name: parts[0],
+      last_name: parts.slice(1).join(" ")
+    };
+  };
+
+  const parseCsvText = (text) => {
+    const lines = text.split(/\r?\n/);
+    const rows = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const cells = [];
+      let insideQuotes = false;
+      let currentCell = "";
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          insideQuotes = !insideQuotes;
+        } else if (char === ',' && !insideQuotes) {
+          cells.push(currentCell.trim().replace(/^"+|"+$/g, ''));
+          currentCell = "";
+        } else {
+          currentCell += char;
+        }
+      }
+      cells.push(currentCell.trim().replace(/^"+|"+$/g, ''));
+      if (cells.some(c => c !== "")) {
+        rows.push(cells);
+      }
+    }
+    return rows;
+  };
+
+  const downloadCsvTemplate = () => {
+    const csvContent = "lrn,first_name,last_name,year_level,section\n120000000001,Juan,Dela Cruz,11,Emerald\n120000000002,Maria,Santos,11,Diamond";
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.setAttribute("href", URL.createObjectURL(blob));
+    link.setAttribute("download", "connected_student_masterlist_template.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("CSV template downloaded.");
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith(".csv")) {
+      toast.error("Invalid file format. Please upload a CSV file.");
+      return;
+    }
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target.result;
+        const rows = parseCsvText(text);
+
+        if (rows.length < 2) {
+          toast.error("CSV file is empty or missing data rows.");
+          setIsImporting(false);
+          return;
+        }
+
+        const rawHeaders = rows[0];
+        const headerMap = {};
+        rawHeaders.forEach((h, idx) => {
+          const field = matchHeaderField(h);
+          if (field) headerMap[field] = idx;
+        });
+
+        const hasLrn = headerMap.lrn !== undefined;
+        const hasNames = (headerMap.first_name !== undefined && headerMap.last_name !== undefined) || headerMap.full_name !== undefined;
+        const hasGradeLevel = headerMap.year_level !== undefined;
+
+        if (!hasLrn || !hasNames || !hasGradeLevel) {
+          const missing = [];
+          if (!hasLrn) missing.push("LRN");
+          if (!hasNames) missing.push("First Name & Last Name (or Full Name)");
+          if (!hasGradeLevel) missing.push("Grade Level (Year Level)");
+
+          toast.error(`Invalid CSV format: Missing required column(s): ${missing.join(", ")}.`, { duration: 7000 });
+          setIsImporting(false);
+          return;
+        }
+
+        const [{ data: existingMasterlist }, { data: existingProfiles }, { data: existingGradeSections }] = await Promise.all([
+          db ? db.from("student_masterlist").select("lrn") : { data: [] },
+          adminApi.db("profiles", "select", { payload: "id, lrn, email", eq: { column: "role", value: "student" } }),
+          adminApi.db("grade_sections", "select", { payload: "*" })
+        ]);
+
+        const existingMasterlistData = existingMasterlist || [];
+        const existingProfilesData = existingProfiles || [];
+
+        const dbLrnSet = new Set([
+          ...existingMasterlistData.map(r => r.lrn),
+          ...existingProfilesData.map(p => p.lrn)
+        ].filter(Boolean));
+
+        const dbEmailSet = new Set([
+          ...existingProfilesData.map(p => p.email?.toLowerCase())
+        ].filter(Boolean));
+
+        const existingGradeSectionKeySet = new Set(
+          (existingGradeSections || []).map(gs => `${String(gs.grade_level).replace(/\D/g, "")}_${String(gs.section_name).trim().toLowerCase()}`)
+        );
+
+        const validRecords = [];
+        const alreadyExistingRecords = [];
+        const invalidRecords = [];
+        const duplicateRecords = [];
+        const fileLrnSet = new Set();
+        const sectionBreakdown = {};
+        const newGradeSectionsToCreate = [];
+        const addedSectionKeySet = new Set();
+
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i];
+          const rowNum = i + 1;
+
+          if (!cols || cols.length === 0 || cols.every(c => !c || !c.trim())) {
+            continue; // Skip blank rows
+          }
+
+          let rawLrn = (cols[headerMap.lrn] || "").trim();
+          let cleanLrn = rawLrn.replace(/\D/g, "");
+
+          // Check for scientific notation e.g. 1.23456789012E+11
+          if (/^\d+(\.\d+)?[eE]\+\d+$/.test(rawLrn)) {
+            try {
+              const num = Number(rawLrn);
+              if (!isNaN(num)) {
+                const fullStr = num.toLocaleString('fullwide', { useGrouping: false });
+                if (/^\d{12}$/.test(fullStr)) {
+                  cleanLrn = fullStr;
+                }
+              }
+            } catch (e) {}
+          }
+
+          let firstName = "";
+          let lastName = "";
+          let middleName = headerMap.middle_name !== undefined ? (cols[headerMap.middle_name] || "").trim() : null;
+
+          if (headerMap.first_name !== undefined && headerMap.last_name !== undefined) {
+            firstName = (cols[headerMap.first_name] || "").trim();
+            lastName = (cols[headerMap.last_name] || "").trim();
+          } else if (headerMap.full_name !== undefined) {
+            const split = splitFullName(cols[headerMap.full_name]);
+            firstName = split.first_name;
+            lastName = split.last_name;
+          }
+
+          const rawYearLevel = headerMap.year_level !== undefined ? (cols[headerMap.year_level] || "").trim() : "";
+          const yearLevel = rawYearLevel ? normalizeYearLevel(rawYearLevel) : null;
+
+          const rawSection = headerMap.section !== undefined ? (cols[headerMap.section] || "").trim() : "";
+          const section = rawSection ? formatSectionName(rawSection) : null;
+          const email = headerMap.email !== undefined ? (cols[headerMap.email] || "").trim() : null;
+
+          const fullNameDisplay = [firstName, lastName].filter(Boolean).join(" ") || "N/A";
+
+          // LRN Validation (12-digit numeric)
+          if (!cleanLrn || cleanLrn.length !== 12) {
+            invalidRecords.push({
+              rowNum,
+              lrn: rawLrn || "Empty",
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Invalid LRN (${rawLrn || "empty"}). Must contain exactly 12 numeric digits.`
+            });
+            continue;
+          }
+
+          if (!firstName || !lastName) {
+            invalidRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Missing student first or last name.`
+            });
+            continue;
+          }
+
+          if (!yearLevel) {
+            invalidRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Missing or invalid Grade Level.`
+            });
+            continue;
+          }
+
+          if (fileLrnSet.has(cleanLrn)) {
+            duplicateRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Duplicate LRN in uploaded CSV file (${cleanLrn}).`
+            });
+            continue;
+          }
+          fileLrnSet.add(cleanLrn);
+
+          if (dbLrnSet.has(cleanLrn)) {
+            alreadyExistingRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Student with LRN ${cleanLrn} already exists in database.`
+            });
+            continue;
+          }
+
+          if (email && dbEmailSet.has(email.toLowerCase())) {
+            alreadyExistingRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              name: fullNameDisplay,
+              reason: `Row ${rowNum}: Email ${email} already exists in database.`
+            });
+            continue;
+          }
+
+          validRecords.push({
+            rowNum,
+            lrn: cleanLrn,
+            first_name: firstName,
+            last_name: lastName,
+            middle_name: middleName || null,
+            year_level: yearLevel || null,
+            section: section || null,
+            email: email || null,
+            account_created: false
+          });
+
+          const ylKey = yearLevel || "Unassigned";
+          const secKey = section || "Unassigned";
+          if (!sectionBreakdown[ylKey]) sectionBreakdown[ylKey] = {};
+          sectionBreakdown[ylKey][secKey] = (sectionBreakdown[ylKey][secKey] || 0) + 1;
+
+          if (yearLevel && section) {
+            const key = `${yearLevel}_${section.toLowerCase()}`;
+            if (!existingGradeSectionKeySet.has(key) && !addedSectionKeySet.has(key)) {
+              addedSectionKeySet.add(key);
+              newGradeSectionsToCreate.push({
+                grade_level: yearLevel,
+                section_name: section
+              });
+            }
+          }
+        }
+
+        const totalRows = validRecords.length + alreadyExistingRecords.length + invalidRecords.length + duplicateRecords.length;
+
+        if (totalRows === 0) {
+          toast.error("No data rows found in CSV file.");
+          setIsImporting(false);
+          return;
+        }
+
+        setImportPreviewSummary({
+          total: totalRows,
+          valid: validRecords,
+          alreadyExisting: alreadyExistingRecords,
+          invalid: invalidRecords,
+          duplicates: duplicateRecords,
+          sectionBreakdown,
+          newGradeSectionsToCreate,
+          hasSectionColumn: headerMap.section !== undefined
+        });
+        setPreviewTab(validRecords.length > 0 ? "valid" : (alreadyExistingRecords.length > 0 ? "alreadyExisting" : (duplicateRecords.length > 0 ? "duplicates" : "invalid")));
+        setShowImportPreviewModal(true);
+      } catch (err) {
+        toast.error(err.message || "Failed to process CSV file.");
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleConfirmImport = async () => {
+    if (importPreviewSummary.valid.length === 0) {
+      toast.error("No valid records to import.");
+      return;
+    }
+
+    setIsSavingImport(true);
+    try {
+      if (!db) throw new Error("Supabase client not configured");
+
+      // 1. Auto-create any missing sections in grade_sections table
+      if (importPreviewSummary.newGradeSectionsToCreate && importPreviewSummary.newGradeSectionsToCreate.length > 0) {
+        for (const gs of importPreviewSummary.newGradeSectionsToCreate) {
+          try {
+            await adminApi.db("grade_sections", "insert", { payload: gs });
+          } catch (secErr) {
+            console.warn("[handleConfirmImport] Auto section insertion warning:", secErr);
+          }
+        }
+      }
+
+      // 2. Insert valid student masterlist records
+      const recordsToInsert = importPreviewSummary.valid.map(({ rowNum, email, ...record }) => record);
+
+      const { error } = await db.from("student_masterlist").insert(recordsToInsert);
+      if (error) throw error;
+
+      if (!importPreviewSummary.hasSectionColumn) {
+        toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist! Select students to assign sections in bulk.`, { duration: 6000 });
+      } else {
+        toast.success(`Successfully imported ${recordsToInsert.length} students to masterlist.`);
+      }
+
+      const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
+      if (data) setMasterlist(data);
+
+      setShowImportPreviewModal(false);
+      await refreshStudents();
+    } catch (err) {
+      toast.error(err.message || "Failed to insert masterlist records.");
+    } finally {
+      setIsSavingImport(false);
+    }
+  };
+
+  const handleOpenBulkAssignSectionModal = () => {
+    const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+    if (selectedSet.size === 0) {
+      toast.error("Please select at least one student.");
+      return;
+    }
+
+    const currentList = activeTab === "Profiles" ? students : masterlist;
+    const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+
+    if (activeTab === "Masterlist") {
+      const pendingAccountRows = selectedRows.filter(s => !s.account_created);
+      if (pendingAccountRows.length > 0) {
+        toast.warning(
+          `Section assignment is only available AFTER student accounts have been generated (${pendingAccountRows.length} selected student(s) pending account creation). Please click 'Generate Accounts' first.`,
+          { duration: 6000 }
+        );
+        return;
+      }
+    }
+
+    const uniqueGradeLevels = Array.from(new Set(selectedRows.map(s => s.year_level).filter(Boolean)));
+
+    if (uniqueGradeLevels.length > 1) {
+      toast.warning(
+        `Selected students belong to multiple grade levels (${uniqueGradeLevels.map(g => `Grade ${g}`).join(", ")}). Please filter by Grade Level first to assign sections per grade level.`,
+        { duration: 6000 }
+      );
+      return;
+    }
+
+    setTargetBulkSection("");
+    setShowBulkAssignSectionModal(true);
+  };
+
+  const handleConfirmBulkAssignSection = async () => {
+    const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+    if (selectedSet.size === 0) {
+      toast.error("No students selected.");
+      return;
+    }
+
+    const cleanSection = formatSectionName(targetBulkSection);
+    if (!cleanSection) {
+      toast.error("Please select or enter a valid section name.");
+      return;
+    }
+
+    setIsBulkAssigning(true);
+    try {
+      const selectedIds = Array.from(selectedSet);
+
+      if (activeTab === "Profiles") {
+        const { error: updErr } = await adminApi.db("profiles", "update", {
+          payload: { section: cleanSection },
+          in: { column: "id", value: selectedIds }
+        });
+        if (updErr) throw updErr;
+
+        const targetStudents = students.filter(s => selectedSet.has(s.id));
+        const targetLrns = targetStudents.map(s => s.lrn).filter(Boolean);
+        if (targetLrns.length > 0) {
+          await db.from("student_masterlist").update({ section: cleanSection }).in("lrn", targetLrns);
+        }
+
+        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
+        setSelectedStudentIds(new Set());
+      } else {
+        const { error: updErr } = await adminApi.db("student_masterlist", "update", {
+          payload: { section: cleanSection },
+          in: { column: "id", value: selectedIds }
+        });
+        if (updErr) throw updErr;
+
+        const targetMaster = masterlist.filter(m => selectedSet.has(m.id));
+        const targetLrns = targetMaster.map(m => m.lrn).filter(Boolean);
+        if (targetLrns.length > 0) {
+          await db.from("profiles").update({ section: cleanSection }).in("lrn", targetLrns);
+        }
+
+        toast.success(`Successfully assigned ${selectedIds.length} masterlist record(s) to Section ${cleanSection}.`);
+        setSelectedMasterlistIds(new Set());
+      }
+
+      setShowBulkAssignSectionModal(false);
+      setTargetBulkSection("");
+      await refreshStudents();
+    } catch (err) {
+      console.error("Bulk section assignment error:", err);
+      toast.error(err.message || "Failed to assign section to selected students.");
+    } finally {
+      setIsBulkAssigning(false);
+    }
+  };
+
+  const handleGenerateAccounts = async (specificIds = null) => {
+    const idsToProcess = Array.isArray(specificIds) ? new Set(specificIds) : selectedMasterlistIds;
+    const selected = masterlist.filter(m => idsToProcess.has(m.id) && !m.account_created);
+    if (selected.length === 0) return;
+
+    setIsGenerating(true);
+    setShowGenerationProgressModal(true);
+    setGenerationProgress({
+      total: selected.length,
+      current: 0,
+      percentage: 0,
+      currentBatch: 0,
+      totalBatches: 0
+    });
+
+    const BATCH_SIZE = 50; // Optimized batch size for Vercel & Supabase
+    const batches = [];
+    for (let i = 0; i < selected.length; i += BATCH_SIZE) {
+      batches.push(selected.slice(i, i + BATCH_SIZE));
+    }
+
+    setGenerationProgress(prev => ({
+      ...prev,
+      totalBatches: batches.length
+    }));
+
+    const allResults = {
+      total: selected.length,
+      success: [],
+      alreadyExists: [],
+      failed: []
+    };
+
+    let processedCount = 0;
+
+    for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+      const batch = batches[bIndex];
+      setGenerationProgress(prev => ({
+        ...prev,
+        currentBatch: bIndex + 1
+      }));
+
+      try {
+        const { data, error } = await adminApi.batchGenerateAccounts(batch);
+        if (error) throw error;
+
+        if (data?.results && Array.isArray(data.results)) {
+          data.results.forEach(res => {
+            if (res.status === "success") {
+              allResults.success.push(res);
+            } else if (res.status === "already_exists") {
+              allResults.alreadyExists.push(res);
+            } else {
+              allResults.failed.push(res);
+            }
+          });
+        }
+      } catch (err) {
+        console.error(`[handleGenerateAccounts] Batch ${bIndex + 1} error:`, err);
+        batch.forEach(student => {
+          allResults.failed.push({
+            id: student.id,
+            lrn: student.lrn,
+            name: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "N/A",
+            status: "failed",
+            reason: err.message || "Batch network error"
+          });
+        });
+      }
+
+      processedCount += batch.length;
+      const pct = Math.round((processedCount / selected.length) * 100);
+      setGenerationProgress(prev => ({
+        ...prev,
+        current: processedCount,
+        percentage: pct
+      }));
+
+      // Short delay for UI responsiveness
+      await new Promise(r => setTimeout(r, 40));
+    }
+
+    setIsGenerating(false);
+    setShowGenerationProgressModal(false);
+    setSelectedMasterlistIds(new Set());
+
+    setGenerationResultsSummary(allResults);
+    setResultsTab(allResults.success.length > 0 ? "success" : (allResults.alreadyExists.length > 0 ? "alreadyExists" : "failed"));
+    setShowGenerationResultsModal(true);
+
+    await refreshStudents();
   };
 
   const handleViewStudent = (student) => {
@@ -574,7 +1260,7 @@ function StudentManagement() {
       email: student.email ?? "",
       lrn: student.lrn ?? "",
       year_level: student.year_level ?? "",
-      phone: student.phone ?? "",
+
       section: student.section ?? "",
       status: student.status ?? "Active"
     });
@@ -590,7 +1276,7 @@ function StudentManagement() {
       email: "",
       lrn: "",
       year_level: "",
-      phone: "",
+
       section: "",
       status: "Active",
       password: ""
@@ -608,7 +1294,7 @@ function StudentManagement() {
       email: "",
       lrn: "",
       year_level: "",
-      phone: "",
+
       section: "",
       status: "Active"
     });
@@ -638,7 +1324,6 @@ function StudentManagement() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
     setStudents((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
 
     if (selectedStudent?.id === studentId) {
@@ -654,10 +1339,31 @@ function StudentManagement() {
     setStudentToDelete(null);
 
     try {
-      const { error } = await db.from("profiles").delete().eq("id", studentId);
+      const cleanupTables = [
+        { name: "notifications", col: "user_id" },
+        { name: "password_reset_logs", col: "user_id" },
+        { name: "conversation_participants", col: "profile_id" },
+        { name: "conversation_reads", col: "user_id" },
+        { name: "messages", col: "sender_id" },
+        { name: "teacher_student_grades", col: "student_id" },
+        { name: "teacher_assessment_submissions", col: "student_id" },
+        { name: "teacher_assessment_grades", col: "student_id" },
+      ];
+
+      for (const table of cleanupTables) {
+        await adminApi.db(table.name, "delete", { eq: { column: table.col, value: studentId } });
+      }
+
+      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: studentId } });
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      try {
+        await adminApi.deleteUser(studentId);
+      } catch (e) {
+        console.error("Non-fatal: Failed to delete auth user", e);
       }
 
       logActivity({
@@ -669,60 +1375,305 @@ function StudentManagement() {
         timestamp: new Date().toISOString()
       });
       await refreshStudents();
-      setSuccessMessage(`${studentName} deleted successfully`);
+      toast.success(`${studentName} deleted successfully`);
     } catch (err) {
       setStudents(previousStudents);
-      setErrorMessage(err instanceof Error ? err.message : "Unable to delete student.");
+      const errMsg = err instanceof Error ? err.message : "Unable to delete student.";
+      toast.error(errMsg);
+    }
+  };
+
+  const toggleStudentSelection = (id) => {
+    setSelectedStudentIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const toggleAllStudents = (filteredIds) => {
+    if (selectedStudentIds.size === filteredIds.length) {
+      setSelectedStudentIds(new Set());
+    } else {
+      setSelectedStudentIds(new Set(filteredIds));
+    }
+  };
+
+  const handleBulkDeleteStudents = async () => {
+    if (selectedStudentIds.size === 0) return;
+    setIsBulkDeleting(true);
+    try {
+      const idsToDelete = Array.from(selectedStudentIds);
+      
+      const results = await Promise.allSettled(
+        idsToDelete.map(async (id) => {
+          // 1. Manually delete related records to prevent 409 Foreign Key Constraint Errors
+          // This is necessary if the Supabase schema lacks ON DELETE CASCADE for these tables.
+          const cleanupTables = [
+            { name: "notifications", col: "user_id" },
+            { name: "password_reset_logs", col: "user_id" },
+            { name: "conversation_participants", col: "profile_id" },
+            { name: "conversation_reads", col: "user_id" },
+            { name: "messages", col: "sender_id" },
+            { name: "teacher_student_grades", col: "student_id" },
+            { name: "teacher_assessment_submissions", col: "student_id" },
+            { name: "teacher_assessment_grades", col: "student_id" },
+          ];
+
+          for (const table of cleanupTables) {
+            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
+          }
+
+          // 2. Delete the profile
+          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
+          if (profileError) throw profileError;
+
+          // 3. Fully delete the user from Auth
+          try {
+             await adminApi.deleteUser(id);
+          } catch (e) {
+             console.error("Non-fatal: Failed to delete auth user", e);
+          }
+        })
+      );
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      results.forEach(result => {
+        if (result.status === "fulfilled") {
+          successCount++;
+        } else {
+          failureCount++;
+          console.error("Delete failed for a student:", result.reason);
+        }
+      });
+
+      if (successCount > 0) {
+        logActivity({
+          actionType: "deleted",
+          entityType: "student",
+          entityName: `${successCount} students`,
+          details: { action: "bulk_delete" },
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      if (failureCount === 0) {
+        toast.success(`Successfully deleted ${successCount} students.`);
+      } else if (successCount > 0) {
+        toast.warning(`Deleted ${successCount} students. ${failureCount} failed (likely due to linked records).`);
+      } else {
+        throw new Error(`Failed to delete students. They might have linked records (e.g., grades, messages) that prevent deletion.`);
+      }
+
+      setSelectedStudentIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      await refreshStudents();
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      toast.error(err.message || "Unable to bulk delete students.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const handleClearMasterlist = async () => {
+    setIsClearingMasterlist(true);
+    try {
+      const { error } = await db.from("student_masterlist").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      if (error) throw error;
+      
+      logActivity({
+        actionType: "deleted",
+        entityType: "masterlist",
+        entityName: "All Imported Masterlist Records",
+        details: { action: "clear_masterlist" },
+        timestamp: new Date().toISOString()
+      });
+      
+      toast.success("Imported Masterlist cleared successfully.");
+      setMasterlist([]);
+      setSelectedMasterlistIds(new Set());
+      setShowClearMasterlistConfirm(false);
+    } catch (err) {
+      console.error("Clear masterlist error:", err);
+      toast.error(err.message || "Unable to clear masterlist.");
+    } finally {
+      setIsClearingMasterlist(false);
+    }
+  };
+
+  const handlePromptResetPassword = (student) => {
+    setSelectedStudent(student);
+    setResetSettings({
+      forceChange: true,
+      tempPassword: generateTempPassword()
+    });
+    setShowResetPasswordModal(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedStudent) return;
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    try {
+      const { error: authError } = await adminApi.updateUserById(selectedStudent.id, {
+        password: resetSettings.tempPassword
+      });
+
+      if (authError) {
+        if (authError.message?.includes("User not found") || authError.status === 404) {
+          // Fallback: If auth user was never created (due to past bugs), create it now linking the same ID
+          const { error: createError } = await adminApi.createUser({
+             id: selectedStudent.id,
+             email: selectedStudent.email || `${selectedStudent.lrn}@students.connected`,
+             password: resetSettings.tempPassword,
+             email_confirm: true
+          });
+          if (createError) throw createError;
+        } else {
+          throw authError;
+        }
+      }
+
+      const { error: profileError } = await adminApi.updateProfile(selectedStudent.id, {
+        must_change_password: resetSettings.forceChange,
+        last_password_reset: new Date().toISOString()
+      });
+
+      if (profileError) throw profileError;
+
+      const { error: logError } = await db.from("password_reset_logs").insert({
+        user_id: selectedStudent.id,
+        reset_by: JSON.parse(localStorage.getItem("currentUser")).id,
+        temporary_password_generated: true
+      });
+
+      if (logError) console.error("Failed to log password reset:", logError);
+
+      await db.from("notifications").insert({
+        user_id: selectedStudent.id,
+        title: "Password Reset",
+        message: `Your password has been reset by the administrator. Temporary Password: ${resetSettings.tempPassword}. You will be required to change your password after login.`,
+        type: "system"
+      });
+
+      toast.success("Temporary password generated and saved.");
+      setShowResetPasswordModal(false);
+    } catch (err) {
+      toast.error(err.message || "Failed to reset password.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const [statusFilter, setStatusFilter] = useState("all");
+  const [yearLevelFilter, setYearLevelFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
+  // Optional course filter
+  const [courseFilter, setCourseFilter] = useState("all");
 
-  const filteredStudents = students.filter((student) => {
-    const fullName = getFullName(student).toLowerCase();
-    const search = searchQuery.toLowerCase();
-    const matchesSearch = fullName.includes(search) || (student.email ?? "").toLowerCase().includes(search) || (student.lrn ?? "").toLowerCase().includes(search) || (student.year_level ?? "").toLowerCase().includes(search) || (student.section ?? "").toLowerCase().includes(search) || (student.status ?? "").toLowerCase().includes(search);
-    
-    if (statusFilter === "all") return matchesSearch;
-    return matchesSearch && student.status === statusFilter;
-  });
+  const availableYearLevels = useMemo(() => {
+    return Array.from(new Set([...students, ...masterlist].map(s => s.year_level).filter(Boolean))).sort((a, b) => {
+      const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+      return numA - numB || String(a).localeCompare(String(b));
+    });
+  }, [students, masterlist]);
+
+  const availableSections = useMemo(() => {
+    return Array.from(new Set(
+      [...students, ...masterlist]
+        .filter(s => yearLevelFilter === "all" || s.year_level === yearLevelFilter)
+        .map(s => s.section)
+        .filter(Boolean)
+    )).sort();
+  }, [students, masterlist, yearLevelFilter]);
+
+  const availableCourses = useMemo(() => {
+    return Array.from(new Set([...students, ...masterlist].map(s => s.course).filter(Boolean))).sort();
+  }, [students, masterlist]);
+
+  const filteredStudents = useMemo(() => {
+    const search = (searchQuery || "").toLowerCase().trim();
+    return students.filter(student => {
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !search || fullName.includes(search) || 
+        String(student.username || "").toLowerCase().includes(search) || 
+        String(student.lrn || "").toLowerCase().includes(search);
+
+      const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
+      const matchesSection = sectionFilter === "all" || student.section === sectionFilter;
+      const matchesCourse = courseFilter === "all" || student.course === courseFilter;
+      const matchesStatus = statusFilter === "all" || student.status === statusFilter;
+
+      return matchesSearch && matchesYearLevel && matchesSection && matchesCourse && matchesStatus;
+    });
+  }, [students, searchQuery, yearLevelFilter, sectionFilter, courseFilter, statusFilter]);
+
+  const filteredMasterlist = useMemo(() => {
+    const search = (searchQuery || "").toLowerCase().trim();
+    return masterlist.filter(student => {
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ").toLowerCase();
+      const matchesSearch = !search || fullName.includes(search) || 
+        String(student.username || "").toLowerCase().includes(search) || 
+        String(student.lrn || "").toLowerCase().includes(search);
+
+      const matchesYearLevel = yearLevelFilter === "all" || student.year_level === yearLevelFilter;
+      const matchesSection = sectionFilter === "all" || student.section === sectionFilter;
+      const matchesCourse = courseFilter === "all" || student.course === courseFilter;
+
+      return matchesSearch && matchesYearLevel && matchesSection && matchesCourse;
+    });
+  }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
   const handleExportToCSV = () => {
-    const headers = ["Full Name", "Email", "LRN", "Year Level", "Section", "Status", "Created At"];
-    const rows = filteredStudents.map((student) => [
-      getFullName(student),
-      student.email,
-      student.lrn || "",
-      student.year_level || "",
-      student.section || "",
-      student.status || "",
-      formatDate(student.created_at)
-    ]);
-    const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `students_${new Date().toISOString().split("T")[0]}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (activeTab === "Profiles") {
+      const headers = ["Full Name", "Username", "LRN", "Year Level", "Section", "Status", "Created At"];
+      const rows = filteredStudents.map((student) => [
+        getFullName(student),
+        student.username,
+        student.lrn || "",
+        student.year_level || "",
+        student.section || "",
+        student.status || "",
+        formatDate(student.created_at)
+      ]);
+      const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.setAttribute("href", URL.createObjectURL(blob));
+      link.setAttribute("download", `students_${new Date().toISOString().split("T")[0]}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      const headers = ["Full Name", "LRN", "Year Level", "Section", "Account Created", "Created At"];
+      const rows = filteredMasterlist.map((student) => [
+        [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" "),
+        student.lrn || "",
+        student.year_level || "",
+        student.section || "",
+        student.account_created ? "Yes" : "No",
+        formatDate(student.created_at)
+      ]);
+      const csvContent = [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.setAttribute("href", URL.createObjectURL(blob));
+      link.setAttribute("download", `masterlist_${new Date().toISOString().split("T")[0]}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "150ms" }} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "300ms" }} />
-          </div>
-          <p className="text-gray-500">Loading student management...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
@@ -733,14 +1684,10 @@ function StudentManagement() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-gray-900">Student Management</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
@@ -751,7 +1698,7 @@ function StudentManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="students-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -760,15 +1707,20 @@ function StudentManagement() {
             <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Database</h1>
-                <p className="text-gray-600">{students.length} student profiles loaded from Supabase</p>
+                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Management</h1>
+                <p className="text-gray-600">Student records are up to date.</p>
               </div>
-              <div className="flex gap-3">
-                <button onClick={handleFetchMasterlist} className="flex items-center gap-2 px-5 py-3 bg-white border border-gray-250 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer">
-                  <Download className="w-4 h-4" />
-                  Import Masterlist
+              <div className="flex items-center gap-3">
+                <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                  {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+                  {isImporting ? "Importing..." : "Import Masterlist"}
                 </button>
-                <button onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-500 transition-colors font-semibold shadow-lg shadow-blue-500/20 cursor-pointer">
+                <button onClick={downloadCsvTemplate} type="button" className="flex items-center gap-2 px-4 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer" title="Download CSV Template">
+                  <Download className="w-4 h-4 text-gray-500" />
+                  CSV Template
+                </button>
+                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Student
                 </button>
@@ -795,129 +1747,429 @@ function StudentManagement() {
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
-              {successMessage}
-            </div>
-          )}
-
-          <div className="bg-white rounded-xl p-4 border border-gray-200">
-            <div className="flex flex-col md:flex-row gap-4 items-center">
-              <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
-                {["all", "Active", "Pending", "Disabled"].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setStatusFilter(status)}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      statusFilter === status
-                        ? "bg-white text-blue-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                  </button>
-                ))}
-              </div>
-              <div className="flex-1 relative w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
-                <input type="text" placeholder="Search students..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
-              </div>
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
-                <Download className="w-4 h-4" />
-                Export
-              </button>
-            </div>
+          <div className="flex gap-4 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab("Profiles")}
+              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                activeTab === "Profiles"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Enrolled Students
+            </button>
+            <button
+              data-tour="students-masterlist-tab"
+              onClick={() => setActiveTab("Masterlist")}
+              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
+                activeTab === "Masterlist"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Masterlist
+            </button>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div data-tour="students-filters" className="bg-white rounded-xl p-4 border border-gray-200">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                {activeTab === "Profiles" && (
+                  <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
+                    {["all", "Active", "Disabled"].map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setStatusFilter(status)}
+                        className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          statusFilter === status
+                            ? "bg-white text-blue-600 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="flex flex-wrap gap-3 w-full md:w-auto flex-1">
+                  <div className="flex-1 md:flex-none min-w-[180px]">
+                    <CustomSelect
+                      value={yearLevelFilter}
+                      onChange={(val) => {
+                        setYearLevelFilter(val);
+                        setSectionFilter("all"); // reset section when year level changes
+                      }}
+                      options={[
+                        { value: "all", label: "All Year Levels" },
+                        ...availableYearLevels.map(yl => ({ value: yl, label: yl }))
+                      ]}
+                      placeholder="All Year Levels"
+                    />
+                  </div>
+
+                  <div className="flex-1 md:flex-none min-w-[180px]">
+                    <CustomSelect
+                      value={sectionFilter}
+                      onChange={(val) => setSectionFilter(val)}
+                      disabled={yearLevelFilter === "all" || availableSections.length === 0}
+                      options={[
+                        { value: "all", label: "All Sections" },
+                        ...availableSections.map(sec => ({ value: sec, label: sec }))
+                      ]}
+                      placeholder="All Sections"
+                    />
+                  </div>
+
+                  {availableCourses.length > 0 && (
+                    <div className="flex-1 md:flex-none min-w-[180px]">
+                      <CustomSelect
+                        value={courseFilter}
+                        onChange={(val) => setCourseFilter(val)}
+                        options={[
+                          { value: "all", label: "All Courses" },
+                          ...availableCourses.map(c => ({ value: c, label: c }))
+                        ]}
+                        placeholder="All Courses"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-4 items-center">
+                <div data-tour="students-search" className="flex-1 relative w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                  <input type="text" placeholder="Search by name, username, or LRN..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
+                </div>
+                <button data-tour="students-export-btn" onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
+                  <Download className="w-4 h-4" />
+                  Export
+                </button>
+
+              {activeTab === "Profiles" && (
+                <>
+                  {selectedStudentIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleOpenBulkAssignSectionModal}
+                      className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      Assign Section ({selectedStudentIds.size})
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    disabled={selectedStudentIds.size === 0 || isBulkDeleting}
+                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                  >
+                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedStudentIds.size})`}
+                  </button>
+                </>
+              )}
+
+              {activeTab === "Masterlist" && (() => {
+                const selectedRows = masterlist.filter(m => selectedMasterlistIds.has(m.id));
+                const newCount = selectedRows.filter(m => !m.account_created).length;
+                const createdCount = selectedRows.filter(m => m.account_created).length;
+
+                return (
+                  <>
+                    {selectedMasterlistIds.size > 0 && (
+                      <>
+              
+                        <button
+                          type="button"
+                          onClick={handleGenerateAccounts}
+                          disabled={isGenerating || newCount === 0}
+                          className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                        >
+                          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                          {isGenerating ? "Generating..." : `Generate Accounts (${newCount})`}
+                        </button>
+                      </>
+                    )}
+                    {masterlist.length > 0 && (
+                      <button
+                        onClick={() => setShowClearMasterlistConfirm(true)}
+                        disabled={isClearingMasterlist}
+                        className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      >
+                        {isClearingMasterlist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        {isClearingMasterlist ? "Clearing..." : "Clear Imported Masterlist"}
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+
+
+
+          <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              {activeTab === "Profiles" ? (
+              <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Full Name</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">LRN</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Year Level</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-gray-600 uppercase tracking-wider text-right">Actions</th>
+                    <th className="px-6 py-5 text-left w-12">
+                      <button
+                        onClick={() => toggleAllStudents(filteredStudents.map(s => s.id))}
+                        className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        {selectedStudentIds.size > 0 && selectedStudentIds.size === filteredStudents.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                      </button>
+                    </th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Username</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">LRN</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
+                    <th data-tour="students-actions" className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
-                  {filteredStudents.map((student) => (
-                    <tr key={student.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900">{getFullName(student)}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Student profile</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Mail className="w-3.5 h-3.5 text-gray-500" />
-                          {student.email}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <Hash className="w-3.5 h-3.5 text-gray-500" />
-                          {student.lrn || "-"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Hash className="w-3.5 h-3.5 text-gray-500" />
-                          {student.year_level || "-"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${
-                          student.status === "Disabled" ? "bg-red-50 text-red-400 border-red-200" : 
-                          student.status === "Pending" ? "bg-amber-50 text-amber-600 border-amber-200" :
-                          "bg-green-50 text-green-600 border-green-200"
-                        }`}>
-                          {student.status || "Active"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{formatDate(student.created_at)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {student.status === "Pending" && (
-                            <button 
-                              onClick={async () => {
-                                try {
-                                  const { error } = await db.from("profiles").update({ status: "Active" }).eq("id", student.id);
-                                  if (error) throw error;
-                                  setSuccessMessage(`${getFullName(student)} approved successfully!`);
-                                  refreshStudents();
-                                } catch (err) {
-                                  setErrorMessage("Failed to approve student.");
-                                }
-                              }}
-                              className="p-2 hover:bg-emerald-50 rounded-lg transition-colors text-emerald-600" 
-                              title="Approve Student"
+                <tbody className="divide-y divide-gray-100">
+                  {(() => {
+                    const grouped = {};
+                    filteredStudents.forEach(student => {
+                      const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                      const section = rawSec;
+                      if (!grouped[year]) grouped[year] = {};
+                      if (!grouped[year][section]) grouped[year][section] = [];
+                      grouped[year][section].push(student);
+                    });
+                    const rows = [];
+                    let firstStudentRowFound = false;
+                    Object.keys(grouped).sort((a, b) => {
+                      const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                      const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                      return numA - numB || a.localeCompare(b);
+                    }).forEach(year => {
+                      Object.keys(grouped[year]).sort().forEach(section => {
+                        const groupStudents = grouped[year][section];
+                        rows.push(
+                          <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
+                            <td colSpan="100%" className="px-6 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-800">{year}</span>
+                                <span className="text-gray-400">•</span>
+                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
+                                <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
+                                  {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                        groupStudents.forEach((student) => {
+                          const isFirstRow = !firstStudentRowFound;
+                          if (isFirstRow) firstStudentRowFound = true;
+                          rows.push(
+                            <tr
+                              key={student.id}
+                              data-tour={isFirstRow ? "students-row" : undefined}
+                              className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}
                             >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                          )}
-                          <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
-                            <Eye className="w-4 h-4 text-gray-600" />
-                          </button>
-                          <button onClick={() => handleEditStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
-                            <Edit className="w-4 h-4 text-blue-400" />
-                          </button>
-                          <button onClick={() => handlePromptDeleteStudent(student)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                              <td className="px-6 py-5 text-left align-middle">
+                                <button
+                                  onClick={() => toggleStudentSelection(student.id)}
+                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                  {selectedStudentIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                              </td>
+                              <td className="px-6 py-5 align-middle">
+                                <p className="font-semibold text-gray-900 truncate">{getFullName(student)}</p>
+                              </td>
+                              <td className="px-6 py-5 align-middle">
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <div className="truncate max-w-[200px]">{getDisplayUsername(student)}</div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <div className="flex items-center gap-2">
+                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <span className="truncate">{student.lrn || "-"}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-5 align-middle">
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                  <span className="truncate">{student.year_level || "-"}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-5 align-middle">
+                                <span
+                                  data-tour={isFirstRow ? "students-status-badge" : undefined}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                    student.status === "Disabled"
+                                      ? "bg-red-50 text-red-500 border-red-200"
+                                      : "bg-green-50 text-green-600 border-green-200"
+                                  }`}
+                                >
+                                  {student.status || "Active"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">{formatDate(student.created_at)}</td>
+                              <td
+                                data-tour={isFirstRow ? "students-actions" : undefined}
+                                className="px-6 py-5 text-right align-middle"
+                              >
+                                <div className="flex items-center justify-end gap-1.5 transition-opacity">
+                                  <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
+                                    <Eye className="w-4 h-4 text-gray-600" />
+                                  </button>
+                                  <button onClick={() => handleEditStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
+                                    <Edit className="w-4 h-4 text-blue-500" />
+                                  </button>
+                                  <button onClick={() => handlePromptDeleteStudent(student)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      });
+                    });
+                    return rows;
+                  })()}
                 </tbody>
               </table>
+              ) : (
+              <table className="w-full text-left border-collapse min-w-[1000px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
+                      <button 
+                        onClick={() => {
+                          if (selectedMasterlistIds.size === filteredMasterlist.length) {
+                            setSelectedMasterlistIds(new Set());
+                          } else {
+                            setSelectedMasterlistIds(new Set(filteredMasterlist.map(m => m.id)));
+                          }
+                        }}
+                        className="text-gray-500 hover:text-blue-600 transition-colors"
+                      >
+                        {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
+                      </button>
+                    </th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">LRN</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Section</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Account Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(() => {
+                    const grouped = {};
+                    filteredMasterlist.forEach(student => {
+                      const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                      const section = rawSec;
+                      if (!grouped[year]) grouped[year] = {};
+                      if (!grouped[year][section]) grouped[year][section] = [];
+                      grouped[year][section].push(student);
+                    });
+                    const rows = [];
+                    Object.keys(grouped).sort((a, b) => {
+                      const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                      const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                      return numA - numB || a.localeCompare(b);
+                    }).forEach(year => {
+                      Object.keys(grouped[year]).sort().forEach(section => {
+                        const groupStudents = grouped[year][section];
+                        rows.push(
+                          <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
+                            <td colSpan="100%" className="px-6 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-gray-800">{year}</span>
+                                <span className="text-gray-400">•</span>
+                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
+                                <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
+                                  {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                        groupStudents.forEach((student) => {
+                          rows.push(
+                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedMasterlistIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                              <td className="px-6 py-5 align-middle">
+                                <button
+                                  onClick={() => {
+                                    const newSet = new Set(selectedMasterlistIds);
+                                    if (newSet.has(student.id)) newSet.delete(student.id);
+                                    else newSet.add(student.id);
+                                    setSelectedMasterlistIds(newSet);
+                                  }}
+                                  className="text-gray-500 hover:text-blue-600 transition-colors"
+                                >
+                                  {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                              </td>
+                              <td className="px-6 py-5 align-middle">
+                                <p className="font-semibold text-gray-900 truncate">{[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ")}</p>
+                              </td>
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.lrn || "-"}</span>
+                              </td>
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.year_level || "-"}</span>
+                              </td>
+                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                <span className="truncate">{student.section || "Unassigned"}</span>
+                              </td>
+                              <td className="px-6 py-5 text-right align-middle">
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                    student.account_created
+                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}>
+                                    {student.account_created ? "Account Generated" : "Pending Account"}
+                                  </span>
+                                  {!student.account_created && (
+                                    <button
+                                      onClick={() => handleGenerateAccounts([student.id])}
+                                      disabled={isGenerating}
+                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                                    >
+                                      Generate
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      });
+                    });
+                    return rows;
+                  })()}
+                </tbody>
+              </table>
+              )}
             </div>
-            {filteredStudents.length === 0 && (
+            {activeTab === "Profiles" && filteredStudents.length === 0 && (
               <div className="p-16 text-center">
                 <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-600">No students found.</p>
+              </div>
+            )}
+            {activeTab === "Masterlist" && filteredMasterlist.length === 0 && (
+              <div className="p-16 text-center">
+                <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-600">No masterlist records found. Import a CSV to get started.</p>
               </div>
             )}
           </div>
@@ -950,11 +2202,7 @@ function StudentManagement() {
                     <input type="text" value={studentFormData.last_name} onChange={(e) => handleAddStudentFieldChange("last_name", e.target.value)} placeholder="Enter last name" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={studentFormData.email} onChange={(e) => handleAddStudentFieldChange("email", e.target.value)} placeholder="student@example.com" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
-                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
                     <input type="text" value={studentFormData.lrn} onChange={(e) => handleAddStudentFieldChange("lrn", e.target.value)} inputMode="numeric" maxLength={12} placeholder="12-digit LRN" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.lrn ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
@@ -962,24 +2210,42 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Year Level</label>
-                    <input type="text" inputMode="numeric" maxLength={2} value={studentFormData.year_level} onChange={(e) => handleAddStudentFieldChange("year_level", e.target.value)} placeholder="e.g. 7 or 12" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.year_level ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    <CustomSelect
+                      value={studentFormData.year_level}
+                      onChange={(value) => handleAddStudentFieldChange("year_level", value)}
+                      options={[
+                        { value: "7", label: "Year 7" },
+                        { value: "8", label: "Year 8" },
+                        { value: "9", label: "Year 9" },
+                        { value: "10", label: "Year 10" },
+                      ]}
+                      placeholder="Select year level"
+                      className="w-full"
+                    />
                     {formErrors.year_level && <p className="text-red-500 text-sm mt-1">{formErrors.year_level}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input type="text" value={studentFormData.phone} onChange={(e) => handleAddStudentFieldChange("phone", e.target.value)} inputMode="numeric" maxLength={11} placeholder="11-digit phone number" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.phone ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
+                    <label className="block text-sm font-medium text-gray-700">Section</label>
+                    <SectionDropdown
+                      value={studentFormData.section}
+                      onChange={(value) => handleAddStudentFieldChange("section", value)}
+                      gradeLevel={studentFormData.year_level ? `Grade ${studentFormData.year_level}` : ""}
+                      className="w-full"
+                    />
+                    {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
-                    <div className="relative">
-                      <select value={studentFormData.status} onChange={(e) => handleAddStudentFieldChange("status", e.target.value)} className={`w-full appearance-none px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 bg-white ${formErrors.status ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                        <option value="">Select status</option>
-                        <option value="Active">Active</option>
-                        <option value="Disabled">Disabled</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                    <CustomSelect
+                      value={studentFormData.status}
+                      onChange={(value) => handleAddStudentFieldChange("status", value)}
+                      options={[
+                        { value: "Active", label: "Active" },
+                        { value: "Disabled", label: "Disabled" },
+                      ]}
+                      placeholder="Select status"
+                      className="w-full"
+                    />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
                   </div>
                   <div className="md:col-span-2">
@@ -996,11 +2262,11 @@ function StudentManagement() {
                     {formErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Student"}
                   </button>
@@ -1037,11 +2303,7 @@ function StudentManagement() {
                     <input type="text" value={editFormData.last_name} onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" value={editFormData.email} onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })} placeholder="student@example.com" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
-                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
                     <input type="text" value={editFormData.lrn} onChange={(e) => {
@@ -1064,44 +2326,57 @@ function StudentManagement() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Year Level</label>
-                    <input type="text" value={editFormData.year_level} onChange={(e) => {
-                      const nextValue = normalizeYearLevel(e.target.value);
-                      setEditFormData({ ...editFormData, year_level: nextValue });
-                      setEditFormErrors((currentErrors) => {
-                        const nextErrors = { ...currentErrors };
-                        const fieldError = validateAddField("year_level", nextValue);
+                    <CustomSelect
+                      value={editFormData.year_level}
+                      onChange={(value) => {
+                        const nextFormData = { ...editFormData, year_level: value, section: "" };
+                        setEditFormData(nextFormData);
+                        setEditFormErrors((currentErrors) => {
+                          const nextErrors = { ...currentErrors };
+                          const fieldError = validateAddField("year_level", value, nextFormData);
 
-                        if (fieldError) {
-                          nextErrors.year_level = fieldError;
-                        } else {
-                          delete nextErrors.year_level;
-                        }
+                          if (fieldError) {
+                            nextErrors.year_level = fieldError;
+                          } else {
+                            delete nextErrors.year_level;
+                          }
 
-                        return nextErrors;
-                      });
-                    }} inputMode="numeric" maxLength={2} placeholder="e.g. 7 or 12" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          return nextErrors;
+                        });
+                      }}
+                      options={[
+                        { value: "7", label: "Year 7" },
+                        { value: "8", label: "Year 8" },
+                        { value: "9", label: "Year 9" },
+                        { value: "10", label: "Year 10" },
+                      ]}
+                      placeholder="Select year level"
+                      className="w-full"
+                    />
                     {editFormErrors.year_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.year_level}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                    <input type="text" value={editFormData.phone} onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    {editFormErrors.phone && <p className="text-red-500 text-sm mt-1">{editFormErrors.phone}</p>}
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700">Section</label>
-                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} placeholder="Enter section" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <SectionDropdown
+                      value={editFormData.section}
+                      onChange={(value) => handleEditFieldChange("section", value)}
+                      gradeLevel={editFormData.year_level ? `Grade ${editFormData.year_level}` : ""}
+                      className="w-full"
+                    />
                     {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
-                    <div className="relative">
-                      <select value={editFormData.status} onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })} className="w-full appearance-none px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white">
-                        <option value="">Select status</option>
-                        <option value="Active">Active</option>
-                        <option value="Disabled">Disabled</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
+                    <CustomSelect
+                      value={editFormData.status}
+                      onChange={(value) => setEditFormData({ ...editFormData, status: value })}
+                      options={[
+                        { value: "Active", label: "Active" },
+                        { value: "Disabled", label: "Disabled" },
+                      ]}
+                      placeholder="Select status"
+                      className="w-full"
+                    />
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
                 </div>
@@ -1110,11 +2385,11 @@ function StudentManagement() {
                     {editFormErrors.form}
                   </div>
                 )}
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Student"}
                   </button>
@@ -1162,13 +2437,6 @@ function StudentManagement() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Phone Number</label>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-green-600" />
-                      <p className="text-gray-900">{selectedStudent.phone || "Not set"}</p>
-                    </div>
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Status</label>
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-green-600" />
@@ -1207,19 +2475,19 @@ function StudentManagement() {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-150">
+                <button onClick={handleCloseViewModal} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">
+                  Close
+                </button>
                 <button
                   onClick={() => {
                     handleCloseViewModal();
                     handleEditStudent(selectedStudent);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm"
                 >
                   <Edit className="w-4 h-4" />
                   Edit Student
-                </button>
-                <button onClick={handleCloseViewModal} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                  Close
                 </button>
               </div>
             </div>
@@ -1240,116 +2508,522 @@ function StudentManagement() {
         cancelText="Cancel"
         type="danger"
       />
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDeleteStudents}
+        title="Delete Selected Students"
+        message={`Are you sure you want to permanently delete ${selectedStudentIds.size} selected student(s)? This action cannot be undone.`}
+        confirmText="Delete All Selected"
+        cancelText="Cancel"
+        type="danger"
+      />
+      <ConfirmDialog
+        isOpen={showClearMasterlistConfirm}
+        onClose={() => setShowClearMasterlistConfirm(false)}
+        onConfirm={handleClearMasterlist}
+        title="Clear Imported Masterlist"
+        message="Are you sure you want to permanently delete ALL imported masterlist records? This action cannot be undone and will affect any pending accounts."
+        confirmText="Clear Masterlist"
+        cancelText="Cancel"
+        type="danger"
+      />
 
-      {showImportModal && (
+      {showImportPreviewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide relative">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl">
-              <h3 className="text-xl font-semibold text-gray-900">
-                {importSummary ? "Import Summary" : `Sync Student Masterlist (${masterListPending.length})`}
-              </h3>
-              <button onClick={() => { setShowImportModal(false); setImportSummary(null); }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-gray-600" />
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-100 rounded-xl text-blue-600">
+                  <Upload className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">CSV Import Summary & Preview</h3>
+                  <p className="text-sm text-gray-500">Review parsed rows before importing into masterlist</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImportPreviewModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+                disabled={isSavingImport}
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="p-6">
-              {importSummary ? (
-                /* Import Summary Screen */
-                <div className="space-y-4">
-                  {importSummary.succeeded.length > 0 && (
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                      <h4 className="font-semibold text-green-850 text-sm mb-2">Successfully Imported ({importSummary.succeeded.length})</h4>
-                      <p className="text-xs text-green-700 mb-3 font-medium">Accounts generated. Please copy these temporary passwords for the students:</p>
-                      <div className="max-h-[200px] overflow-y-auto border border-green-150 rounded-lg bg-white divide-y divide-green-100 text-xs">
-                        {importSummary.succeeded.map((s, idx) => (
-                          <div key={idx} className="p-3 flex justify-between items-center gap-4 hover:bg-green-50/50">
-                            <div>
-                              <p className="font-semibold text-gray-800">{s.name}</p>
-                              <p className="text-gray-500 font-mono text-[10px]">{s.email} | LRN: {s.lrn}</p>
-                            </div>
-                            <span className="bg-green-100 text-green-900 font-mono font-bold px-2.5 py-1 rounded text-xs">
-                              {s.password}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
-                  {importSummary.failed.length > 0 && (
-                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <h4 className="font-semibold text-red-800 text-sm mb-2">Failed Records ({importSummary.failed.length})</h4>
-                      <div className="max-h-[150px] overflow-y-auto border border-red-155 rounded-lg bg-white divide-y divide-red-100 text-xs">
-                        {importSummary.failed.map((f, idx) => (
-                          <div key={idx} className="p-2.5 flex justify-between items-center text-red-700">
-                            <span className="font-semibold">{f.name} (LRN: {f.lrn})</span>
-                            <span className="text-xs">{f.reason}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex justify-end pt-4">
-                    <button
-                      onClick={() => { setShowImportModal(false); setImportSummary(null); }}
-                      className="px-6 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 font-semibold cursor-pointer"
-                    >
-                      Done & Close
-                    </button>
-                  </div>
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Total Rows</p>
+                  <p className="text-xl font-bold text-gray-900 mt-0.5">{importPreviewSummary.total}</p>
                 </div>
-              ) : (
-                /* Import Preview Screen */
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 leading-relaxed">
-                    The following students from <span className="font-semibold text-blue-400">student_masterlist</span> do not have accounts yet. ConnectEd will generate accounts ending in <span className="font-semibold text-green-600">@student.connected</span> and temporary passwords.
-                  </p>
-                  
-                  <div className="max-h-[350px] overflow-y-auto border border-gray-200 rounded-xl bg-gray-50 divide-y divide-gray-200">
-                    {masterListPending.map((student, idx) => (
-                      <div key={student.id || idx} className="p-3.5 flex justify-between items-center gap-4 bg-white hover:bg-gray-50/50">
-                        <div className="text-left">
-                          <p className="font-semibold text-gray-800">
-                            {student.first_name} {student.middle_name ? `${student.middle_name} ` : ""}{student.last_name}
-                          </p>
-                          <p className="text-xs text-gray-500">LRN: {student.lrn} | Grade: {student.year_level || "7"} - {student.section || "A"}</p>
-                        </div>
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full uppercase">Pending Import</span>
-                      </div>
-                    ))}
-                  </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Valid (New)</p>
+                  <p className="text-xl font-bold text-emerald-700 mt-0.5">{importPreviewSummary.valid.length}</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-purple-600 font-semibold uppercase tracking-wider">Already Exists</p>
+                  <p className="text-xl font-bold text-purple-700 mt-0.5">{importPreviewSummary.alreadyExisting?.length || 0}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wider">CSV Duplicates</p>
+                  <p className="text-xl font-bold text-amber-700 mt-0.5">{importPreviewSummary.duplicates.length}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center col-span-2 sm:col-span-1">
+                  <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wider">Invalid Rows</p>
+                  <p className="text-xl font-bold text-red-700 mt-0.5">{importPreviewSummary.invalid.length}</p>
+                </div>
+              </div>
 
-                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                    <button
-                      onClick={() => setShowImportModal(false)}
-                      disabled={importing}
-                      className="px-4 py-2.5 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleImportMasterlist}
-                      disabled={importing}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 font-semibold cursor-pointer disabled:opacity-50"
-                    >
-                      {importing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Importing & Creating...
-                        </>
-                      ) : (
-                        "Import & Generate Accounts"
-                      )}
-                    </button>
+              {importPreviewSummary.sectionBreakdown && Object.keys(importPreviewSummary.sectionBreakdown).length > 0 && (
+                <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-blue-900 font-semibold text-sm">
+                    <BookOpen className="w-4 h-4 text-blue-600" />
+                    <span>Detected Grade Level & Section Breakdown</span>
                   </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {Object.entries(importPreviewSummary.sectionBreakdown)
+                      .sort(([a], [b]) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0))
+                      .map(([grade, secs]) => (
+                        <div key={grade} className="bg-white border border-blue-100 rounded-lg p-3 shadow-xs">
+                          <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">
+                            {grade.toLowerCase().includes("grade") || grade === "Unassigned" ? grade : `Grade ${grade}`}
+                          </p>
+                          <ul className="mt-1 space-y-1">
+                            {Object.entries(secs).map(([secName, count]) => (
+                              <li key={secName} className="text-xs text-gray-600 flex justify-between">
+                                <span>{secName}</span>
+                                <span className="font-semibold text-gray-900">{count} student{count !== 1 ? 's' : ''}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                  </div>
+                  {importPreviewSummary.newGradeSectionsToCreate?.length > 0 && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        <strong>Notice:</strong> {importPreviewSummary.newGradeSectionsToCreate.length} new section(s) will be automatically registered in Academic Settings (
+                        {importPreviewSummary.newGradeSectionsToCreate.map(gs => `Grade ${gs.grade_level} - ${gs.section_name}`).join(", ")}).
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
+
+              <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab("valid")}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                    previewTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Valid Records ({importPreviewSummary.valid.length})
+                </button>
+                {importPreviewSummary.alreadyExisting?.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("alreadyExisting")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                      previewTab === "alreadyExisting" ? "border-purple-600 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Already Existing ({importPreviewSummary.alreadyExisting.length})
+                  </button>
+                )}
+                {importPreviewSummary.duplicates.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("duplicates")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                      previewTab === "duplicates" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Duplicates ({importPreviewSummary.duplicates.length})
+                  </button>
+                )}
+                {importPreviewSummary.invalid.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("invalid")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+                      previewTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Invalid Rows ({importPreviewSummary.invalid.length})
+                  </button>
+                )}
+              </div>
+
+              {previewTab === "valid" && (
+                <div>
+                  {importPreviewSummary.valid.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No valid new records to import.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                      <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3">Row</th>
+                            <th className="px-4 py-3">LRN</th>
+                            <th className="px-4 py-3">Name</th>
+                            <th className="px-4 py-3">Year Level</th>
+                            <th className="px-4 py-3">Section</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {importPreviewSummary.valid.map((r, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">#{r.rowNum}</td>
+                              <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                              <td className="px-4 py-2.5 font-medium text-gray-900">{[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(" ")}</td>
+                              <td className="px-4 py-2.5">{r.year_level || "-"}</td>
+                              <td className="px-4 py-2.5">{r.section || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {previewTab === "alreadyExisting" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.alreadyExisting?.map((ae, idx) => (
+                    <div key={idx} className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-900 flex items-start gap-2">
+                      <Users className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{ae.name} (LRN: {ae.lrn}):</span> {ae.reason}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {previewTab === "duplicates" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.duplicates.map((d, idx) => (
+                    <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{d.reason}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {previewTab === "invalid" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {importPreviewSummary.invalid.map((inv, idx) => (
+                    <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{inv.reason}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                Only <strong className="text-emerald-700">{importPreviewSummary.valid.length} valid record(s)</strong> will be inserted into Supabase.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowImportPreviewModal(false)}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                  disabled={isSavingImport}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmImport}
+                  disabled={isSavingImport || importPreviewSummary.valid.length === 0}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+                >
+                  {isSavingImport && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isSavingImport ? "Importing..." : `Confirm Import (${importPreviewSummary.valid.length})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Progress Modal during Account Generation */}
+      {showGenerationProgressModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-6 text-center">
+            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
+              <UserPlus className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Generating Student Accounts...</h3>
+              <p className="text-sm text-gray-500 mt-1">Please wait while accounts are created in optimized batches.</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm font-semibold text-gray-700">
+                <span>Batch {generationProgress.currentBatch} of {generationProgress.totalBatches}</span>
+                <span className="text-blue-600 font-bold">{generationProgress.percentage}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden border border-gray-200 shadow-inner">
+                <div 
+                  className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300 rounded-full" 
+                  style={{ width: `${generationProgress.percentage}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 pt-1">
+                {generationProgress.current} / {generationProgress.total} accounts processed
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Generation Results Summary Modal */}
+      {showGenerationResultsModal && generationResultsSummary && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-green-100 rounded-xl text-green-600">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Account Generation Summary</h3>
+                  <p className="text-sm text-gray-500">Bulk student account creation results</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGenerationResultsModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Total Processed</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{generationResultsSummary.total}</p>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-emerald-600 font-semibold uppercase tracking-wider">Enrolled</p>
+                  <p className="text-2xl font-bold text-emerald-700 mt-1">{generationResultsSummary.success.length}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-amber-600 font-semibold uppercase tracking-wider">Already Existed</p>
+                  <p className="text-2xl font-bold text-amber-700 mt-1">{generationResultsSummary.alreadyExists.length}</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+                  <p className="text-xs text-red-600 font-semibold uppercase tracking-wider">Failed / Errors</p>
+                  <p className="text-2xl font-bold text-red-700 mt-1">{generationResultsSummary.failed.length}</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 border-b border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setResultsTab("success")}
+                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    resultsTab === "success" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  Newly Enrolled ({generationResultsSummary.success.length})
+                </button>
+                {generationResultsSummary.alreadyExists.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setResultsTab("alreadyExists")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      resultsTab === "alreadyExists" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Already Existed ({generationResultsSummary.alreadyExists.length})
+                  </button>
+                )}
+                {generationResultsSummary.failed.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setResultsTab("failed")}
+                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                      resultsTab === "failed" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Failed ({generationResultsSummary.failed.length})
+                  </button>
+                )}
+              </div>
+
+              {resultsTab === "success" && (
+                <div>
+                  {generationResultsSummary.success.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic py-4 text-center">No new accounts created in this run.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                      <table className="w-full text-left text-sm text-gray-600">
+                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3">LRN</th>
+                            <th className="px-4 py-3">Name</th>
+                            <th className="px-4 py-3">Generated Username</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {generationResultsSummary.success.map((r, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50">
+                              <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                              <td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td>
+                              <td className="px-4 py-2.5 font-mono text-blue-600 font-semibold">{r.username}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {resultsTab === "alreadyExists" && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-sm text-gray-600">
+                    <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3">LRN</th>
+                        <th className="px-4 py-3">Name</th>
+                        <th className="px-4 py-3">Username</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {generationResultsSummary.alreadyExists.map((r, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/50">
+                          <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
+                          <td className="px-4 py-2.5 font-medium text-gray-900">{r.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-gray-600">{r.username || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {resultsTab === "failed" && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {generationResultsSummary.failed.map((f, idx) => (
+                    <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold">{f.name} (LRN: {f.lrn}):</span> {f.reason}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowGenerationResultsModal(false)}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Assign Section Modal */}
+      {showBulkAssignSectionModal && (() => {
+        const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+        const currentList = activeTab === "Profiles" ? students : masterlist;
+        const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+        const firstGrade = selectedRows[0]?.year_level || "";
+        const formattedGradeLevel = firstGrade ? `Grade ${firstGrade.replace(/\D/g, "")}` : "Grade 7";
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-blue-50">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 rounded-xl text-indigo-600">
+                    <BookOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">Bulk Assign Section</h3>
+                    <p className="text-xs text-gray-500">Assign section to {selectedSet.size} selected student(s)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBulkAssignSectionModal(false)}
+                  className="p-2 hover:bg-black/5 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={isBulkAssigning}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between text-sm">
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Grade Level</p>
+                    <p className="text-base font-bold text-gray-900 mt-0.5">{formattedGradeLevel}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-500 font-semibold uppercase">Target Students</p>
+                    <p className="text-base font-bold text-indigo-600 mt-0.5">{selectedSet.size} Selected</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Select Section</label>
+                  <SectionDropdown
+                    gradeLevel={formattedGradeLevel}
+                    value={targetBulkSection}
+                    onChange={setTargetBulkSection}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Or click the settings icon in the section dropdown to create a new section for {formattedGradeLevel}.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkAssignSectionModal(false)}
+                  disabled={isBulkAssigning}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmBulkAssignSection}
+                  disabled={isBulkAssigning || !targetBulkSection}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isBulkAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isBulkAssigning ? "Assigning..." : `Assign to ${selectedSet.size} Student(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -57,10 +57,9 @@ export default function TabBar({ state, descriptors, navigation, onMenuPress, ro
                         ? rawLabel.replace('teacher/', '').replace('teacher-', '') 
                         : rawLabel;
 
-                    // Handle sub-route highlighting (e.g., Attendance highlights Dashboard)
+                    // Handle sub-route highlighting for teacher home and classes screens.
                     const currentRouteName = state.routes[state.index].name;
-                    const isFocused = state.index === routeIndex || 
-                        (item.name === "teacher-home" && (currentRouteName === "teacher/attendance" || currentRouteName === "teacher/meeting")) ||
+                    const isFocused = state.index === routeIndex ||
                         (item.name === "teacher/classes" && currentRouteName.includes("teacher/class-details"));
 
                     const onPress = () => {

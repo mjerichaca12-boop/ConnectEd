@@ -1,24 +1,32 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
+import { CustomSelect } from "../../components/admin/CustomSelect";
+import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
+import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
+import { toast } from "sonner";
+import { useCallback } from "react";
 import { useActivity } from "../../lib/ActivityContext";
-import { Search, Plus, Eye, Edit, Trash2, Download, Clock, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus } from "lucide-react";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square } from "lucide-react";
 
 const emptyForm = {
   code: "",
   name: "",
   description: "",
-  credits: "",
   teacher: "",
+  capacity: "",
+  grade_level: "",
   section: "",
-  schedule: "",
-  capacity: ""
+  subject_category: DEPED_SUBJECT_CATEGORIES[0]
 };
 
-const subjectSelectColumns = "id, code, name, description, credits, teacher_id, section, schedule, capacity, enrolled, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, teacher_id, capacity, enrolled, grade_level, section, subject_category, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -26,7 +34,7 @@ function SubjectManagement() {
   const { logActivity } = useActivity();
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
+  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -50,35 +58,34 @@ function SubjectManagement() {
   const [enrollmentSearchQuery, setEnrollmentSearchQuery] = useState("");
   const [subjectTable, setSubjectTable] = useState("subjects");
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const resolveSubjectTable = async () => {
-    if (!supabase) throw new Error("Supabase client is not configured.");
-
-    for (const tableName of subjectTableCandidates) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
-
-      if (!error) {
-        setSubjectTable(tableName);
-        return tableName;
-      }
-    }
-
-    throw new Error("Could not find the table 'public.subjects' in the schema cache.");
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const getCapacityStatus = (enrolled, capacity) => {
+    if (!capacity || capacity === 0) return { label: "Available", color: "text-green-600", dot: "bg-green-500", bar: "bg-green-500", raw: "Available" };
+    const percentage = enrolled / capacity;
+    if (percentage >= 1) return { label: "Full", color: "text-red-600", dot: "bg-red-500", bar: "bg-red-500", raw: "Full" };
+    if (percentage >= 0.9) return { label: "Nearly Full", color: "text-amber-500", dot: "bg-amber-500", bar: "bg-amber-500", raw: "Nearly Full" };
+    return { label: "Available", color: "text-green-600", dot: "bg-green-500", bar: "bg-green-500", raw: "Available" };
   };
 
-  const getSubjectTableName = async () => {
-    if (subjectTable) {
-      const { error } = await supabase.from(subjectTable).select("id", { count: "exact", head: true });
-      if (!error) return subjectTable;
+  useEffect(() => {
+    if (showAddModal || showViewModal || showEditModal || showDeleteConfirm || showEnrollModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
     }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showAddModal, showViewModal, showEditModal, showDeleteConfirm, showEnrollModal]);
 
-    return resolveSubjectTable();
-  };
+  const resolveSubjectTable = async () => "subjects";
+  const getSubjectTableName = async () => "subjects";
 
 
   const normalizePositiveInteger = (value) => value.replace(/\D/g, "");
   const normalizeCode = (value) => value.toUpperCase().replace(/\s+/g, "");
-  const isValidSection = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
 
   const getTeacherNameById = (teacherId) => {
     if (!teacherId) return "Unassigned";
@@ -94,12 +101,25 @@ function SubjectManagement() {
 
   const formatSubject = (subjectRow) => ({
     ...subjectRow,
-    credits: Number(subjectRow.credits ?? 0),
     capacity: Number(subjectRow.capacity ?? 0),
     enrolled: Number(subjectRow.enrolled ?? 0),
     section: String(subjectRow.section || "").trim(),
-    teacher_id: subjectRow.teacher_id ?? null
+    teacher_id: (() => {
+      const t = String(subjectRow.teacher_id || "").trim();
+      return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
+    })(),
+    grade_level: String(subjectRow.grade_level || "").trim(),
+    subject_category: normalizeSubjectCategory(subjectRow.subject_category || "", subjectRow.name || subjectRow.code || "")
   });
+
+  const buildSubjectDedupKey = (subjectRow) => {
+    const t = String(subjectRow?.teacher_id || "").trim();
+    const teacherId = (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? "" : t;
+    const code = String(subjectRow?.code || "").trim().toLowerCase();
+    const name = String(subjectRow?.name || "").trim().toLowerCase();
+    const section = String(subjectRow?.section || "").trim().toLowerCase();
+    return [teacherId, code, name, section].join("|");
+  };
 
   const fetchTeachers = async () => {
     if (!supabase) throw new Error("Supabase client is not configured.");
@@ -137,16 +157,72 @@ function SubjectManagement() {
       throw new Error(error.message);
     }
 
-    setSubjects((data ?? []).map(formatSubject));
+    // Dynamically calculate enrollment counts
+    const { data: enrollmentData, error: enrollmentError } = await supabase
+      .from("teacher_student_assignments")
+      .select("subject_id");
+    
+    let enrollmentCounts = {};
+    if (!enrollmentError && enrollmentData) {
+      enrollmentData.forEach(row => {
+        enrollmentCounts[row.subject_id] = (enrollmentCounts[row.subject_id] || 0) + 1;
+      });
+    }
+
+    const normalizedSubjects = (data ?? []).map(subjectRow => ({
+      ...formatSubject(subjectRow),
+      enrolled: enrollmentCounts[subjectRow.id] || 0
+    }));
+    const seen = new Set();
+    const dedupedSubjects = normalizedSubjects.filter((subjectRow) => {
+      const key = buildSubjectDedupKey(subjectRow);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (dedupedSubjects.length !== normalizedSubjects.length) {
+      console.warn("[SubjectManagement] duplicate subject rows detected during fetch", {
+        fetched: normalizedSubjects.length,
+        unique: dedupedSubjects.length
+      });
+    }
+
+    setSubjects(dedupedSubjects);
   };
 
   const fetchAvailableStudents = async (subjectId) => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
-    // Get all students
+    const normalizeGradeLevel = (value) => {
+      const v = String(value || "").trim();
+      if (!v) return "";
+      const digits = v.match(/\d+/);
+      if (digits) return String(digits[0]);
+      return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+    };
+
+    const normalizeSection = (value) =>
+      String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+
+    // Get subject details including grade_level and section
+    const { data: subjectRow } = await supabase
+      .from("subjects")
+      .select("id, teacher_id, grade_level, section")
+      .eq("id", subjectId)
+      .maybeSingle();
+
+    const tIdRaw = String(subjectRow?.teacher_id || "").trim();
+    const teacherId = (!tIdRaw || tIdRaw.toLowerCase() === "null" || tIdRaw.toLowerCase() === "undefined") ? null : tIdRaw;
+    const subjectGradeRaw = String(subjectRow?.grade_level || "").trim();
+    const subjectSectionRaw = String(subjectRow?.section || "").trim();
+    const subjectGrade = normalizeGradeLevel(subjectGradeRaw);
+    const subjectSection = normalizeSection(subjectSectionRaw);
+
+    // Get all students (include grade and section columns)
     const { data: allStudents, error: studentsError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, role")
+      .select("id, first_name, middle_name, last_name, email, role, year_level, section")
       .eq("role", "student")
       .order("first_name", { ascending: true });
 
@@ -168,8 +244,8 @@ function SubjectManagement() {
       (enrolledAssignments ?? []).map((assignment) => assignment.student_id)
     );
 
-    // Filter out already enrolled students
-    const available = (allStudents ?? [])
+    // Filter out already enrolled students and map to display objects
+    let available = (allStudents ?? [])
       .filter((student) => !enrolledStudentIds.has(student.id))
       .map((student) => ({
         id: student.id,
@@ -177,22 +253,38 @@ function SubjectManagement() {
           .filter(Boolean)
           .join(" ")
           .trim() || student.email || "Unknown",
-        email: student.email || ""
+        email: student.email || "",
+        grade_level: String(student?.year_level || "").trim(),
+        section: String(student?.section || "").trim()
       }));
 
-    setAvailableStudents(available);
-  };
+    // Filter by subject's grade level (strict) — only show matching grade students
+    if (subjectGrade) {
+      available = available.filter(
+        (s) => normalizeGradeLevel(s.grade_level) === subjectGrade
+      );
+    }
 
-  const formatStudentName = (studentRow) => {
-    const parts = [studentRow.first_name, studentRow.middle_name, studentRow.last_name].filter(Boolean);
-    const combined = parts.join(" ").trim();
-    return combined || studentRow.email || "Unknown student";
+    // Filter by subject's section (strict) — only show matching section students
+    if (subjectSection) {
+      available = available.filter(
+        (s) => normalizeSection(s.section) === subjectSection
+      );
+    }
+
+    setAvailableStudents(available);
   };
 
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
     if (!supabase) throw new Error("Supabase client is not configured.");
 
-    const uniqueTeacherIds = [...new Set((teacherIds || []).map((value) => String(value).trim()).filter(Boolean))];
+    const uniqueTeacherIds = [...new Set((teacherIds || [])
+      .map((val) => {
+        const s = String(val || "").trim();
+        return (!s || s.toLowerCase() === "null" || s.toLowerCase() === "undefined") ? "" : s;
+      })
+      .filter(Boolean)
+    )];
     if (uniqueTeacherIds.length === 0) {
       return;
     }
@@ -211,10 +303,7 @@ function SubjectManagement() {
         .filter((subject) => String(subject.teacher_id) === String(teacherId))
         .map((subject) => subject.id);
 
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ subjects: assignedSubjectIds })
-        .eq("id", teacherId);
+      const { error: updateError } = await adminApi.updateProfile(teacherId, { subjects: assignedSubjectIds });
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -222,45 +311,79 @@ function SubjectManagement() {
     }));
   };
 
+  const fetchSubjectsData = useCallback(async () => {
+    if (!supabase) return null;
+    const tableName = await getSubjectTableName();
+    const [teachersRes, subjectsRes, enrollmentRes] = await Promise.all([
+      supabase.from("profiles").select("id, first_name, middle_name, last_name, email, role").eq("role", "teacher").order("first_name", { ascending: true }),
+      supabase.from(tableName).select(subjectSelectColumns).order("created_at", { ascending: false }),
+      supabase.from("teacher_student_assignments").select("subject_id")
+    ]);
+
+    if (subjectsRes.error) throw new Error(subjectsRes.error.message);
+
+    const enrollmentCounts = {};
+    if (!enrollmentRes.error && enrollmentRes.data) {
+      enrollmentRes.data.forEach((row) => {
+        enrollmentCounts[row.subject_id] = (enrollmentCounts[row.subject_id] || 0) + 1;
+      });
+    }
+
+    const normalizedSubjects = (subjectsRes.data ?? []).map((s) => ({
+      ...formatSubject(s),
+      enrolled: enrollmentCounts[s.id] || 0
+    }));
+
+    const seen = new Set();
+    const dedupedSubjects = normalizedSubjects.filter((s) => {
+      const key = buildSubjectDedupKey(s);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const mappedTeachers = (teachersRes.data ?? []).map((t) => ({
+      id: t.id,
+      name: formatTeacherName(t),
+      email: t.email ?? ""
+    }));
+
+    return {
+      subjects: dedupedSubjects,
+      teachers: mappedTeachers
+    };
+  }, []);
+
+  const { data: cachedSubjectsData, loading: isCachedSubjectsLoading } = useCachedFetch("admin_subjects_data", fetchSubjectsData);
+
   useEffect(() => {
     let isMounted = true;
+    const userData = localStorage.getItem("currentUser");
+    if (!userData) {
+      navigate("/login");
+      return;
+    }
 
-    const initialize = async () => {
-      try {
-        const userData = localStorage.getItem("currentUser");
-        if (!userData) {
-          navigate("/login");
-          return;
-        }
+    const user = JSON.parse(userData);
+    if (user.role !== "admin") {
+      navigate("/login");
+      return;
+    }
 
-        const user = JSON.parse(userData);
-        if (user.role !== "admin") {
-          navigate("/login");
-          return;
-        }
+    setAdminName(user.name);
+    setNotificationList(adminNotifications);
 
-        setAdminName(user.name);
-        setNotificationList(adminNotifications);
-
-        await resolveSubjectTable();
-        await Promise.all([fetchTeachers(), fetchSubjects()]);
-        setErrorMessage("");
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : "Unable to load subjects.");
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initialize();
+    if (cachedSubjectsData) {
+      setSubjects(cachedSubjectsData.subjects || []);
+      setTeachers(cachedSubjectsData.teachers || []);
+      setLoading(false);
+    } else {
+      setLoading(isCachedSubjectsLoading);
+    }
 
     const subjectChannel = supabase
       ? supabase
-          .channel("admin-subject-table")
+          .channel(`admin-subject-table-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, async () => {
             try {
               await fetchSubjects();
@@ -273,7 +396,7 @@ function SubjectManagement() {
 
     const teacherChannel = supabase
       ? supabase
-          .channel("admin-subject-teachers")
+          .channel(`admin-subject-teachers-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async (payload) => {
             if (payload.new?.role !== "teacher" && payload.old?.role !== "teacher") return;
 
@@ -291,24 +414,15 @@ function SubjectManagement() {
       if (subjectChannel) supabase.removeChannel(subjectChannel);
       if (teacherChannel) supabase.removeChannel(teacherChannel);
     };
-  }, [navigate]);
-
-  useEffect(() => {
-    if (!successMessage) return;
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
+  }, [navigate, cachedSubjectsData, isCachedSubjectsLoading]);
 
   const validateSubjectForm = async (formData, excludeId = null, setErrors = setFormErrors) => {
     const errors = {};
 
     const code = normalizeCode(formData.code || "").trim();
     const name = (formData.name || "").trim();
-    const description = (formData.description || "").trim();
     const credits = normalizePositiveInteger(String(formData.credits || ""));
     const teacherId = (formData.teacher || "").trim();
-    const section = (formData.section || "").trim();
-    const schedule = (formData.schedule || "").trim();
     const capacity = normalizePositiveInteger(String(formData.capacity || ""));
 
     if (!code) {
@@ -321,28 +435,24 @@ function SubjectManagement() {
       errors.name = "Subject name is required";
     }
 
-    if (!credits) {
-      errors.credits = "Credits are required";
-    }
-
-    if (!teacherId) {
-      errors.teacher = "Teacher is required";
-    } else if (!teachers.some((item) => item.id === teacherId)) {
+    if (teacherId && !teachers.some((item) => item.id === teacherId)) {
       errors.teacher = "Selected teacher is invalid";
     }
 
-    if (!section) {
-      errors.section = "Section/Class is required";
-    } else if (!isValidSection(section)) {
-      errors.section = "Section/Class is invalid";
+    const rawCap = String(formData.capacity || "").trim();
+    const parsedCap = Number(rawCap);
+    if (!rawCap || isNaN(parsedCap) || !Number.isInteger(parsedCap) || parsedCap <= 0) {
+      errors.capacity = "Capacity must be a positive integer (greater than 0)";
     }
 
-    if (!schedule) {
-      errors.schedule = "Schedule is required";
+    const gradeLevel = (formData.grade_level || '').trim();
+    if (!gradeLevel) {
+      errors.grade_level = "Grade level is required";
     }
 
-    if (!capacity) {
-      errors.capacity = "Capacity is required";
+    const subjectCategory = normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || "");
+    if (!DEPED_SUBJECT_CATEGORIES.includes(subjectCategory)) {
+      errors.subject_category = "Subject category is required";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -392,17 +502,21 @@ function SubjectManagement() {
     code: normalizeCode(formData.code || "").trim(),
     name: (formData.name || "").trim(),
     description: (formData.description || "").trim() || null,
-    credits: Number(normalizePositiveInteger(String(formData.credits || ""))),
-    teacher_id: (formData.teacher || "").trim(),
-    section: (formData.section || "").trim(),
-    schedule: (formData.schedule || "").trim(),
-    capacity: Number(normalizePositiveInteger(String(formData.capacity || "")))
+    credits: formData.credits ? Number(normalizePositiveInteger(String(formData.credits))) : null,
+    teacher_id: (() => {
+      const t = (formData.teacher || "").trim();
+      return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
+    })(),
+    capacity: Number(normalizePositiveInteger(String(formData.capacity || ""))),
+    grade_level: (formData.grade_level || "").trim(),
+    section: (formData.section || "").trim() || null,
+    subject_category: normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || "")
   });
 
   const handleAddSubject = async (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
     setErrorMessage("");
-    setSuccessMessage("");
 
     const isValid = await validateSubjectForm(subjectFormData, null, setFormErrors);
     if (!isValid) return;
@@ -417,12 +531,49 @@ function SubjectManagement() {
     try {
       const payload = buildPayload(subjectFormData);
       const tableName = await getSubjectTableName();
-      const { data, error } = await supabase.from(tableName).insert(payload).select(subjectSelectColumns).single();
+
+      const query = supabase
+        .from(tableName)
+        .select("id")
+        .eq("code", payload.code)
+        .eq("name", payload.name)
+        .eq("grade_level", payload.grade_level);
+
+      if (payload.section) {
+        query.eq("section", payload.section);
+      } else {
+        query.is("section", null);
+      }
+
+      if (payload.teacher_id) {
+        query.eq("teacher_id", payload.teacher_id);
+      } else {
+        query.is("teacher_id", null);
+      }
+
+      const { data: existingSubject, error: existingSubjectError } = await query.maybeSingle();
+
+      if (existingSubjectError) {
+        throw existingSubjectError;
+      }
+
+      if (existingSubject?.id) {
+        setFormErrors({
+          form: payload.teacher_id 
+            ? "This subject is already assigned to this teacher and grade level."
+            : "This subject already exists for this grade level."
+        });
+        return;
+      }
+
+      const { data, error } = await adminApi.db(tableName, "insert", { payload, select: subjectSelectColumns, single: true });
 
       if (error) throw error;
 
       const next = formatSubject(data);
-      await refreshTeacherSubjectsFromDatabase([next.teacher_id]);
+      if (next.teacher_id) {
+        await refreshTeacherSubjectsFromDatabase([next.teacher_id]);
+      }
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
 
       logActivity({
@@ -446,9 +597,20 @@ function SubjectManagement() {
       setSubjectFormData(emptyForm);
       setFormErrors({});
       setShowAddModal(false);
-      setSuccessMessage("Subject added successfully.");
+      toast.success("Subject added successfully.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to add subject.");
+      const duplicateViolation =
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        String(error.code) === "23505";
+
+      if (duplicateViolation) {
+        toast.error("This subject is already assigned to this teacher and section.");
+      } else {
+        const errMsg = error instanceof Error ? error.message : "Unable to add subject.";
+        toast.error(errMsg);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -467,9 +629,10 @@ function SubjectManagement() {
       description: String(subject.description || ""),
       credits: String(subject.credits || ""),
       teacher: String(subject.teacher_id || ""),
-      section: String(subject.section || ""),
-      schedule: String(subject.schedule || ""),
-      capacity: String(subject.capacity || "")
+      capacity: String(subject.capacity || ""),
+      grade_level: String(subject.grade_level || ""),
+        section: String(subject.section || ""),
+        subject_category: normalizeSubjectCategory(subject.subject_category || "", subject.name || subject.code || "")
     });
     setShowEditModal(true);
   };
@@ -479,7 +642,6 @@ function SubjectManagement() {
     if (!selectedSubject) return;
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     const isValid = await validateSubjectForm(editFormData, selectedSubject.id, setEditFormErrors);
     if (!isValid) return;
@@ -495,11 +657,15 @@ function SubjectManagement() {
       const payload = buildPayload(editFormData);
       const previousTeacherId = selectedSubject.teacher_id || "";
       const tableName = await getSubjectTableName();
-      const { error } = await supabase
-        .from(tableName)
-        .update(payload)
-        .eq("id", selectedSubject.id)
-        .select("id");
+
+      if (payload.capacity > 0 && payload.capacity < (selectedSubject.enrolled || 0)) {
+        toast.warning(
+          `Current enrollment (${selectedSubject.enrolled}) exceeds the new capacity (${payload.capacity}). Existing enrollments will not be removed, but no additional students can be enrolled until capacity is increased.`,
+          { duration: 8000 }
+        );
+      }
+
+      const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: selectedSubject.id }, select: "id" });
 
       if (error) throw error;
 
@@ -538,11 +704,70 @@ function SubjectManagement() {
       setShowEditModal(false);
       setSelectedSubject(null);
       setEditFormErrors({});
-      setSuccessMessage("Subject updated successfully.");
+      toast.success("Subject updated successfully.");
     } catch (error) {
-      setErrorMessage(error?.message || (error instanceof Error ? error.message : "Unable to update subject."));
+      const errMsg = error?.message || (error instanceof Error ? error.message : "Unable to update subject.");
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleSubjectSelection = (subjectId) => {
+    const newSelection = new Set(selectedSubjectIds);
+    if (newSelection.has(subjectId)) {
+      newSelection.delete(subjectId);
+    } else {
+      newSelection.add(subjectId);
+    }
+    setSelectedSubjectIds(newSelection);
+  };
+
+  const handleSelectAllSubjects = () => {
+    if (filteredSubjects.length > 0 && selectedSubjectIds.size === filteredSubjects.length) {
+      setSelectedSubjectIds(new Set());
+    } else {
+      setSelectedSubjectIds(new Set(filteredSubjects.map((s) => s.id)));
+    }
+  };
+
+  const handleBulkDeleteSubjects = async () => {
+    if (selectedSubjectIds.size === 0) return;
+    setIsBulkDeleting(true);
+    setErrorMessage("");
+    try {
+      const idsToDelete = Array.from(selectedSubjectIds);
+      const tableName = await getSubjectTableName();
+      
+      const results = await Promise.allSettled(
+        idsToDelete.map(async (id) => {
+          const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: id } });
+          if (error) throw error;
+        })
+      );
+
+      let successCount = 0;
+      results.forEach(result => {
+        if (result.status === "fulfilled") successCount++;
+      });
+
+      setShowBulkDeleteConfirm(false);
+      setSelectedSubjectIds(new Set());
+      setSubjects((current) => current.filter((item) => !selectedSubjectIds.has(item.id)));
+      await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
+
+      if (successCount === idsToDelete.length) {
+        toast.success(`Successfully deleted ${successCount} subject(s).`);
+      } else if (successCount > 0) {
+        toast.warning(`Deleted ${successCount} out of ${idsToDelete.length} subjects. Some subjects might be referenced by other records.`);
+      } else {
+        toast.error("Failed to delete any subjects. They might be referenced by other records.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("An error occurred during bulk deletion.");
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -580,55 +805,83 @@ function SubjectManagement() {
 
     setEnrollmentLoading(true);
     setErrorMessage("");
-    setSuccessMessage("");
 
     try {
       const subject = selectedSubjectForEnroll;
-      const currentTeacherId = subject.teacher_id;
+      const tIdVal = String(subject.teacher_id || "").trim();
+      const currentTeacherId = (!tIdVal || tIdVal.toLowerCase() === "null" || tIdVal.toLowerCase() === "undefined") ? (subject.teacher_id || null) : tIdVal;
 
-      // Get current enrollment count
-      const { count: currentEnrollment, error: countError } = await supabase
-        .from("teacher_student_assignments")
-        .select("*", { count: "exact" })
-        .eq("subject_id", subject.id);
+      const normalizeGradeLevel = (value) => {
+        const v = String(value || "").trim();
+        if (!v) return "";
+        const digits = v.match(/\d+/);
+        if (digits) return String(digits[0]);
+        return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+      };
 
-      if (countError) throw countError;
+      const normalizeSection = (value) =>
+        String(value || "").trim().toLowerCase().replace(/\s+/g, "");
 
-      const newEnrollmentCount = (currentEnrollment ?? 0) + selectedStudents.size;
-      
-      // Check capacity
-      if (newEnrollmentCount > subject.capacity) {
-        setErrorMessage(
-          `Cannot enroll ${selectedStudents.size} students. Subject capacity is ${subject.capacity} and ${currentEnrollment ?? 0} are already enrolled. ` +
-          `Only ${subject.capacity - (currentEnrollment ?? 0)} more students can be added.`
-        );
-        setEnrollmentLoading(false);
-        return;
+      // Validate selected students against subject's grade_level and section
+      const subjectGrade = normalizeGradeLevel(subject.grade_level || "");
+      const subjectSection = normalizeSection(subject.section || "");
+
+      if (subjectGrade || subjectSection) {
+        const selectedIds = Array.from(selectedStudents);
+        const { data: selectedRows, error: selErr } = await supabase
+          .from("profiles")
+          .select("id, year_level, section")
+          .in("id", selectedIds);
+        if (selErr) throw selErr;
+
+        for (const r of selectedRows ?? []) {
+          if (subjectGrade && normalizeGradeLevel(String(r?.year_level || "")) !== subjectGrade) {
+            setErrorMessage("This student cannot be assigned because their Grade Level does not match the selected class or subject.");
+            setEnrollmentLoading(false);
+            return;
+          }
+          if (subjectSection && normalizeSection(String(r?.section || "")) !== subjectSection) {
+            setErrorMessage("This student belongs to a different section.");
+            setEnrollmentLoading(false);
+            return;
+          }
+        }
       }
 
-      // Prepare enrollment records
-      const enrollmentRecords = Array.from(selectedStudents).map((studentId) => ({
-        teacher_id: currentTeacherId,
-        student_id: studentId,
+      // Atomic Enrollment with Server-Side Capacity Validation
+      const res = await adminApi.enrollStudents({
         subject_id: subject.id,
-        section: subject.section,
-        status: "Active"
-      }));
+        student_ids: Array.from(selectedStudents),
+        teacher_id: currentTeacherId,
+        section: subject.section || null
+      });
 
-      // Insert enrollment records
-      const { error: insertError } = await supabase
-        .from("teacher_student_assignments")
-        .insert(enrollmentRecords);
+      if (res.error) {
+        throw new Error(res.error.message || res.error);
+      }
 
-      if (insertError) throw insertError;
+      const { enrolled_count, skipped_capacity, already_enrolled_count, new_total_enrolled } = res.data || {};
 
-      // Update the subject's enrolled count
-      const { error: updateError } = await supabase
-        .from("subjects")
-        .update({ enrolled: newEnrollmentCount })
-        .eq("id", subject.id);
+      // Sync student profile section and grade level if missing in profiles
+      if (subject.section || subject.grade_level) {
+        const normSec = subject.section ? subject.section.trim() : null;
+        const normGrade = subject.grade_level ? normalizeGradeLevel(subject.grade_level) : null;
 
-      if (updateError) throw updateError;
+        for (const studentId of selectedStudents) {
+          const sRow = (availableStudents || []).find(s => s.id === studentId);
+          if (!sRow?.section || !sRow?.grade_level) {
+            const pUpd = {};
+            if (!sRow?.section && normSec) pUpd.section = normSec;
+            if (!sRow?.grade_level && normGrade) pUpd.year_level = normGrade;
+            if (Object.keys(pUpd).length > 0) {
+              await adminApi.db("profiles", "update", {
+                payload: pUpd,
+                eq: { column: "id", value: studentId }
+              });
+            }
+          }
+        }
+      }
 
       // Log activity
       logActivity({
@@ -638,7 +891,7 @@ function SubjectManagement() {
         entityName: `${subject.code} - ${subject.name}`,
         details: { 
           studentCount: selectedStudents.size,
-          newTotal: newEnrollmentCount
+          newTotal: new_total_enrolled ?? ((subject.enrolled || 0) + (enrolled_count || selectedStudents.size))
         },
         timestamp: new Date().toISOString()
       });
@@ -649,9 +902,10 @@ function SubjectManagement() {
       setShowEnrollModal(false);
       setSelectedSubjectForEnroll(null);
       setSelectedStudents(new Set());
-      setSuccessMessage(`Successfully enrolled ${selectedStudents.size} student(s) in the subject.`);
+      toast.success(`Successfully enrolled ${selectedStudents.size} student(s) in the subject.`);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to enroll students.");
+      const errMsg = error instanceof Error ? error.message : "Unable to enroll students.";
+      toast.error(errMsg);
     } finally {
       setEnrollmentLoading(false);
     }
@@ -667,6 +921,17 @@ function SubjectManagement() {
     setSelectedStudents(newSelection);
   };
 
+  const handleSelectAllStudents = (filteredStudents) => {
+    const allSelected = filteredStudents.length > 0 && filteredStudents.every((s) => selectedStudents.has(s.id));
+    const newSelection = new Set(selectedStudents);
+    if (allSelected) {
+      filteredStudents.forEach((s) => newSelection.delete(s.id));
+    } else {
+      filteredStudents.forEach((s) => newSelection.add(s.id));
+    }
+    setSelectedStudents(newSelection);
+  };
+
   const handleConfirmDelete = async () => {
     if (!subjectToDelete) return;
 
@@ -676,7 +941,6 @@ function SubjectManagement() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     const deletingSubject = subjectToDelete;
     setIsSubmitting(true);
@@ -722,12 +986,13 @@ function SubjectManagement() {
         });
       }
 
-      setSuccessMessage("Subject deleted successfully.");
+      toast.success("Subject deleted successfully.");
     } catch (error) {
       const errorCode = error && typeof error === "object" && "code" in error ? String(error.code) : "";
       const errorMessage = error && typeof error === "object" && "message" in error
         ? String(error.message)
         : (error instanceof Error ? error.message : "Unable to delete subject.");
+      toast.error(errorMessage);
 
       if (errorCode === "23503") {
         setErrorMessage("This subject cannot be deleted because it is referenced by other records. Remove dependent records first, then try again.");
@@ -753,15 +1018,15 @@ function SubjectManagement() {
   };
 
   const handleExportToCSV = () => {
-    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Section", "Schedule", "Capacity", "Enrolled"];
+    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Section", "Capacity", "Enrolled"];
     const rows = filteredSubjects.map((subject) => [
       subject.code,
       subject.name,
       subject.description || "",
       String(subject.credits),
       getTeacherNameById(subject.teacher_id),
+      subject.grade_level || "No grade assigned",
       subject.section || "No section assigned",
-      subject.schedule,
       String(subject.capacity),
       String(subject.enrolled)
     ]);
@@ -777,20 +1042,7 @@ function SubjectManagement() {
     document.body.removeChild(link);
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: "150ms" }} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{ animationDelay: "300ms" }} />
-          </div>
-          <p className="text-gray-500">Loading subject management...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
@@ -801,14 +1053,10 @@ function SubjectManagement() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-gray-900">Subject Management</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
@@ -819,7 +1067,7 @@ function SubjectManagement() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="subjects-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -831,10 +1079,12 @@ function SubjectManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Subject Management</h1>
                 <p className="text-gray-600">{subjects.length} subjects available</p>
               </div>
-              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20">
-                <Plus className="w-5 h-5" />
-                Add Subject
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                <button data-tour="subjects-add-btn" onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                  <Plus className="w-5 h-5" />
+                  Add Subject
+                </button>
+              </div>
             </div>
           </div>
 
@@ -845,20 +1095,10 @@ function SubjectManagement() {
             </div>
           )}
 
-          {successMessage && (
-            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-200">
-              {successMessage}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
               <p className="text-3xl font-bold text-gray-900">{subjects.length}</p>
-            </div>
-            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-500 text-sm mb-1">Total Credits</p>
-              <p className="text-3xl font-bold text-green-600">{subjects.reduce((sum, s) => sum + Number(s.credits || 0), 0)}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Enrolled</p>
@@ -866,9 +1106,9 @@ function SubjectManagement() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div data-tour="subjects-list" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
+              <div data-tour="subjects-search" className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
@@ -878,11 +1118,34 @@ function SubjectManagement() {
                   className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
                 />
               </div>
+              {selectedSubjectIds.size > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  disabled={isBulkDeleting}
+                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
+                </button>
+              )}
               <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 mb-4 mt-2 px-4 py-2 bg-white rounded-lg border border-gray-200 shadow-sm w-fit">
+            <button
+              onClick={handleSelectAllSubjects}
+              className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+              id="selectAllSubjects"
+            >
+              {filteredSubjects.length > 0 && selectedSubjectIds.size === filteredSubjects.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+            </button>
+            <label htmlFor="selectAllSubjects" className="text-sm font-medium text-gray-700 cursor-pointer select-none" onClick={handleSelectAllSubjects}>
+              Select All Subjects
+            </label>
           </div>
 
           {filteredSubjects.length === 0 ? (
@@ -896,12 +1159,17 @@ function SubjectManagement() {
                 <div key={subject.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-colors overflow-hidden">
                   <div className="bg-gradient-to-r from-green-500/10 to-teal-500/10 p-4 border-b border-gray-100">
                     <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm text-green-600 font-medium">{subject.code}</p>
-                        <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
-                      </div>
-                      <div className="px-3 py-1 bg-gray-50 border border-gray-200 rounded-full">
-                        <p className="text-sm font-medium text-gray-700">{subject.credits} Credits</p>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleToggleSubjectSelection(subject.id)}
+                          className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                        >
+                          {selectedSubjectIds.has(subject.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                        </button>
+                        <div>
+                          <p className="text-sm text-green-600 font-medium">{subject.code}</p>
+                          <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -909,20 +1177,25 @@ function SubjectManagement() {
                     <p className="text-gray-600 text-sm">{subject.description || "No description provided"}</p>
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{getTeacherNameById(subject.teacher_id)}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.section || "No section assigned"}</span></div>
-                      <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.schedule}</span></div>
+                      <div className="flex items-center gap-2 text-sm"><BookOpen className="w-4 h-4 text-green-600/70" /><span className="text-gray-700">{subject.grade_level || "No grade assigned"} {subject.section ? ` - ${subject.section}` : ""}</span></div>
                     </div>
                       <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-100">
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Enrollment</p>
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-xs text-gray-500">Enrollment</p>
+                          <div className={`flex items-center gap-1.5 ml-2`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${getCapacityStatus(subject.enrolled, subject.capacity).dot}`}></span>
+                            <p className={`text-[10px] font-bold uppercase tracking-wider ${getCapacityStatus(subject.enrolled, subject.capacity).color}`}>{getCapacityStatus(subject.enrolled, subject.capacity).label}</p>
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-green-600">{subject.enrolled}/{subject.capacity}</p>
+                          <p className={`text-sm font-medium ${getCapacityStatus(subject.enrolled, subject.capacity).color}`}>{subject.enrolled}/{subject.capacity}</p>
                           <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-green-500" style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
+                            <div className={`h-full ${getCapacityStatus(subject.enrolled, subject.capacity).bar}`} style={{ width: `${subject.capacity > 0 ? (subject.enrolled / subject.capacity) * 100 : 0}%` }} />
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div data-tour="subjects-actions" className="flex items-center gap-1.5">
                         <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-600" /></button>
                         <button onClick={() => handleOpenEnrollModal(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Enroll Students"><UserPlus className="w-4 h-4 text-blue-600" /></button>
                         <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-green-600" /></button>
@@ -953,11 +1226,6 @@ function SubjectManagement() {
                     <input type="text" placeholder="e.g., CS101" value={subjectFormData.code} onChange={(e) => setSubjectFormData({ ...subjectFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.code && <p className="text-red-500 text-sm mt-1">{formErrors.code}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" placeholder="e.g., 3" value={subjectFormData.credits} onChange={(e) => setSubjectFormData({ ...subjectFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.credits && <p className="text-red-500 text-sm mt-1">{formErrors.credits}</p>}
-                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
                     <input type="text" placeholder="e.g., Computer Science Fundamentals" value={subjectFormData.name} onChange={(e) => setSubjectFormData({ ...subjectFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
@@ -968,18 +1236,40 @@ function SubjectManagement() {
                     <textarea rows={3} placeholder="Brief description of the subject" value={subjectFormData.description} onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={subjectFormData.teacher} onChange={(e) => setSubjectFormData({ ...subjectFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select teacher</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
-                      ))}
-                    </select>
-                    {formErrors.teacher && <p className="text-red-500 text-sm mt-1">{formErrors.teacher}</p>}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject Category</label>
+                    <CustomSelect
+                      value={subjectFormData.subject_category}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, subject_category: value })}
+                      options={DEPED_SUBJECT_CATEGORIES.map((category) => ({ value: category, label: category }))}
+                      placeholder="Select category"
+                      className="w-full"
+                    />
+                    {formErrors.subject_category && <p className="text-red-500 text-sm mt-1">{formErrors.subject_category}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" placeholder="e.g., Grade 10 - Section A" value={subjectFormData.section} onChange={(e) => setSubjectFormData({ ...subjectFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <CustomSelect
+                      value={subjectFormData.grade_level}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, grade_level: value, section: "" })}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="w-full"
+                    />
+                    {formErrors.grade_level && <p className="text-red-500 text-sm mt-1">{formErrors.grade_level}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <SectionDropdown
+                      value={subjectFormData.section}
+                      onChange={(value) => setSubjectFormData({ ...subjectFormData, section: value })}
+                      gradeLevel={subjectFormData.grade_level}
+                      className="w-full"
+                    />
                     {formErrors.section && <p className="text-red-500 text-sm mt-1">{formErrors.section}</p>}
                   </div>
                   <div>
@@ -987,15 +1277,10 @@ function SubjectManagement() {
                     <input type="text" inputMode="numeric" placeholder="e.g., 30" value={subjectFormData.capacity} onChange={(e) => setSubjectFormData({ ...subjectFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.capacity && <p className="text-red-500 text-sm mt-1">{formErrors.capacity}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" placeholder="e.g., MWF 8:00-9:00 AM" value={subjectFormData.schedule} onChange={(e) => setSubjectFormData({ ...subjectFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {formErrors.schedule && <p className="text-red-500 text-sm mt-1">{formErrors.schedule}</p>}
-                  </div>
                 </div>
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseAddModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Adding..." : "Add Subject"}
                   </button>
@@ -1022,11 +1307,6 @@ function SubjectManagement() {
                     <input type="text" value={editFormData.code} onChange={(e) => setEditFormData({ ...editFormData, code: normalizeCode(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.code ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.code && <p className="text-red-500 text-sm mt-1">{editFormErrors.code}</p>}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Credits</label>
-                    <input type="text" inputMode="numeric" value={editFormData.credits} onChange={(e) => setEditFormData({ ...editFormData, credits: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.credits ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {editFormErrors.credits && <p className="text-red-500 text-sm mt-1">{editFormErrors.credits}</p>}
-                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subject Name</label>
                     <input type="text" value={editFormData.name} onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
@@ -1037,18 +1317,40 @@ function SubjectManagement() {
                     <textarea rows={3} value={editFormData.description} onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teacher</label>
-                    <select value={editFormData.teacher} onChange={(e) => setEditFormData({ ...editFormData, teacher: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.teacher ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}>
-                      <option value="">Select teacher</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
-                      ))}
-                    </select>
-                    {editFormErrors.teacher && <p className="text-red-500 text-sm mt-1">{editFormErrors.teacher}</p>}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subject Category</label>
+                    <CustomSelect
+                      value={editFormData.subject_category}
+                      onChange={(value) => setEditFormData({ ...editFormData, subject_category: value })}
+                      options={DEPED_SUBJECT_CATEGORIES.map((category) => ({ value: category, label: category }))}
+                      placeholder="Select category"
+                      className="w-full"
+                    />
+                    {editFormErrors.subject_category && <p className="text-red-500 text-sm mt-1">{editFormErrors.subject_category}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Section/Class</label>
-                    <input type="text" value={editFormData.section} onChange={(e) => setEditFormData({ ...editFormData, section: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.section ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+                    <CustomSelect
+                      value={editFormData.grade_level}
+                      onChange={(value) => setEditFormData({ ...editFormData, grade_level: value, section: "" })}
+                      options={[
+                        { value: "Grade 7", label: "Grade 7" },
+                        { value: "Grade 8", label: "Grade 8" },
+                        { value: "Grade 9", label: "Grade 9" },
+                        { value: "Grade 10", label: "Grade 10" },
+                      ]}
+                      placeholder="Select grade"
+                      className="w-full"
+                    />
+                    {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Section</label>
+                    <SectionDropdown
+                      value={editFormData.section}
+                      onChange={(value) => setEditFormData({ ...editFormData, section: value })}
+                      gradeLevel={editFormData.grade_level}
+                      className="w-full"
+                    />
                     {editFormErrors.section && <p className="text-red-500 text-sm mt-1">{editFormErrors.section}</p>}
                   </div>
                   <div>
@@ -1056,15 +1358,10 @@ function SubjectManagement() {
                     <input type="text" inputMode="numeric" value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.capacity && <p className="text-red-500 text-sm mt-1">{editFormErrors.capacity}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Schedule</label>
-                    <input type="text" value={editFormData.schedule} onChange={(e) => setEditFormData({ ...editFormData, schedule: e.target.value })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.schedule ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
-                    {editFormErrors.schedule && <p className="text-red-500 text-sm mt-1">{editFormErrors.schedule}</p>}
-                  </div>
                 </div>
-                <div className="flex justify-end gap-3 mt-6">
-                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
-                  <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2" disabled={isSubmitting}>
+                <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                  <button onClick={handleCloseEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
                     {isSubmitting ? "Updating..." : "Update Subject"}
                   </button>
@@ -1089,12 +1386,6 @@ function SubjectManagement() {
                     <p className="text-sm text-green-600 font-medium mb-1">{selectedSubject.code}</p>
                     <h4 className="text-2xl font-bold text-gray-900">{selectedSubject.name}</h4>
                   </div>
-                  <div className="px-4 py-2 bg-white rounded-full">
-                    <div className="flex items-center gap-2">
-                      <Award className="w-5 h-5 text-green-600" />
-                      <span className="font-semibold text-gray-900">{selectedSubject.credits} Credits</span>
-                    </div>
-                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1104,12 +1395,12 @@ function SubjectManagement() {
                     <div className="flex items-center gap-2"><User className="w-4 h-4 text-green-600" /><p className="text-gray-900">{getTeacherNameById(selectedSubject.teacher_id)}</p></div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Section/Class</label>
-                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.section || "No section assigned"}</p></div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Grade Level</label>
+                    <div className="flex items-center gap-2"><BookOpen className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.grade_level || "No grade assigned"}</p></div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-500 mb-1">Schedule</label>
-                    <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.schedule}</p></div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Subject Category</label>
+                    <div className="flex items-center gap-2"><Award className="w-4 h-4 text-green-600" /><p className="text-gray-900">{selectedSubject.subject_category || normalizeSubjectCategory("", selectedSubject.name || selectedSubject.code || "")}</p></div>
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -1130,68 +1421,53 @@ function SubjectManagement() {
                   <label className="block text-sm font-medium text-gray-500 mb-2">Enrollment Progress</label>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Available Slots</span>
-                      <span className="font-medium text-gray-900">{selectedSubject.capacity - selectedSubject.enrolled} / {selectedSubject.capacity}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-600">Available Slots:</span>
+                        <span className="font-medium text-gray-900">{Math.max(0, selectedSubject.capacity - selectedSubject.enrolled)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).dot}`}></span>
+                        <span className={`font-bold ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).color}`}>{getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).label}</span>
+                        <span className="text-gray-500 ml-1">({selectedSubject.enrolled} / {selectedSubject.capacity})</span>
+                      </div>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-gradient-to-r from-green-600 to-teal-600 h-3 rounded-full transition-all" style={{ width: `${selectedSubject.capacity > 0 ? selectedSubject.enrolled / selectedSubject.capacity * 100 : 0}%` }} />
+                      <div className={`h-3 rounded-full transition-all ${getCapacityStatus(selectedSubject.enrolled, selectedSubject.capacity).bar}`} style={{ width: `${selectedSubject.capacity > 0 ? (selectedSubject.enrolled / selectedSubject.capacity) * 100 : 0}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-gray-200">
-                <button onClick={() => { setShowViewModal(false); handleEditSubject(selectedSubject); }} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors"><Edit className="w-4 h-4" />Edit Subject</button>
-                <button onClick={() => setShowViewModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Close</button>
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-150">
+                <button onClick={() => setShowViewModal(false)} className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Close</button>
+                <button onClick={() => { setShowViewModal(false); handleEditSubject(selectedSubject); }} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all cursor-pointer shadow-sm"><Edit className="w-4 h-4" />Edit Subject</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {showDeleteConfirm && subjectToDelete && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gray-50 rounded-2xl shadow-2xl max-w-md w-full transform border border-gray-200 overflow-hidden">
-            <div className="flex items-start justify-between p-6 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl border bg-red-50 border-red-200">
-                  <AlertTriangle className="w-6 h-6 text-red-500" />
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Delete Subject</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setShowDeleteConfirm(false); setSubjectToDelete(null); }}
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <ConfirmDialog
+        isOpen={showBulkDeleteConfirm}
+        onClose={() => setShowBulkDeleteConfirm(false)}
+        onConfirm={handleBulkDeleteSubjects}
+        title="Delete Selected Subjects"
+        description={`Are you sure you want to delete ${selectedSubjectIds.size} selected subject(s)? This action cannot be undone.`}
+        confirmText={isBulkDeleting ? "Deleting..." : "Delete All Selected"}
+        variant="danger"
+      />
 
-            <div className="p-6 bg-gray-50">
-              <p className="text-gray-700 leading-relaxed">
-                Are you sure you want to permanently delete {subjectToDelete.name}? This action cannot be undone.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 p-6 bg-gray-50 rounded-b-2xl border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => { setShowDeleteConfirm(false); setSubjectToDelete(null); }}
-                className="px-6 py-2.5 text-gray-700 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-all duration-200 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-6 py-2.5 text-gray-900 rounded-xl transition-all duration-200 font-medium shadow-lg bg-red-600 hover:bg-red-700"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        onClose={() => {
+          setShowDeleteConfirm(false);
+          setSubjectToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Delete Subject"
+        description={`Are you sure you want to delete ${subjectToDelete?.code} - ${subjectToDelete?.name}? This action cannot be undone.`}
+        confirmText={isSubmitting ? "Deleting..." : "Delete"}
+        variant="danger"
+      />
 
       {showEnrollModal && selectedSubjectForEnroll && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1249,70 +1525,91 @@ function SubjectManagement() {
                     </div>
                   </div>
 
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="block text-sm font-medium text-gray-700">Available Students</label>
-                      <span className="text-sm text-gray-500">{selectedStudents.size} selected</span>
-                    </div>
-                    
-                    <div className="border border-gray-200 rounded-lg divide-y max-h-96 overflow-y-auto">
-                      {availableStudents
-                        .filter((student) => {
-                          const search = enrollmentSearchQuery.toLowerCase();
-                          return (
-                            student.name.toLowerCase().includes(search) ||
-                            student.email.toLowerCase().includes(search)
-                          );
-                        })
-                        .length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          {availableStudents.length === 0 
-                            ? "All students are already enrolled in this subject."
-                            : "No students match your search."}
-                        </div>
-                      ) : (
-                        availableStudents
-                          .filter((student) => {
-                            const search = enrollmentSearchQuery.toLowerCase();
-                            return (
-                              student.name.toLowerCase().includes(search) ||
-                              student.email.toLowerCase().includes(search)
-                            );
-                          })
-                          .map((student) => (
-                            <label
-                              key={student.id}
-                              className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                            >
+                  {(() => {
+                    const filteredList = availableStudents.filter((student) => {
+                      const search = enrollmentSearchQuery.toLowerCase();
+                      return (
+                        student.name.toLowerCase().includes(search) ||
+                        student.email.toLowerCase().includes(search)
+                      );
+                    });
+                    const allFilteredSelected = filteredList.length > 0 && filteredList.every((s) => selectedStudents.has(s.id));
+
+                    return (
+                      <div className="mb-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {filteredList.length > 0 && (
                               <input
                                 type="checkbox"
-                                checked={selectedStudents.has(student.id)}
-                                onChange={() => handleToggleStudentSelection(student.id)}
+                                id="selectAllEnrollmentStudents"
+                                checked={allFilteredSelected}
+                                onChange={() => handleSelectAllStudents(filteredList)}
                                 className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
                               />
-                              <div className="flex-1">
-                                <p className="font-medium text-gray-900">{student.name}</p>
-                                <p className="text-sm text-gray-500">{student.email}</p>
-                              </div>
+                            )}
+                            <label htmlFor="selectAllEnrollmentStudents" className="block text-sm font-medium text-gray-700 cursor-pointer">
+                              Available Students ({filteredList.length})
                             </label>
-                          ))
-                      )}
+                          </div>
+                          <span className="text-sm text-gray-500">{selectedStudents.size} selected</span>
+                        </div>
+                        
+                        <div className="border border-gray-200 rounded-lg divide-y max-h-96 overflow-y-auto">
+                          {filteredList.length === 0 ? (
+                            <div className="p-4 text-center text-gray-500">
+                              {availableStudents.length === 0 
+                                ? "All eligible students are already enrolled in this subject."
+                                : "No students match your search."}
+                            </div>
+                          ) : (
+                            filteredList.map((student) => (
+                              <label
+                                key={student.id}
+                                className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudents.has(student.id)}
+                                  onChange={() => handleToggleStudentSelection(student.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                                />
+                                <div className="flex-1">
+                                  <p className="font-medium text-gray-900">{student.name}</p>
+                                  <p className="text-sm text-gray-500">{student.email}</p>
+                                </div>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className={`border rounded-lg p-3 text-sm mb-4 ${selectedSubjectForEnroll.capacity > 0 && selectedSubjectForEnroll.enrolled + selectedStudents.size > selectedSubjectForEnroll.capacity ? 'bg-red-50 border-red-200 text-red-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-medium">Enrollment Status</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).dot}`}></span>
+                        <p className={`font-bold ${getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).color}`}>{getCapacityStatus(selectedSubjectForEnroll.enrolled + selectedStudents.size, selectedSubjectForEnroll.capacity).label}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p>
+                        Current: {selectedSubjectForEnroll.enrolled}/{selectedSubjectForEnroll.capacity} students
+                        {selectedStudents.size > 0 && (
+                          <span className="ml-2 font-semibold">
+                            → After enrollment: {selectedSubjectForEnroll.enrolled + selectedStudents.size}/{selectedSubjectForEnroll.capacity}
+                          </span>
+                        )}
+                      </p>
+                      <p>
+                        Available Slots: {Math.max(0, selectedSubjectForEnroll.capacity - (selectedSubjectForEnroll.enrolled + selectedStudents.size))}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700 mb-4">
-                    <p className="font-medium mb-1">Enrollment Status</p>
-                    <p>
-                      Current: {selectedSubjectForEnroll.enrolled}/{selectedSubjectForEnroll.capacity} students
-                      {selectedStudents.size > 0 && (
-                        <span className="ml-2">
-                          → After enrollment: {selectedSubjectForEnroll.enrolled + selectedStudents.size}/{selectedSubjectForEnroll.capacity}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-3 pt-5 border-t border-gray-100">
                     <button
                       onClick={() => {
                         setShowEnrollModal(false);
@@ -1320,7 +1617,7 @@ function SubjectManagement() {
                         setSelectedStudents(new Set());
                       }}
                       type="button"
-                      className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                      className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
                       disabled={enrollmentLoading}
                     >
                       Cancel
@@ -1328,7 +1625,7 @@ function SubjectManagement() {
                     <button
                       onClick={handleEnrollStudents}
                       type="button"
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
                       disabled={enrollmentLoading || selectedStudents.size === 0}
                     >
                       {enrollmentLoading && <Loader2 className="w-4 h-4 animate-spin" />}

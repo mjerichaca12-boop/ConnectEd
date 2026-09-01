@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
+import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { v4 as uuidv4 } from "uuid";
+import { toast } from "sonner";
 import {
   sanitizeFileName,
   isColumnMissingError,
@@ -16,11 +21,11 @@ import {
   buildMaterialAttachments,
   normalizeAudience,
   normalizeAnnouncement,
-  getPriorityStyles,
   formatAnnouncementDate
 } from "@/app/lib/teacherHelpers";
 import { streamMessage } from "@/app/lib/groqClient";
 import { parseDocument } from "@/app/lib/documentParser";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 import {
   ArrowLeft,
   Users,
@@ -51,9 +56,27 @@ import {
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
-const ASSIGNMENT_TABLE_CANDIDATES = ["assignments_activity", "class_assignments", "assignments", "teacher_assignments", "class_activities"];
+const ANNOUNCEMENT_STORAGE_BUCKET = "class-announcements";
+const ASSIGNMENT_TABLE_CANDIDATES = ["assignments", "assignments_activity"];
 const ASSESSMENT_TABLE = "teacher_assessment_grades";
-const ANNOUNCEMENT_TABLE = "school_announcements";
+const ANNOUNCEMENT_TABLE_CANDIDATES = ["class_announcements", "announcements"];
+const MAX_ANNOUNCEMENT_FILE_SIZE = 15 * 1024 * 1024;
+const ALLOWED_ANNOUNCEMENT_FILE_EXTENSIONS = new Set([
+  "pdf", "doc", "docx", "ppt", "pptx", "jpg", "jpeg", "png", "gif", "webp", "zip"
+]);
+
+const parseAnnouncementAttachmentsValue = (value) => {
+  if (Array.isArray(value)) return value;
+  const text = String(value || "").trim();
+  if (!text) return [];
+
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
 
 const normalizeMaterialRecord = (row) => {
   const attachments = buildMaterialAttachments(row);
@@ -79,7 +102,7 @@ const normalizeMaterialRecord = (row) => {
 const normalizeAssignmentRecord = (row) => {
   const attachments = buildAssignmentAttachments(row);
   const assessmentType = String(row?.assessment_type || row?.type || row?.task_type || "assignment").trim().toLowerCase();
-  
+
   let type = "assignment";
   if (assessmentType === "activity") type = "activity";
   else if (assessmentType === "quiz") type = "quiz";
@@ -122,31 +145,88 @@ const getAssignmentLifecycle = (dueDate) => {
   return { key: "open", label: "Open", cls: "bg-emerald-100 text-emerald-700" };
 };
 
-
+const parsePriorityMetadata = (priority) => {
+  try {
+    if (priority && String(priority).trim().startsWith('{')) {
+      const parsed = JSON.parse(priority);
+      return {
+        is_pinned: !!parsed.is_pinned,
+        status: parsed.status || "Published",
+        scheduled_at: parsed.scheduled_at || null,
+        link_url: parsed.link_url || ""
+      };
+    }
+  } catch (e) {
+    // ignore
+  }
+  return {
+    is_pinned: priority === "pinned",
+    status: "Published",
+    scheduled_at: null,
+    link_url: ""
+  };
+};
 
 const normalizeAnnouncementRecordLocal = (row) => {
-  const attachments = Array.isArray(row?.attachments) ? row.attachments : [];
-  const firstAttachment = attachments[0] || {};
-  const fileName = String(row?.file_name || firstAttachment.name || "").trim();
-  const filePath = String(row?.file_path || firstAttachment.path || "").trim();
-  const fileUrl = String(row?.file_url || firstAttachment.url || "").trim();
-  const fileType = String(row?.file_type || firstAttachment.mimeType || "").trim();
+  const fileName = String(row?.file_name || "").trim();
+  const filePath = String(row?.file_path || "").trim();
+  const fileUrl = String(row?.file_url || "").trim();
+  const fileType = String(row?.file_type || "").trim();
+
+  const structuredAttachments = parseAnnouncementAttachmentsValue(row?.attachments)
+    .map((attachment, index) => {
+      const attachmentName = String(attachment?.name || attachment?.fileName || `File ${index + 1}`).trim();
+      const attachmentPath = String(attachment?.path || attachment?.filePath || "").trim();
+      const attachmentUrl = String(attachment?.signedUrl || attachment?.url || attachment?.fileUrl || "").trim();
+      const attachmentType = String(attachment?.mimeType || "").trim();
+
+      return {
+        fileName: attachmentName,
+        filePath: attachmentPath,
+        fileUrl: attachmentUrl,
+        fileType: attachmentType,
+        kind: getAnnouncementAttachmentKind({
+          fileType: attachmentType,
+          fileName: attachmentName,
+          fileUrl: attachmentUrl
+        })
+      };
+    })
+    .filter((attachment) => attachment.fileName || attachment.filePath || attachment.fileUrl);
+
+  const legacyAttachment = (fileName || filePath || fileUrl)
+    ? [{
+      fileName: fileName || "Attached file",
+      filePath,
+      fileUrl,
+      fileType,
+      kind: getAnnouncementAttachmentKind({ fileType, fileName, fileUrl })
+    }]
+    : [];
+
+  const attachments = structuredAttachments.length > 0 ? structuredAttachments : legacyAttachment;
+  const meta = parsePriorityMetadata(row?.priority);
 
   return {
     id: String(row?.id || ""),
     title: String(row?.title || "").trim(),
     content: String(row?.content || "").trim(),
-    priority: String(row?.priority || row?.announcement_priority || "Medium").trim() || "Medium",
+
     targetAudience: normalizeAudience(row?.target_audience || row?.audience || row?.targetAudience || "Students"),
-    author: String(row?.author || row?.created_by_name || "").trim(),
-    fileName,
-    filePath,
-    fileUrl,
+    author: String(row?.author || row?.created_by_name || "Faculty").trim(),
+    fileName: attachments[0]?.fileName || fileName,
+    filePath: attachments[0]?.filePath || filePath,
+    fileUrl: attachments[0]?.fileUrl || fileUrl,
     fileType,
+    attachments,
     datePosted: row?.created_at || row?.date_posted || row?.updated_at || new Date().toISOString(),
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
-    section: String(row?.section || "").trim()
+    section: String(row?.section || "").trim(),
+    isPinned: meta.is_pinned,
+    status: meta.status,
+    scheduledAt: meta.scheduled_at,
+    linkUrl: meta.link_url
   };
 };
 
@@ -169,16 +249,31 @@ const getAnnouncementAttachmentKind = (announcement) => {
   return fileUrl ? "document" : "";
 };
 
+let classMaterialsTableStatus = "missing";
+
 export function ClassDetail() {
-  const navigate = useNavigate();
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
+  const { activeSchoolYear, activeQuarter } = useAcademic();
   const fileInputRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("students");
+  const [activeTab, setActiveTab] = useState("lessons");
+
+  useEffect(() => {
+    const handleSwitchTab = (e) => {
+      const tab = e.detail?.tab;
+      if (tab) {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener("tour-switch-tab", handleSwitchTab);
+    return () => window.removeEventListener("tour-switch-tab", handleSwitchTab);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Quiz AI state
@@ -202,6 +297,17 @@ export function ClassDetail() {
   const [assignments, setAssignments] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
 
+  // Live dashboard metrics state
+  const [metrics, setMetrics] = useState({
+    totalLessons: 0,
+    publishedLessons: 0,
+    activitiesCount: 0,
+    seatworksCount: 0,
+    assignmentsCount: 0,
+    quizzesCount: 0,
+    materialsCount: 0,
+  });
+
   // Modal states
   const [showMaterialModal, setShowMaterialModal] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
@@ -212,12 +318,30 @@ export function ClassDetail() {
   const [teacherProfileId, setTeacherProfileId] = useState("");
   const [assignedStudents, setAssignedStudents] = useState([]);
   const [availableStudents, setAvailableStudents] = useState([]);
+  const [isStudentsLoading, setIsStudentsLoading] = useState(false);
+  const [hasLoadedStudents, setHasLoadedStudents] = useState(false);
   const [studentPickerQuery, setStudentPickerQuery] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [isStudentSubmitting, setIsStudentSubmitting] = useState(false);
   const [stuError, setStuError] = useState("");
   const [showDeleteStudentModal, setShowDeleteStudentModal] = useState(false);
   const [pendingDeleteStudent, setPendingDeleteStudent] = useState(null);
+  
+  // Advanced Add Student State
+  const [addStudentMode, setAddStudentMode] = useState("individual"); // "individual", "masterlist", "csv"
+  const [masterlistStudents, setMasterlistStudents] = useState([]);
+  const [selectedMasterlistIds, setSelectedMasterlistIds] = useState([]);
+  const [masterlistQuery, setMasterlistQuery] = useState("");
+  const [masterlistYearFilter, setMasterlistYearFilter] = useState("all");
+  const [masterlistSectionFilter, setMasterlistSectionFilter] = useState("all");
+  const [isMasterlistLoading, setIsMasterlistLoading] = useState(false);
+  
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreviewData, setCsvPreviewData] = useState([]);
+  const [csvValidRecords, setCsvValidRecords] = useState([]);
+  const [csvErrorRecords, setCsvErrorRecords] = useState([]);
+  const [isCsvValidating, setIsCsvValidating] = useState(false);
+  const csvFileInputRef = useRef(null);
 
   // Material form
   const [matForm, setMatForm] = useState({ title: "", description: "", fileType: "PDF" });
@@ -248,6 +372,7 @@ export function ClassDetail() {
   const [isPostingAssignment, setIsPostingAssignment] = useState(false);
   const [assignmentTable, setAssignmentTable] = useState("");
   const [assignmentColumns, setAssignmentColumns] = useState([]);
+  const [assignmentColumnsTrusted, setAssignmentColumnsTrusted] = useState(false);
   const [asgSupportsFiles, setAsgSupportsFiles] = useState(false);
   const asgFileRef = useRef(null);
 
@@ -266,19 +391,26 @@ export function ClassDetail() {
   const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
 
   // Announcement form
-  const [annForm, setAnnForm] = useState({ title: "", content: "", priority: "" });
-  const [annFile, setAnnFile] = useState(null);
-  const [annFileName, setAnnFileName] = useState("");
-  const [annOriginalFile, setAnnOriginalFile] = useState({ fileName: "", filePath: "", fileUrl: "" });
-  const [announcementTable, setAnnouncementTable] = useState(ANNOUNCEMENT_TABLE);
+  const [annForm, setAnnForm] = useState({ title: "", content: "" });
+  const [annFiles, setAnnFiles] = useState([]);
+  const [annFileNames, setAnnFileNames] = useState([]);
+  const [annOriginalFiles, setAnnOriginalFiles] = useState({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
+  const [announcementTable, setAnnouncementTable] = useState(ANNOUNCEMENT_TABLE_CANDIDATES[0]);
   const [announcementColumns, setAnnouncementColumns] = useState([]);
-  const [annError, setAnnError] = useState("");
-  const [annSuccess, setAnnSuccess] = useState("");
   const [isPostingAnnouncement, setIsPostingAnnouncement] = useState(false);
   const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
   const [editingAnnouncementId, setEditingAnnouncementId] = useState(null);
   const [showDeleteAnnouncementModal, setShowDeleteAnnouncementModal] = useState(false);
   const [pendingDeleteAnnouncement, setPendingDeleteAnnouncement] = useState(null);
+  const [activeAnnouncementTab, setActiveAnnouncementTab] = useState("Active");
+  const [selectedAnnouncementDetail, setSelectedAnnouncementDetail] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+
+  useEffect(() => {
+    const handleCloseMenu = () => setOpenMenuId(null);
+    window.addEventListener("click", handleCloseMenu);
+    return () => window.removeEventListener("click", handleCloseMenu);
+  }, []);
   const annFileRef = useRef(null);
 
   const getStudentFullName = (student) => {
@@ -290,6 +422,105 @@ export function ClassDetail() {
 
     if (fullName) return fullName;
     return String(student?.email || "").split("@")[0] || "Student";
+  };
+
+  const normalizeGradeLevel = (value) => {
+    const v = String(value || "").trim();
+    if (!v) return "";
+    const digits = v.match(/\d+/);
+    if (digits) return String(digits[0]);
+    return v.toLowerCase().replace(/grade|year|level|\s+/g, "").trim();
+  };
+
+  const normalizeSection = (value) =>
+    String(value || "").trim().toLowerCase().replace(/\s+/g, "");
+
+  const dedupeStudentsById = (rows) => {
+    const seen = new Set();
+    return (rows ?? []).filter((student) => {
+      const key = String(student?.id || "").trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const normalizeSearchText = (value) => String(value || "").toLowerCase().trim();
+
+  const extractGradeFromText = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+
+    const labeled = text.match(/(?:grade|year)\s*([0-9]{1,2})/i);
+    if (labeled) return `Grade ${labeled[1]}`;
+
+    const numericOnly = text.match(/^([1-9]|1[0-2])$/);
+    if (numericOnly) return `Grade ${numericOnly[1]}`;
+
+    return "";
+  };
+
+  const getClassGradeValue = (classObj) => {
+    const direct = String(classObj?.gradeLevel || classObj?.grade_level || classObj?.year_level || "").trim();
+    if (direct) return direct;
+
+    const fromSection = extractGradeFromText(classObj?.section);
+    if (fromSection) return fromSection;
+
+    const fromName = extractGradeFromText(classObj?.name);
+    if (fromName) return fromName;
+
+    return "";
+  };
+
+  const normalizeStudentRecord = (student) => {
+    const yearLevel = student?.year_level ?? student?.grade_level ?? student?.grade ?? student?.year ?? "";
+    return {
+      id: String(student?.id || student?.student_id || "").trim(),
+      first_name: String(student?.first_name || student?.firstname || "").trim(),
+      middle_name: String(student?.middle_name || student?.middlename || "").trim(),
+      last_name: String(student?.last_name || student?.lastname || "").trim(),
+      email: String(student?.email || "").trim(),
+      lrn: String(student?.lrn || student?.student_number || "").trim(),
+      year_level: String(yearLevel || "").trim(),
+      grade_level: String(student?.grade_level || yearLevel || "").trim(),
+      section: String(student?.section || "").trim(),
+      phone: String(student?.phone || student?.contact_number || "").trim(),
+      status: String(student?.status || "Active").trim()
+    };
+  };
+
+  const resolveSubjectGradeLevel = async (classObj) => {
+    const localGrade = getClassGradeValue(classObj);
+    if (localGrade) return localGrade;
+
+    if (!supabase || !id) return "";
+
+    let { data, error } = await supabase
+      .from("subjects")
+      .select("grade_level")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[ClassDetail] Unable to resolve subject grade level:", error);
+      return "";
+    }
+
+    const fetchedGrade = String(data?.grade_level || data?.year_level || "").trim();
+    if (fetchedGrade) {
+      setClassData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          gradeLevel: fetchedGrade,
+          grade_level: data?.grade_level ?? current?.grade_level,
+          year_level: data?.year_level ?? current?.year_level
+        };
+      });
+    }
+
+    return fetchedGrade;
   };
 
   const syncStudentsIntoClassData = (students) => {
@@ -305,7 +536,7 @@ export function ClassDetail() {
   };
 
   const loadAssignedStudents = async (teacherId, subjectId) => {
-    if (!supabase || !teacherId || !subjectId) {
+    if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) {
       syncStudentsIntoClassData([]);
       return;
     }
@@ -323,7 +554,15 @@ export function ClassDetail() {
       return;
     }
 
-    const studentIds = [...new Set((assignmentRows ?? []).map((row) => String(row.student_id || "")).filter(Boolean))];
+    const uniqueAssignmentsByStudent = new Map();
+    (assignmentRows ?? []).forEach((row) => {
+      const studentKey = String(row?.student_id || "").trim();
+      if (!studentKey || uniqueAssignmentsByStudent.has(studentKey)) return;
+      uniqueAssignmentsByStudent.set(studentKey, row);
+    });
+
+    const uniqueAssignmentRows = Array.from(uniqueAssignmentsByStudent.values());
+    const studentIds = uniqueAssignmentRows.map((row) => String(row.student_id || "")).filter(Boolean);
 
     if (studentIds.length === 0) {
       syncStudentsIntoClassData([]);
@@ -332,7 +571,7 @@ export function ClassDetail() {
 
     const { data: studentRows, error: studentError } = await supabase
       .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
+      .select("id, first_name, middle_name, last_name, email, lrn, year_level, section, phone, status")
       .eq("role", "student")
       .in("id", studentIds);
 
@@ -342,8 +581,11 @@ export function ClassDetail() {
       return;
     }
 
-    const studentById = new Map((studentRows ?? []).map((student) => [String(student.id), student]));
-    const mapped = (assignmentRows ?? []).map((row) => {
+    const studentById = new Map((studentRows ?? []).map((student) => {
+      const normalized = normalizeStudentRecord(student);
+      return [String(normalized.id), normalized];
+    }));
+    const mapped = uniqueAssignmentRows.map((row) => {
       const student = studentById.get(String(row.student_id || ""));
       return {
         assignmentId: row.id,
@@ -358,27 +600,149 @@ export function ClassDetail() {
     });
 
     syncStudentsIntoClassData(mapped);
+
+    if (supabase && subjectId && !String(subjectId).startsWith("demo-")) {
+      try {
+        const queryId = !isNaN(Number(subjectId)) ? Number(subjectId) : subjectId;
+        const { data: sub } = await supabase.from("subjects").select("capacity, enrolled").eq("id", queryId).maybeSingle();
+        if (sub && sub.capacity !== undefined) {
+          setClassData(prev => prev ? ({ ...prev, capacity: Number(sub.capacity || 0), enrolled: mapped.length }) : prev);
+        }
+      } catch (e) {
+        console.warn("[ClassDetail] Failed to re-fetch subject capacity:", e);
+      }
+    }
   };
 
-  const loadAvailableStudents = async () => {
+  const fetchDashboardMetrics = async (teacherId, subjectId) => {
+    if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) return;
+    try {
+      // 1. Fetch lessons count
+      const { data: lessons, error: lessonsError } = await supabase
+        .from("lessons")
+        .select("id, status")
+        .eq("subject_id", subjectId)
+        .eq("teacher_id", teacherId);
+
+      if (lessonsError) throw lessonsError;
+
+      const activeLessons = lessons.filter(l => l.status !== "Archived");
+      const totalLessons = activeLessons.length;
+      const publishedLessons = activeLessons.filter(l => l.status === "Published").length;
+
+      const activeLessonIds = activeLessons.map(l => l.id);
+
+      let activitiesCount = 0;
+      let seatworksCount = 0;
+      let assignmentsCount = 0;
+      let quizzesCount = 0;
+      let materialsCount = 0;
+
+      if (activeLessonIds.length > 0) {
+        // 2. Fetch lesson activities
+        const { data: activities, error: actError } = await supabase
+          .from("lesson_activities")
+          .select("activity_type, activity_id")
+          .in("lesson_id", activeLessonIds);
+
+        if (actError) throw actError;
+
+        if (activities && activities.length > 0) {
+          activitiesCount = activities.filter(a => ["Activity", "Assignment", "Assessment", "Seatwork", "Quiz"].includes(a.activity_type)).length;
+          seatworksCount = activities.filter(a => a.activity_type === "Assessment" || a.activity_type === "Seatwork").length;
+          assignmentsCount = activities.filter(a => a.activity_type === "Assignment").length;
+          quizzesCount = activities.filter(a => a.activity_type === "Quiz").length;
+        }
+
+        // 3. Fetch lesson materials count
+        const { count: matCount, error: matError } = await supabase
+          .from("lesson_materials")
+          .select("*", { count: "exact", head: true })
+          .in("lesson_id", activeLessonIds);
+
+        if (!matError) materialsCount = matCount || 0;
+      }
+
+      setMetrics({
+        totalLessons,
+        publishedLessons,
+        activitiesCount,
+        seatworksCount,
+        assignmentsCount,
+        quizzesCount,
+        materialsCount
+      });
+
+    } catch (err) {
+      console.error("Error fetching dashboard metrics:", err);
+    }
+  };
+
+  const loadAvailableStudents = async (classObj) => {
     if (!supabase) {
-      setAvailableStudents([]);
+      setStuError("Supabase client is not configured.");
       return;
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, first_name, middle_name, last_name, email, lrn, year_level, phone, status")
-      .eq("role", "student")
-      .order("first_name", { ascending: true });
+    setIsStudentsLoading(true);
+    setHasLoadedStudents(false);
 
-    if (error) {
-      console.error("Failed to load students:", error);
-      setAvailableStudents([]);
-      return;
+    const tableCandidates = ["profiles", "students"];
+    const classCandidate = classObj || classData || {};
+    const resolvedClassGradeRaw = await resolveSubjectGradeLevel(classCandidate);
+    let classGrade = normalizeGradeLevel(resolvedClassGradeRaw);
+    const classSectionRaw = String(classCandidate?.section || "").trim();
+
+    try {
+      let loadedRows = null;
+      let lastError = null;
+
+      for (const tableName of tableCandidates) {
+        let query = tableName === "students"
+          ? supabase.from(tableName).select("*")
+          : supabase
+            .from(tableName)
+            .select("*")
+            .eq("role", "student")
+            .order("first_name", { ascending: true });
+
+        if (classSectionRaw && classSectionRaw.toLowerCase() !== "unassigned") {
+          query = query.ilike("section", classSectionRaw);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          lastError = error;
+          console.warn(`[ClassDetail] Student fetch failed on table ${tableName}:`, error);
+          continue;
+        }
+
+        loadedRows = (data ?? [])
+          .map(normalizeStudentRecord)
+          .filter((student) => String(student.id || "").trim());
+        break;
+      }
+
+      if (!loadedRows) {
+        const message = String(lastError?.message || "").toLowerCase();
+        if (lastError?.code === "42501" || message.includes("row-level security") || message.includes("permission denied")) {
+          setStuError("Unable to load students due to permissions (RLS). Ensure teacher/admin has SELECT access to students/profiles.");
+        } else {
+          setStuError(lastError?.message || "Unable to load students right now.");
+        }
+        return;
+      }
+
+      setAvailableStudents(dedupeStudentsById(loadedRows));
+      setStuError("");
+      setHasLoadedStudents(true);
+    } catch (err) {
+      console.error("[ClassDetail] Failed to load students:", err);
+      setStuError(err instanceof Error ? err.message : "Unable to load students.");
+    } finally {
+      setIsStudentsLoading(false);
     }
-
-    setAvailableStudents(data ?? []);
   };
 
   const resolveTeacherProfileId = async (email) => {
@@ -416,7 +780,7 @@ export function ClassDetail() {
       const { data: sessionData } = await supabase.auth.getSession();
       const sessionUserId = sessionData?.session?.user?.id;
       if (sessionUserId) return String(sessionUserId);
-    } catch {}
+    } catch { }
 
     return "";
   };
@@ -433,21 +797,25 @@ export function ClassDetail() {
       "file_type",
       "file_url",
       "file_name",
-      "file_path",
-      "subject",
-      "section",
       "teacher_id",
       "created_by",
-      "created_at"
+      "class_id",
+      "subject_id",
+      "course_id"
     ];
 
     const detected = [];
 
+    if (classMaterialsTableStatus === "missing") {
+      return ["id", "title", "description", "file_type", "file_url", "created_at"];
+    }
+
     // First check if table exists by trying a simple query
     try {
-      const { error: tableCheckError } = await supabase.from("class_materials").select("id", { count: "exact", head: true });
-      
-      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400)) {
+      const { error: tableCheckError } = await supabase.from("class_materials").select("id").limit(1);
+
+      if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400 || tableCheckError.status === 404 || tableCheckError.code === '42P01' || tableCheckError.code === 'PGRST205')) {
+        classMaterialsTableStatus = "missing";
         console.warn("class_materials table not accessible in ClassDetail, using default columns:", tableCheckError);
         // Return default columns that might exist
         return ["id", "title", "description", "file_type", "file_url", "created_at"];
@@ -459,7 +827,7 @@ export function ClassDetail() {
 
     for (const columnName of candidates) {
       try {
-        const { error } = await supabase.from("class_materials").select(columnName, { count: "exact", head: true });
+        const { error } = await supabase.from("class_materials").select(columnName).limit(1);
         if (!error) {
           detected.push(columnName);
         }
@@ -472,21 +840,13 @@ export function ClassDetail() {
     return detected;
   };
 
-  const getMaterialColumns = async () => {
-    if (materialColumns.length > 0) {
-      return materialColumns;
-    }
-
-    return resolveMaterialColumns();
-  };
-
   const resolveAssignmentTable = async () => {
     if (!supabase) {
       return "";
     }
 
     for (const tableName of ASSIGNMENT_TABLE_CANDIDATES) {
-      const { error } = await supabase.from(tableName).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(tableName).select("id").limit(1);
       if (!error) {
         setAssignmentTable(tableName);
         return tableName;
@@ -502,7 +862,7 @@ export function ClassDetail() {
     }
 
     if (assignmentTable) {
-      const { error } = await supabase.from(assignmentTable).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(assignmentTable).select("id").limit(1);
       if (!error) {
         return assignmentTable;
       }
@@ -527,43 +887,81 @@ export function ClassDetail() {
       return [];
     }
 
-    const defaultColumns = [
-      "id",
-      "type",
-      "assessment_type",
-      "task_type",
-      "title",
-      "name",
-      "description",
-      "instructions",
-      "content",
-      "deadline",
-      "max_points",
-      "total_points",
-      "maxPoints",
-      "file_url",
-      "file_name",
-      "file_path",
-      "course_id",
-      "created_at",
-      "updated_at",
-      "updated_by"
-    ];
+    const defaultColumns = tableName === 'assignments_activity'
+      ? [
+          "id",
+          "course_id",
+          "title",
+          "assessment_type",
+          "description",
+          "deadline",
+          "file_url",
+          "file_name",
+          "file_path",
+          "created_at",
+          "updated_at",
+          "updated_by"
+        ]
+      : [
+          "id",
+          "title",
+          "name",
+          "description",
+          "instructions",
+          "content",
+          "due_date",
+          "deadline",
+          "file_url",
+          "file_name",
+          "file_path",
+          "subject",
+          "class_code",
+          "class_name",
+          "section",
+          "class_id",
+          "course_id",
+          "subject_id",
+          "created_by",
+          "teacher_id",
+          "author",
+          "teacher_name",
+          "created_at",
+          "updated_at",
+          "updated_by",
+          "assessment_type",
+          "task_type",
+          "max_points",
+          "total_points",
+          "maxPoints"
+        ];
 
-    const { data, error } = await supabase.from(tableName).select("*").limit(1);
-    if (error) {
-      console.error("[ClassDetail] Failed to resolve assignment columns:", error);
+    // Probe the table with a single select(*) to retrieve a sample row and infer columns.
+    try {
+      const { data, error } = await supabase.from(tableName).select("*").limit(1);
+      if (error) {
+        console.error("[ClassDetail] Failed to resolve assignment columns via sample query:", error);
+        // Do not trust default columns when the sample query failed ΓÇö return defaults but mark as untrusted
+        setAssignmentColumns(defaultColumns);
+        setAssignmentColumnsTrusted(false);
+        setAsgSupportsFiles(defaultColumns.includes("file_url") || defaultColumns.includes("file_name") || defaultColumns.includes("file_path"));
+        return defaultColumns;
+      }
+
+      const detected = data && data.length > 0 ? Object.keys(data[0]) : defaultColumns;
+      setAssignmentColumns(detected);
+      // If we actually got a sample row, we can trust the detected columns. If not, mark untrusted.
+      const isTrusted = Array.isArray(data) && data.length > 0;
+      setAssignmentColumnsTrusted(isTrusted);
+      const supportsFiles = detected.includes("file_url") || detected.includes("file_name") || detected.includes("file_path");
+      setAsgSupportsFiles(supportsFiles);
+      return detected;
+    } catch (err) {
+      console.error("[ClassDetail] Unexpected error resolving assignment columns:", err);
       setAssignmentColumns(defaultColumns);
+      setAssignmentColumnsTrusted(false);
       setAsgSupportsFiles(defaultColumns.includes("file_url") || defaultColumns.includes("file_name") || defaultColumns.includes("file_path"));
       return defaultColumns;
     }
-
-    const detected = data && data.length > 0 ? Object.keys(data[0]) : defaultColumns;
-
-    setAssignmentColumns(detected);
-    const supportsFiles = detected.includes("file_url") || detected.includes("file_name") || detected.includes("file_path");
-    setAsgSupportsFiles(supportsFiles);
-    return detected;
   };
 
   const getAssignmentColumns = async (tableNameOverride) => {
@@ -579,21 +977,16 @@ export function ClassDetail() {
       return "";
     }
 
-    // Try 'class_announcements' first for subject-scoped announcements
-    const { error: classAnnError } = await supabase.from('class_announcements').select("id", { count: "exact", head: true });
-    if (!classAnnError) {
-      setAnnouncementTable('class_announcements');
-      return 'class_announcements';
+    for (const tableName of ANNOUNCEMENT_TABLE_CANDIDATES) {
+      const { error } = await supabase.from(tableName).select("id").limit(1);
+      if (!error) {
+        setAnnouncementTable(tableName);
+        return tableName;
+      }
     }
 
-    const { error } = await supabase.from(ANNOUNCEMENT_TABLE).select("id", { count: "exact", head: true });
-    if (error) {
-      console.error("[ClassDetail] Announcements table check failed:", error);
-      return "";
-    }
-
-    setAnnouncementTable(ANNOUNCEMENT_TABLE);
-    return ANNOUNCEMENT_TABLE;
+    console.error("[ClassDetail] Announcements table check failed for candidates:", ANNOUNCEMENT_TABLE_CANDIDATES);
+    return "";
   };
 
   const getAnnouncementTableName = async () => {
@@ -602,9 +995,9 @@ export function ClassDetail() {
     }
 
     if (announcementTable) {
-      const { error } = await supabase.from(ANNOUNCEMENT_TABLE).select("id", { count: "exact", head: true });
+      const { error } = await supabase.from(announcementTable).select("id").limit(1);
       if (!error) {
-        return ANNOUNCEMENT_TABLE;
+        return announcementTable;
       }
     }
 
@@ -622,45 +1015,18 @@ export function ClassDetail() {
       return [];
     }
 
-    if (tableName === 'class_announcements') {
-      const classAnnColumns = [
-        "id",
-        "class_id",
-        "teacher_id",
-        "title",
-        "content",
-        "attachments",
-        "created_at",
-        "updated_at",
-        "author",
-        "created_by_name",
-        "priority"
-      ];
-      setAnnouncementColumns(classAnnColumns);
-      return classAnnColumns;
-    }
-
     const defaultColumns = [
       "id",
+      "class_id",
+      "teacher_id",
       "title",
       "content",
-      "priority",
-      "target_audience",
+
+      "attachments",
       "author",
-      "created_by",
       "created_by_name",
       "created_at",
-      "updated_at",
-      "subject",
-      "class_code",
-      "class_name",
-      "class_id",
-      "course_id",
-      "subject_id",
-      "section",
-      "file_url",
-      "file_name",
-      "file_path"
+      "updated_at"
     ];
 
     const { data, error } = await supabase.from(tableName).select("*").limit(1);
@@ -683,8 +1049,53 @@ export function ClassDetail() {
     return resolveAnnouncementColumns(tableNameOverride);
   };
 
+  const hydrateAnnouncementAttachmentUrls = async (rows) => {
+    const normalizedRows = Array.isArray(rows) ? rows : [];
+
+    return Promise.all(
+      normalizedRows.map(async (row) => {
+        const attachments = parseAnnouncementAttachmentsValue(row?.attachments);
+        if (!Array.isArray(attachments) || attachments.length === 0 || !supabase) {
+          return row;
+        }
+
+        const hydrated = await Promise.all(
+          attachments.map(async (attachment) => {
+            const path = String(attachment?.path || attachment?.filePath || "").trim();
+            if (!path) return attachment;
+
+            const bucket = path.includes("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
+            const signed = await supabase.storage
+              .from(bucket)
+              .createSignedUrl(path, 60 * 60);
+
+            if (signed.error) {
+              console.error("[ClassDetail] Announcement signed URL generation failed:", signed.error, path, "bucket:", bucket);
+              return attachment;
+            }
+
+            return {
+              ...attachment,
+              signedUrl: String(signed.data?.signedUrl || "").trim() || attachment?.signedUrl || attachment?.url || ""
+            };
+          })
+        );
+
+        return { ...row, attachments: hydrated };
+      })
+    );
+  };
+
   const fetchClassAnnouncements = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
+    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+
+    if (isDemoMode) {
+      setAnnouncements(MOCK_ANNOUNCEMENTS);
+      return;
+    }
+
+    if (!supabase || !cleanTeacherId) {
       setAnnouncements([]);
       return;
     }
@@ -697,6 +1108,7 @@ export function ClassDetail() {
 
     const columns = await getAnnouncementColumns(tableName);
     const ownerColumn = resolveColumnName(columns, ["created_by", "teacher_id"]);
+    const classColumn = resolveColumnName(columns, ["class_id", "course_id", "subject_id"]);
     const orderColumn = columns.includes("created_at")
       ? "created_at"
       : columns.includes("date_posted")
@@ -710,25 +1122,36 @@ export function ClassDetail() {
       query = query.order(orderColumn, { ascending: false });
     }
 
-    if (ownerColumn) {
-      query = query.eq(ownerColumn, resolvedTeacherId);
+    if (classColumn && cleanClassId) {
+      query = query.eq(classColumn, cleanClassId);
+    } else if (ownerColumn) {
+      query = query.eq(ownerColumn, cleanTeacherId);
     }
 
     let { data, error } = await query;
 
     if (error && isColumnMissingError(error)) {
       query = supabase.from(tableName).select("*");
-      if (ownerColumn) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
+      if (classColumn && cleanClassId) {
+        query = query.eq(classColumn, cleanClassId);
+      } else if (ownerColumn) {
+        query = query.eq(ownerColumn, cleanTeacherId);
       }
       const fallback = await query;
       data = fallback.data;
       error = fallback.error;
     }
 
+    if (!error && Array.isArray(data) && data.length === 0) {
+      const fallbackAll = await supabase.from(tableName).select("*");
+      if (!fallbackAll.error && Array.isArray(fallbackAll.data)) {
+        data = fallbackAll.data;
+      }
+    }
+
     if (error) {
       console.error("[ClassDetail] Failed to fetch announcements:", error);
-      setAnnError("Unable to load announcements from database.");
+      toast.error("Unable to load announcements from database.");
       setAnnouncements([]);
       return;
     }
@@ -751,147 +1174,216 @@ export function ClassDetail() {
       return subjectMatches && sectionMatches;
     });
 
-    setAnnouncements(filtered.map(normalizeAnnouncementRecordLocal));
+    const hydratedRows = await hydrateAnnouncementAttachmentUrls(filtered);
+    setAnnouncements(hydratedRows.map(normalizeAnnouncementRecordLocal));
   };
 
   const fetchClassAssignments = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+    const cleanTeacherId = resolvedTeacherId && resolvedTeacherId !== "null" && resolvedTeacherId !== "undefined" ? resolvedTeacherId : null;
+    const cleanClassId = id && id !== "null" && id !== "undefined" ? id : null;
+
+    if (!supabase || !cleanTeacherId || !cleanClassId || String(cleanClassId).startsWith("demo-")) {
       setAssignments([]);
       return;
     }
 
-    const tableName = await getAssignmentTableName();
-    if (!tableName) {
-      setAssignments([]);
-      return;
-    }
+    const previousAssignments = Array.isArray(assignments) ? assignments : [];
+    const allAssignments = [];
 
-    const columns = await getAssignmentColumns(tableName);
-    const ownerColumn = resolveColumnName(columns, ["created_by", "teacher_id"]);
-
-    let query = supabase.from(tableName).select("*");
-    const orderColumn = columns.includes("created_at")
-      ? "created_at"
-      : columns.includes("deadline")
-        ? "deadline"
-        : columns.includes("dueDate")
-          ? "dueDate"
-          : columns.includes("deadline")
-            ? "deadline"
-            : "";
-    if (orderColumn) {
-      query = query.order(orderColumn, { ascending: false });
-    }
-
-    if (ownerColumn) {
-      query = query.eq(ownerColumn, resolvedTeacherId);
-    }
-
-    let { data, error } = await query;
-
-    if (error && isColumnMissingError(error)) {
-      query = supabase.from(tableName).select("*");
-      if (ownerColumn) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
+    // 1. Try to fetch from assignments_activity
+    try {
+      const { data, error } = await supabase.from("assignments_activity").select("*");
+      if (!error && data) {
+        const rows = (data ?? []).filter((row) => {
+          const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
+          const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
+          const classMatches = !cleanClassId || !rowCourseId || rowCourseId === cleanClassId;
+          const teacherMatches = !rowTeacherId || rowTeacherId === cleanTeacherId;
+          return classMatches && teacherMatches;
+        });
+        rows.forEach(row => allAssignments.push(normalizeAssignmentRecord(row)));
       }
-      const fallback = await query;
-      data = fallback.data;
-      error = fallback.error;
+    } catch (e) {
+      console.warn("Failed to fetch from assignments_activity in ClassDetail:", e);
     }
 
-    if (error) {
-      console.error("[ClassDetail] Failed to fetch assignments:", error);
-      setAsgError("Unable to load assignments from database.");
-      setAssignments([]);
-      return;
+    // 2. Fetch lessons of this class to resolve LMS assignments and quizzes
+    let lessonIds = [];
+    try {
+      const { data: lessons, error: lessonsError } = await supabase
+        .from("lessons")
+        .select("id")
+        .eq("subject_id", cleanClassId);
+      
+      if (!lessonsError && lessons) {
+        lessonIds = lessons.map(l => l.id);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch lessons in ClassDetail:", e);
     }
 
-    const classCode = String(currentClassData?.code || "").trim();
-    const classSection = String(currentClassData?.section || "").trim();
-    const classId = String(id || "").trim();
-
-    const filtered = (data ?? []).filter((row) => {
-      const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-      const rowSubject = String(row?.subject || row?.class_code || "").trim();
-      const rowSection = String(row?.section || "").trim();
-
-      if (rowCourseId) {
-        return !classId || rowCourseId === classId;
+    if (lessonIds.length > 0) {
+      // 3. Try to fetch LMS assignments
+      try {
+        const { data, error } = await supabase
+          .from("assignments")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            const normalized = normalizeAssignmentRecord(row);
+            const isQuiz = String(row.assignment_type || "").trim().toLowerCase() === "quiz" || String(row.title || "").toLowerCase().includes("quiz");
+            allAssignments.push({
+              ...normalized,
+              type: isQuiz ? "quiz" : normalized.type || "assignment"
+            });
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS assignments in ClassDetail:", e);
       }
 
-      const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-      const sectionMatches = !classSection || !rowSection || rowSection === classSection;
-      return subjectMatches && sectionMatches;
+      // 4. Try to fetch LMS quizzes
+      try {
+        const { data, error } = await supabase
+          .from("quizzes")
+          .select("*")
+          .in("lesson_id", lessonIds);
+        
+        if (!error && data) {
+          data.forEach(row => {
+            allAssignments.push(normalizeAssignmentRecord({
+              ...row,
+              assessment_type: "quiz",
+              designation: "Quiz"
+            }));
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to fetch LMS quizzes in ClassDetail:", e);
+      }
+    }
+
+    // Deduplicate assignments by ID
+    const uniqueMap = new Map();
+    allAssignments.forEach(item => {
+      if (item.id) {
+        uniqueMap.set(item.id, item);
+      }
     });
 
-    setAssignments(filtered.map(normalizeAssignmentRecord));
+    const serverAssignments = Array.from(uniqueMap.values())
+      .sort((a, b) => {
+        const timeA = new Date(a.dueDate || 0).getTime();
+        const timeB = new Date(b.dueDate || 0).getTime();
+        return timeB - timeA;
+      })
+      .map((item) => ({ ...item, _optimistic: false }));
+
+    setAssignments((previous) => {
+      const prev = Array.isArray(previous) ? previous : [];
+      const optimistic = prev.filter((item) => item?._optimistic);
+      const serverIds = new Set(serverAssignments.map((item) => String(item.id || "")));
+      const carryOverOptimistic = optimistic.filter((item) => !serverIds.has(String(item.id || "")));
+      return [...serverAssignments, ...carryOverOptimistic];
+    });
   };
 
-  const fetchClassMaterials = async (resolvedTeacherId, currentClassData) => {
-    if (!supabase || !resolvedTeacherId) {
+  const fetchClassMaterials = async (cleanTeacherId, targetClass) => {
+    if (!supabase) {
+      setMaterials([]);
+      return;
+    }
+
+    const cleanClassId = targetClass?.id || id;
+    if (!cleanClassId || String(cleanClassId).startsWith("demo-")) {
       setMaterials([]);
       return;
     }
 
     try {
-      const columns = await getMaterialColumns();
-      const ownerColumn = resolveColumnName(columns, ["teacher_id", "created_by"]);
+      // 1. Fetch materials from class_materials table for this subject if available
+      let classMats = [];
+      if (classMaterialsTableStatus !== "missing") {
+        const { data: cmData, error: cmErr } = await supabase
+          .from("class_materials")
+          .select("*")
+          .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
 
-      let query = supabase
-        .from("class_materials")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (ownerColumn) {
-        query = query.eq(ownerColumn, resolvedTeacherId);
-      }
-
-      let { data, error } = await query;
-
-      // Handle case where table doesn't exist or permissions issue
-      if (error && (error.code === 'PGRST116' || error.status === 400)) {
-        console.warn("[ClassDetail] class_materials table not accessible, showing empty state:", error);
-        setMaterials([]);
-        setMatError("");
-        return;
-      }
-
-      if (error && isColumnMissingError(error)) {
-        query = supabase.from("class_materials").select("*");
-        if (ownerColumn) {
-          query = query.eq(ownerColumn, resolvedTeacherId);
+        if (cmErr) {
+          if (cmErr.status === 404 || cmErr.code === "PGRST205" || cmErr.code === "42P01" || cmErr.status === 400) {
+            classMaterialsTableStatus = "missing";
+          }
+        } else if (cmData) {
+          classMats = cmData;
         }
-        const fallback = await query;
-        data = fallback.data;
-        error = fallback.error;
       }
 
-      if (error) {
-        console.error("[ClassDetail] Failed to fetch class materials:", error);
-        setMatError("Unable to load class materials from database.");
-        setMaterials([]);
-        return;
+      // 2. Fetch lessons for subject
+      const { data: lessonsData } = await supabase
+        .from("lessons")
+        .select("id, title, topic")
+        .eq("subject_id", cleanClassId);
+
+      const lessonMap = new Map();
+      (lessonsData || []).forEach(l => {
+        lessonMap.set(String(l.id), String(l.title || l.topic || "Untitled Lesson").trim());
+      });
+
+      const lessonIds = Array.from(lessonMap.keys());
+      let lessonMats = [];
+      if (lessonIds.length > 0) {
+        const { data: lmData } = await supabase
+          .from("lesson_materials")
+          .select("*")
+          .in("lesson_id", lessonIds)
+          .order("created_at", { ascending: false });
+        if (lmData) lessonMats = lmData;
       }
 
-    const classCode = String(currentClassData?.code || "").trim();
-    const classSection = String(currentClassData?.section || "").trim();
+      const combined = [...classMats, ...lessonMats];
+      const seenIds = new Set();
+      const uniqueMats = [];
+      for (const row of combined) {
+        const rowId = String(row.id || "");
+        if (rowId && !seenIds.has(rowId)) {
+          seenIds.add(rowId);
+          uniqueMats.push(row);
+        }
+      }
 
-    const filtered = (data ?? []).filter((row) => {
-      const rowSubject = String(row?.subject || "").trim();
-      const rowSection = String(row?.section || "").trim();
+      const normalized = uniqueMats.map(row => normalizeMaterialRecord({
+        ...row,
+        lesson_title: row.lesson_id ? (lessonMap.get(String(row.lesson_id)) || "General") : (row.lesson_title || "General")
+      }));
 
-      const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-      const sectionMatches = !classSection || !rowSection || rowSection === classSection;
-      return subjectMatches && sectionMatches;
-    });
-
-    setMaterials(filtered.map(normalizeMaterialRecord));
+      setMaterials(normalized);
     } catch (err) {
-      console.error("[ClassDetail] Unexpected error in fetchClassMaterials:", err);
+      console.warn("[ClassDetail] fetchClassMaterials notice:", err);
       setMaterials([]);
-      setMatError("Unexpected error loading materials.");
     }
   };
+
+  useEffect(() => {
+    if (!supabase || !id || String(id).startsWith("demo-")) return;
+
+    const channel = supabase
+      .channel(`class-detail-materials-rt-${id}-${Math.random().toString(36).substring(7)}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lesson_materials" },
+        () => {
+          fetchClassMaterials(teacherProfileId, classData);
+          fetchDashboardMetrics(teacherProfileId, id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherProfileId, id, classData]);
 
   useEffect(() => {
     let isMounted = true;
@@ -906,12 +1398,49 @@ export function ClassDetail() {
       const saved = localStorage.getItem("teacher_classes");
       let foundClass = null;
       if (saved) {
-        const all = JSON.parse(saved);
-        const found = all.find((c) => c.id === id);
-        foundClass = found || null;
-        if (isMounted) {
-          setClassData(found || null);
+        try {
+          const all = JSON.parse(saved);
+          foundClass = all.find((c) => String(c.id) === String(id)) || null;
+        } catch {
+          foundClass = null;
         }
+      }
+
+      if (supabase && id && !String(id).startsWith("demo-")) {
+        try {
+          const queryId = !isNaN(Number(id)) ? Number(id) : id;
+          const { data: subData } = await supabase.from("subjects").select("*").eq("id", queryId).maybeSingle();
+          if (subData) {
+            foundClass = {
+              ...(foundClass || {}),
+              id: String(subData.id),
+              code: String(subData.code || ""),
+              name: String(subData.name || "Untitled Class"),
+              section: String(subData.section || "Section"),
+              schedule: String(subData.schedule || ""),
+              room: "",
+              semester: "Current School Year",
+              studentCount: Number(subData.enrolled || 0),
+              capacity: Number(subData.capacity || 0),
+              gradeLevel: String(subData.grade_level || "")
+            };
+          }
+        } catch (err) {
+          console.warn("[ClassDetail] Fresh subject fetch error:", err);
+        }
+      }
+
+      if (!isDemoMode && String(id).startsWith("demo-")) {
+        navigate("/teacher/classes");
+        return;
+      }
+
+      if (!foundClass && isDemoMode) {
+        foundClass = mockData.classes.find((c) => String(c.id) === String(id)) || mockData.classes[0];
+      }
+
+      if (isMounted) {
+        setClassData(foundClass || null);
       }
 
       const resolvedTeacherId = await resolveTeacherProfileId(user.email);
@@ -919,22 +1448,19 @@ export function ClassDetail() {
         setTeacherProfileId(resolvedTeacherId);
       }
 
-      await resolveMaterialColumns();
-      const assignmentTableName = await resolveAssignmentTable();
-      if (assignmentTableName) {
-        await resolveAssignmentColumns(assignmentTableName);
-      }
-      const announcementTableName = await resolveAnnouncementTable();
-      if (announcementTableName) {
-        await resolveAnnouncementColumns(announcementTableName);
-      }
+      await Promise.all([
+        resolveMaterialColumns(),
+        resolveAssignmentTable().then(tableName => tableName ? resolveAssignmentColumns(tableName) : null),
+        resolveAnnouncementTable().then(tableName => tableName ? resolveAnnouncementColumns(tableName) : null)
+      ]);
 
       await Promise.all([
-        loadAvailableStudents(),
+        loadAvailableStudents(foundClass),
         loadAssignedStudents(resolvedTeacherId, id),
         fetchClassMaterials(resolvedTeacherId, foundClass),
         fetchClassAssignments(resolvedTeacherId, foundClass),
-        fetchClassAnnouncements(resolvedTeacherId, foundClass)
+        fetchClassAnnouncements(resolvedTeacherId, foundClass),
+        fetchDashboardMetrics(resolvedTeacherId, id)
       ]);
 
       if (isMounted) {
@@ -953,7 +1479,7 @@ export function ClassDetail() {
     if (!supabase || !teacherProfileId || !id) return;
 
     const channel = supabase
-      .channel(`teacher-class-students-${teacherProfileId}-${id}`)
+      .channel(`teacher-class-students-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
       .on(
         "postgres_changes",
         {
@@ -989,23 +1515,25 @@ export function ClassDetail() {
     const config = {
       event: "*",
       schema: "public",
-      table: "class_materials"
+      table: "lesson_materials"
     };
 
     if (ownerColumn) {
       config.filter = `${ownerColumn}=eq.${teacherProfileId}`;
     }
 
-    const channel = supabase
-      .channel(`class-detail-materials-${teacherProfileId}-${id}`)
-      .on("postgres_changes", config, () => {
-        fetchClassMaterials(teacherProfileId, classData);
-      })
-      .subscribe();
+    if (classMaterialsTableStatus !== "missing") {
+      const channel = supabase
+        .channel(`class-detail-materials-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
+        .on("postgres_changes", config, () => {
+          fetchClassMaterials(teacherProfileId, classData);
+        })
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [teacherProfileId, id, materialColumns, classData]);
 
   useEffect(() => {
@@ -1028,7 +1556,7 @@ export function ClassDetail() {
     }
 
     const channel = supabase
-      .channel(`class-detail-assignments-${teacherProfileId}-${id}`)
+      .channel(`class-detail-assignments-${teacherProfileId}-${id}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", config, () => {
         fetchClassAssignments(teacherProfileId, classData);
       })
@@ -1047,6 +1575,13 @@ export function ClassDetail() {
       : announcementColumns.includes("teacher_id")
         ? "teacher_id"
         : "";
+    const classColumn = announcementColumns.includes("class_id")
+      ? "class_id"
+      : announcementColumns.includes("course_id")
+        ? "course_id"
+        : announcementColumns.includes("subject_id")
+          ? "subject_id"
+          : "";
 
     const config = {
       event: "*",
@@ -1054,12 +1589,14 @@ export function ClassDetail() {
       table: announcementTable
     };
 
-    if (ownerColumn) {
+    if (classColumn && id) {
+      config.filter = `${classColumn}=eq.${id}`;
+    } else if (ownerColumn) {
       config.filter = `${ownerColumn}=eq.${teacherProfileId}`;
     }
 
     const channel = supabase
-      .channel(`class-detail-announcements-${teacherProfileId}-${id}-${announcementTable}`)
+      .channel(`class-detail-announcements-${teacherProfileId}-${id}-${announcementTable}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", config, () => {
         fetchClassAnnouncements(teacherProfileId, classData);
       })
@@ -1076,11 +1613,34 @@ export function ClassDetail() {
   };
 
 
+  const loadMasterlistStudents = async () => {
+    if (!supabase) return;
+    setIsMasterlistLoading(true);
+    try {
+      const { data, error } = await supabase.from("student_masterlist").select("*").order("first_name", { ascending: true });
+      if (error) {
+        console.error("Failed to fetch masterlist:", error);
+      } else {
+        setMasterlistStudents(data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching masterlist:", err);
+    } finally {
+      setIsMasterlistLoading(false);
+    }
+  };
+
   const handleOpenStudentModal = () => {
     setSelectedStudentIds([]);
     setStudentPickerQuery("");
     setStuError("");
+    setAddStudentMode("individual");
+    setSelectedMasterlistIds([]);
+    setMasterlistQuery("");
+    setCsvFile(null);
+    setCsvPreviewData([]);
     setShowStudentModal(true);
+    loadMasterlistStudents();
   };
   const toggleStudentSelection = (studentId) => {
     setSelectedStudentIds((current) => {
@@ -1108,6 +1668,24 @@ export function ClassDetail() {
       return;
     }
 
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (currentCapacity > 0 && selectedStudentIds.length > availableSlots) {
+      const msg = `Only ${availableSlots} slots are available for this class.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
     const alreadyAssigned = selectedStudentIds.some((studentId) => assignedStudents.some((student) => String(student.id) === String(studentId)));
     if (alreadyAssigned) {
       setStuError("This student is already assigned to this class.");
@@ -1123,36 +1701,306 @@ export function ClassDetail() {
       return;
     }
 
+    // Grade Level and Section Parity Validation
+    const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+    const classSectionNorm = normalizeSection(classData?.section);
+
+    for (const student of selectedStudents) {
+      const studentGradeNorm = normalizeGradeLevel(student.grade_level || student.year_level);
+      const studentSectionNorm = normalizeSection(student.section);
+      if (!studentSectionNorm || studentSectionNorm === "unassigned" || (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) || (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm)) {
+        const msg = "Student does not belong to this class section.";
+        setStuError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
     setIsStudentSubmitting(true);
     setStuError("");
 
     try {
-      const payload = selectedStudents.map((student) => ({
-        teacher_id: teacherProfileId,
-        student_id: student.id,
+      const res = await adminApi.enrollStudents({
         subject_id: id,
-        section: String(classData?.section || "").trim() || null,
-        status: "Active"
-      }));
+        student_ids: selectedStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
 
-      const { error } = await supabase
-        .from("teacher_student_assignments")
-        .insert(payload);
-
-      if (error) {
-        if (error.code === "23505") {
-          setStuError("One or more selected students are already assigned to this class.");
-          return;
-        }
-
-        throw error;
+      if (res.error) {
+        throw new Error(res.error.message || res.error);
       }
+
+      const { enrolled_count, skipped_capacity, already_enrolled_count } = res.data;
 
       await loadAssignedStudents(teacherProfileId, id);
       setSelectedStudentIds([]);
       setShowStudentModal(false);
+
+      if (skipped_capacity > 0) {
+        toast.warning(`Successfully enrolled ${enrolled_count} student(s). ${skipped_capacity} student(s) skipped because class capacity was reached.`);
+      } else if (already_enrolled_count > 0 && enrolled_count === 0) {
+        toast.info("Selected student(s) are already enrolled in this class.");
+      } else {
+        toast.success(`Successfully enrolled ${enrolled_count} student(s).`);
+      }
     } catch (error) {
-      setStuError(error instanceof Error ? error.message : "Unable to add student.");
+      const msg = error instanceof Error ? error.message : "Unable to add student.";
+      setStuError(msg);
+      toast.error(msg);
+    } finally {
+      setIsStudentSubmitting(false);
+    }
+  };
+
+  const handleImportMasterlist = async () => {
+    if (!supabase || !teacherProfileId) return;
+    if (selectedMasterlistIds.length === 0) {
+      setStuError("Please select at least one student from the masterlist.");
+      return;
+    }
+
+    const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
+    if (selectedStudents.length === 0) return;
+
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    if (currentCapacity > 0 && selectedStudents.length > availableSlots) {
+      const msg = `Only ${availableSlots} slots are available for this class.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    // Grade Level and Section Parity Validation
+    const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+    const classSectionNorm = normalizeSection(classData?.section);
+
+    for (const student of selectedStudents) {
+      const studentGradeNorm = normalizeGradeLevel(student.year_level || student.grade_level);
+      const studentSectionNorm = normalizeSection(student.section);
+      if (!studentSectionNorm || studentSectionNorm === "unassigned" || (classGradeNorm && studentGradeNorm && studentGradeNorm !== classGradeNorm) || (classSectionNorm && studentSectionNorm && studentSectionNorm !== classSectionNorm)) {
+        const msg = "Student does not belong to this class section.";
+        setStuError(msg);
+        toast.error(msg);
+        return;
+      }
+    }
+
+    setIsStudentSubmitting(true);
+    setStuError("");
+
+    try {
+      const selectedLrns = selectedStudents.map(s => String(s.lrn || "").replace(/\D/g, "")).filter(Boolean);
+      const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", selectedLrns);
+      const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
+
+      const targetStudentIds = [];
+      let skippedNoAccount = 0;
+
+      for (const student of selectedStudents) {
+        const lrn = String(student.lrn || "").replace(/\D/g, "");
+        const profileId = lrnToProfileId.get(lrn);
+        if (profileId) {
+          targetStudentIds.push(profileId);
+        } else {
+          skippedNoAccount++;
+        }
+      }
+
+      if (targetStudentIds.length === 0) {
+        setStuError("Selected masterlist students do not have registered student accounts.");
+        setIsStudentSubmitting(false);
+        return;
+      }
+
+      const res = await adminApi.enrollStudents({
+        subject_id: id,
+        student_ids: targetStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
+
+      if (res.error) throw new Error(res.error.message || res.error);
+
+      const { enrolled_count, skipped_capacity } = res.data;
+
+      await loadAssignedStudents(teacherProfileId, id);
+      setShowStudentModal(false);
+      
+      if (skipped_capacity > 0 || skippedNoAccount > 0) {
+        toast.warning(`Imported ${enrolled_count} student(s). ${skipped_capacity > 0 ? `${skipped_capacity} skipped (capacity reached). ` : ''}${skippedNoAccount > 0 ? `${skippedNoAccount} skipped (no account).` : ''}`);
+      } else {
+        toast.success(`Imported ${enrolled_count} student(s) from Masterlist.`);
+      }
+    } catch (err) {
+      setStuError(err.message || "Failed to import from masterlist.");
+      toast.error(err.message || "Failed to import from masterlist.");
+    } finally {
+      setIsStudentSubmitting(false);
+    }
+  };
+
+  const handleCsvFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvFile(file);
+    setIsCsvValidating(true);
+    setStuError("");
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const rows = text.split('\n').map(row => row.trim()).filter(Boolean);
+        if (rows.length < 2) throw new Error("CSV file is empty or missing headers");
+        
+        const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+        const lrnIdx = headers.indexOf('lrn');
+        const firstNameIdx = headers.indexOf('first_name');
+        const lastNameIdx = headers.indexOf('last_name');
+        const middleNameIdx = headers.indexOf('middle_name');
+        const yearLevelIdx = headers.indexOf('year_level');
+        const sectionIdx = headers.indexOf('section');
+        
+        if (lrnIdx === -1 || firstNameIdx === -1 || lastNameIdx === -1) {
+          throw new Error("CSV missing required headers: lrn, first_name, last_name");
+        }
+        
+        const records = [];
+        const errors = [];
+        const classGradeNorm = normalizeGradeLevel(getClassGradeValue(classData));
+        const classSectionNorm = normalizeSection(classData?.section);
+        
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+          if (cols.length > lrnIdx && cols[lrnIdx]) {
+            const lrn = cols[lrnIdx].replace(/\D/g, "");
+            if (!lrn) {
+              errors.push(`Row ${i+1}: Invalid LRN`);
+              continue;
+            }
+
+            const rowYearLevel = yearLevelIdx !== -1 ? cols[yearLevelIdx] : null;
+            const rowSection = sectionIdx !== -1 ? cols[sectionIdx] : null;
+
+            if (classGradeNorm && rowYearLevel) {
+              const rowGradeNorm = normalizeGradeLevel(rowYearLevel);
+              if (rowGradeNorm && rowGradeNorm !== classGradeNorm) {
+                errors.push(`Row ${i+1}: Grade Level mismatch (${rowYearLevel})`);
+                continue;
+              }
+            }
+
+            if (classSectionNorm && rowSection) {
+              const rowSecNorm = normalizeSection(rowSection);
+              if (rowSecNorm && rowSecNorm !== classSectionNorm) {
+                errors.push(`Row ${i+1}: Section mismatch (${rowSection})`);
+                continue;
+              }
+            }
+
+            records.push({
+               lrn,
+               first_name: cols[firstNameIdx],
+               last_name: cols[lastNameIdx],
+               middle_name: middleNameIdx !== -1 ? cols[middleNameIdx] : null,
+               year_level: rowYearLevel,
+               section: rowSection,
+            });
+          } else {
+             errors.push(`Row ${i+1}: Missing LRN`);
+          }
+        }
+        
+        setCsvPreviewData(records);
+        setCsvValidRecords(records);
+        setCsvErrorRecords(errors);
+      } catch (err) {
+        setStuError(err.message);
+        setCsvFile(null);
+      } finally {
+        setIsCsvValidating(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCSV = async () => {
+    if (!supabase || !teacherProfileId || csvValidRecords.length === 0) return;
+
+    const currentCapacity = Number(classData?.capacity || 30);
+    const currentEnrolled = assignedStudents.length;
+    const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
+
+    if (currentCapacity > 0 && availableSlots <= 0) {
+      const msg = `Cannot enroll student. This class has reached its maximum capacity of ${currentCapacity} students.`;
+      setStuError(msg);
+      toast.error(msg);
+      return;
+    }
+
+    setIsStudentSubmitting(true);
+    setStuError("");
+    try {
+      const { data: existingMaster } = await supabase.from("student_masterlist").select("id, lrn");
+      const existingLrns = new Map((existingMaster || []).map(r => [String(r.lrn || "").replace(/\D/g, ""), r.id]));
+      
+      const newRecords = csvValidRecords.filter(r => !existingLrns.has(String(r.lrn || "").replace(/\D/g, ""))).map(r => ({ ...r, account_created: false }));
+      
+      if (newRecords.length > 0) {
+        const { error } = await supabase.from("student_masterlist").insert(newRecords);
+        if (error) throw error;
+      }
+      
+      const csvLrns = csvValidRecords.map(r => String(r.lrn || "").replace(/\D/g, ""));
+      const { data: profiles } = await supabase.from("profiles").select("id, lrn").in("lrn", csvLrns);
+      const lrnToProfileId = new Map((profiles || []).map(p => [String(p.lrn || "").replace(/\D/g, ""), p.id]));
+      
+      const targetStudentIds = [];
+      for (const student of csvValidRecords) {
+         const profileId = lrnToProfileId.get(String(student.lrn || "").replace(/\D/g, ""));
+         if (profileId) targetStudentIds.push(profileId);
+      }
+
+      if (targetStudentIds.length === 0) {
+        setStuError("No registered student accounts found for the CSV LRNs.");
+        setIsStudentSubmitting(false);
+        return;
+      }
+
+      const res = await adminApi.enrollStudents({
+        subject_id: id,
+        student_ids: targetStudentIds,
+        teacher_id: teacherProfileId,
+        section: String(classData?.section || "").trim() || null
+      });
+
+      if (res.error) throw new Error(res.error.message || res.error);
+
+      const { enrolled_count, skipped_capacity } = res.data;
+
+      await loadAssignedStudents(teacherProfileId, id);
+      setShowStudentModal(false);
+      
+      const skippedNoAccount = csvValidRecords.length - targetStudentIds.length;
+      if (skipped_capacity > 0 || skippedNoAccount > 0) {
+        toast.warning(`Enrolled ${enrolled_count} students. ${skipped_capacity > 0 ? `${skipped_capacity} skipped (capacity reached). ` : ''}${skippedNoAccount > 0 ? `${skippedNoAccount} skipped (without accounts).` : ''}`);
+      } else {
+        toast.success(`Successfully imported and enrolled ${enrolled_count} students from CSV.`);
+      }
+    } catch (err) {
+      setStuError(err.message || "Failed to process CSV enrollment.");
+      toast.error(err.message || "Failed to process CSV enrollment.");
     } finally {
       setIsStudentSubmitting(false);
     }
@@ -1174,8 +2022,11 @@ export function ClassDetail() {
       }
 
       await loadAssignedStudents(teacherProfileId, id);
+      toast.success("Student removed successfully.");
     } catch (error) {
-      setStuError(error instanceof Error ? error.message : "Unable to remove student.");
+      const msg = error instanceof Error ? error.message : "Unable to remove student.";
+      setStuError(msg);
+      toast.error(msg);
     }
   };
 
@@ -1198,183 +2049,193 @@ export function ClassDetail() {
   };
 
   // Upload Material
- const handleAddMaterial = async () => {
-  const title = String(matForm.title || "").trim();
-  const fileType = String(matForm.fileType || "").trim();
+  const handleAddMaterial = async () => {
+    const title = String(matForm.title || "").trim();
+    const fileType = String(matForm.fileType || "").trim();
 
-  if (!title) {
-    setMatError("Title is required.");
-    return;
-  }
-
-  if (!fileType) {
-    setMatError("File Type is required.");
-    return;
-  }
-
-  if (matFiles.length === 0) {
-    setMatError("Attach File is required.");
-    return;
-  }
-
-  if (!supabase) {
-    setMatError("Supabase client is not configured. Check your .env file.");
-    return;
-  }
-
-  // Ensure we have a teacher ID - try to resolve it now if missing
-  let effectiveTeacherId = teacherProfileId;
-  if (!effectiveTeacherId) {
-    const userData = localStorage.getItem("currentUser");
-    const user = userData ? JSON.parse(userData) : null;
-    if (user?.email) {
-      effectiveTeacherId = await resolveTeacherProfileId(user.email);
-      if (effectiveTeacherId) setTeacherProfileId(effectiveTeacherId);
+    if (!title) {
+      setMatError("Title is required.");
+      return;
     }
+
+    if (!fileType) {
+      setMatError("File Type is required.");
+      return;
+    }
+
+    if (matFiles.length === 0) {
+      setMatError("Attach File is required.");
+      return;
+    }
+
+    if (!supabase) {
+      setMatError("Supabase client is not configured. Check your .env file.");
+      return;
+    }
+
+    // Ensure we have a teacher ID - try to resolve it now if missing
+    let effectiveTeacherId = teacherProfileId;
     if (!effectiveTeacherId) {
-      setMatError("Unable to identify your teacher account. Please log out and log in again.");
-      return;
+      const userData = localStorage.getItem("currentUser");
+      const user = userData ? JSON.parse(userData) : null;
+      if (user?.email) {
+        effectiveTeacherId = await resolveTeacherProfileId(user.email);
+        if (effectiveTeacherId) setTeacherProfileId(effectiveTeacherId);
+      }
+      if (!effectiveTeacherId) {
+        setMatError("Unable to identify your teacher account. Please log out and log in again.");
+        return;
+      }
     }
-  }
 
-  setIsUploadingMaterial(true);
-  setMatError("");
-  setMatSuccess("");
+    setIsUploadingMaterial(true);
+    setMatError("");
+    setMatSuccess("");
 
-  try {
-    const uploadedFiles = [];
+    try {
+      const uploadedFiles = [];
 
-    for (const file of matFiles) {
-      const timestamp = Date.now();
-      const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
-      const storagePath = `${effectiveTeacherId}/${storedFileName}`;
+      for (const file of matFiles) {
+        const timestamp = Date.now();
+        const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
+        const storagePath = `${effectiveTeacherId}/${storedFileName}`;
 
-      console.log("[ClassDetail] Material upload selected file:", file.name, "size:", file.size);
+        console.log("[ClassDetail] Material upload selected file:", file.name, "size:", file.size);
 
-      const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert: false });
-      console.log("[ClassDetail] Storage upload response:", uploadResult.error ? uploadResult.error : "OK");
+        const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, file, { upsert: false });
+        console.log("[ClassDetail] Storage upload response:", uploadResult.error ? uploadResult.error : "OK");
 
-      if (uploadResult.error) {
-        const errCode = String(uploadResult.error?.statusCode || uploadResult.error?.status || uploadResult.error?.error || "");
-        console.error("[ClassDetail] Storage upload failed:", uploadResult.error);
-        if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
-          setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
-        } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-          setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
+        if (uploadResult.error) {
+          const errCode = String(uploadResult.error?.statusCode || uploadResult.error?.status || uploadResult.error?.error || "");
+          console.error("[ClassDetail] Storage upload failed:", uploadResult.error);
+          if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
+            setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
+          } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
+            setMatError(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads for authenticated users.`);
+          } else {
+            setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
+          }
+          const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+          if (rollbackResult.error) {
+            console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
+          }
+          return;
+        }
+
+        const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
+        const fileUrl = String(publicData?.publicUrl || "").trim();
+
+        if (!fileUrl) {
+          const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove([...uploadedFiles.map((item) => item.filePath), storagePath]);
+          if (rollbackResult.error) {
+            console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
+          }
+          setMatError("Unable to get uploaded file URL.");
+          return;
+        }
+
+        uploadedFiles.push({
+          fileName: storedFileName,
+          filePath: storagePath,
+          fileUrl
+        });
+      }
+
+      // Γ£à FIXED: Use FIRST file URL as plain string (not JSON array)
+      const firstFileUrl = uploadedFiles[0]?.fileUrl;
+
+      const columns = await getMaterialColumns();
+      const payload = {
+        title,
+        description: String(matForm.description || "").trim() || null,
+        file_type: fileType,
+        file_url: firstFileUrl,  // ≡ƒæê Plain URL string - CRITICAL FIX
+        teacher_id: effectiveTeacherId  // ≡ƒæê Always include
+      };
+
+      // Γ£à FIXED: Conditionally add fields ONLY if columns exist
+      if (columns.includes("file_name")) {
+        payload.file_name = uploadedFiles[0]?.fileName;  // Single file
+      }
+
+      if (columns.includes("file_path")) {
+        payload.file_path = uploadedFiles[0]?.filePath;  // Single file
+      }
+
+      if (columns.includes("subject_id")) {
+        payload.subject_id = classData?.id || classData?.subject_id || null;
+        if (!payload.subject_id) {
+          console.warn("[ClassDetail] No subject_id found in classData:", classData);
+        }
+      }
+
+      if (columns.includes("class_id")) {
+        payload.class_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("course_id")) {
+        payload.course_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("subject")) {
+        payload.subject = String(classData?.code || classData?.name || "").trim() || null;
+      }
+
+      if (columns.includes("section")) {
+        payload.section = String(classData?.section || "").trim() || null;
+      }
+
+      if (columns.includes("created_by")) {
+        payload.created_by = effectiveTeacherId;
+      }
+
+      // Let DB handle timestamps if possible
+      if (columns.includes("created_at") && !columns.find(col => col.includes('default'))) {
+        payload.created_at = new Date().toISOString();
+      }
+
+      console.log("[ClassDetail] Γ£à FIXED DB insert payload:", payload);
+
+      const insertResult = await supabase
+        .from("class_materials")
+        .insert(payload)
+        .select("id, *")
+        .single();
+
+      console.log("[ClassDetail] DB insert response:", insertResult);
+
+      if (insertResult.error) {
+        console.error("[ClassDetail] DB insert failed:", insertResult.error);
+        const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
+        if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
+          setMatError(`RLS policy violation. Check: 1) subject_id present? 2) file_url is plain string? 3) teacher_id matches auth.uid()`);
         } else {
-          setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
+          setMatError(`Failed to save: ${insertResult.error.message}`);
         }
-        const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
-        if (rollbackResult.error) {
-          console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
+
+        // Rollback storage
+        if (uploadedFiles.length > 0) {
+          await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
         }
         return;
       }
 
-      const { data: publicData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-      const fileUrl = String(publicData?.publicUrl || "").trim();
-
-      if (!fileUrl) {
-        const rollbackResult = await supabase.storage.from(STORAGE_BUCKET).remove([...uploadedFiles.map((item) => item.filePath), storagePath]);
-        if (rollbackResult.error) {
-          console.error("[ClassDetail] Rollback file delete failed:", rollbackResult.error);
-        }
-        setMatError("Unable to get uploaded file URL.");
-        return;
+      if (insertResult.data) {
+        const normalized = normalizeMaterialRecord(insertResult.data);
+        setMaterials((current) => [normalized, ...current]);
       }
 
-      uploadedFiles.push({
-        fileName: storedFileName,
-        filePath: storagePath,
-        fileUrl
-      });
+      await fetchClassMaterials(teacherProfileId, classData);
+      setMatSuccess("Material uploaded successfully!");
+      resetMaterialForm(true);
+      setShowMaterialModal(false);
+    } catch (error) {
+      console.error("[ClassDetail] Unexpected error:", error);
+      setMatError(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setIsUploadingMaterial(false);
     }
-
-    // ✅ FIXED: Use FIRST file URL as plain string (not JSON array)
-    const firstFileUrl = uploadedFiles[0]?.fileUrl;
-    
-    const columns = await getMaterialColumns();
-    const payload = {
-      title,
-      description: String(matForm.description || "").trim() || null,
-      file_type: fileType,
-      file_url: firstFileUrl,  // 👈 Plain URL string - CRITICAL FIX
-      teacher_id: effectiveTeacherId  // 👈 Always include
-    };
-
-    // ✅ FIXED: Conditionally add fields ONLY if columns exist
-    if (columns.includes("file_name")) {
-      payload.file_name = uploadedFiles[0]?.fileName;  // Single file
-    }
-
-    if (columns.includes("file_path")) {
-      payload.file_path = uploadedFiles[0]?.filePath;  // Single file
-    }
-
-    if (columns.includes("subject_id") || columns.includes("subject")) {  // 👈 Likely your column name
-      payload.subject_id = classData?.id || classData?.subject_id;  // 👈 Use class/subject UUID
-      if (!payload.subject_id) {
-        console.warn("[ClassDetail] No subject_id found in classData:", classData);
-      }
-    } else if (columns.includes("subject")) {
-      payload.subject = String(classData?.code || classData?.name || "").trim() || null;
-    }
-
-    if (columns.includes("section")) {
-      payload.section = String(classData?.section || "").trim() || null;
-    }
-
-    if (columns.includes("created_by")) {
-      payload.created_by = effectiveTeacherId;
-    }
-
-    // Let DB handle timestamps if possible
-    if (columns.includes("created_at") && !columns.find(col => col.includes('default'))) {
-      payload.created_at = new Date().toISOString();
-    }
-
-    console.log("[ClassDetail] ✅ FIXED DB insert payload:", payload);
-
-    const insertResult = await supabase
-      .from("class_materials")
-      .insert(payload)
-      .select("id, *")
-      .single();
-
-    console.log("[ClassDetail] DB insert response:", insertResult);
-
-    if (insertResult.error) {
-      console.error("[ClassDetail] DB insert failed:", insertResult.error);
-      const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
-      if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-        setMatError(`RLS policy violation. Check: 1) subject_id present? 2) file_url is plain string? 3) teacher_id matches auth.uid()`);
-      } else {
-        setMatError(`Failed to save: ${insertResult.error.message}`);
-      }
-
-      // Rollback storage
-      if (uploadedFiles.length > 0) {
-        await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
-      }
-      return;
-    }
-
-    if (insertResult.data) {
-      const normalized = normalizeMaterialRecord(insertResult.data);
-      setMaterials((current) => [normalized, ...current]);
-    }
-
-    await fetchClassMaterials(teacherProfileId, classData);
-    setMatSuccess("Material uploaded successfully!");
-    resetMaterialForm(true);
-    setShowMaterialModal(false);
-  } catch (error) {
-    console.error("[ClassDetail] Unexpected error:", error);
-    setMatError(error instanceof Error ? error.message : "Upload failed.");
-  } finally {
-    setIsUploadingMaterial(false);
-  }
-};
+  };
 
   const deleteMaterialRecord = async (targetMaterial) => {
     if (!supabase || !targetMaterial?.id) return;
@@ -1559,6 +2420,18 @@ export function ClassDetail() {
 
       if (columns.includes("subject")) {
         payload.subject = String(classData?.code || "").trim() || null;
+      }
+
+      if (columns.includes("subject_id")) {
+        payload.subject_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("class_id")) {
+        payload.class_id = classData?.id || classData?.subject_id || null;
+      }
+
+      if (columns.includes("course_id")) {
+        payload.course_id = classData?.id || classData?.subject_id || null;
       }
 
       if (columns.includes("section")) {
@@ -1775,7 +2648,7 @@ export function ClassDetail() {
         if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
           throw new Error(`Storage bucket '${STORAGE_BUCKET}' not found. Create it in Supabase Storage.`);
         } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-          throw new Error(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads.`);
+          throw new Error(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads.`);
         }
         await removeAssignmentFilesFromStorage(uploadedFiles.map((item) => item.filePath));
         throw uploadResult.error;
@@ -1857,89 +2730,48 @@ export function ClassDetail() {
     setAsgSuccess("");
 
     try {
-      const columns = await getAssignmentColumns(tableName);
-      console.log("[DEBUG] Table name:", tableName);
-      console.log("[DEBUG] Available columns:", columns);
-      
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: userData } = await supabase.auth.getUser();
+      const authSessionUser = sessionData?.session?.user || null;
+      const authUser = userData?.user || authSessionUser;
+
+      console.log("[ClassDetail] Assignment auth session:", sessionData?.session || null);
+      console.log("[ClassDetail] Assignment auth user:", authUser || null);
+      console.log("[ClassDetail] Assignment auth user id:", authUser?.id || null);
+
       const uploadedFiles = asgFiles.length > 0 ? await uploadAssignmentFiles(asgFiles, effectiveTeacherId) : [];
       const nextFileNames = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileName) : asgMaterialAttachments.fileNames;
       const nextFilePaths = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.filePath) : asgMaterialAttachments.filePaths;
       const nextFileUrls = uploadedFiles.length > 0 ? uploadedFiles.map((item) => item.fileUrl) : asgMaterialAttachments.fileUrls;
-      const fileNamesValue = JSON.stringify(nextFileNames);
-      const filePathsValue = JSON.stringify(nextFilePaths);
-      const fileUrlsValue = JSON.stringify(nextFileUrls);
 
-      const payload = {};
+      // Build strict payload with only columns that exist in assignments_activity table
+      // Schema verified: id (auto), course_id (REQUIRED), title (REQUIRED), assessment_type, description, deadline, file_url, file_name, file_path, created_at (auto), updated_at, updated_by
+      const assignmentId = uuidv4();
+      const payload = {
+        id: assignmentId,
+        course_id: id, // REQUIRED: maps class_id/subject_id to course_id
+        title: title,
+        assessment_type: assignmentType,
+        description: String(asgForm.description || "").trim() || null,
+        deadline: dueDate || null,
+        file_url: nextFileUrls.length > 0 ? JSON.stringify(nextFileUrls) : null,
+        file_name: nextFileNames.length > 0 ? JSON.stringify(nextFileNames) : null,
+        file_path: nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null,
+        school_year: activeSchoolYear,
+        term: activeQuarter
+      };
 
-      const titleColumn = resolveColumnName(columns, ["title", "name"]);
-      const descriptionColumn = resolveColumnName(columns, ["description", "instructions", "content"]);
-      const dueDateColumn = resolveColumnName(columns, ["deadline"]);
-      const maxPointsColumn = resolveColumnName(columns, ["max_points", "total_points", "maxPoints"]);
-      const typeColumns = ["assessment_type"];
-      
-      console.log("[DEBUG] Column detection results:");
-      console.log("  - titleColumn:", titleColumn);
-      console.log("  - descriptionColumn:", descriptionColumn);
-      console.log("  - dueDateColumn:", dueDateColumn);
-      console.log("  - maxPointsColumn:", maxPointsColumn);
-      console.log("  - asgForm.maxPoints:", asgForm.maxPoints);
+      console.log("[ClassDetail] FINAL VALIDATED PAYLOAD:", payload);
+      console.log("[ClassDetail] Payload keys:", Object.keys(payload));
+      console.log("[ClassDetail] Required fields present:", { id: !!payload.id, course_id: !!payload.course_id, title: !!payload.title, assessment_type: !!payload.assessment_type });
 
-      typeColumns.forEach((columnName) => {
-        if (columns.includes(columnName)) {
-          payload[columnName] = assignmentType;
-        }
-      });
-
-      if (titleColumn) payload[titleColumn] = title;
-      
-      // Include max_points in description if it exists in the form and the table doesn't have max_points column
-      let descriptionValue = String(asgForm.description || "").trim() || null;
-      if (asgForm.maxPoints && !maxPointsColumn) {
-        descriptionValue = descriptionValue ? `${descriptionValue}\n\nMax Points: ${asgForm.maxPoints}` : `Max Points: ${asgForm.maxPoints}`;
-      }
-      if (descriptionColumn) payload[descriptionColumn] = descriptionValue;
-      
-      if (dueDateColumn) payload[dueDateColumn] = dueDate;
-      
-      console.log("[DEBUG] Before maxPoints check - payload:", payload);
-      console.log("[DEBUG] maxPointsColumn exists:", !!maxPointsColumn);
-      console.log("[DEBUG] asgForm.maxPoints:", asgForm.maxPoints);
-      console.log("[DEBUG] tableName:", tableName);
-      
-      // Only add max_points if the column actually exists in the table AND it's not assignments_activity
-      // assignments_activity table doesn't have max_points column according to schema
-      if (maxPointsColumn && tableName !== 'assignments_activity') {
-        payload[maxPointsColumn] = Number(asgForm.maxPoints || 100) || 100;
-        console.log("[DEBUG] Added max_points to payload with key:", maxPointsColumn);
-      } else {
-        if (tableName === 'assignments_activity') {
-          console.log("[DEBUG] Skipped adding max_points - assignments_activity table doesn't have this column");
-        } else {
-          console.log("[DEBUG] Skipped adding max_points - column not found in table");
-        }
+      if (!authUser?.id) {
+        throw new Error("Your Supabase session is missing. Please sign out and sign in again.");
       }
 
-      if (columns.includes("file_url")) payload.file_url = fileUrlsValue;
-      if (columns.includes("file_name")) payload.file_name = fileNamesValue;
-      if (columns.includes("file_path")) payload.file_path = filePathsValue;
-
-      if (columns.includes("subject")) payload.subject = String(classData?.code || "").trim() || null;
-      if (columns.includes("class_code")) payload.class_code = String(classData?.code || "").trim() || null;
-      if (columns.includes("class_name")) payload.class_name = String(classData?.name || "").trim() || null;
-      if (columns.includes("section")) payload.section = String(classData?.section || "").trim() || null;
-      if (columns.includes("course_id")) payload.course_id = id;
-      if (columns.includes("subject_id")) payload.subject_id = id;
-
-      if (columns.includes("created_by")) payload.created_by = effectiveTeacherId;
-      if (columns.includes("teacher_id")) payload.teacher_id = effectiveTeacherId;
-      if (columns.includes("author")) payload.author = teacherName;
-      if (columns.includes("teacher_name")) payload.teacher_name = teacherName;
-      if (columns.includes("created_at")) payload.created_at = new Date().toISOString();
-
-      console.log("[DEBUG] Final payload before insertion:", payload);
-      console.log("[DEBUG] Payload keys:", Object.keys(payload));
-
-      const insertResult = await supabase.from(tableName).insert(payload).select("*").single();
+      // Direct insert with returned row ΓÇö no retry logic
+      const insertResult = await supabase.from(tableName).insert(payload).select("*").maybeSingle();
+      console.log("[ClassDetail] Assignment insert response:", insertResult);
 
       if (insertResult.error) {
         console.error("[ClassDetail] Assignment insert failed:", insertResult.error);
@@ -1947,16 +2779,46 @@ export function ClassDetail() {
         if (uploadedFiles.length > 0) {
           await removeAssignmentFilesFromStorage(uploadedFiles.map((item) => item.filePath));
         }
+
         const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
         if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-          setAsgError(`Database blocked by Row Level Security. In Supabase: Table Editor → ${tableName} → RLS Policies → Allow INSERT.`);
+          setAsgError(`Database blocked by Row Level Security. In Supabase: Table Editor ΓåÆ ${tableName} ΓåÆ RLS Policies ΓåÆ Allow INSERT.`);
         } else {
           setAsgError(`Failed to save assignment: ${insertResult.error.message || "Unknown error"}`);
         }
         return;
       }
 
+      // Get the returned row
+      let insertedRow = insertResult?.data || null;
+
+      // Build optimistic UI row from the inserted/returned row or fallback payload
+      const optimisticSource = insertedRow || payload;
+      const optimisticRow = {
+        id: assignmentId,
+        course_id: payload.course_id,
+        title: payload.title,
+        assessment_type: payload.assessment_type,
+        description: payload.description,
+        deadline: payload.deadline,
+        file_url: payload.file_url,
+        file_name: payload.file_name,
+        file_path: payload.file_path,
+        created_at: insertedRow?.created_at || new Date().toISOString()
+      };
+
+      const optimisticAssignment = { ...normalizeAssignmentRecord(optimisticRow), _optimistic: !Boolean(insertedRow) };
+      setAssignments((prev) => {
+        const existing = Array.isArray(prev) ? prev : [];
+        const deduped = existing.filter((item) => String(item?.id || "") !== String(optimisticAssignment.id));
+        return [optimisticAssignment, ...deduped];
+      });
+
+      // Refresh the assignments list to ensure consistency
       await fetchClassAssignments(effectiveTeacherId, classData);
+
+      await fetchClassAssignments(effectiveTeacherId, classData);
+      console.log("[ClassDetail] Refreshed assignments count:", assignments.length);
       setAsgSuccess("Assignment/Activity saved successfully.");
       resetAssignmentForm(true);
       setShowAssignmentModal(false);
@@ -2062,16 +2924,16 @@ export function ClassDetail() {
       });
 
       if (titleColumn) payload[titleColumn] = title;
-      
+
       // Include max_points in description if it exists in form and table doesn't have max_points column
       let descriptionValue = String(asgForm.description || "").trim() || null;
       if (asgForm.maxPoints && !maxPointsColumn) {
         descriptionValue = descriptionValue ? `${descriptionValue}\n\nMax Points: ${asgForm.maxPoints}` : `Max Points: ${asgForm.maxPoints}`;
       }
       if (descriptionColumn) payload[descriptionColumn] = descriptionValue;
-      
+
       if (dueDateColumn) payload[dueDateColumn] = dueDate;
-      
+
       // Only add max_points if the column actually exists in the table AND it's not assignments_activity
       // assignments_activity table doesn't have max_points column according to schema
       if (maxPointsColumn && tableName !== 'assignments_activity') {
@@ -2095,7 +2957,7 @@ export function ClassDetail() {
       if (columns.includes("teacher_name")) payload.teacher_name = teacherName;
       if (columns.includes("updated_at")) payload.updated_at = new Date().toISOString();
 
-      const updateResult = await supabase.from(tableName).update(payload).eq("id", editingAssignmentId).select("*").single();
+      const updateResult = await supabase.from(tableName).update(payload).eq("id", editingAssignmentId);
 
       if (updateResult.error) {
         console.error("[ClassDetail] Assignment update failed:", updateResult.error);
@@ -2129,15 +2991,24 @@ export function ClassDetail() {
   };
 
   const resetAnnouncementForm = (preserveMessages = false) => {
-    setAnnForm({ title: "", content: "", priority: "" });
-    setAnnFile(null);
-    setAnnFileName("");
-    setAnnOriginalFile({ fileName: "", filePath: "", fileUrl: "" });
+    setAnnForm({
+      title: "",
+      content: "",
+      link_url: "",
+      is_pinned: false,
+      status: "Published",
+      scheduled_date: "",
+      scheduled_time: "08:00",
+      publishImmediately: true
+    });
+    setAnnFiles([]);
+    setAnnFileNames([]);
+    setAnnOriginalFiles({ fileNames: [], filePaths: [], fileUrls: [], attachments: [] });
     setIsEditingAnnouncement(false);
     setEditingAnnouncementId(null);
     if (!preserveMessages) {
-      setAnnError("");
-      setAnnSuccess("");
+      
+      
     }
     if (annFileRef.current) {
       annFileRef.current.value = "";
@@ -2152,111 +3023,332 @@ export function ClassDetail() {
   const openEditAnnouncementModal = (announcement) => {
     if (!announcement?.id) return;
 
+    const existingAttachments = Array.isArray(announcement.attachments) ? announcement.attachments : [];
+
     setIsEditingAnnouncement(true);
     setEditingAnnouncementId(announcement.id);
+    
+    let sDate = "";
+    let sTime = "08:00";
+    if (announcement.scheduledAt) {
+      const d = new Date(announcement.scheduledAt);
+      sDate = d.toISOString().split("T")[0];
+      sTime = d.toTimeString().split(" ")[0].substring(0, 5);
+    }
+
     setAnnForm({
       title: announcement.title || "",
       content: announcement.content || "",
-      priority: announcement.priority || ""
+      link_url: announcement.linkUrl || "",
+      is_pinned: !!announcement.isPinned,
+      status: announcement.status || "Published",
+      scheduled_date: sDate,
+      scheduled_time: sTime,
+      publishImmediately: announcement.status !== "Scheduled"
     });
-    setAnnOriginalFile({
-      fileName: announcement.fileName || "",
-      filePath: announcement.filePath || "",
-      fileUrl: announcement.fileUrl || ""
+    setAnnOriginalFiles({
+      fileNames: existingAttachments.map((item) => item.fileName || "").filter(Boolean),
+      filePaths: existingAttachments.map((item) => item.filePath || "").filter(Boolean),
+      fileUrls: existingAttachments.map((item) => item.fileUrl || "").filter(Boolean),
+      attachments: existingAttachments
     });
-    setAnnFile(null);
-    setAnnFileName(announcement.fileName || "");
-    setAnnError("");
-    setAnnSuccess("");
+    setAnnFiles([]);
+    setAnnFileNames(existingAttachments.map((item) => item.fileName || "").filter(Boolean));
+    
+    
     if (annFileRef.current) {
       annFileRef.current.value = "";
     }
     setShowAnnouncementModal(true);
   };
 
+  const togglePinAnnouncement = async (e, ann) => {
+    e.stopPropagation();
+    if (!supabase) return;
+    const nextPinned = !ann.isPinned;
+    const tableName = await getAnnouncementTableName();
+    
+    const priorityPayload = JSON.stringify({
+      is_pinned: nextPinned,
+      status: ann.status,
+      scheduled_at: ann.scheduledAt,
+      link_url: ann.linkUrl
+    });
+
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .update({ priority: priorityPayload })
+        .eq("id", ann.id);
+
+      if (error) throw error;
+      toast.success(nextPinned ? "Announcement pinned successfully" : "Announcement unpinned successfully");
+      await fetchClassAnnouncements(teacherProfileId, classData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to update announcement priority.");
+    }
+  };
+
+  const toggleArchiveAnnouncement = async (e, ann) => {
+    e.stopPropagation();
+    if (!supabase) return;
+    const nextStatus = ann.status === "Archived" ? "Published" : "Archived";
+    const tableName = await getAnnouncementTableName();
+
+    const priorityPayload = JSON.stringify({
+      is_pinned: ann.isPinned,
+      status: nextStatus,
+      scheduled_at: ann.scheduledAt,
+      link_url: ann.linkUrl
+    });
+
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .update({ priority: priorityPayload })
+        .eq("id", ann.id);
+
+      if (error) throw error;
+      toast.success(nextStatus === "Archived" ? "Announcement archived successfully" : "Announcement restored successfully");
+      await fetchClassAnnouncements(teacherProfileId, classData);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to archive/restore announcement.");
+    }
+  };
+
+  const validateAnnouncementFiles = (files) => {
+    const selected = Array.from(files || []);
+    for (const file of selected) {
+      const extension = String(file?.name || "").split(".").pop()?.toLowerCase() || "";
+      if (!ALLOWED_ANNOUNCEMENT_FILE_EXTENSIONS.has(extension)) {
+        return `Unsupported file type: ${file.name}`;
+      }
+      if (Number(file?.size || 0) > MAX_ANNOUNCEMENT_FILE_SIZE) {
+        return `File too large: ${file.name}. Max size is 15MB.`;
+      }
+    }
+    return "";
+  };
+
   const removeAnnouncementFilesFromStorage = async (filePaths) => {
     const uniquePaths = [...new Set(parseStoredFileList(filePaths))];
     if (uniquePaths.length === 0 || !supabase) return;
 
-    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove(uniquePaths);
-    if (error && !isStorageNotFoundError(error)) {
-      throw new Error(error.message || "Unable to remove file from storage.");
+    // Files uploaded after the RLS fix live in ANNOUNCEMENT_STORAGE_BUCKET.
+    // Legacy files that were uploaded to class-materials as a workaround
+    // can be identified because their path starts with "announcements/".
+    for (const path of uniquePaths) {
+      const bucket = path.startsWith("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
+      const { error } = await supabase.storage.from(bucket).remove([path]);
+      if (error && !isStorageNotFoundError(error)) {
+        console.warn("[ClassDetail] Could not remove file from storage:", error.message, path);
+      }
     }
   };
 
-  const uploadAnnouncementFile = async (file) => {
-    if (!supabase || !teacherProfileId || !file) return null;
+  const uploadAnnouncementFiles = async (files) => {
+    if (!supabase || !teacherProfileId) return [];
 
-    const timestamp = Date.now();
-    const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
-    const uploadedPath = `announcements/${teacherProfileId}/${storedFileName}`;
+    const selectedFiles = Array.from(files || []);
+    if (selectedFiles.length === 0) return [];
 
-    const uploadResult = await supabase.storage.from(STORAGE_BUCKET).upload(uploadedPath, file, { upsert: false });
-    if (uploadResult.error) {
-      throw new Error(uploadResult.error.message || "Unable to upload file.");
+    const uploaded = [];
+
+    // Resolve a valid class UUID for use as the first path segment.
+    // The storage RLS policy checks split_part(name, '/', 1) as the class UUID.
+    let classUuid = "";
+    if (isUuid(id)) {
+      classUuid = String(id).trim();
+    } else {
+      const targetClassId = classData?.id || id;
+      if (isUuid(targetClassId)) {
+        classUuid = String(targetClassId).trim();
+      } else {
+        const savedClasses = localStorage.getItem("teacher_classes");
+        if (savedClasses) {
+          try {
+            const parsed = JSON.parse(savedClasses);
+            const found = parsed.find(c => isUuid(c.id));
+            if (found) classUuid = String(found.id).trim();
+          } catch (_) {}
+        }
+      }
     }
 
-    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(uploadedPath);
-    const fileUrl = String(data?.publicUrl || "").trim();
-    if (!fileUrl) {
-      await removeAnnouncementFilesFromStorage(uploadedPath);
-      throw new Error("Unable to generate file URL.");
-    }
+    try {
+      for (const file of selectedFiles) {
+        const timestamp = Date.now();
+        const storedFileName = `${timestamp}_${sanitizeFileName(file.name)}`;
 
-    return {
-      fileName: storedFileName,
-      filePath: uploadedPath,
-      fileUrl
-    };
+        // Path: <class_uuid>/<teacher_uuid>/<filename>
+        // The RLS policy on class-announcements bucket checks split_part(name,'/',1) as the class UUID
+        // and verifies the current user is teacher of that class (via TSA or subjects.teacher_id).
+        const uploadedPath = classUuid
+          ? `${classUuid}/${teacherProfileId}/${storedFileName}`
+          : `${teacherProfileId}/${storedFileName}`;
+
+        const uploadResult = await supabase.storage
+          .from(ANNOUNCEMENT_STORAGE_BUCKET)
+          .upload(uploadedPath, file, { upsert: false });
+
+        console.log("[ClassDetail] Announcement upload result:", uploadResult);
+
+        if (uploadResult.error) {
+          throw new Error(uploadResult.error.message || "Unable to upload file.");
+        }
+
+        // Build a signed URL so students can download even from a private bucket
+        const { data: signedUrlData, error: signedUrlErr } = await supabase.storage
+          .from(ANNOUNCEMENT_STORAGE_BUCKET)
+          .createSignedUrl(uploadedPath, 60 * 60 * 24 * 365); // 1 year
+
+        const fileUrl = signedUrlData?.signedUrl
+          || `storage://${ANNOUNCEMENT_STORAGE_BUCKET}/${uploadedPath}`;
+
+        if (signedUrlErr) {
+          console.warn("[ClassDetail] Could not create signed URL:", signedUrlErr.message);
+        }
+
+        uploaded.push({
+          name: file.name,
+          path: uploadedPath,
+          url: fileUrl,
+          mimeType: file.type || null,
+          size: Number(file.size || 0)
+        });
+      }
+
+      return uploaded;
+    } catch (error) {
+      if (uploaded.length > 0) {
+        await removeAnnouncementFilesFromStorage(uploaded.map((item) => item.path));
+      }
+      throw error;
+    }
   };
 
   const handleSaveAnnouncement = async () => {
     const title = String(annForm.title || "").trim();
     const content = String(annForm.content || "").trim();
-    const priority = String(annForm.priority || "").trim() || "";
 
     if (!title) {
-      setAnnError("Title is required.");
+      toast.error("Title is required.");
+      return;
+    }
+    if (!content) {
+      toast.error("Content is required.");
       return;
     }
 
     if (!supabase) {
-      setAnnError("Supabase client is not configured.");
+      toast.error("Supabase client is not configured.");
       return;
     }
 
-    if (!teacherProfileId) {
-      setAnnError("Teacher profile could not be resolved.");
+    // ── Verify active auth session (auth.uid() powers all RLS checks) ────────
+    let authUid = "";
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session) {
+        toast.error("Authentication session expired. Please log in again.");
+        console.error("[ClassDetail] Session check failed:", sessionError);
+        return;
+      }
+      authUid = sessionData.session.user?.id || "";
+    } catch (sessionErr) {
+      toast.error("Authentication session expired. Please log in again.");
+      console.error("[ClassDetail] Session check exception:", sessionErr);
+      return;
+    }
+
+    if (!authUid) {
+      toast.error("You must be logged in as a teacher to post announcements.");
+      return;
+    }
+
+    // ── Resolve effective teacher ID — must match auth.uid() for RLS ─────────
+    // In Supabase, profiles.id == auth.uid() for all normal users.
+    // If they somehow differ, prefer authUid which is what RLS sees.
+    let effectiveTeacherId = teacherProfileId || authUid;
+    if (effectiveTeacherId !== authUid) {
+      console.warn(
+        "[ClassDetail] teacherProfileId does not match authUid — using authUid for RLS compliance.",
+        { teacherProfileId, authUid }
+      );
+      effectiveTeacherId = authUid;
+      setTeacherProfileId(authUid);
+    }
+
+    // ── Resolve and validate class UUID ──────────────────────────────────────
+    const classId = String((isUuid(id) ? id : classData?.id) || "").trim();
+    if (!classId || !isUuid(classId)) {
+      toast.error("Class information could not be found. Please navigate back and try again.");
+      console.error("[ClassDetail] Invalid class ID:", { routeId: id, classData });
       return;
     }
 
     const tableName = await getAnnouncementTableName();
     if (!tableName) {
-      setAnnError("Announcements table is not available.");
+      toast.error("Announcements table is not available. Please contact support.");
       return;
     }
 
-    setIsPostingAnnouncement(true);
-    setAnnError("");
-    setAnnSuccess("");
+    const selectedFiles = Array.from(annFiles || []);
+    const validationError = validateAnnouncementFiles(selectedFiles);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
 
-    const existingFile = annOriginalFile || { fileName: "", filePath: "", fileUrl: "" };
+    let status = "Published";
+    let scheduled_at = null;
+
+    if (!annForm.publishImmediately) {
+      if (!annForm.scheduled_date) {
+        toast.error("Scheduled date is required for scheduled announcements.");
+        return;
+      }
+      status = "Scheduled";
+      scheduled_at = new Date(
+        `${annForm.scheduled_date}T${annForm.scheduled_time || "00:00"}`
+      ).toISOString();
+    }
+
+    setIsPostingAnnouncement(true);
+    
+    
+
+    console.log("[ClassDetail] Announcement save — debug context:", {
+      authUid,
+      effectiveTeacherId,
+      classId,
+      tableName,
+      isEditing: isEditingAnnouncement,
+      status,
+      fileCount: selectedFiles.length,
+    });
+
+    const existingAttachments = Array.isArray(annOriginalFiles?.attachments)
+      ? annOriginalFiles.attachments.map((attachment) => ({
+        name: String(attachment?.fileName || attachment?.name || "").trim(),
+        path: String(attachment?.filePath || attachment?.path || "").trim(),
+        url: String(attachment?.fileUrl || attachment?.url || "").trim(),
+        mimeType: String(attachment?.fileType || attachment?.mimeType || "").trim() || null,
+        size: Number(attachment?.size || 0) || null
+      })).filter((attachment) => attachment.name || attachment.path || attachment.url)
+      : [];
 
     try {
       const columns = await getAnnouncementColumns(tableName);
-      const fileColumnsSupported = columns.includes("file_url") || columns.includes("file_name") || columns.includes("file_path");
 
-      if (annFile && !fileColumnsSupported) {
-        setAnnError("Current announcements table does not support attachments.");
-        return;
-      }
-
-      const replacingFile = Boolean(annFile);
-      const uploadedFile = replacingFile ? await uploadAnnouncementFile(annFile) : null;
+      const replacingAttachments = selectedFiles.length > 0;
+      const uploadedAttachments = replacingAttachments ? await uploadAnnouncementFiles(selectedFiles) : [];
+      const nextAttachments = replacingAttachments ? uploadedAttachments : existingAttachments;
 
       const titleColumn = resolveColumnName(columns, ["title", "subject", "name"]);
       const contentColumn = resolveColumnName(columns, ["content", "description", "message", "body"]);
-      const priorityColumn = resolveColumnName(columns, ["priority", "announcement_priority", "importance", "priority_level"]);
       const audienceColumn = resolveColumnName(columns, ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"]);
       const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType"]);
 
@@ -2264,43 +3356,42 @@ export function ClassDetail() {
 
       if (titleColumn) payload[titleColumn] = title;
       if (contentColumn) payload[contentColumn] = content;
-      if (priorityColumn) payload[priorityColumn] = priority;
       if (audienceColumn) payload[audienceColumn] = "Students";
       if (audienceTypeColumn) payload[audienceTypeColumn] = "student";
 
-      if (columns.includes("author")) payload.author = teacherName;
       if (columns.includes("created_by_name")) payload.created_by_name = teacherName;
-      if (columns.includes("created_by") && isUuid(teacherProfileId)) payload.created_by = teacherProfileId;
-      if (columns.includes("teacher_id") && isUuid(teacherProfileId)) payload.teacher_id = teacherProfileId;
+      // Use effectiveTeacherId (= authUid) so RLS INSERT check passes
+      if (columns.includes("created_by") && isUuid(effectiveTeacherId)) payload.created_by = effectiveTeacherId;
+      if (columns.includes("teacher_id") && isUuid(effectiveTeacherId)) payload.teacher_id = effectiveTeacherId;
       if (columns.includes("subject")) payload.subject = String(classData?.code || "").trim() || null;
       if (columns.includes("class_code")) payload.class_code = String(classData?.code || "").trim() || null;
       if (columns.includes("class_name")) payload.class_name = String(classData?.name || "").trim() || null;
       if (columns.includes("section")) payload.section = String(classData?.section || "").trim() || null;
-      if (columns.includes("class_id")) payload.class_id = String(id || "").trim() || null;
-      if (columns.includes("course_id")) payload.course_id = String(id || "").trim() || null;
-      if (columns.includes("subject_id")) payload.subject_id = String(id || "").trim() || null;
+      // classId is pre-validated above — required NOT NULL and used by RLS
+      if (columns.includes("class_id")) payload.class_id = classId;
+      if (columns.includes("course_id")) payload.course_id = classId;
+      if (columns.includes("subject_id")) payload.subject_id = classId;
 
-      const nextFileName = replacingFile ? uploadedFile?.fileName || "" : existingFile.fileName;
-      const nextFilePath = replacingFile ? uploadedFile?.filePath || "" : existingFile.filePath;
-      const nextFileUrl = replacingFile ? uploadedFile?.fileUrl || "" : existingFile.fileUrl;
-
-      if (columns.includes("file_name")) payload.file_name = nextFileName || null;
-      if (columns.includes("file_path")) payload.file_path = nextFilePath || null;
-      if (columns.includes("file_url")) payload.file_url = nextFileUrl || null;
+      if (columns.includes("priority")) {
+        payload.priority = JSON.stringify({
+          is_pinned: !!annForm.is_pinned,
+          status: status,
+          scheduled_at: scheduled_at,
+          link_url: annForm.link_url || ""
+        });
+      }
 
       if (columns.includes("attachments")) {
-        if (nextFileUrl) {
-          payload.attachments = [{
-            url: nextFileUrl,
-            name: nextFileName,
-            path: nextFilePath,
-            size: annFile ? annFile.size : null,
-            mimeType: annFile ? annFile.type : (nextFileName.endsWith('.pdf') ? 'application/pdf' : 'image/png')
-          }];
-        } else {
-          payload.attachments = [];
-        }
+        payload.attachments = nextAttachments;
       }
+
+      const nextFileNames = nextAttachments.map((attachment) => attachment.name).filter(Boolean);
+      const nextFilePaths = nextAttachments.map((attachment) => attachment.path).filter(Boolean);
+      const nextFileUrls = nextAttachments.map((attachment) => attachment.url).filter(Boolean);
+
+      if (columns.includes("file_name")) payload.file_name = nextFileNames.length > 0 ? JSON.stringify(nextFileNames) : null;
+      if (columns.includes("file_path")) payload.file_path = nextFilePaths.length > 0 ? JSON.stringify(nextFilePaths) : null;
+      if (columns.includes("file_url")) payload.file_url = nextFileUrls.length > 0 ? JSON.stringify(nextFileUrls) : null;
 
       if (!isEditingAnnouncement && columns.includes("created_at")) {
         payload.created_at = new Date().toISOString();
@@ -2309,25 +3400,67 @@ export function ClassDetail() {
         payload.updated_at = new Date().toISOString();
       }
 
+      console.log("[ClassDetail] Announcement payload:", payload);
+
       const writeResult = isEditingAnnouncement
         ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
         : await supabase.from(tableName).insert(payload).select("*").single();
 
+      console.log("[ClassDetail] Announcement write result:", writeResult);
+
       if (writeResult.error) {
-        if (uploadedFile?.filePath) {
-          await removeAnnouncementFilesFromStorage(uploadedFile.filePath);
+        if (uploadedAttachments.length > 0) {
+          await removeAnnouncementFilesFromStorage(uploadedAttachments.map((item) => item.path));
         }
-        throw new Error(writeResult.error.message || "Failed to save announcement.");
+
+        const errMsg = writeResult.error.message || "";
+        console.error("[ClassDetail] Supabase write error:", writeResult.error);
+
+        // Map known Supabase/Postgres error messages to user-friendly text
+        if (errMsg.includes("row-level security") || errMsg.includes("new row violates")) {
+          throw new Error(
+            "You do not have permission to post announcements in this class. " +
+            "Ensure you are the assigned teacher and your session is active."
+          );
+        } else if (errMsg.includes("not-null") || errMsg.includes("null value")) {
+          throw new Error("A required field is missing. Please fill in the title and content.");
+        } else if (errMsg.includes("foreign key") || errMsg.includes("violates foreign key")) {
+          throw new Error("Class information could not be found. Please navigate back to the class and try again.");
+        } else if (errMsg.includes("unique") || errMsg.includes("duplicate")) {
+          throw new Error("This announcement already exists. Please try editing it instead.");
+        } else {
+          throw new Error(`Failed to save announcement: ${errMsg || "Unknown database error."}`);
+        }
       }
 
       let oldFileCleanupFailed = false;
-      if (isEditingAnnouncement && replacingFile && existingFile.filePath) {
-        try {
-          await removeAnnouncementFilesFromStorage(existingFile.filePath);
-        } catch (error) {
-          oldFileCleanupFailed = true;
-          console.error("[ClassDetail] Old announcement file cleanup failed:", error);
+      if (isEditingAnnouncement && replacingAttachments) {
+        const oldPaths = existingAttachments.map((item) => item.path).filter(Boolean);
+        if (oldPaths.length > 0) {
+          try {
+            await removeAnnouncementFilesFromStorage(oldPaths);
+          } catch (error) {
+            oldFileCleanupFailed = true;
+            console.error("[ClassDetail] Old announcement file cleanup failed:", error);
+          }
         }
+      }
+
+      // Send notifications to students if published immediately
+      if (!isEditingAnnouncement && status === "Published" && assignedStudents.length > 0) {
+        const notificationInserts = assignedStudents.map(student => ({
+          user_id: student.id,
+          type: "announcement",
+          title: "New Announcement Posted",
+          message: `"${title}" is now available in your class.`,
+          related_id: String(id),
+          is_read: false
+        }));
+
+        const { error: notifErr } = await supabase
+          .from("notifications")
+          .insert(notificationInserts);
+        if (notifErr) console.error("[ClassDetail] Notification insert failed:", notifErr);
       }
 
       if (writeResult.data) {
@@ -2339,16 +3472,19 @@ export function ClassDetail() {
         }
       }
 
-      await fetchClassAnnouncements(teacherProfileId, classData);
+      await fetchClassAnnouncements(effectiveTeacherId || teacherProfileId, classData);
+      await fetchDashboardMetrics(effectiveTeacherId || teacherProfileId, id);
+
       if (oldFileCleanupFailed) {
-        setAnnError("Announcement was saved, but old file cleanup failed. Please retry or contact admin.");
+        toast.error("Announcement was saved, but old file cleanup failed. Please contact support if files are missing.");
       }
-      setAnnSuccess(isEditingAnnouncement ? "Announcement updated successfully." : "Announcement posted successfully.");
+      toast.success(isEditingAnnouncement ? "Announcement updated successfully." : "Announcement posted successfully.");
       resetAnnouncementForm(true);
       setShowAnnouncementModal(false);
     } catch (error) {
       console.error("[ClassDetail] Announcement save failed:", error);
-      setAnnError(error instanceof Error ? error.message : "Unable to save announcement.");
+      const msg = error instanceof Error ? error.message : "Unable to save announcement. Please try again.";
+      toast.error(msg);
     } finally {
       setIsPostingAnnouncement(false);
     }
@@ -2365,53 +3501,65 @@ export function ClassDetail() {
 
     const tableName = await getAnnouncementTableName();
     if (!tableName) {
-      setAnnError("Announcements table is not available.");
+      toast.error("Announcements table is not available.");
       return;
     }
 
     const announcementId = String(targetAnnouncement.id);
     const previous = announcements;
-    setAnnError("");
-    setAnnSuccess("");
+    
+    
     setAnnouncements((current) => current.filter((item) => String(item.id) !== announcementId));
 
-    const targetFilePath = String(targetAnnouncement.filePath || "").trim();
-    let backup = null;
+    const targetFilePaths = [
+      ...parseStoredFileList(targetAnnouncement.filePath),
+      ...(Array.isArray(targetAnnouncement.attachments)
+        ? targetAnnouncement.attachments.map((attachment) => String(attachment?.filePath || attachment?.path || "").trim()).filter(Boolean)
+        : [])
+    ];
+    const uniqueTargetPaths = [...new Set(targetFilePaths)];
+    const backups = [];
 
     try {
-      if (targetFilePath) {
-        const downloadResult = await supabase.storage.from(STORAGE_BUCKET).download(targetFilePath);
-        if (downloadResult.error) {
-          if (!isStorageNotFoundError(downloadResult.error)) {
-            throw new Error(downloadResult.error.message || "Failed to prepare file deletion.");
+      if (uniqueTargetPaths.length > 0) {
+        for (const path of uniqueTargetPaths) {
+          const bucket = path.includes("announcements/") ? "class-materials" : ANNOUNCEMENT_STORAGE_BUCKET;
+          const downloadResult = await supabase.storage.from(bucket).download(path);
+          if (downloadResult.error) {
+            if (!isStorageNotFoundError(downloadResult.error)) {
+              throw new Error(downloadResult.error.message || "Failed to prepare file deletion.");
+            }
+          } else {
+            backups.push({ filePath: path, blob: downloadResult.data, bucket });
           }
-        } else {
-          backup = { filePath: targetFilePath, blob: downloadResult.data };
         }
 
-        await removeAnnouncementFilesFromStorage(targetFilePath);
+        await removeAnnouncementFilesFromStorage(uniqueTargetPaths);
       }
 
       const { error } = await supabase.from(tableName).delete().eq("id", announcementId);
       if (error) {
-        if (backup?.blob) {
-          const restoreResult = await supabase.storage.from(STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
-            upsert: true,
-            contentType: backup.blob.type || "application/octet-stream"
-          });
-          if (restoreResult.error) {
-            console.error("[ClassDetail] Failed to restore announcement file after DB delete failure:", restoreResult.error);
+        if (backups.length > 0) {
+          for (const backup of backups) {
+            const restoreResult = await supabase.storage.from(backup.bucket).upload(backup.filePath, backup.blob, {
+              upsert: true,
+              contentType: backup.blob.type || "application/octet-stream"
+            });
+            if (restoreResult.error) {
+              console.error("[ClassDetail] Failed to restore announcement file after DB delete failure:", restoreResult.error);
+            }
           }
         }
         throw new Error(error.message || "Failed to delete announcement.");
       }
 
       await fetchClassAnnouncements(teacherProfileId, classData);
-      setAnnSuccess("Announcement deleted successfully.");
+      await fetchDashboardMetrics(teacherProfileId, id);
+      toast.success("Announcement deleted successfully.");
     } catch (error) {
       console.error("[ClassDetail] Announcement delete failed:", error);
       setAnnouncements(previous);
-      setAnnError(error instanceof Error ? error.message : "Unable to delete announcement.");
+      toast.error(error instanceof Error ? error.message : "Unable to delete announcement.");
     }
   };
 
@@ -2421,21 +3569,94 @@ export function ClassDetail() {
     setPendingDeleteAnnouncement(null);
   };
 
-  const filteredStudents = assignedStudents.filter(
+  const MOCK_ANNOUNCEMENTS = [
+    {
+      id: "demo-ann-1",
+      title: "📢 Quarter 1 Periodic Examination Schedule & Review Materials",
+      content: "Please be reminded that our Quarter 1 Examination for Grade 10 Araling Panlipunan will be held on Thursday, August 15. Make sure to review Module 1 (Kontemporaryong Isyu) and Module 2 (Suliraning Pangkapaligiran). Practice quiz items have been uploaded under the Lessons tab.",
+      isPinned: true,
+      pinned: true,
+      createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+      datePosted: new Date(Date.now() - 3600000 * 24).toISOString(),
+      authorName: "Teacher Maria Santos",
+      category: "Exam Notice",
+      status: "Active",
+    },
+    {
+      id: "demo-ann-2",
+      title: "🌱 Group Project Submission: Environmental Action Plan Poster",
+      content: "Reminder for all section groups: Submit your printed infographic or digital poster for the DepEd Climate Change Awareness Campaign by Friday at 5:00 PM. Late submissions will receive a 5-point deduction per day.",
+      isPinned: false,
+      pinned: false,
+      createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
+      datePosted: new Date(Date.now() - 3600000 * 72).toISOString(),
+      authorName: "Teacher Maria Santos",
+      category: "Project Reminder",
+      status: "Active",
+    },
+  ];
+
+  const MOCK_STUDENTS = [
+    { id: "s1", studentId: "109876543210", name: "Juan Dela Cruz", yearLevel: "Grade 10", email: "juan.delacruz@deped.gov.ph", phone: "0917-123-4567", status: "Active" },
+    { id: "s2", studentId: "109876543211", name: "Maria Clara Santos", yearLevel: "Grade 10", email: "maria.santos@deped.gov.ph", phone: "0918-234-5678", status: "Active" },
+    { id: "s3", studentId: "109876543212", name: "John Mark Reyes", yearLevel: "Grade 10", email: "john.reyes@deped.gov.ph", phone: "0919-345-6789", status: "Active" },
+  ];
+
+  const activeStudentsList = isDemoMode
+    ? MOCK_STUDENTS
+    : assignedStudents;
+
+  const activeAnnouncementsList = isDemoMode && announcements.length === 0
+    ? MOCK_ANNOUNCEMENTS
+    : announcements;
+
+  const filteredStudents = activeStudentsList.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.studentId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(s.studentId || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(s.yearLevel || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const classGradeValue = getClassGradeValue(classData);
+  const classGradeNormalized = normalizeGradeLevel(classGradeValue);
+  const classSectionNormalized = normalizeSection(classData?.section);
 
   const filteredAvailableStudents = availableStudents
     .filter((student) => !assignedStudents.some((assigned) => String(assigned.id) === String(student.id)))
     .filter((student) => {
-      const name = getStudentFullName(student).toLowerCase();
-      const lrn = String(student.lrn || "").toLowerCase();
-      const yearLevel = String(student.year_level || "").toLowerCase();
-      const query = studentPickerQuery.toLowerCase();
-      return name.includes(query) || lrn.includes(query) || yearLevel.includes(query);
+      const yearLevelRaw = student.grade_level || student.year_level || "";
+      const studentGradeNorm = normalizeGradeLevel(yearLevelRaw);
+      const studentSectionNorm = normalizeSection(student.section || "");
+
+      // Unassigned or missing section is never eligible
+      if (!studentSectionNorm || studentSectionNorm === "unassigned") {
+        return false;
+      }
+      // Grade Level validation
+      if (classGradeNormalized && studentGradeNorm !== classGradeNormalized) {
+        return false;
+      }
+      // Section validation
+      if (classSectionNormalized && studentSectionNorm !== classSectionNormalized) {
+        return false;
+      }
+
+      const name = normalizeSearchText(getStudentFullName(student));
+      const lrn = normalizeSearchText(student.lrn || "");
+      const yearLevel = normalizeSearchText(yearLevelRaw);
+      const yearLevelCompact = yearLevel.replace(/\s+/g, "");
+      const query = normalizeSearchText(studentPickerQuery);
+      const queryCompact = query.replace(/\s+/g, "");
+      const queryGradeNormalized = normalizeGradeLevel(query);
+
+      const matchesQuery =
+        !query ||
+        name.includes(query) ||
+        lrn.includes(query) ||
+        yearLevel.includes(query) ||
+        yearLevelCompact.includes(queryCompact) ||
+        (queryGradeNormalized && studentGradeNorm === queryGradeNormalized);
+
+      return matchesQuery;
     });
 
   useEffect(() => {
@@ -2449,6 +3670,17 @@ export function ClassDetail() {
     selectAllCheckboxRef.current.indeterminate = partiallySelected;
   }, [selectedStudentIds, filteredAvailableStudents]);
 
+  useEffect(() => {
+    if (!showStudentModal) return;
+    loadAvailableStudents(classData);
+  }, [showStudentModal, id, classGradeNormalized, teacherProfileId]);
+
+  useEffect(() => {
+    if (!showStudentModal) return;
+    console.log("[ClassDetail] Student modal search input:", studentPickerQuery);
+    console.log("[ClassDetail] Filtered available students:", filteredAvailableStudents);
+  }, [showStudentModal, studentPickerQuery, filteredAvailableStudents]);
+
   const getDaysUntilDue = (dueDate) => {
     const diff = Math.ceil((new Date(dueDate) - new Date()) / (1000 * 60 * 60 * 24));
     if (diff < 0) return { label: "Overdue", color: "text-red-600 bg-red-50" };
@@ -2457,11 +3689,7 @@ export function ClassDetail() {
     return { label: `${diff} days left`, color: "text-emerald-600 bg-emerald-50" };
   };
 
-  const getPriorityColor = (p) => {
-    if (p === "High") return "bg-red-100 text-red-700";
-    if (p === "Medium") return "bg-blue-100 text-blue-700";
-    return "bg-gray-100 text-gray-500";
-  };
+
 
   const getFileIcon = (type = "PDF") => {
     const t = type.toUpperCase();
@@ -2471,9 +3699,7 @@ export function ClassDetail() {
     return <File className="w-5 h-5 text-gray-500" />;
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading class details..." />;
-  }
+
 
   if (!classData) {
     return (
@@ -2494,10 +3720,8 @@ export function ClassDetail() {
 
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
-    { id: "materials", label: "Materials", icon: <BookOpen className="w-4 h-4" /> },
-    { id: "assignments", label: "Assignments & Activities", icon: <FileText className="w-4 h-4" /> },
+    { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
-    { id: "quiz", label: "AI Quiz Generator", icon: <Sparkles className="w-4 h-4" /> },
   ];
 
   const handleQuizFileChange = async (e) => {
@@ -2537,7 +3761,7 @@ export function ClassDetail() {
       fileContents: [],
       onChunk: (text) => {
         accum += text;
-        setQuizMessages([...updatedMessages, { role: "assistant", content: accum + "▌", timestamp: Date.now() }]);
+        setQuizMessages([...updatedMessages, { role: "assistant", content: accum + "Γûî", timestamp: Date.now() }]);
       },
       onDone: (fullText) => {
         setQuizMessages([...updatedMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
@@ -2550,6 +3774,27 @@ export function ClassDetail() {
         setIsQuizStreaming(false);
       }
     });
+  };
+
+
+
+
+
+  const displayMetrics = isDemoMode ? {
+    totalLessons: 5,
+    publishedLessons: 5,
+    activitiesCount: 2,
+    seatworksCount: 2,
+    assignmentsCount: 2,
+    quizzesCount: 4,
+    materialsCount: 4,
+    studentCount: 42,
+    announcementsCount: 4,
+  } : {
+    ...metrics,
+    studentCount: assignedStudents.length,
+    materialsCount: materials.length,
+    announcementsCount: announcements.length,
   };
 
   return (
@@ -2581,69 +3826,6 @@ export function ClassDetail() {
         </div>
 
         <div className="p-6 space-y-6">
-          <ConfirmDialog
-            isOpen={showDeleteStudentModal && Boolean(pendingDeleteStudent)}
-            onClose={() => {
-              setShowDeleteStudentModal(false);
-              setPendingDeleteStudent(null);
-            }}
-            onConfirm={confirmDeleteStudent}
-            title="Remove Student"
-            message={pendingDeleteStudent
-              ? `Are you sure you want to remove ${pendingDeleteStudent.name} from this class?`
-              : "Are you sure you want to remove this student from this class?"}
-            confirmText="Remove"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteMaterialModal && Boolean(pendingDeleteMaterial)}
-            onClose={() => {
-              setShowDeleteMaterialModal(false);
-              setPendingDeleteMaterial(null);
-            }}
-            onConfirm={confirmDeleteMaterial}
-            title="Delete Material"
-            message={pendingDeleteMaterial
-              ? `Are you sure you want to delete this material? (${pendingDeleteMaterial.title})`
-              : "Are you sure you want to delete this material?"}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
-            onClose={() => {
-              setShowDeleteAssignmentModal(false);
-              setPendingDeleteAssignment(null);
-            }}
-            onConfirm={confirmDeleteAssignment}
-            title="Delete Assignment / Activity"
-            message={pendingDeleteAssignment
-              ? `Are you sure you want to delete ${pendingDeleteAssignment.title}? This action cannot be undone.`
-              : "Are you sure you want to delete this assignment/activity? This action cannot be undone."}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
-
-          <ConfirmDialog
-            isOpen={showDeleteAnnouncementModal && Boolean(pendingDeleteAnnouncement)}
-            onClose={() => {
-              setShowDeleteAnnouncementModal(false);
-              setPendingDeleteAnnouncement(null);
-            }}
-            onConfirm={confirmDeleteAnnouncement}
-            title="Delete Announcement"
-            message={pendingDeleteAnnouncement
-              ? `Are you sure you want to delete ${pendingDeleteAnnouncement.title}? This action cannot be undone.`
-              : "Are you sure you want to delete this announcement? This action cannot be undone."}
-            confirmText="Delete"
-            cancelText="Cancel"
-            type="danger"
-          />
 
           <button
             onClick={() => navigate("/teacher/classes")}
@@ -2653,7 +3835,7 @@ export function ClassDetail() {
             Back to Classes
           </button>
 
-          <div className="rounded-2xl bg-green-600 p-6 text-white shadow-sm border border-green-500/30">
+          <div data-tour="teacher-class-banner" className="rounded-2xl bg-green-600 p-6 text-white shadow-sm border border-green-500/30">
             <div className="flex items-start gap-3 mb-5">
               <div className="w-11 h-11 rounded-xl bg-white/20 border border-white/30 flex items-center justify-center flex-shrink-0">
                 <BookOpen className="w-6 h-6" />
@@ -2667,34 +3849,104 @@ export function ClassDetail() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <Users className="w-3.5 h-3.5" />
-                  Students
+            {/* Dashboard Stats Panel */}
+            <div className="space-y-4">
+              {/* Row 1 */}
+              <div>
+                <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Class Overview</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div 
+                    onClick={() => setActiveTab("students")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Users className="w-4 h-4 text-white" />
+                      </div>
+                      Students
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.studentCount}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab("lessons")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <BookOpen className="w-4 h-4 text-white" />
+                      </div>
+                      Lessons
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.totalLessons}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => {
+                      setMatError("");
+                      setMatSuccess("");
+                      setShowMaterialModal(true);
+                    }}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <BookOpen className="w-4 h-4 text-white" />
+                      </div>
+                      Materials
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.materialsCount}</p>
+                  </div>
+
+                  <div 
+                    onClick={() => setActiveTab("announcements")}
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <Megaphone className="w-4 h-4 text-white" />
+                      </div>
+                      Announcements
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.announcementsCount}</p>
+                  </div>
                 </div>
-                <p className="text-2xl font-semibold mt-1">{assignedStudents.length}</p>
               </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <BookOpen className="w-3.5 h-3.5" />
-                  Materials
+
+              {/* Row 2 */}
+              <div className="mt-6">
+                <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Classroom Activity</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <FileText className="w-4 h-4 text-white" />
+                      </div>
+                      Seatworks
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.seatworksCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <ClipboardList className="w-4 h-4 text-white" />
+                      </div>
+                      Assignments
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.assignmentsCount}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                    <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
+                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                        <CheckCircle className="w-4 h-4 text-white" />
+                      </div>
+                      Quizzes
+                    </div>
+                    <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.quizzesCount}</p>
+                  </div>
                 </div>
-                <p className="text-2xl font-semibold mt-1">{materials.length}</p>
-              </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <FileText className="w-3.5 h-3.5" />
-                  Assignments
-                </div>
-                <p className="text-2xl font-semibold mt-1">{assignments.length}</p>
-              </div>
-              <div className="rounded-xl bg-white/10 border border-white/20 p-3">
-                <div className="flex items-center gap-2 text-green-100 text-xs font-medium">
-                  <Megaphone className="w-3.5 h-3.5" />
-                  Announcements
-                </div>
-                <p className="text-2xl font-semibold mt-1">{announcements.length}</p>
               </div>
             </div>
           </div>
@@ -2702,16 +3954,16 @@ export function ClassDetail() {
           {/* Tabs + Content */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Tab Nav */}
-            <div className="flex border-b border-gray-100 overflow-x-auto no-scrollbar">
+            <div data-tour="teacher-class-tabs" className="flex border-b border-gray-100 overflow-x-auto no-scrollbar">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
+                  data-tour-tab={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors whitespace-nowrap border-b-2 ${
-                    activeTab === tab.id
-                      ? "border-green-600 text-green-600"
-                      : "border-transparent text-gray-500 hover:text-green-600 hover:border-green-200"
-                  }`}
+                  className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors whitespace-nowrap rounded-t-lg ${activeTab === tab.id
+                      ? "bg-gray-100 text-green-600"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }`}
                 >
                   {tab.icon}
                   {tab.label}
@@ -2720,13 +3972,33 @@ export function ClassDetail() {
             </div>
 
             <div className="p-6">
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ STUDENTS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-              {activeTab === "students" && (
-                <div>
+              {/* STUDENTS TAB */}
+              {activeTab === "students" && (() => {
+                const capacity = Number(classData?.capacity || 30);
+                const enrolledCount = activeStudentsList.length;
+                const availableSlots = Math.max(0, capacity - enrolledCount);
+                const isClassFull = capacity > 0 && enrolledCount >= capacity;
+
+                return (
+                <div data-tour="class-detail-students-list">
                   <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">{assignedStudents.length} students enrolled</p>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {enrolledCount} / {capacity} Students
+                          <span className="ml-2 font-medium">
+                            ({isClassFull ? "0 slots available" : `${availableSlots} slot(s) available`})
+                          </span>
+                        </p>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                        isClassFull
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      }`}>
+                        {isClassFull ? "FULL" : "Available"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-3 w-full md:w-auto">
                       <div className="relative flex-1 md:w-64">
@@ -2741,13 +4013,23 @@ export function ClassDetail() {
                       </div>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm whitespace-nowrap"
+                        disabled={isClassFull}
+                        title={isClassFull ? "Class is full. No additional students can be enrolled." : ""}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         Add Student
                       </button>
                     </div>
                   </div>
+
+                  {isClassFull && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-sm font-semibold flex items-center gap-2 mb-4">
+                      <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>Class is full. No additional students can be enrolled. (Capacity: {enrolledCount}/{capacity})</span>
+                    </div>
+                  )}
+
                   {filteredStudents.length === 0 ? (
                     <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
                       <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -2757,7 +4039,8 @@ export function ClassDetail() {
                       <p className="text-gray-500 text-sm mb-4">Add students to this class so they can access materials and assignments.</p>
                       <button
                         onClick={handleOpenStudentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                        disabled={isClassFull}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         Add First Student
@@ -2770,7 +4053,7 @@ export function ClassDetail() {
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student ID</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student Email</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
                           </tr>
@@ -2809,669 +4092,265 @@ export function ClassDetail() {
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ MATERIALS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-              {activeTab === "materials" && (
-                <div>
-                  <div className="flex items-center justify-between mb-6">
+              {/* LESSONS TAB */}
+              {activeTab === "lessons" && (
+                <div data-tour="class-detail-lessons-content">
+                  <TeacherLessonsTab 
+                    subjectId={id} 
+                    teacherId={teacherProfileId} 
+                    onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
+                  />
+                </div>
+              )}
+              {/* ANNOUNCEMENTS TAB */}
+              {activeTab === "announcements" && (
+                <div data-tour="class-detail-announcements-content">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Class Materials</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Upload files visible to all enrolled students</p>
-                      {matError && <p className="text-sm text-red-600 mt-2">{matError}</p>}
-                      {matSuccess && <p className="text-sm text-green-600 mt-2">{matSuccess}</p>}
-                    </div>
+                      <h3 className="text-xl font-bold text-gray-900">Class Announcements</h3>
+                      <p className="text-sm text-gray-500 mt-0.5">Manage and post announcements for your class.</p>
+                      </div>
                     <button
-                      onClick={openCreateMaterialModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                      onClick={openCreateAnnouncementModal}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
                     >
-                      <Upload className="w-4 h-4" />
-                      Upload Material
+                      <Megaphone className="w-4 h-4" />
+                      New Announcement
                     </button>
                   </div>
 
-                  {materials.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <BookOpen className="w-7 h-7 text-green-600" />
-                      </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No materials uploaded yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Upload lecture notes, slides, or reference files for your students.</p>
+                  {/* Feed Filters & Mini Dashboard */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6 border-b border-gray-100 pb-4">
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-xl self-start">
                       <button
-                        onClick={openCreateMaterialModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                        onClick={() => setActiveAnnouncementTab("Active")}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                          activeAnnouncementTab === "Active"
+                            ? "bg-white text-purple-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
                       >
-                        <Upload className="w-4 h-4" />
-                        Upload First Material
+                        Active Feed
+                      </button>
+                      <button
+                        onClick={() => setActiveAnnouncementTab("Archived")}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                          activeAnnouncementTab === "Archived"
+                            ? "bg-white text-purple-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        Archive
                       </button>
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {materials.map((mat) => (
-                        <div
-                          key={mat.id}
-                          className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-green-200 hover:bg-green-50 transition-all"
-                        >
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center border border-gray-200 flex-shrink-0">
-                            {getFileIcon(mat.fileType)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-900 text-sm">{mat.title}</p>
-                            {mat.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{mat.description}</p>}
-                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
-                              <span>{mat.fileType}</span>
-                              <span>|</span>
-                              <span>{new Date(mat.uploadDate).toLocaleDateString()}</span>
-                              {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                                <>
-                                  <span>|</span>
-                                  <span>{mat.attachments.length} file{mat.attachments.length === 1 ? "" : "s"}</span>
-                                </>
-                              )}
-                            </div>
-                            {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {mat.attachments.map((attachment, index) => (
-                                  <a
-                                    key={`${mat.id}-attachment-${index}`}
-                                    href={attachment.fileUrl || attachment.filePath || "#"}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs hover:bg-green-100"
-                                  >
-                                    <File className="w-3 h-3" />
-                                    {attachment.fileName || `File ${index + 1}`}
-                                  </a>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => openEditMaterialModal(mat)}
-                              className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            >
-                              <FileText className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                handleDeleteMaterial(mat.id);
-                              }}
-                              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ASSIGNMENTS & ACTIVITIES TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-              {activeTab === "assignments" && (
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Assignments &amp; Activities</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Post tasks for students to accomplish and submit</p>
-                      {asgError && <p className="text-sm text-red-600 mt-2">{asgError}</p>}
-                      {asgSuccess && <p className="text-sm text-green-600 mt-2">{asgSuccess}</p>}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => {
-                          const params = new URLSearchParams();
-                          params.set("classId", String(id || ""));
-                          navigate(`/teacher/grades?${params.toString()}`, {
-                            state: {
-                              selectedClassId: String(id || ""),
-                              selectedSubjectCode: String(classData?.code || ""),
-                              selectedSubjectName: String(classData?.name || ""),
-                              selectedSection: String(classData?.section || ""),
-                            },
-                          });
-                        }}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 rounded-lg transition-all font-medium text-sm"
-                      >
-                        <TrendingUp className="w-4 h-4" />
-                        Grade Students
-                      </button>
-                      <button
-                        onClick={openCreateAssignmentModal}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Create Task
-                      </button>
+                    <div className="flex items-center gap-4 text-xs font-medium text-gray-500 self-end sm:self-auto">
+                      <div className="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-3 py-1 rounded-full">
+                        <span className="font-bold">{activeAnnouncementsList.filter(a => (a.isPinned || a.pinned) && a.status !== "Archived").length}</span> Pinned
+                      </div>
+                      <div className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
+                        <span className="font-bold">{activeAnnouncementsList.length}</span> Total
+                      </div>
                     </div>
                   </div>
 
-                  {assignments.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <FileText className="w-7 h-7 text-blue-400" />
-                      </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No assignments yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Create assignments or activities for your students to complete.</p>
-                      <button
-                        onClick={openCreateAssignmentModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Create First Task
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {assignments.map((asg) => {
-                        const due = getDaysUntilDue(asg.dueDate);
-                        const lifecycle = getAssignmentLifecycle(asg.dueDate);
-                        return (
+                  {(() => {
+                    const filteredList = activeAnnouncementsList.filter((ann) => {
+                      if (activeAnnouncementTab === "Archived") {
+                        return ann.status === "Archived";
+                      }
+                      return ann.status !== "Archived";
+                    });
+
+                    // Order: Pinned on top, then newest first
+                    const sortedList = [...filteredList].sort((a, b) => {
+                      if (a.isPinned && !b.isPinned) return -1;
+                      if (!a.isPinned && b.isPinned) return 1;
+                      return new Date(b.datePosted).getTime() - new Date(a.datePosted).getTime();
+                    });
+
+                    if (sortedList.length === 0) {
+                      return (
+                        <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                          <div className="w-14 h-14 bg-purple-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Megaphone className="w-6 h-6 text-purple-600" />
+                          </div>
+                          <h4 className="font-bold text-gray-900 mb-1">
+                            {activeAnnouncementTab === "Archived" ? "No archived announcements" : "No announcements posted yet"}
+                          </h4>
+                          <p className="text-gray-500 text-sm max-w-sm mx-auto mb-5">
+                            {activeAnnouncementTab === "Archived"
+                              ? "Announcements you archive will be moved here and hidden from student feeds."
+                              : "Get your students' attention! Post a lesson update, course announcement, or resource link."}
+                          </p>
+                          {activeAnnouncementTab !== "Archived" && (
+                            <button
+                              onClick={openCreateAnnouncementModal}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+                            >
+                              <Megaphone className="w-4 h-4" />
+                              Create Announcement
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {sortedList.map((ann) => (
                           <div
-                            key={asg.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              const params = new URLSearchParams();
-                              params.set("classId", String(id || ""));
-                              params.set("assessmentId", String(asg.id || ""));
-
-                              navigate(`/teacher/grades?${params.toString()}`, {
-                                state: {
-                                  selectedClassId: String(id || ""),
-                                  selectedAssessmentId: String(asg.id || ""),
-                                  selectedAssessmentType: String(asg.type || "assignment"),
-                                  selectedAssessmentTitle: String(asg.title || ""),
-                                  selectedSubjectCode: String(classData?.code || ""),
-                                  selectedSubjectName: String(classData?.name || ""),
-                                  selectedSection: String(classData?.section || ""),
-                                },
-                              });
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-
-                              const params = new URLSearchParams();
-                              params.set("classId", String(id || ""));
-                              params.set("assessmentId", String(asg.id || ""));
-
-                              navigate(`/teacher/grades?${params.toString()}`, {
-                                state: {
-                                  selectedClassId: String(id || ""),
-                                  selectedAssessmentId: String(asg.id || ""),
-                                  selectedAssessmentType: String(asg.type || "assignment"),
-                                  selectedAssessmentTitle: String(asg.title || ""),
-                                  selectedSubjectCode: String(classData?.code || ""),
-                                  selectedSubjectName: String(classData?.name || ""),
-                                  selectedSection: String(classData?.section || ""),
-                                },
-                              });
-                            }}
-                            className="p-5 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500"
+                            key={ann.id}
+                            onClick={() => setSelectedAnnouncementDetail(ann)}
+                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-purple-200 transition-all duration-200 cursor-pointer relative group ${
+                              ann.isPinned ? "border-purple-200 bg-purple-50/10 ring-1 ring-purple-100" : "border-gray-200"
+                            }`}
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${asg.type === "activity" ? "bg-purple-100 text-purple-700" : asg.type === "quiz" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
-                                    {asg.type === "activity" ? "Activity" : asg.type === "quiz" ? "Quiz" : "Assignment"}
-                                  </span>
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${lifecycle.cls}`}>
-                                    {lifecycle.label}
-                                  </span>
-                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${due.color}`}>
-                                    {due.label}
+                                <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                                  {ann.isPinned && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                                      <Sparkles className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
+                                      Pinned
+                                    </span>
+                                  )}
+                                  {ann.status === "Scheduled" && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Scheduled: {ann.scheduledAt ? new Date(ann.scheduledAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-gray-500 font-medium">
+                                    By {ann.author} &bull; {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                                   </span>
                                 </div>
-                                <h4 className="font-semibold text-gray-900 text-sm">{asg.title}</h4>
-                                {asg.description && (
-                                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">{asg.description}</p>
+
+                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-purple-700 transition-colors">
+                                  {ann.title}
+                                </h4>
+
+                                <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3 leading-relaxed">
+                                  {ann.content}
+                                </p>
+
+                                {/* Optional Link Indicator */}
+                                {ann.linkUrl && (
+                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-purple-600 font-semibold hover:underline">
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Attachment Link Associated</span>
+                                  </div>
                                 )}
-                                <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="w-3 h-3" />
-                                    Due: {new Date(asg.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                  </span>
-                                  <span>Max Points: {asg.maxPoints}</span>
-                                </div>
-                                {Array.isArray(asg.attachments) && asg.attachments.length > 0 && (
-                                  <div className="flex flex-wrap gap-2 mt-3">
-                                    {asg.attachments.map((attachment, index) => (
-                                      <a
-                                        key={`${asg.id}-attachment-${index}`}
-                                        href={attachment.fileUrl || attachment.filePath || "#"}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        onClick={(event) => event.stopPropagation()}
-                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100"
-                                      >
-                                        <File className="w-3 h-3" />
-                                        {attachment.fileName || `File ${index + 1}`}
-                                      </a>
-                                    ))}
+
+                                {/* Attachments Listing */}
+                                {Array.isArray(ann.attachments) && ann.attachments.length > 0 && (
+                                  <div className="mt-3.5 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                                    {ann.attachments.map((attachment, idx) => {
+                                      const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
+                                      const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${idx + 1}`).trim();
+                                      const attachmentKind = String(attachment?.kind || "document");
+
+                                      if (!attachmentUrl) {
+                                        return (
+                                          <div
+                                            key={`${ann.id}-att-${idx}`}
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-600 text-xs font-medium border border-gray-100"
+                                          >
+                                            <File className="w-3.5 h-3.5 text-gray-400" />
+                                            <span className="truncate max-w-[150px]">{attachmentName}</span>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <a
+                                          key={`${ann.id}-att-${idx}`}
+                                          href={attachmentUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 text-purple-700 text-xs font-medium border border-purple-100/50 hover:border-purple-200 transition-all"
+                                        >
+                                          {attachmentKind === "image" ? (
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                          ) : (
+                                            <File className="w-3.5 h-3.5 text-purple-500" />
+                                          )}
+                                          <span className="truncate max-w-[180px]">{attachmentName}</span>
+                                        </a>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
-                              <div className="flex gap-2 flex-shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
 
-                                    const params = new URLSearchParams();
-                                    params.set("classId", String(id || ""));
-                                    params.set("assessmentId", String(asg.id || ""));
+                              {/* Three-Dot Menu Options */}
+                              <div className="relative flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenuId(openMenuId === ann.id ? null : ann.id);
+                                  }}
+                                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+                                >
+                                  <Sparkles className="w-4 h-4 rotate-90" />
+                                </button>
 
-                                    navigate(`/teacher/grades?${params.toString()}`, {
-                                      state: {
-                                        selectedClassId: String(id || ""),
-                                        selectedAssessmentId: String(asg.id || ""),
-                                        selectedAssessmentType: String(asg.type || "assignment"),
-                                        selectedAssessmentTitle: String(asg.title || ""),
-                                        selectedSubjectCode: String(classData?.code || ""),
-                                        selectedSubjectName: String(classData?.name || ""),
-                                        selectedSection: String(classData?.section || ""),
-                                      },
-                                    });
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                  title="Grade this activity"
-                                >
-                                  <TrendingUp className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    openEditAssignmentModal(asg.id);
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                >
-                                  <FileText className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.preventDefault();
-                                    event.stopPropagation();
-                                    handleDeleteAssignment(asg);
-                                  }}
-                                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                {openMenuId === ann.id && (
+                                  <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-100 rounded-xl shadow-lg py-1.5 z-30 ring-1 ring-black/5 animate-in fade-in slide-in-from-top-1 duration-150">
+                                    <button
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        openEditAnnouncementModal(ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        setOpenMenuId(null);
+                                        togglePinAnnouncement(e, ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Sparkles className="w-3.5 h-3.5 fill-current" />
+                                      {ann.isPinned ? "Unpin" : "Pin"}
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        setOpenMenuId(null);
+                                        toggleArchiveAnnouncement(e, ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Calendar className="w-3.5 h-3.5" />
+                                      {ann.status === "Archived" ? "Restore" : "Archive"}
+                                    </button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <button
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        requestDeleteAnnouncement(ann);
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ ANNOUNCEMENTS TAB ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-              {activeTab === "announcements" && (
-                <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Class Announcements</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">Post updates visible to all students in this class</p>
-                      {annError && <p className="text-sm text-red-600 mt-2">{annError}</p>}
-                      {annSuccess && <p className="text-sm text-green-600 mt-2">{annSuccess}</p>}
-                    </div>
-                    <button
-                      onClick={openCreateAnnouncementModal}
-                      className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
-                    >
-                      <Megaphone className="w-4 h-4" />
-                      Post Announcement
-                    </button>
-                  </div>
-
-                  {announcements.length === 0 ? (
-                    <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl">
-                      <div className="w-14 h-14 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Megaphone className="w-7 h-7 text-purple-400" />
+                        ))}
                       </div>
-                      <h4 className="font-semibold text-gray-900 mb-1">No announcements yet</h4>
-                      <p className="text-gray-500 text-sm mb-4">Post important updates, reminders, or news for your class.</p>
-                      <button
-                        onClick={openCreateAnnouncementModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-                      >
-                        <Megaphone className="w-4 h-4" />
-                        Post First Announcement
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {announcements.map((ann) => (
-                        <div key={ann.id} className="p-5 bg-white border border-gray-200 rounded-xl hover:border-purple-300 hover:shadow-sm transition-all">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap mb-1">
-                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${getPriorityColor(ann.priority)}`}>
-                                  {ann.priority} Priority
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                  {new Date(ann.datePosted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                </span>
-                              </div>
-                              <h4 className="font-semibold text-gray-900 text-sm">{ann.title}</h4>
-                              <p className="text-sm text-gray-600 mt-2 whitespace-pre-line line-clamp-3">{ann.content}</p>
-                              {ann.fileUrl && (() => {
-                                const attachmentKind = getAnnouncementAttachmentKind(ann);
-
-                                if (attachmentKind === "image") {
-                                  return (
-                                    <a href={ann.fileUrl} target="_blank" rel="noreferrer" className="block mt-3">
-                                      <img
-                                        src={ann.fileUrl}
-                                        alt={ann.fileName || "Announcement attachment"}
-                                        className="max-h-80 w-full rounded-xl border border-gray-200 object-cover bg-gray-50"
-                                      />
-                                    </a>
-                                  );
-                                }
-
-                                if (attachmentKind === "video") {
-                                  return (
-                                    <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
-                                      <video
-                                        controls
-                                        src={ann.fileUrl}
-                                        className="w-full max-h-80 bg-black"
-                                      />
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <a
-                                    href={ann.fileUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100"
-                                  >
-                                    <File className="w-3 h-3" />
-                                    {ann.fileName || "Attached file"}
-                                  </a>
-                                );
-                              })()}
-                            </div>
-                            <div className="flex gap-2 flex-shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => openEditAnnouncementModal(ann)}
-                                className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                              >
-                                <FileText className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => requestDeleteAnnouncement(ann)}
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ══ AI QUIZ GENERATOR TAB ══ */}
-              {activeTab === "quiz" && (
-                <div>
-                  <div className="mb-6">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="p-2 bg-violet-100 rounded-lg">
-                        <Sparkles className="w-5 h-5 text-violet-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">AI Quiz Generator</h3>
-                        <p className="text-sm text-gray-500">Generate quizzes for {classData?.name || "this class"} using AI</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Settings panel */}
-                    <div className="lg:col-span-1 space-y-4">
-                      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
-                        <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Quiz Settings</h4>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Topic / Subject</label>
-                          <input
-                            type="text"
-                            placeholder={`e.g. ${classData?.name || "Photosynthesis"}`}
-                            value={quizTopic}
-                            onChange={(e) => setQuizTopic(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Reference Material (Optional)</label>
-                          <div className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => quizMaterialInputRef.current?.click()}
-                              className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-all bg-white"
-                            >
-                              <FilePlus className="w-4 h-4" />
-                              {quizMaterialFile ? "Change File" : "Select Reference File"}
-                            </button>
-                            {quizMaterialFile && (
-                              <div className="flex items-center justify-between px-3 py-2 bg-violet-50 border border-violet-100 rounded-lg">
-                                <span className="text-xs text-violet-700 font-medium truncate max-w-[150px]">
-                                  {quizMaterialFile.name}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setQuizMaterialFile(null);
-                                    setQuizMaterialContent("");
-                                    if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
-                                  }}
-                                  className="p-1 text-violet-400 hover:text-violet-600"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Quiz Type</label>
-                          <select
-                            value={quizType}
-                            onChange={(e) => setQuizType(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          >
-                            {["Multiple Choice", "True/False", "Short Answer", "Identification", "Essay", "Fill in the Blank", "Mixed"].map(t => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Number of Items</label>
-                          <select
-                            value={quizItemCount}
-                            onChange={(e) => setQuizItemCount(Number(e.target.value))}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                          >
-                            {[5, 10, 15, 20, 25, 30, 50].map(n => (
-                              <option key={n} value={n}>{n} items</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Difficulty</label>
-                          <div className="flex gap-2">
-                            {["Easy", "Medium", "Hard"].map(d => (
-                              <button
-                                key={d}
-                                type="button"
-                                onClick={() => setQuizDifficulty(d)}
-                                className={`flex-1 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
-                                  quizDifficulty === d
-                                    ? d === "Hard" ? "border-red-500 bg-red-50 text-red-700"
-                                      : d === "Easy" ? "border-green-500 bg-green-50 text-green-700"
-                                      : "border-violet-500 bg-violet-50 text-violet-700"
-                                    : "border-gray-200 text-gray-500 hover:border-gray-300"
-                                }`}
-                              >
-                                {d}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleGenerateQuiz}
-                          disabled={isQuizStreaming || (!quizTopic.trim() && !quizInput.trim())}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Sparkles className="w-4 h-4" />
-                          {isQuizStreaming ? "Generating..." : "Generate Quiz"}
-                        </button>
-
-                        {quizMessages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => { setQuizMessages([]); setQuizGenerated(""); setQuizTopic(""); }}
-                            className="w-full flex items-center justify-center gap-2 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 text-xs font-medium transition-all"
-                          >
-                            <RefreshCw className="w-3 h-3" />
-                            Clear & Start Over
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
-                        <h4 className="text-xs font-semibold text-violet-700 mb-2 flex items-center gap-1.5">
-                          <ClipboardList className="w-3.5 h-3.5" />
-                          Quick Prompts
-                        </h4>
-                        <div className="space-y-2">
-                          {[
-                            `Create ${quizItemCount} ${quizType} questions about ${quizTopic || classData?.name || "the subject"}`,
-                            `Make a ${quizDifficulty.toLowerCase()} quiz on ${quizTopic || classData?.name || "today's lesson"}`,
-                            `Generate an assessment with answer key for ${quizTopic || classData?.name || "this topic"}`,
-                          ].map((prompt, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => setQuizInput(prompt)}
-                              className="w-full text-left text-xs text-violet-700 bg-white border border-violet-200 rounded-lg px-3 py-2 hover:bg-violet-50 transition-colors line-clamp-2"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Chat/Output panel */}
-                    <div className="lg:col-span-2 flex flex-col gap-3">
-                      <div className="min-h-[400px] max-h-[550px] overflow-y-auto border border-gray-200 rounded-xl bg-white p-4 space-y-3">
-                        {quizMessages.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                            <div className="w-14 h-14 bg-violet-50 rounded-2xl flex items-center justify-center mb-3">
-                              <Sparkles className="w-7 h-7 text-violet-400" />
-                            </div>
-                            <p className="text-gray-500 font-medium">AI Quiz Generator</p>
-                            <p className="text-gray-400 text-sm mt-1">Set your quiz parameters on the left and click Generate Quiz, or type a custom prompt below.</p>
-                          </div>
-                        ) : (
-                          quizMessages.map((msg, idx) => (
-                            <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                              <div className={`max-w-[90%] rounded-xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-violet-600 text-white" : "bg-gray-50 border border-gray-200 text-gray-800"}`}>
-                                <pre className="whitespace-pre-wrap font-sans leading-relaxed">{msg.content}</pre>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Custom prompt input */}
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={quizInput}
-                          onChange={(e) => setQuizInput(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerateQuiz(); } }}
-                          placeholder="Type a custom quiz request or modification..."
-                          className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleGenerateQuiz}
-                          disabled={isQuizStreaming || (!quizTopic.trim() && !quizInput.trim())}
-                          className="p-2.5 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-                        >
-                          <Send className="w-5 h-5" />
-                        </button>
-                      </div>
-
-                      {quizGenerated && (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={openCreateQuizModal}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-semibold transition-all"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Create Quiz
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { navigator.clipboard.writeText(quizGenerated); }}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 text-xs font-medium transition-all"
-                          >
-                            <ClipboardList className="w-3.5 h-3.5" />
-                            Copy Quiz
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const blob = new Blob([quizGenerated], { type: "text/plain" });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement("a");
-                              a.href = url;
-                              a.download = `Quiz_${classData?.name || "Class"}_${new Date().toISOString().split("T")[0]}.txt`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              URL.revokeObjectURL(url);
-                            }}
-                            className="flex-1 flex items-center justify-center gap-2 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-xs font-semibold transition-all"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Download Quiz
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -3479,645 +4358,19 @@ export function ClassDetail() {
         </div>
       </main>
 
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ UPLOAD MATERIAL MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {showMaterialModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Upload className="w-5 h-5 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{isEditingMaterial ? "Edit Class Material" : "Upload Class Material"}</h3>
-                  <p className="text-sm text-gray-500">
-                    {isEditingMaterial ? "Update details and attachment for this material" : `Visible to all students in ${classData.code}`}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowMaterialModal(false);
-                  resetMaterialForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Chapter 1 - Introduction"
-                  value={matForm.title}
-                  onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-                <textarea
-                  rows={3}
-                  placeholder="Optional short description..."
-                  value={matForm.description}
-                  onChange={(e) => setMatForm({ ...matForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">File Type</label>
-                <select
-                  value={matForm.fileType}
-                  onChange={(e) => setMatForm({ ...matForm, fileType: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                >
-                  {["PDF", "DOCX", "PPTX", "XLSX", "TXT", "ZIP", "Other"].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attach File</label>
-                {isEditingMaterial && Array.isArray(matOriginalFiles.fileNames) && matOriginalFiles.fileNames.length > 0 && (
-                  <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-xs text-gray-700 mb-1">Current files:</p>
-                    <p className="text-xs text-green-700">{matOriginalFiles.fileNames.join(", ")}</p>
-                  </div>
-                )}
-                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-green-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-green-500">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept="*/*"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const selectedFiles = Array.from(e.target.files || []);
-                      setMatFiles(selectedFiles);
-                      setMatFileNames(selectedFiles.map((file) => file.name));
-                      setMatError("");
-                    }}
-                  />
-                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2 group-hover:text-green-500 transition-colors" />
-                  <p className="text-sm text-gray-500">
-                    {matFileNames.length > 0
-                      ? `${matFileNames.length} file${matFileNames.length === 1 ? "" : "s"} selected`
-                      : "Click to select file(s)"}
-                  </p>
-                  {matFileNames.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1 truncate">{matFileNames.join(", ")}</p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">All file formats accepted (PDF, DOCX, PPTX, images, videos, ZIP, etc.)</p>
-                </label>
-              </div>
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowMaterialModal(false);
-                  resetMaterialForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={isEditingMaterial ? handleEditMaterial : handleAddMaterial}
-                disabled={isUploadingMaterial}
-                className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isUploadingMaterial ? (isEditingMaterial ? "Updating..." : "Uploading...") : (isEditingMaterial ? "Update Material" : "Upload Material")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ CREATE ASSIGNMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {showAssignmentModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {isEditingAssignment ? "Edit Assignment / Activity" : "Create Assignment / Activity"}
-                  </h3>
-                  <p className="text-sm text-gray-500">{isEditingAssignment ? "Update the task details" : `Students in ${classData.code} will see this task`}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAssignmentModal(false);
-                  resetAssignmentForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Type</label>
-                <div className="flex gap-3">
-                  {["assignment", "activity", "quiz"].map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setAsgForm({ ...asgForm, type: t })}
-                      className={`flex-1 py-2.5 rounded-lg border-2 text-sm font-medium capitalize transition-all ${asgForm.type === t ? "border-blue-600 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {asgForm.type === 'quiz' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
-                  <label className="block text-sm font-medium text-purple-900 mb-2">Generate Quiz with AI</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Quiz Topic</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Photosynthesis"
-                        value={quizTopic}
-                        onChange={(e) => setQuizTopic(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 placeholder-gray-400 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Reference Material (Optional)</label>
-                      <div className="space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => quizMaterialInputRef.current?.click()}
-                          className="w-full flex items-center justify-center gap-2 px-3 py-2 border border-purple-200 rounded-lg text-sm text-purple-600 hover:bg-purple-50 transition-all bg-white"
-                        >
-                          <FilePlus className="w-4 h-4" />
-                          {quizMaterialFile ? "Change File" : "Select Reference File"}
-                        </button>
-                        {quizMaterialFile && (
-                          <div className="flex items-center justify-between px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
-                            <span className="text-xs text-purple-700 font-medium truncate max-w-[150px]">
-                              {quizMaterialFile.name}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setQuizMaterialFile(null);
-                                setQuizMaterialContent("");
-                                if (quizMaterialInputRef.current) quizMaterialInputRef.current.value = "";
-                              }}
-                              className="p-1 text-purple-400 hover:text-purple-600"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Number of Questions</label>
-                      <input
-                        type="number"
-                        min="5"
-                        max="50"
-                        value={quizItemCount}
-                        onChange={(e) => setQuizItemCount(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-white text-gray-900 placeholder-gray-400 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Quiz Type</label>
-                      <select
-                        value={quizType}
-                        onChange={(e) => setQuizType(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      >
-                        <option value="Multiple Choice">Multiple Choice</option>
-                        <option value="True/False">True/False</option>
-                        <option value="Short Answer">Short Answer</option>
-                        <option value="Essay">Essay</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Difficulty</label>
-                      <select
-                        value={quizDifficulty}
-                        onChange={(e) => setQuizDifficulty(e.target.value)}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                      >
-                        <option value="Easy">Easy</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Hard">Hard</option>
-                      </select>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!quizTopic.trim()) {
-                        alert("Please enter a quiz topic");
-                        return;
-                      }
-
-                      setAsgForm((prev) => ({
-                        ...prev,
-                        type: "quiz",
-                        title: prev.title.trim() ? prev.title : `${quizTopic} Quiz`,
-                      }));
-
-                      setIsQuizStreaming(true);
-                      setQuizGenerated(""); // Reset before generating
-
-                      const materialInfo = quizMaterialContent ? `\n\nREFERENCE MATERIAL:\n${quizMaterialContent}` : "";
-                      const prompt = `Generate a ${quizType} quiz about ${quizTopic} with ${quizItemCount} questions at ${quizDifficulty} difficulty level. Format as a numbered list with clear questions and answers.${materialInfo}`;
-                      const userMessage = { role: "user", content: prompt, timestamp: Date.now() };
-                      const currentMessages = [...quizMessages, userMessage];
-
-                      setQuizMessages([...currentMessages, { role: "assistant", content: "", timestamp: Date.now() }]);
-
-                      let generatedContent = "";
-                      streamMessage({
-                        messages: currentMessages.map((m) => ({ role: m.role, content: m.content })),
-                        fileContents: [],
-                        onChunk: (chunk) => {
-                          generatedContent += chunk;
-                          setQuizGenerated(generatedContent);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: generatedContent + "▌", timestamp: Date.now() }]);
-                        },
-                        onDone: (fullText) => {
-                          setQuizGenerated(fullText);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: fullText, timestamp: Date.now() }]);
-                          setAsgForm((prev) => ({
-                            ...prev,
-                            type: "quiz",
-                            title: prev.title.trim() ? prev.title : `${quizTopic} Quiz`,
-                            description: fullText,
-                          }));
-                          setIsQuizStreaming(false);
-                        },
-                        onError: (err) => {
-                          console.error("Quiz AI Error:", err);
-                          setQuizMessages([...currentMessages, { role: "assistant", content: "⚠️ Unable to generate quiz. Please check your AI configuration or try again.", timestamp: Date.now() }]);
-                          setIsQuizStreaming(false);
-                        },
-                      });
-                    }}
-                    disabled={isQuizStreaming || !quizTopic.trim()}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {isQuizStreaming ? "Generating Quiz..." : "Generate Quiz"}
-                  </button>
-                  {quizGenerated && (
-                    <div>
-                      <label className="block text-xs text-purple-700 mb-1">Generated Quiz</label>
-                      <textarea
-                        rows={6}
-                        value={quizGenerated}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setQuizGenerated(value);
-                          setAsgForm((prev) => ({ ...prev, description: value }));
-                        }}
-                        className="w-full px-3 py-2 bg-white text-gray-900 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Problem Set 1"
-                  value={asgForm.title}
-                  onChange={(e) => setAsgForm({ ...asgForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Instructions / Description</label>
-                <textarea
-                  rows={3}
-                  placeholder="Describe what students need to do..."
-                  value={asgForm.description}
-                  onChange={(e) => setAsgForm({ ...asgForm, description: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Due Date <span className="text-red-600">*</span></label>
-                  <input
-                    type="date"
-                    value={asgForm.dueDate}
-                    onChange={(e) => setAsgForm({ ...asgForm, dueDate: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Max Points</label>
-                  <input
-                    type="number"
-                    value={asgForm.maxPoints}
-                    onChange={(e) => setAsgForm({ ...asgForm, maxPoints: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                  />
-                </div>
-              </div>
-              <div>
-                {asgSupportsFiles ? (
-                  <>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      {isEditingAssignment ? "Replace Reference File (Optional)" : "Attach Reference File (Optional)"}
-                    </label>
-                    {isEditingAssignment && Array.isArray(asgOriginalFile?.fileNames) && asgOriginalFile.fileNames.length > 0 && (
-                      <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-xs text-gray-700">Current files:</p>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          {asgOriginalFile.fileNames.map((fileName, index) => (
-                            <span key={`${fileName}-${index}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">
-                              <File className="w-3 h-3" />
-                              {fileName}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <label className={`block border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-blue-500 ${asgPickedMaterialIds.length > 0 ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 hover:border-blue-500"}`}>
-                      <input
-                        ref={asgFileRef}
-                        type="file"
-                        multiple
-                        accept="*/*"
-                        className="sr-only"
-                        disabled={asgPickedMaterialIds.length > 0}
-                        onChange={(e) => {
-                          const selectedFiles = Array.from(e.target.files || []);
-                          setAsgFiles(selectedFiles);
-                          setAsgFileNames(selectedFiles.map((file) => file.name));
-                          setAsgError("");
-                        }}
-                      />
-                      <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-blue-500 transition-colors" />
-                      <p className="text-sm text-gray-500">
-                        {asgFileNames.length > 0
-                          ? `${asgFileNames.length} file${asgFileNames.length === 1 ? "" : "s"} selected`
-                          : asgPickedMaterialIds.length > 0 ? "Clear material selection to upload a new file" : "Click to attach files"}
-                      </p>
-                      {asgFileNames.length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1 truncate">{asgFileNames.join(", ")}</p>
-                      )}
-                    </label>
-                  </>
-                ) : (
-                  <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-                    <p className="text-xs text-amber-700">File attachments are not supported with the current database schema.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Pick from Class Materials */}
-              {asgSupportsFiles && materials.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <BookOpen className="w-4 h-4 text-green-600" />
-                    <label className="text-sm font-medium text-gray-700">Or Pick from Class Materials</label>
-                    {asgPickedMaterialIds.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAsgPickedMaterialIds([]);
-                          setAsgMaterialAttachments({ fileNames: [], filePaths: [], fileUrls: [] });
-                        }}
-                        className="ml-auto text-xs text-red-500 hover:text-red-700"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-200 rounded-xl p-2 bg-gray-50">
-                    {materials.map((mat) => {
-                      const isPicked = asgPickedMaterialIds.includes(mat.id);
-                      return (
-                        <button
-                          key={mat.id}
-                          type="button"
-                          onClick={() => {
-                            let newIds;
-                            if (isPicked) {
-                              newIds = asgPickedMaterialIds.filter((mid) => mid !== mat.id);
-                            } else {
-                              newIds = [...asgPickedMaterialIds, mat.id];
-                              // Clear new file uploads when selecting a material
-                              setAsgFiles([]);
-                              setAsgFileNames([]);
-                              if (asgFileRef.current) asgFileRef.current.value = "";
-                            }
-                            setAsgPickedMaterialIds(newIds);
-                            const pickedMats = materials.filter((m) => newIds.includes(m.id));
-                            setAsgMaterialAttachments({
-                              fileNames: pickedMats.flatMap((m) => m.fileNames?.length ? m.fileNames : m.fileName ? [m.fileName] : []),
-                              filePaths: pickedMats.flatMap((m) => m.filePaths?.length ? m.filePaths : m.filePath ? [m.filePath] : []),
-                              fileUrls: pickedMats.flatMap((m) => m.fileUrls?.length ? m.fileUrls : m.fileUrl ? [m.fileUrl] : []),
-                            });
-                          }}
-                          className={`w-full flex items-center gap-3 p-2.5 rounded-lg border text-left transition-all ${
-                            isPicked
-                              ? "border-green-400 bg-green-50"
-                              : "border-gray-100 bg-white hover:border-green-200 hover:bg-green-50/40"
-                          }`}
-                        >
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                            isPicked ? "border-green-500 bg-green-500" : "border-gray-300"
-                          }`}>
-                            {isPicked && <CheckCircle className="w-3 h-3 text-white" />}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{mat.title}</p>
-                            {mat.description && (
-                              <p className="text-xs text-gray-500 truncate">{mat.description}</p>
-                            )}
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-xs text-gray-400">{mat.fileType}</span>
-                              {Array.isArray(mat.attachments) && mat.attachments.length > 0 && (
-                                <span className="text-xs text-green-600">{mat.attachments.length} file{mat.attachments.length === 1 ? "" : "s"}</span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {asgPickedMaterialIds.length > 0 && (
-                    <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" />
-                      {asgPickedMaterialIds.length} material{asgPickedMaterialIds.length === 1 ? "" : "s"} selected as attachment
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 sticky bottom-0 bg-white">
-              <button
-                onClick={() => {
-                  setShowAssignmentModal(false);
-                  resetAssignmentForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={isEditingAssignment ? handleEditAssignment : handleAddAssignment}
-                disabled={isPostingAssignment}
-                className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isPostingAssignment ? (isEditingAssignment ? "Updating..." : "Saving...") : (isEditingAssignment ? "Update Task" : "Post Task")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ POST ANNOUNCEMENT MODAL ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {showAnnouncementModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{isEditingAnnouncement ? "Edit Announcement" : "Post Announcement"}</h3>
-                  <p className="text-sm text-gray-500">{isEditingAnnouncement ? "Update this class announcement" : `All students in ${classData.code} will be notified`}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setShowAnnouncementModal(false);
-                  resetAnnouncementForm();
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Subject / Title <span className="text-red-600">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Reminder: Quiz next Monday"
-                  value={annForm.title}
-                  onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Message</label>
-                <textarea
-                  rows={5}
-                  placeholder="Write your announcement here..."
-                  value={annForm.content}
-                  onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Attachment (Optional)</label>
-                {isEditingAnnouncement && annOriginalFile.fileName && (
-                  <div className="mb-3 p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <p className="text-xs text-gray-700 mb-1">Current file:</p>
-                    <p className="text-xs text-purple-700">{annOriginalFile.fileName}</p>
-                  </div>
-                )}
-                <label className="block border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:border-purple-500 cursor-pointer transition-colors group focus-within:ring-2 focus-within:ring-purple-500">
-                  <input
-                    ref={annFileRef}
-                    type="file"
-                    accept="*/*"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const selected = e.target.files?.[0] || null;
-                      setAnnFile(selected);
-                      setAnnFileName(selected ? selected.name : "");
-                      setAnnError("");
-                    }}
-                  />
-                  <Upload className="w-6 h-6 text-gray-400 mx-auto mb-1 group-hover:text-purple-500 transition-colors" />
-                  <p className="text-sm text-gray-500 group-hover:text-purple-600 transition-colors">
-                    {annFileName || "Click to attach a file"}
-                  </p>
-                </label>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Priority</label>
-                <div className="flex gap-2">
-                  {["Low", "Medium", "High"].map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setAnnForm({ ...annForm, priority: p })}
-                      className={`flex-1 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
-                        annForm.priority === p
-                          ? p === "High" ? "border-red-500 bg-red-50 text-red-700"
-                            : p === "Medium" ? "border-blue-500 bg-blue-50 text-blue-700"
-                            : "border-gray-200 bg-gray-50 text-gray-700"
-                          : "border-gray-200 text-gray-500 hover:border-gray-300"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowAnnouncementModal(false);
-                  resetAnnouncementForm();
-                }}
-                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveAnnouncement}
-                disabled={isPostingAnnouncement}
-                className="flex-1 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isPostingAnnouncement
-                  ? (isEditingAnnouncement ? "Updating..." : "Posting...")
-                  : (isEditingAnnouncement ? "Update Announcement" : "Post Announcement")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ ADD STUDENT MODAL ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬Â Ã¢â€šÂ¬ */}
+      {/* AI QUIZ GENERATOR TAB REMOVED */}
+          {/* ••••• ADD STUDENT MODAL ••••• */}
       {showStudentModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl max-w-4xl w-full shadow-xl flex flex-col max-h-[90vh]">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <Users className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Add Student</h3>
-                  <p className="text-sm text-gray-500">Enroll a student in {classData.code} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â  {classData.section}</p>
+                  <h3 className="text-lg font-bold text-gray-900">Add Students</h3>
+                  <p className="text-sm text-gray-500">Enroll students in {classData.code} — {classData.section}</p>
                 </div>
               </div>
               <button onClick={() => setShowStudentModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -4125,88 +4378,675 @@ export function ClassDetail() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="px-6 pt-4 border-b border-gray-100 flex gap-6 shrink-0">
+              <button onClick={() => setAddStudentMode("individual")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "individual" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Individual Student</button>
+              <button onClick={() => setAddStudentMode("masterlist")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "masterlist" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Import from Masterlist</button>
+              <button onClick={() => setAddStudentMode("csv")} className={`pb-3 text-sm font-medium border-b-2 transition-colors ${addStudentMode === "csv" ? "border-green-600 text-green-700" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Upload CSV</button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {(() => {
+                const capacity = Number(classData?.capacity || 30);
+                const currentEnrolled = assignedStudents.length;
+                const availableSlots = Math.max(0, capacity - currentEnrolled);
+                const selectedCount = addStudentMode === "individual" ? selectedStudentIds.length : (addStudentMode === "masterlist" ? selectedMasterlistIds.length : csvValidRecords.length);
+                const isOverCapacity = capacity > 0 && selectedCount > availableSlots;
+
+                return (
+                  <>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity} Enrolled ({availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full"})</span>
+                      </div>
+                    </div>
+
+                    {isOverCapacity && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-center gap-2 mb-4">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Notice: Only {availableSlots} slot(s) are available. You selected {selectedCount} students. System will enroll the first {availableSlots} and skip the remaining.</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+
               {stuError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{stuError}</div>
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 mb-4">{stuError}</div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Students</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by Name, ID, or Year Level"
-                    value={studentPickerQuery}
-                    onChange={(e) => setStudentPickerQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                  />
+              {addStudentMode === "individual" && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Search Enrolled Students</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search by Name, ID, or Year Level"
+                        value={studentPickerQuery}
+                        onChange={(e) => setStudentPickerQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      onChange={(e) => {
+                        const allFilteredIds = filteredAvailableStudents.map((student) => student.id);
+                        if (e.target.checked) {
+                          setSelectedStudentIds((current) => Array.from(new Set([...current, ...allFilteredIds])));
+                        } else {
+                          const removable = new Set(allFilteredIds);
+                          setSelectedStudentIds((current) => current.filter((idValue) => !removable.has(idValue)));
+                        }
+                      }}
+                      className="accent-green-600"
+                    />
+                    <span>Select All Students</span>
+                  </label>
+
+                  <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                          <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {isStudentsLoading ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading students...</td></tr>
+                        ) : filteredAvailableStudents.length === 0 ? (
+                          <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No available students found.</td></tr>
+                        ) : (
+                          filteredAvailableStudents.map((student) => (
+                            <tr
+                              key={student.id}
+                              className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
+                              onClick={() => toggleStudentSelection(student.id)}
+                            >
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudentIds.includes(student.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    toggleStudentSelection(student.id);
+                                  }}
+                                  className="accent-green-600"
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{getStudentFullName(student)}</td>
+                              <td className="px-4 py-3 text-sm text-green-600">{student.lrn || "N/A"}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{student.year_level || "N/A"}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {addStudentMode === "masterlist" && (
+                <div className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search Masterlist..."
+                        value={masterlistQuery}
+                        onChange={(e) => setMasterlistQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const filtered = masterlistStudents.filter(s => {
+                      const studentGradeNorm = normalizeGradeLevel(s.year_level || s.grade_level);
+                      const studentSectionNorm = normalizeSection(s.section);
+
+                      if (!studentSectionNorm || studentSectionNorm === "unassigned") return false;
+                      if (classGradeNormalized && studentGradeNorm !== classGradeNormalized) return false;
+                      if (classSectionNormalized && studentSectionNorm !== classSectionNormalized) return false;
+
+                      // Exclude already enrolled
+                      const lrnNorm = String(s.lrn || "").replace(/\D/g, "");
+                      if (assignedStudents.some(a => String(a.lrn || "").replace(/\D/g, "") === lrnNorm)) {
+                        return false;
+                      }
+
+                      const q = masterlistQuery.toLowerCase();
+                      const matchesQuery = !q || (
+                        (s.first_name && s.first_name.toLowerCase().includes(q)) ||
+                        (s.last_name && s.last_name.toLowerCase().includes(q)) ||
+                        (s.lrn && String(s.lrn).includes(q))
+                      );
+
+                      return matchesQuery;
+                    });
+
+                    return (
+                      <>
+                        <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMasterlistIds(Array.from(new Set([...selectedMasterlistIds, ...filtered.map(f => f.id)])));
+                              } else {
+                                const removable = new Set(filtered.map(f => f.id));
+                                setSelectedMasterlistIds(selectedMasterlistIds.filter(id => !removable.has(id)));
+                              }
+                            }}
+                            className="accent-green-600"
+                          />
+                          <span>Select All Filtered</span>
+                        </label>
+                        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LRN</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Section</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {isMasterlistLoading ? (
+                                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">Loading masterlist...</td></tr>
+                              ) : filtered.length === 0 ? (
+                                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No students found.</td></tr>
+                              ) : (
+                                filtered.map((student) => (
+                                  <tr
+                                    key={student.id}
+                                    className={`cursor-pointer transition-colors ${selectedMasterlistIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
+                                    onClick={() => {
+                                      setSelectedMasterlistIds(curr => curr.includes(student.id) ? curr.filter(id => id !== student.id) : [...curr, student.id]);
+                                    }}
+                                  >
+                                    <td className="px-4 py-3">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedMasterlistIds.includes(student.id)}
+                                        onChange={() => {}}
+                                        className="accent-green-600"
+                                      />
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-900">{[student.first_name, student.last_name].filter(Boolean).join(" ")}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{student.lrn || "-"}</td>
+                                    <td className="px-4 py-3 text-sm text-gray-600">{student.section || student.year_level || "-"}</td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {addStudentMode === "csv" && (
+                <div className="space-y-4">
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-gray-50 transition-colors">
+                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+                    <p className="text-sm text-gray-600 mb-2">Upload a CSV file to enroll multiple students</p>
+                    <p className="text-xs text-gray-500 mb-4">Required columns: lrn, first_name, last_name. Optional: middle_name, year_level, section</p>
+                    <button onClick={() => csvFileInputRef.current?.click()} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">
+                      {csvFile ? csvFile.name : "Select CSV File"}
+                    </button>
+                    <input type="file" accept=".csv" ref={csvFileInputRef} onChange={handleCsvFileUpload} className="hidden" />
+                  </div>
+
+                  {isCsvValidating && <p className="text-sm text-gray-500 text-center">Validating file...</p>}
+                  
+                  {!isCsvValidating && (csvValidRecords.length > 0 || csvErrorRecords.length > 0) && (
+                    <div className="space-y-3">
+                      <div className="flex gap-4">
+                        <div className="flex-1 bg-green-50 rounded-xl p-3 border border-green-100">
+                          <p className="text-xs font-semibold text-green-700 uppercase">Valid Records</p>
+                          <p className="text-xl font-bold text-green-800">{csvValidRecords.length}</p>
+                        </div>
+                        <div className="flex-1 bg-red-50 rounded-xl p-3 border border-red-100">
+                          <p className="text-xs font-semibold text-red-700 uppercase">Errors</p>
+                          <p className="text-xl font-bold text-red-800">{csvErrorRecords.length}</p>
+                        </div>
+                      </div>
+
+                      {csvErrorRecords.length > 0 && (
+                        <div className="bg-red-50 p-3 rounded-lg border border-red-200 max-h-32 overflow-y-auto">
+                          <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
+                            {csvErrorRecords.map((err, i) => <li key={i}>{err}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {csvValidRecords.length > 0 && (
+                        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                          <table className="w-full text-left">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">LRN</th>
+                                <th className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">Name</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {csvValidRecords.slice(0, 10).map((r, i) => (
+                                <tr key={i}>
+                                  <td className="px-4 py-2 text-sm text-gray-600">{r.lrn}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{r.first_name} {r.last_name}</td>
+                                </tr>
+                              ))}
+                              {csvValidRecords.length > 10 && (
+                                <tr>
+                                  <td colSpan={2} className="px-4 py-2 text-xs text-gray-500 text-center italic">...and {csvValidRecords.length - 10} more</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
+              <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
+              
+              {addStudentMode === "individual" && (
+                <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}
+                </button>
+              )}
+              {addStudentMode === "masterlist" && (
+                <button onClick={handleImportMasterlist} disabled={isStudentSubmitting || selectedMasterlistIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Importing..." : `Import Selected (${selectedMasterlistIds.length})`}
+                </button>
+              )}
+              {addStudentMode === "csv" && (
+                <button onClick={handleImportCSV} disabled={isStudentSubmitting || csvValidRecords.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">
+                  {isStudentSubmitting ? "Processing..." : `Enroll ${csvValidRecords.length} Students`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        isOpen={showDeleteStudentModal && Boolean(pendingDeleteStudent)}
+        onClose={() => {
+          setShowDeleteStudentModal(false);
+          setPendingDeleteStudent(null);
+        }}
+        onConfirm={confirmDeleteStudent}
+        title="Remove Student"
+        message={pendingDeleteStudent
+          ? `Are you sure you want to remove ${pendingDeleteStudent.name} from this class?`
+          : "Are you sure you want to remove this student from this class?"}
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteMaterialModal && Boolean(pendingDeleteMaterial)}
+        onClose={() => {
+          setShowDeleteMaterialModal(false);
+          setPendingDeleteMaterial(null);
+        }}
+        onConfirm={confirmDeleteMaterial}
+        title="Delete Material"
+        message={pendingDeleteMaterial
+          ? `Are you sure you want to delete this material? (${pendingDeleteMaterial.title})`
+          : "Are you sure you want to delete this material?"}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
+        onClose={() => {
+          setShowDeleteAssignmentModal(false);
+          setPendingDeleteAssignment(null);
+        }}
+        onConfirm={confirmDeleteAssignment}
+        title="Delete Assignment / Activity"
+        message={pendingDeleteAssignment
+          ? `Are you sure you want to delete ${pendingDeleteAssignment.title}? This action cannot be undone.`
+          : "Are you sure you want to delete this assignment/activity? This action cannot be undone."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteAnnouncementModal && Boolean(pendingDeleteAnnouncement)}
+        onClose={() => {
+          setShowDeleteAnnouncementModal(false);
+          setPendingDeleteAnnouncement(null);
+        }}
+        onConfirm={confirmDeleteAnnouncement}
+        title="Delete Announcement"
+        message={pendingDeleteAnnouncement
+          ? `Are you sure you want to delete ${pendingDeleteAnnouncement.title}? This action cannot be undone.`
+          : "Are you sure you want to delete this announcement? This action cannot be undone."}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+      />
+
+      {/* ••••• CREATE / EDIT ANNOUNCEMENT MODAL ••••• */}
+      {showAnnouncementModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isEditingAnnouncement ? "Edit Announcement" : "Create Announcement"}
+                  </h3>
+                  <p className="text-xs text-gray-500">Post updates and news directly to student dashboards</p>
                 </div>
               </div>
+              <button
+                onClick={() => setShowAnnouncementModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
 
-              <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Announcement Title <span className="text-red-500">*</span>
+                </label>
                 <input
-                  ref={selectAllCheckboxRef}
-                  type="checkbox"
-                  onChange={(e) => {
-                    const allFilteredIds = filteredAvailableStudents.map((student) => student.id);
-                    if (e.target.checked) {
-                      setSelectedStudentIds((current) => Array.from(new Set([...current, ...allFilteredIds])));
-                    } else {
-                      const removable = new Set(allFilteredIds);
-                      setSelectedStudentIds((current) => current.filter((idValue) => !removable.has(idValue)));
-                    }
-                  }}
-                  className="accent-green-600"
-                  aria-label="Select All Students"
+                  type="text"
+                  placeholder="e.g. Midterm Examination Guidelines"
+                  value={annForm.title}
+                  onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
                 />
-                <span>Select All Students</span>
-              </label>
+              </div>
 
-              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year Level</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredAvailableStudents.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">No available students found.</td>
-                      </tr>
-                    ) : (
-                      filteredAvailableStudents.map((student) => (
-                        <tr
-                          key={student.id}
-                          className={`cursor-pointer transition-colors ${selectedStudentIds.includes(student.id) ? "bg-green-50" : "hover:bg-gray-50"}`}
-                          onClick={() => toggleStudentSelection(student.id)}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Message / Content <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={5}
+                  placeholder="Write your announcement details here..."
+                  value={annForm.content}
+                  onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Reference Link (Optional)
+                </label>
+                <input
+                  type="url"
+                  placeholder="e.g. https://classroom.google.com/..."
+                  value={annForm.link_url}
+                  onChange={(e) => setAnnForm({ ...annForm, link_url: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Attachments (Optional)
+                </label>
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-purple-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                  <p className="text-xs text-gray-650 mb-1">Click to select files from your computer</p>
+                  <p className="text-[10px] text-gray-400">PDF, DOCX, Images, and ZIP (Max 15MB)</p>
+                  <input
+                    type="file"
+                    multiple
+                    ref={annFileRef}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setAnnFiles(files);
+                      setAnnFileNames(files.map((file) => file.name));
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+                {annFileNames.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {annFileNames.map((name, i) => (
+                      <div key={i} className="flex items-center justify-between bg-purple-50/40 border border-purple-100 rounded-lg px-3 py-1.5 text-xs text-purple-750 font-medium">
+                        <span className="truncate max-w-[300px]">{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextFiles = Array.from(annFiles).filter((_, idx) => idx !== i);
+                            setAnnFiles(nextFiles);
+                            setAnnFileNames(nextFiles.map(f => f.name));
+                          }}
+                          className="text-red-500 hover:text-red-750 font-bold"
                         >
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedStudentIds.includes(student.id)}
-                              onChange={() => toggleStudentSelection(student.id)}
-                              className="accent-green-600"
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">{getStudentFullName(student)}</td>
-                          <td className="px-4 py-3 text-sm text-green-600">{student.lrn || "N/A"}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{student.year_level || "N/A"}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-150 pt-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800">Pin Announcement</span>
+                    <span className="text-[10px] text-gray-550">Always keep this announcement at the top of the feed</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={annForm.is_pinned}
+                      onChange={(e) => setAnnForm({ ...annForm, is_pinned: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800">Publish Immediately</span>
+                    <span className="text-[10px] text-gray-550">Post right now or set a date/time to schedule</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={annForm.publishImmediately}
+                      onChange={(e) => setAnnForm({ ...annForm, publishImmediately: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+
+                {!annForm.publishImmediately && (
+                  <div className="grid grid-cols-2 gap-3 bg-purple-50/20 border border-purple-100 rounded-xl p-3.5 animate-in slide-in-from-top-2 duration-150">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
+                        Publish Date
+                      </label>
+                      <input
+                        type="date"
+                        value={annForm.scheduled_date}
+                        onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
+                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
+                        Publish Time
+                      </label>
+                      <input
+                        type="time"
+                        value={annForm.scheduled_time}
+                        onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
+                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="border-t border-gray-100 px-6 py-4 flex gap-3">
-              <button onClick={() => setShowStudentModal(false)} className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium">Cancel</button>
-              <button onClick={handleAddStudent} disabled={isStudentSubmitting || selectedStudentIds.length === 0} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed">{isStudentSubmitting ? "Adding..." : `Add Selected (${selectedStudentIds.length})`}</button>
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
+              <button
+                onClick={() => setShowAnnouncementModal(false)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-55 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAnnouncement}
+                disabled={isPostingAnnouncement}
+                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-750 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+              >
+                {isPostingAnnouncement ? "Saving..." : isEditingAnnouncement ? "Update Announcement" : "Post Announcement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ••••• ANNOUNCEMENT DETAIL VIEW MODAL ••••• */}
+      {selectedAnnouncementDetail && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 truncate max-w-[320px]">
+                    {selectedAnnouncementDetail.title}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    By {selectedAnnouncementDetail.author} &bull; {new Date(selectedAnnouncementDetail.datePosted).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedAnnouncementDetail(null)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              {selectedAnnouncementDetail.isPinned && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-150/40 text-purple-800 rounded-full text-xs font-bold border border-purple-200">
+                  <Sparkles className="w-3.5 h-3.5 fill-purple-650 text-purple-650" />
+                  Pinned Announcement
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
+                  {selectedAnnouncementDetail.content}
+                </p>
+              </div>
+
+              {selectedAnnouncementDetail.linkUrl && (
+                <div className="bg-purple-50/30 border border-purple-100 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-purple-850 uppercase tracking-wider">Reference Link</p>
+                    <p className="text-xs text-gray-600 truncate mt-0.5">{selectedAnnouncementDetail.linkUrl}</p>
+                  </div>
+                  <a
+                    href={selectedAnnouncementDetail.linkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-shrink-0 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-750 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                  >
+                    Open Link
+                  </a>
+                </div>
+              )}
+
+              {Array.isArray(selectedAnnouncementDetail.attachments) && selectedAnnouncementDetail.attachments.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wide">Attachments</h4>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {selectedAnnouncementDetail.attachments.map((attachment, idx) => {
+                      const attachmentUrl = String(attachment?.fileUrl || attachment?.url || "").trim();
+                      const attachmentName = String(attachment?.fileName || attachment?.name || `Attachment ${idx + 1}`).trim();
+                      const attachmentKind = String(attachment?.kind || "document");
+
+                      if (!attachmentUrl) return null;
+
+                      return (
+                        <div
+                          key={`detail-att-${idx}`}
+                          className="border border-gray-150 rounded-xl p-3 bg-gray-50/50 hover:bg-gray-50 transition-colors flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2 bg-white rounded-lg border border-gray-100">
+                              <File className="w-5 h-5 text-gray-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-800 truncate max-w-[280px]">
+                                {attachmentName}
+                              </p>
+                              <p className="text-[10px] text-gray-400 capitalize">
+                                {attachmentKind} File
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={attachmentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg text-xs font-semibold shadow-sm transition-all"
+                          >
+                            <Download className="w-3.5 h-3.5 text-gray-500" />
+                            Download
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex shrink-0">
+              <button
+                onClick={() => setSelectedAnnouncementDetail(null)}
+                className="w-full px-4 py-2.5 bg-gray-105 border border-gray-200 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-150 transition-all"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -1,28 +1,29 @@
+import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, Users, UserCog, BookOpen, ClipboardList,
-  Megaphone, FileText, Settings, Menu, X, LogOut, ChevronRight,
-  Calendar, MessageSquare, Mail, Sparkles
+  LayoutDashboard, Users, UserCog, BookOpen,
+  Megaphone, Menu, X, LogOut, ChevronRight,
+  Calendar, MessageSquare, Settings, HelpCircle
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 
 export function AdminSidebar({ adminName, onLogout }) {
+  const { unreadCount } = useUnreadMessages();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
 
   const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard",          path: "/admin/dashboard" },
-    { icon: Users,           label: "Student Management", path: "/admin/students" },
-    { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers" },
-    { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects" },
-    { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements" },
-    { icon: MessageSquare,   label: "Messages",           path: "/admin/messages" },
-    { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar" },
-    { icon: FileText,        label: "Reports",            path: "/admin/reports" },
-    { icon: Settings,        label: "System Settings",    path: "/admin/settings" },
-    { icon: Sparkles,        label: "AI Assistant",       path: "/admin/ai-assistant", badge: "NEW" },
+    { icon: LayoutDashboard, label: "Dashboard",          path: "/admin/dashboard",         tourId: "nav-dashboard" },
+    { icon: Users,           label: "Student Management", path: "/admin/students",          tourId: "nav-students" },
+    { icon: UserCog,         label: "Teacher Management", path: "/admin/teachers",          tourId: "nav-teachers" },
+    { icon: BookOpen,        label: "Subject Management", path: "/admin/subjects",          tourId: "nav-subjects" },
+    { icon: Megaphone,       label: "Announcements",      path: "/admin/announcements",      tourId: "nav-announcements" },
+    { icon: MessageSquare,   label: "Messages",           path: "/admin/messages",          tourId: "nav-messages" },
+    { icon: Calendar,        label: "School Calendar",    path: "/admin/calendar",          tourId: "nav-calendar" },
+    { icon: Settings,        label: "Academic Settings",  path: "/admin/academic-settings",  tourId: "nav-academic-settings" },
+    { icon: HelpCircle,      label: "Help Center",        path: "/admin/help-center",       tourId: "nav-help-center" },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -47,6 +48,7 @@ export function AdminSidebar({ adminName, onLogout }) {
       )}
 
       <aside
+        data-tour="sidebar"
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200
           flex flex-col h-screen overflow-hidden
           transform transition-transform duration-300 ease-in-out
@@ -97,6 +99,7 @@ export function AdminSidebar({ adminName, onLogout }) {
               <Link
                 key={item.path}
                 to={item.path}
+                data-tour={item.tourId}
                 onClick={() => setIsMobileOpen(false)}
                 className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 text-sm font-medium group
                   ${active
@@ -134,11 +137,9 @@ export function AdminSidebar({ adminName, onLogout }) {
         <div className="px-3 pb-4 flex-shrink-0 border-t border-gray-100 pt-2">
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all border border-transparent hover:border-red-100 text-sm font-medium group"
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-red-600 hover:bg-red-50 transition-colors duration-150 text-sm font-medium"
           >
-            <div className="p-1 bg-gray-100 group-hover:bg-red-100 rounded-lg transition-colors flex-shrink-0">
-              <LogOut className="w-4 h-4 text-gray-400 group-hover:text-red-500" />
-            </div>
+            <LogOut className="w-4 h-4" />
             <span>Logout</span>
           </button>
         </div>
@@ -148,13 +149,11 @@ export function AdminSidebar({ adminName, onLogout }) {
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
         onConfirm={onLogout}
-        title="Logout Confirmation"
-        message="Are you sure you want to logout?"
-        confirmText="Logout"
+        title="Confirm Logout"
+        description="Are you sure you want to log out of your administrator account? Any unsaved work may be lost."
+        confirmText="Log Out"
         cancelText="Cancel"
       />
     </>
   );
 }
-
-export default AdminSidebar;

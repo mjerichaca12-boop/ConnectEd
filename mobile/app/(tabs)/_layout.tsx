@@ -96,7 +96,7 @@ export default function TabLayout() {
                         tabBarLabel: "Home",
                     }}
                 />
-                <Tabs.Screen name="meeting" options={{ href: null }} />
+
                 <Tabs.Screen
                     name="messages"
                     options={{
@@ -114,7 +114,6 @@ export default function TabLayout() {
 
                 {/* Hidden screens / Auxiliary */}
                 <Tabs.Screen name="menu" options={{ href: null }} />
-                <Tabs.Screen name="teacher/attendance" options={{ href: null }} />
                 <Tabs.Screen name="enrollment" options={{ href: null }} />
                 <Tabs.Screen name="profile/index" options={{ href: null }} />
                 <Tabs.Screen name="calendar/index" options={{ href: null }} />

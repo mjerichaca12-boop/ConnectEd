@@ -1,0 +1,235 @@
+<USER_REQUEST>
+MAKE THE NOTIFICATION BELL FULLY FUNCTIONAL (SYSTEM-WIDE NOTIFICATION CENTER)
+
+### OBJECTIVE
+
+Implement a complete, real-time notification system connected to the notification bell across the entire platform.
+
+The notification bell should become the central notification hub for all important activities performed by Admins, Teachers, and Students.
+
+Do not create a fake notification system. All notifications must be generated dynamically from actual user actions and database events.
+
+---
+
+## NOTIFICATION BELL FEATURES
+
+### Bell Icon
+
+The notification bell should:
+
+* Display unread notification count.
+* Show a red badge when there are unread notifications.
+* Update automatically in real time.
+* Reset badge count when notifications are viewed.
+
+Example:
+
+🔔 1
+
+🔔 5
+
+🔔 12
+
+---
+
+## NOTIFICATION DROPDOWN
+
+Clicking the bell should open a notification panel showing:
+
+* Notification icon
+* Notification title
+* Notification description
+* Timestamp
+* Read/Unread status
+* Related user
+* Related class (if applicable)
+
+Example:
+
+📝 New Assignment Submitted
+
+Juan Dela Cruz submitted Assignment 1 in Grade 10 ICT.
+
+2 minutes ago
+
+---
+
+## NOTIFICATION CATEGORIES
+
+### ADMIN NOTIFICATIONS
+
+Generate notifications when:
+
+#### User Management
+
+* New teacher account created
+* New student account created
+* Teacher account updated
+* Student account updated
+* User account deactivated
+* User account activated
+
+#### Class Management
+
+* New class created
+* Class archived
+* Class restored
+* Teacher assigned to class
+
+#### Messaging
+
+* New message received from teacher
+* New message received from student (if applicable)
+
+#### Announcements
+
+* New announcement posted
+* Announcement updated
+
+#### Grade Monitoring
+
+* Teacher submitted grades
+* Gradebook generated
+* Gradebook updated
+
+---
+
+### TEACHER NOTIFICATIONS
+
+Generate notifications when:
+
+#### Assessments
+
+* Student submitted Quiz
+* Student submitted Assignment
+* Stud
+<truncated 1226 bytes>
+ification:
+"New message from Admin"
+
+Clicking it should open the conversation.
+
+Notification:
+"Assignment returned"
+
+Clicking it should open assessment details.
+
+---
+
+## READ / UNREAD SYSTEM
+
+Implement:
+
+### Unread
+
+* Highlight unread notifications.
+* Count toward badge total.
+
+### Read
+
+* Mark as read when opened.
+* Remove highlight.
+
+### Mark All As Read
+
+Add button:
+
+"Mark All as Read"
+
+---
+
+## NOTIFICATION HISTORY
+
+Store notification history in database.
+
+Fields:
+
+* id
+* user_id
+* title
+* message
+* type
+* related_id
+* related_type
+* is_read
+* created_at
+
+Notifications must remain available after logout/login.
+
+---
+
+## REAL-TIME FUNCTIONALITY
+
+Use realtime subscriptions or equivalent.
+
+When an event occurs:
+
+* Notification appears instantly.
+* Badge count updates instantly.
+* No page refresh required.
+
+---
+
+## UI IMPROVEMENTS
+
+Notification dropdown should include:
+
+* All Notifications
+* Unread Only
+* Read Notifications
+
+Sorting:
+
+* Newest first
+
+Add:
+
+* Clear notification
+* Delete notification
+* Mark as unread
+
+---
+
+## DEBUGGING
+
+Add logs for:
+
+* Notification creation
+* Notification delivery
+* Notification retrieval
+* Read status update
+* Badge count update
+* Realtime events
+* Failed notification insertions
+* Permission/RLS issues
+
+---
+
+## EXPECTED RESULT
+
+✅ Notification bell works across the entire system
+
+✅ Real notifications generated from actual actions
+
+✅ Admin receives relevant notifications
+
+✅ Teachers receive relevant notifications
+
+✅ Students receive relevant notifications
+
+✅ Real-time updates work
+
+✅ Unread badge count works
+
+✅ Notification history is saved
+
+✅ Notifications are clickable and redirect correctly
+
+✅ No page refresh required
+
+✅ Existing functionality remains intact while implementing a complete production-ready notification system
+
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-22T15:52:04+08:00.
+</ADDITIONAL_METADATA>

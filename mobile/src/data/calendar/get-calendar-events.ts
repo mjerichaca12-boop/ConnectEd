@@ -16,7 +16,6 @@ export async function getCalendarEvents(): Promise<CalendarEvent[]> {
         .from('school_calendar_events')
         .select('*')
         .order('event_date', { ascending: true });
-
     if (userId) {
         const { data: profile } = await supabase.from('profiles').select('role').eq('id', userId).single();
         const isStudent = profile?.role === 'student';

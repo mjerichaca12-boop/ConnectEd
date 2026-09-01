@@ -9,19 +9,20 @@ import {
 import { DashboardCalendar } from "@/app/components/DashboardCalendar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
+import { TeacherTasksAndDeadlines } from "@/app/components/TeacherTasksAndDeadlines";
 import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   normalizeAudience,
-  normalizePriority,
   normalizeTimestamp,
   normalizeAnnouncement,
   sortAnnouncements,
   resolveColumnName,
   matchesTeacherAudience,
   formatAnnouncementDate,
-  getPriorityStyles
 } from "@/app/lib/teacherHelpers";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
 
 const colorMap = {
   emerald: { icon: "text-green-600", bg: "bg-green-50", hover: "hover:border-green-200 hover:shadow-md" },
@@ -31,6 +32,7 @@ const colorMap = {
 
 export function TeacherDashboard() {
   const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
   const [teacherFirstName, setTeacherFirstName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
@@ -45,6 +47,9 @@ export function TeacherDashboard() {
   const [announcementTable, setAnnouncementTable] = useState("");
   const [announcementsError, setAnnouncementsError] = useState("");
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
+  const [draftLessonsCount, setDraftLessonsCount] = useState(0);
+  const [publishedLessonsCount, setPublishedLessonsCount] = useState(0);
+  const { activeSchoolYear, activeQuarter } = useAcademic();
   const totalClasses = assignedSubjects.length;
 
   const getAnnouncementTableName = async () => {
@@ -139,7 +144,7 @@ export function TeacherDashboard() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("id")
+      .select("id, code, name, section, grade_level")
       .eq("teacher_id", id);
 
     if (error) {
@@ -147,7 +152,27 @@ export function TeacherDashboard() {
       return;
     }
 
-    setAssignedSubjects(data ?? []);
+    const seen = new Set();
+    const uniqueSubjects = (data ?? []).filter((subject) => {
+      const code = String(subject.code || "").trim().toLowerCase();
+      const name = String(subject.name || "").trim().toLowerCase();
+      const section = String(subject.section || "").trim().toLowerCase();
+      const semanticKey = [code, name, section].filter(Boolean).join("|");
+      const key = semanticKey || `id:${String(subject.id || "").trim()}`;
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    if (uniqueSubjects.length !== (data ?? []).length) {
+      console.warn("[TeacherDashboard] duplicate teacher subjects detected and removed", {
+        teacherId: id,
+        fetched: (data ?? []).length,
+        kept: uniqueSubjects.length
+      });
+    }
+
+    setAssignedSubjects(uniqueSubjects);
   };
 
   const fetchTeacherStudentTotal = async (id) => {
@@ -183,7 +208,9 @@ export function TeacherDashboard() {
     const { count, error } = await supabase
       .from("teacher_student_grades")
       .select("id", { count: "exact", head: true })
-      .eq("teacher_id", id);
+      .eq("teacher_id", id)
+      .eq("school_year", activeSchoolYear)
+      .eq("term", activeQuarter);
 
     if (error) {
       console.error("Error fetching grades encoded total:", error);
@@ -194,23 +221,58 @@ export function TeacherDashboard() {
     setGradesEncodedTotal(Number(count || 0));
   };
 
+  const fetchLessonsCount = async (id) => {
+    if (!supabase || !id) return;
+    const { data, error } = await supabase
+      .from("lessons")
+      .select("status")
+      .eq("teacher_id", id)
+      .eq("school_year", activeSchoolYear)
+      .eq("term", activeQuarter);
+    if (!error && data) {
+      setDraftLessonsCount(data.filter(l => l.status === "Draft").length);
+      setPublishedLessonsCount(data.filter(l => l.status === "Published").length);
+    }
+  };
+
+  const formatTimeAgo = (dateStr) => {
+    if (!dateStr) return "Just now";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return "Updated just now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `Updated ${minutes} min${minutes > 1 ? "s" : ""} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Updated ${hours} hr${hours > 1 ? "s" : ""} ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `Updated ${days} day${days > 1 ? "s" : ""} ago`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
   const fetchRecentGrades = async (id) => {
     if (!supabase || !id) {
       setRecentGrades([]);
       return;
     }
 
-    const { data: gradeRows, error: gradeError } = await supabase
-      .from("teacher_student_grades")
-      .select("id, student_id, subject_id, overall_grade, updated_at")
+    let { data: gradeRows, error: gradeError } = await supabase
+      .from("teacher_assessment_grades")
+      .select("id, student_id, subject_id, assessment_id, assessment_title, assessment_type, grade_value, max_points, updated_at, created_at")
       .eq("teacher_id", id)
       .order("updated_at", { ascending: false })
-      .limit(5);
+      .limit(6);
 
-    if (gradeError) {
-      console.error("Error fetching recent grades:", gradeError);
-      setRecentGrades([]);
-      return;
+    if (gradeError || !gradeRows || gradeRows.length === 0) {
+      const { data: summaryRows } = await supabase
+        .from("teacher_student_grades")
+        .select("id, student_id, subject_id, overall_grade, updated_at")
+        .eq("teacher_id", id)
+        .order("updated_at", { ascending: false })
+        .limit(5);
+
+      gradeRows = summaryRows ?? [];
     }
 
     const rows = gradeRows ?? [];
@@ -232,7 +294,7 @@ export function TeacherDashboard() {
       subjectIds.length
         ? supabase
           .from("subjects")
-          .select("id, code, name")
+          .select("id, code, name, section")
           .in("id", subjectIds)
         : Promise.resolve({ data: [] })
     ]);
@@ -250,25 +312,45 @@ export function TeacherDashboard() {
 
     const subjectMap = new Map(
       (subjects ?? []).map((subject) => {
-        const label = [String(subject.code || "").trim(), String(subject.name || "").trim()]
+        const label = [String(subject.code || "").trim(), String(subject.name || "").trim(), String(subject.section || "").trim()]
           .filter(Boolean)
           .join(" - ") || "Subject";
         return [String(subject.id), label];
       })
     );
 
-    const mapped = rows.map((row) => ({
-      id: String(row.id),
-      studentName: studentMap.get(String(row.student_id || "")) || "Student",
-      subject: subjectMap.get(String(row.subject_id || "")) || "Subject",
-      dateRecorded: row.updated_at,
-      grade: Number(row.overall_grade || 0)
-    }));
+    const mapped = rows.map((row) => {
+      const isAssessment = "assessment_title" in row;
+      const scoreNum = Number(row.grade_value ?? row.overall_grade ?? 0);
+      const maxNum = Number(row.max_points || 0);
+
+      let scoreDisplay = `${scoreNum}%`;
+      if (isAssessment && maxNum > 0) {
+        scoreDisplay = `${scoreNum} / ${maxNum}`;
+      } else if (isAssessment) {
+        scoreDisplay = `${scoreNum}`;
+      }
+
+      const rawType = String(row.assessment_type || "Grade").toLowerCase();
+      const typeLabel = rawType === "quiz" ? "Quiz" : rawType === "assignment" ? "Assignment" : rawType === "activity" ? "Activity" : rawType === "exam" ? "Exam" : "Assessment";
+      const title = row.assessment_title ? `${row.assessment_title} (${typeLabel})` : subjectMap.get(String(row.subject_id || "")) || "Subject";
+
+      return {
+        id: String(row.id),
+        studentName: studentMap.get(String(row.student_id || "")) || "Student",
+        title: title,
+        subject: subjectMap.get(String(row.subject_id || "")) || "Subject",
+        dateRecorded: row.updated_at || row.created_at,
+        timeAgo: formatTimeAgo(row.updated_at || row.created_at),
+        scoreDisplay: scoreDisplay
+      };
+    });
 
     setRecentGrades(mapped);
   };
 
   useEffect(() => {
+
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
     const user = JSON.parse(userData);
@@ -307,12 +389,20 @@ export function TeacherDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!teacherId) return;
-    fetchTeacherSubjects(teacherId);
-    fetchTeacherStudentTotal(teacherId);
-    fetchGradesEncodedTotal(teacherId);
-    fetchRecentGrades(teacherId);
-  }, [teacherId]);
+    if (teacherId && activeSchoolYear && activeQuarter) {
+      Promise.all([
+        loadAnnouncements().then(rows => {
+          setAnnouncements(rows);
+          setAnnouncementsError("");
+        }),
+        fetchTeacherSubjects(teacherId),
+        fetchTeacherStudentTotal(teacherId),
+        fetchGradesEncodedTotal(teacherId),
+        fetchLessonsCount(teacherId),
+        fetchRecentGrades(teacherId)
+      ]).catch(err => console.warn("[TeacherDashboard] Dashboard load error:", err));
+    }
+  }, [teacherId, activeSchoolYear, activeQuarter]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;
@@ -377,6 +467,20 @@ export function TeacherDashboard() {
               fetchRecentGrades(teacherId);
             }
           )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "teacher_assessment_grades",
+              filter: `teacher_id=eq.${teacherId}`
+            },
+            () => {
+              if (!isMounted) return;
+              fetchGradesEncodedTotal(teacherId);
+              fetchRecentGrades(teacherId);
+            }
+          )
           .subscribe();
       } catch (error) {
         console.error("Failed to set up real-time subscription:", error);
@@ -385,8 +489,17 @@ export function TeacherDashboard() {
 
     setupSubscription();
 
+    const handleGradeUpdated = () => {
+      if (isMounted && teacherId) {
+        fetchGradesEncodedTotal(teacherId);
+        fetchRecentGrades(teacherId);
+      }
+    };
+    window.addEventListener("connected-grade-updated", handleGradeUpdated);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("connected-grade-updated", handleGradeUpdated);
       if (subjectsChannel) supabase.removeChannel(subjectsChannel);
       if (assignmentsChannel) supabase.removeChannel(assignmentsChannel);
       if (gradesChannel) supabase.removeChannel(gradesChannel);
@@ -468,22 +581,16 @@ export function TeacherDashboard() {
     return fullName;
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading dashboard..." />;
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogout} />
 
-      <main className="flex-1 flex flex-col min-h-screen lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top Bar */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 flex-shrink-0">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <div>
-              <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
-              <h2 className="text-lg font-bold text-gray-900">Dashboard</h2>
-            </div>
+          <div className="px-6 py-4 flex items-center justify-end gap-4">
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
@@ -495,11 +602,11 @@ export function TeacherDashboard() {
         <div className="flex-1 p-6 space-y-6">
 
           {/* Welcome Banner */}
-          <div className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-20">
+          <div data-tour="teacher-dashboard-header" className="bg-gradient-to-r from-green-600 to-emerald-500 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4">
               <div className="flex flex-col items-end gap-1">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY 2026-2027</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">Term 1</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white text-green-700">SY {activeSchoolYear}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-200 text-green-800">{activeQuarter}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 mb-1">
@@ -507,17 +614,19 @@ export function TeacherDashboard() {
               <p className="text-green-100 text-xs font-bold uppercase tracking-widest">{getGreeting()}</p>
             </div>
             <h1 className="text-2xl font-bold text-white">
-              Welcome back, {teacherFirstName || getFirstName(teacherName)}!
+              {JSON.parse(localStorage.getItem("currentUser"))?.isFirstLogin ? "Welcome" : "Welcome back"}, {teacherFirstName || getFirstName(teacherName)}!
             </h1>
-            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities for the current term.</p>
+            <p className="text-green-100 text-sm mt-1">Here's an overview of your teaching responsibilities for the current quarter.</p>
           </div>
 
           {/* Stats Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div data-tour="teacher-kpis" className="grid grid-cols-2 md:grid-cols-5 gap-4">
             {[
-              { icon: BookOpen,    label: "Total Classes",   value: totalClasses,  color: "emerald" },
-              { icon: Users,       label: "Total Students",  value: totalStudents,   color: "blue" },
-              { icon: GraduationCap, label: "Grades Encoded", value: gradesEncodedTotal, color: "emerald" },
+              { icon: BookOpen,    label: "Total Classes",   value: isDemoMode ? mockData.kpis.totalClasses : totalClasses,  color: "emerald" },
+              { icon: Users,       label: "Total Students",  value: isDemoMode ? mockData.kpis.totalStudents : totalStudents,   color: "blue" },
+              { icon: BookOpen,    label: "Published Lessons", value: isDemoMode ? mockData.kpis.publishedLessons : publishedLessonsCount, color: "emerald" },
+              { icon: BookOpen,    label: "Draft Lessons",   value: isDemoMode ? mockData.kpis.draftLessons : draftLessonsCount, color: "red" },
+              { icon: GraduationCap, label: "Grades Encoded", value: isDemoMode ? mockData.kpis.gradesEncodedTotal : gradesEncodedTotal, color: "emerald" },
             ].map((stat) => {
               const Icon = stat.icon;
               const c = colorMap[stat.color];
@@ -533,31 +642,21 @@ export function TeacherDashboard() {
             })}
           </div>
 
-          {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Main Grid ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+          {/* — Main Grid — */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* Left Ã¢â‚¬â€ Main Content */}
+            {/* Left — Main Content */}
             <div className="lg:col-span-2 flex flex-col gap-6">
 
               {/* Top row: Tasks & Grades */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
                 {/* Tasks & Deadlines */}
-                <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-                  <h3 className="text-gray-900 font-bold text-base mb-4 flex items-center gap-2 border-b border-gray-100 pb-4">
-                    <ClipboardCheck className="w-5 h-5 text-blue-400" />
-                    Tasks & Deadlines
-                  </h3>
-                  <div className="text-center py-8 flex flex-col items-center justify-center">
-                    <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-blue-100">
-                      <ClipboardCheck className="w-6 h-6 text-blue-500" />
-                    </div>
-                    <p className="text-gray-900 font-bold">You're all caught up!</p>
-                    <p className="text-gray-500 text-sm mt-1">No pending tasks or deadlines.</p>
-                  </div>
+                <div data-tour="teacher-tasks">
+                  <TeacherTasksAndDeadlines teacherId={teacherId} assignedSubjects={assignedSubjects} />
                 </div>
 
                 {/* Recent Grades */}
-                <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                <div data-tour="teacher-recent-grades" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                   <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <h3 className="text-gray-900 font-bold flex items-center gap-2">
                       <TrendingUp className="w-5 h-5 text-green-500" />
@@ -565,22 +664,32 @@ export function TeacherDashboard() {
                     </h3>
                   </div>
                   <div className="p-6">
-                    {recentGrades.length === 0 ? (
+                    {(isDemoMode ? [
+                      { id: "demo-rg-1", studentName: "Juan Dela Cruz", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 91 },
+                      { id: "demo-rg-2", studentName: "Maria Santos", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 96 },
+                      { id: "demo-rg-3", studentName: "John Reyes", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), grade: 87 },
+                      { id: "demo-rg-4", studentName: "Angelica Gonzales", subject: "General Science 8", dateRecorded: new Date().toISOString(), grade: 94 },
+                    ] : recentGrades).length === 0 ? (
                       <div className="text-center py-6">
                         <div className="w-12 h-12 bg-green-50 border border-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                           <TrendingUp className="w-6 h-6 text-green-500" />
                         </div>
-                        <p className="text-gray-700 font-medium">No grades recorded yet</p>
+                        <p className="text-gray-500 font-medium">SY {activeSchoolYear} • {activeQuarter}</p>
                       </div>
                     ) : (
                       <div className="space-y-3 w-full">
-                        {recentGrades.map((grade) => (
-                          <div key={grade.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
-                            <div>
-                              <p className="text-gray-900 text-sm font-bold">{grade.studentName}</p>
-                              <p className="text-gray-500 text-xs mt-0.5">{grade.subject} - {new Date(grade.dateRecorded).toLocaleDateString()}</p>
+                        {(isDemoMode ? [
+                          { id: "demo-rg-1", studentName: "Juan Dela Cruz", title: "Quiz 1 (Quiz)", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), timeAgo: "Updated 5 mins ago", scoreDisplay: "18 / 20" },
+                          { id: "demo-rg-2", studentName: "Maria Santos", title: "Activity 2 (Activity)", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), timeAgo: "Updated 10 mins ago", scoreDisplay: "9 / 10" },
+                          { id: "demo-rg-3", studentName: "Pedro Reyes", title: "Assignment 1 (Assignment)", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), timeAgo: "Updated 15 mins ago", scoreDisplay: "25 / 30" },
+                          { id: "demo-rg-4", studentName: "Angelica Gonzales", title: "First Quarter Exam (Exam)", subject: "General Science 8", dateRecorded: new Date().toISOString(), timeAgo: "Updated 1 hr ago", scoreDisplay: "45 / 50" },
+                        ] : recentGrades).map((grade) => (
+                          <div key={grade.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl hover:bg-gray-100/80 transition-colors border border-gray-100">
+                            <div className="min-w-0 flex-1 mr-3">
+                              <p className="text-gray-900 text-xs sm:text-sm font-bold truncate">{grade.studentName}</p>
+                              <p className="text-gray-500 text-[11px] sm:text-xs mt-0.5 truncate">{grade.title} &bull; <span className="text-gray-400 font-medium">{grade.timeAgo}</span></p>
                             </div>
-                            <p className="text-lg font-bold text-green-600 bg-green-50 px-3 py-1 rounded-lg border border-green-200">{grade.grade}%</p>
+                            <p className="text-xs sm:text-sm font-bold text-green-700 bg-green-50 px-3 py-1 rounded-lg border border-green-200 shrink-0 shadow-2xs">{grade.scoreDisplay}</p>
                           </div>
                         ))}
                       </div>
@@ -591,7 +700,7 @@ export function TeacherDashboard() {
 
               {/* School Announcements — full width */}
 
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+              <div data-tour="teacher-announcements" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                   <h3 className="text-gray-900 font-bold flex items-center gap-2">
                     <Megaphone className="w-5 h-5 text-green-500" />
@@ -606,22 +715,28 @@ export function TeacherDashboard() {
                     </div>
                   )}
 
-                  {visibleAnnouncements.length === 0 ? (
+                  {(isDemoMode ? mockData.announcements : visibleAnnouncements).length === 0 ? (
                     <div className="text-center py-6 text-gray-500">No teacher announcements yet</div>
                   ) : (
                     <div className="space-y-3">
-                      {visibleAnnouncements.map((announcement) => (
+                      {(isDemoMode ? mockData.announcements : visibleAnnouncements).map((announcement) => (
                         <button
                           key={announcement.id}
                           type="button"
                           onClick={() => setSelectedAnnouncement(announcement)}
                           className="w-full text-left px-4 py-3 bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 hover:bg-gray-100 transition-colors"
                         >
+                          {announcement.imageUrl ? (
+                            <div className="mb-3 rounded-lg overflow-hidden border border-gray-100 bg-gray-50">
+                              <img
+                                src={announcement.imageUrl}
+                                alt={announcement.title || "announcement"}
+                                className="h-44 w-full object-cover"
+                              />
+                            </div>
+                          ) : null}
                           <div className="flex items-start justify-between gap-3 mb-1.5">
                             <p className="text-sm font-bold text-gray-900 line-clamp-1">{announcement.title || "Untitled announcement"}</p>
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${getPriorityStyles(announcement.priority)}`}>
-                              {announcement.priority}
-                            </span>
                           </div>
                           <p className="text-xs text-gray-600 line-clamp-2">{announcement.content || "No content."}</p>
                           <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
@@ -640,7 +755,7 @@ export function TeacherDashboard() {
             {/* Right Column */}
             <div className="space-y-6">
               {/* Calendar */}
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+              <div data-tour="teacher-calendar" className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
                 <DashboardCalendar viewerRole="teacher" />
               </div>
             </div>
@@ -670,9 +785,6 @@ export function TeacherDashboard() {
 
             <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getPriorityStyles(selectedAnnouncement.priority)}`}>
-                  {selectedAnnouncement.priority}
-                </span>
                 <span className="text-xs text-gray-500">{formatAnnouncementDate(selectedAnnouncement.createdAt)}</span>
                 <span className="text-xs text-gray-500">•</span>
                 <span className="text-xs text-gray-500">{selectedAnnouncement.targetAudience}</span>

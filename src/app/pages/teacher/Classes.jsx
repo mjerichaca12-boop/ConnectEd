@@ -1,4 +1,4 @@
-  import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
@@ -9,16 +9,18 @@ import {
   Search,
   Plus,
   X,
-  Clock,
   MapPin,
   ChevronRight,
   GraduationCap,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { resolveTeacherIdByEmail } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, resolveTeacherIdByEmail, getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
+import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 
 function Classes() {
   const navigate = useNavigate();
+  const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
   const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,22 +40,61 @@ function Classes() {
   });
 
   const mapSubjectsToCards = (subjectRows, enrollmentBySubject = new Map()) => {
-    return (subjectRows ?? []).map((subject) => ({
-      id: String(subject.id),
-      code: String(subject.code || "").trim(),
-      name: String(subject.name || "Untitled Subject").trim(),
-      section: String(subject.section || "").trim() || "No section assigned",
-      schedule: String(subject.schedule || "").trim(),
-      room: "",
-      semester: "Current School Year",
-      studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
-      students: []
-    }));
+    return (subjectRows ?? []).map((subject) => {
+      const code = String(subject.code || "").trim();
+      const name = String(subject.name || "Untitled Subject").trim();
+      let rawGrade = String(subject.gradeLevel || subject.grade_level || subject.grade || subject.year_level || "").trim();
+      if (!rawGrade) {
+        const gradeMatch = (code.match(/10|11|12|[7-9]/) || name.match(/10|11|12|[7-9]/))?.[0];
+        if (gradeMatch) rawGrade = `Grade ${gradeMatch}`;
+      } else if (!rawGrade.toLowerCase().includes("grade") && /^\d+$/.test(rawGrade)) {
+        rawGrade = `Grade ${rawGrade}`;
+      }
+
+      return {
+        id: String(subject.id),
+        code,
+        name,
+        section: String(subject.section || "").trim() || "No section assigned",
+        schedule: String(subject.schedule || "").trim(),
+        room: "",
+        semester: "Current School Year",
+        studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
+        capacity: Number(subject.capacity || 0),
+        students: [],
+        gradeLevel: rawGrade
+      };
+    });
+  };
+
+  const getSubjectIdentityKey = (subject) => {
+    const code = String(subject?.code || "").trim().toLowerCase();
+    const name = String(subject?.name || "").trim().toLowerCase();
+    const section = String(subject?.section || "").trim().toLowerCase();
+    const gradeLevel = String(subject?.gradeLevel || subject?.grade_level || subject?.year_level || "").trim().toLowerCase();
+    const semanticKey = [code, name, section, gradeLevel].filter(Boolean).join("|");
+
+    if (semanticKey) {
+      return semanticKey;
+    }
+
+    return `id:${String(subject?.id || "").trim()}`;
+  };
+
+  const dedupeSubjects = (rows) => {
+    const seen = new Set();
+    return (rows ?? []).filter((subject) => {
+      const key = getSubjectIdentityKey(subject);
+      if (!key.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   };
 
   const setClassesAndPersist = (nextClasses) => {
-    setClasses(nextClasses);
-    localStorage.setItem("teacher_classes", JSON.stringify(nextClasses));
+    const realClasses = (nextClasses ?? []).filter((c) => !String(c?.id || "").startsWith("demo-"));
+    setClasses(realClasses);
+    localStorage.setItem("teacher_classes", JSON.stringify(realClasses));
   };
 
 
@@ -64,11 +105,22 @@ function Classes() {
       return;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section, schedule, enrolled")
+      .select("id, code, name, section, schedule, enrolled, grade_level, capacity")
       .eq("teacher_id", id)
       .order("code", { ascending: true });
+
+    if (error && isColumnMissingError(error)) {
+      const fallback = await supabase
+        .from("subjects")
+        .select("id, code, name, section, schedule, enrolled, grade_level, capacity")
+        .eq("teacher_id", id)
+        .order("code", { ascending: true });
+
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       console.error("Failed to load teacher subjects:", error);
@@ -95,8 +147,40 @@ function Classes() {
       }
     }
 
-    setClassesAndPersist(mapSubjectsToCards(data, enrollmentBySubject));
+    const uniqueSubjects = dedupeSubjects(data);
+    console.log("[Classes] fetched teacher subjects", {
+      teacherId: id,
+      fetched: (data ?? []).length,
+      unique: uniqueSubjects.length,
+      fetchedSubjectIds: (data ?? []).map((subject) => String(subject.id || "")).filter(Boolean)
+    });
+
+    if (uniqueSubjects.length !== (data ?? []).length) {
+      console.warn("[Classes] duplicate subjects detected and removed", {
+        teacherId: id,
+        fetched: (data ?? []).length,
+        kept: uniqueSubjects.length
+      });
+    }
+
+    setClassesAndPersist(mapSubjectsToCards(uniqueSubjects, enrollmentBySubject));
   };
+
+  const fetchTeacherClassesData = useCallback(async () => {
+    const rawUser = localStorage.getItem("currentUser");
+    if (!rawUser) return null;
+    const user = JSON.parse(rawUser);
+    const { teacherId: resId, classes: resClasses } = await getTeacherAssignedClasses(user);
+    if (resId) setTeacherId(resId);
+
+    return mapSubjectsToCards(resClasses);
+  }, []);
+
+  const { data: cachedClassesCards, loading: isCachedClassesLoading } = useCachedFetch(
+    teacherEmail ? `teacher_classes_${teacherEmail}` : "teacher_classes_default",
+    fetchTeacherClassesData,
+    { deps: [teacherEmail] }
+  );
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -107,16 +191,16 @@ function Classes() {
     setTeacherName(user.name);
     const normalizedEmail = String(user.email || "").trim().toLowerCase();
     setTeacherEmail(normalizedEmail);
-
-    resolveTeacherIdByEmail(normalizedEmail)
-      .then((id) => {
-        setTeacherId(id);
-        return loadTeacherSubjects(id);
-      })
-      .finally(() => {
-      setLoading(false);
-    });
   }, [navigate]);
+
+  useEffect(() => {
+    if (cachedClassesCards && cachedClassesCards.length > 0) {
+      setClasses(cachedClassesCards);
+      setLoading(false);
+    } else {
+      setLoading(isCachedClassesLoading);
+    }
+  }, [cachedClassesCards, isCachedClassesLoading]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;
@@ -185,10 +269,12 @@ function Classes() {
     navigate("/login");
   };
 
-  const filteredClasses = classes.filter((classItem) =>
-    classItem.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    classItem.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    classItem.section.toLowerCase().includes(searchQuery.toLowerCase())
+  const activeClassesList = isDemoMode ? mockData.classes : classes;
+
+  const filteredClasses = activeClassesList.filter((classItem) =>
+    String(classItem.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(classItem.code || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(classItem.section || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleSubmitCreateClass = () => {
@@ -205,9 +291,7 @@ function Classes() {
     setForm({ code: "", name: "", section: "", schedule: "", room: "", semester: "First Semester 2026" });
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading classes..." />;
-  }
+
 
   return (
     <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
@@ -218,11 +302,10 @@ function Classes() {
 
       <TeacherSidebar teacherName={teacherName} onLogout={handleLogoutClick} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         {/* Top Bar */}
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-bold text-gray-900">Classes</h2>
+          <div className="px-6 py-4 flex items-center justify-end gap-4">
             <NotificationDropdown
               notifications={notificationList}
               onMarkAsRead={(id) =>
@@ -237,7 +320,7 @@ function Classes() {
 
         <div className="p-6 space-y-6">
           {/* Header */}
-          <div className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-gray-900 shadow-xl relative overflow-hidden">
+          <div data-tour="teacher-classes-header" className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
             <div
               className="absolute inset-0 opacity-10"
               style={{
@@ -248,7 +331,7 @@ function Classes() {
             <div className="relative flex items-center justify-between flex-wrap gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-1">My Classes</h1>
-                <p className="text-green-50 text-sm">
+                <p className="text-white/90 text-sm">
                   {classes[0]?.semester || "First Semester 2026"} &bull; {classes.length} {classes.length === 1 ? "Class" : "Classes"}
                 </p>
               </div>
@@ -256,7 +339,7 @@ function Classes() {
           </div>
 
           {/* Search */}
-          <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div data-tour="teacher-classes-search" className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
@@ -284,7 +367,7 @@ function Classes() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div data-tour="teacher-classes-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredClasses.map((classItem) => (
                 <div
                   key={classItem.id}
@@ -300,17 +383,13 @@ function Classes() {
                     <h3 className="text-gray-900 font-bold text-xl mt-1 line-clamp-1">
                       {classItem.name}
                     </h3>
-                    {classItem.section && classItem.section !== classItem.name ? (
-                      <p className="text-gray-600 text-sm mt-1">{classItem.section}</p>
-                    ) : null}
+                    {(classItem.gradeLevel || classItem.section) && (
+                      <p className="text-gray-600 text-sm mt-1">
+                        {classItem.gradeLevel ? classItem.gradeLevel : ""} {classItem.section ? (classItem.gradeLevel ? `- ${classItem.section}` : classItem.section) : ""}
+                      </p>
+                    )}
                   </div>
                   <div className="p-6 space-y-3">
-                    {classItem.schedule && (
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Clock className="w-4 h-4 text-green-600 flex-shrink-0" />
-                        {classItem.schedule}
-                      </div>
-                    )}
                     {classItem.room && (
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -319,9 +398,21 @@ function Classes() {
                     )}
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
-                      {classItem.studentCount} students enrolled
+                      <span>{classItem.studentCount} / {classItem.capacity || 30} students enrolled</span>
+                      {classItem.capacity > 0 && classItem.studentCount >= classItem.capacity && (
+                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 rounded">Full</span>
+                      )}
                     </div>
-                    <button className="w-full mt-2 px-4 py-3 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-500/20 transition-colors font-medium flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      data-tour="teacher-classes-view-btn"
+                      data-class-id={classItem.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/teacher/class/${classItem.id}`);
+                      }}
+                      className="w-full mt-2 px-4 py-3 bg-green-50 text-green-600 border border-green-200 rounded-lg hover:bg-green-500/20 transition-colors font-medium flex items-center justify-center gap-2 cursor-pointer"
+                    >
                       View Class
                       <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                     </button>

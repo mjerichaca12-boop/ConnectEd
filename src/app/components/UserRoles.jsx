@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, BookOpen, Shield, ArrowRight, CheckCircle, Settings, Users, BarChart2, Calendar, MessageSquare, ClipboardCheck } from "lucide-react";
+import { GraduationCap, BookOpen, Shield, ArrowRight, CheckCircle, Settings, Users, BarChart2, MessageSquare, ClipboardCheck, Calendar } from "lucide-react";
 import { useScrollReveal } from "@/app/hooks/useAnimations";
 
 const roles = [
@@ -9,24 +9,24 @@ const roles = [
     icon: Shield,
     title: "Administrator",
     subtitle: "Full control over school operations from a unified command center.",
-    features: ["Manage teacher & student accounts", "Monitor all class activities and reports", "Generate school-wide analytics", "Broadcast announcements", "System access control & settings"],
-    mockupFeatures: [{ icon: Users, label: "User Management" }, { icon: BarChart2, label: "Analytics Dashboard" }, { icon: Settings, label: "System Settings" }],
+    features: ["Manage teacher & student accounts", "Monitor all class activities and reports", "Generate school-wide analytics", "Broadcast announcements", "Administrative access control & settings"],
+    mockupFeatures: [{ icon: Users, label: "User Management" }, { icon: BarChart2, label: "Analytics Dashboard" }, { icon: Settings, label: "Administrative Access" }],
   },
   {
     key: "teacher",
     icon: BookOpen,
     title: "Teacher",
     subtitle: "Manage your classes, grades, and student interactions on the web.",
-    features: ["Create & manage class sections", "Upload materials & assignments", "Record grades & track work", "Post class announcements", "Message students directly"],
-    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: ClipboardCheck, label: "Assignments" }],
+    features: ["Create & manage class sections", "Upload materials & assignments", "Record student grades", "Post class announcements", "Message students directly"],
+    mockupFeatures: [{ icon: BookOpen, label: "Class Management" }, { icon: ClipboardCheck, label: "Grade Recording" }, { icon: MessageSquare, label: "Student Messaging" }],
   },
   {
     key: "student",
     icon: GraduationCap,
     title: "Student",
     subtitle: "Access your school on mobile — grades, assignments, and more.",
-    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track academic progress"],
-    mockupFeatures: [{ icon: GraduationCap, label: "Academic Records" }, { icon: MessageSquare, label: "Teacher Chat" }, { icon: BookOpen, label: "Subjects" }],
+    features: ["View grades and academic records", "Submit assignments & activities", "Read class announcements", "Message teachers directly", "Track learning progress"],
+    mockupFeatures: [{ icon: GraduationCap, label: "Academic Records" }, { icon: MessageSquare, label: "Teacher Chat" }, { icon: Calendar, label: "Class Announcements" }],
   },
 ];
 
@@ -54,7 +54,7 @@ function UserRoles() {
               return (
                 <button key={role.key} onClick={() => setActiveTab(role.key)}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer
-                    ${activeTab === role.key ? "bg-green-600 text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"}`}>
+                    ${activeTab === role.key ? "bg-green-600 text-white shadow-sm" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"}`}>
                   <Icon className="w-4 h-4" />
                   {role.title}
                 </button>
@@ -85,7 +85,7 @@ function UserRoles() {
                 ))}
               </ul>
               {activeRole.cta ? (
-                <button onClick={() => navigate(activeRole.cta)} className="group w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-semibold text-sm bg-green-600 hover:bg-green-700 text-gray-900 transition-all duration-200 shadow-md shadow-green-600/20">
+                <button onClick={() => navigate(activeRole.cta)} className="group w-full flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-semibold text-sm bg-green-600 hover:bg-green-700 text-white transition-all duration-200 shadow-md shadow-green-600/20 cursor-pointer">
                   {activeRole.ctaLabel}
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>

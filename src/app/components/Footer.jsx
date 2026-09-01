@@ -2,10 +2,9 @@ import { Link } from "react-router-dom";
 
 function Footer() {
   const links = [
-    { label: "Privacy Policy", href: "/terms-and-privacy" },
-    { label: "Terms of Service", href: "/terms-and-privacy" },
-    { label: "Contact Us", href: "#" },
-    { label: "Support", href: "#" },
+    { label: "Privacy Policy", href: "/privacy-policy" },
+    { label: "Terms of Service", href: "/terms-of-service" },
+    { label: "Support", href: "/support" },
   ];
 
   return (

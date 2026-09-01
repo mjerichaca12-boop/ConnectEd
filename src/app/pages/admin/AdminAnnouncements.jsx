@@ -3,9 +3,12 @@ import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { CustomSelect } from "../../components/admin/CustomSelect";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { adminNotifications } from "../../components/NotificationDefault";
-import { supabase, supabaseAdmin } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
+import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
 import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
 import {
@@ -16,27 +19,19 @@ import {
   Plus,
   File,
   Paperclip,
-  School,
   Search,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 
 const emptyForm = {
   title: "",
-  content: "",
-  targetAudience: "",
-  category: "General",
-  priority: ""
+  content: ""
 };
 
 const emptyTouchedFields = {
   title: false,
-  content: false,
-  targetAudience: false,
-  category: false,
-  priority: false
+  content: false
 };
 
 const announcementTableCandidates = ["announcements", "school_announcements"];
@@ -46,27 +41,14 @@ const ANNOUNCEMENT_FILE_ACCEPT = "image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.tx
 let announcementAttachmentsTableStatus = "unknown";
 
 const ALLOWED_AUDIENCES = ["School-wide", "Students", "Teacher"];
-const ALLOWED_PRIORITIES = ["Low", "Medium", "High"];
-const ALLOWED_CATEGORIES = ["General", "Lesson Plan", "Task", "School Info"];
 
-const audienceOptions = [
-  { value: "School-wide", label: "School-wide" },
-  { value: "Students", label: "Students" },
-  { value: "Teacher", label: "Teacher" }
+const AUDIENCE_TYPE_OPTIONS = [
+  { value: "school-wide", label: "School-wide" },
+  { value: "teachers", label: "Teachers" },
+  { value: "students", label: "Students" }
 ];
 
-const priorityOptions = [
-  { value: "Low", label: "Low" },
-  { value: "Medium", label: "Medium" },
-  { value: "High", label: "High" }
-];
-
-const categoryOptions = [
-  { value: "General", label: "General" },
-  { value: "Lesson Plan", label: "Lesson Plan" },
-  { value: "Task", label: "Task" },
-  { value: "School Info", label: "School Info" }
-];
+const DEFAULT_AUDIENCE_TYPE = "school-wide";
 
 const normalizeAudience = (value) => {
   const normalized = String(value ?? "")
@@ -80,15 +62,6 @@ const normalizeAudience = (value) => {
   if (normalized === "schoolwide" || normalized === "school wide") return "School-wide";
   if (ALLOWED_AUDIENCES.includes(value)) return value;
   return "School-wide";
-};
-
-const normalizePriority = (value) => {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "low") return "Low";
-  if (normalized === "medium") return "Medium";
-  if (normalized === "high") return "High";
-  if (ALLOWED_PRIORITIES.includes(value)) return value;
-  return "Medium";
 };
 
 const toDatabaseAudience = (value) => normalizeAudience(value);
@@ -111,30 +84,18 @@ const audienceLabelFromType = (audienceType) => {
   return "School-wide";
 };
 
-const toDatabasePriority = (value) => normalizePriority(value);
-
-const isAllowedAudience = (value) => {
+const databaseValueToAudienceType = (value) => {
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ");
 
-  return ALLOWED_AUDIENCES.includes(value) || normalized === "student" || normalized === "students" || normalized === "teacher" || normalized === "teachers" || normalized === "schoolwide" || normalized === "school wide";
+  if (normalized === "student" || normalized === "students") return "students";
+  if (normalized === "teacher" || normalized === "teachers") return "teachers";
+  return "school-wide";
 };
 
-const isAllowedPriority = (value) => {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return ALLOWED_PRIORITIES.includes(value) || normalized === "low" || normalized === "medium" || normalized === "high";
-};
-
-const formatAudienceLabel = (audience) => {
-  return normalizeAudience(audience || "School-wide");
-};
-
-const formatPriorityLabel = (priority) => {
-  return normalizePriority(priority || "Medium");
-};
 
 const normalizeTimestamp = (row) => row?.created_at || row?.date_posted || row?.datePosted || row?.timestamp || row?.updated_at || new Date().toISOString();
 
@@ -144,13 +105,7 @@ const extractMissingColumnFromSupabaseError = (error) => {
   return match ? String(match[1] || "").trim() : "";
 };
 
-const getPriorityRank = (priority) => {
-  const normalized = String(priority ?? "").trim().toLowerCase();
-  if (normalized === "high") return 0;
-  if (normalized === "medium") return 1;
-  if (normalized === "low") return 2;
-  return 1;
-};
+
 
 const getAnnouncementAttachmentKind = (fileType, fileName, fileUrl) => {
   const normalizedType = String(fileType || "").trim().toLowerCase();
@@ -251,19 +206,13 @@ const normalizeAnnouncement = (row, attachmentRows = []) => {
           "School-wide"
         ),
     audienceType,
-    category: row?.category || "General",
-    priority: normalizePriority(
-      row?.priority ??
-      row?.announcement_priority ??
-      row?.importance ??
-      row?.priority_level ??
-      "Medium"
-    ),
+
     createdAt: normalizeTimestamp(row),
     author: row?.author || row?.created_by_name || row?.created_by || "Admin Office",
     ...attachments,
+    imageUrl: String(row?.image_url || row?.imageUrl || attachments.attachments.find((attachment) => attachment.kind === "image")?.fileUrl || "").trim(),
+    fileUrl: String(row?.file_url || row?.fileUrl || attachments.fileUrls[0] || "").trim(),
     fileName: attachments.fileNames[0] || "",
-    fileUrl: attachments.fileUrls[0] || "",
     filePath: attachments.filePaths[0] || "",
     fileType: attachments.fileTypes[0] || ""
   };
@@ -273,10 +222,7 @@ const sortAnnouncements = (items) =>
   [...items].sort((left, right) => {
     const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime();
     const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime();
-    if (rightTime !== leftTime) return rightTime - leftTime; // Newest first
-
-    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
-    if (priorityDiff !== 0) return priorityDiff;
+    if (rightTime !== leftTime) return rightTime - leftTime;
 
     return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
   });
@@ -304,49 +250,13 @@ const formatDate = (value) => {
   });
 };
 
-const getAudienceStyles = (audience) => {
-  const normalizedAudience = String(audience ?? "").toLowerCase();
 
-  if (normalizedAudience.includes("school")) {
-    return "bg-green-50 text-green-700 border-green-200";
-  }
 
-  if (normalizedAudience.includes("teacher")) {
-    return "bg-red-50 text-red-700 border-red-200";
-  }
-
-  return "bg-blue-50 text-blue-700 border-blue-200";
-};
-
-const getPriorityStyles = (priority) => {
-  const normalizedPriority = String(priority ?? "").toLowerCase();
-
-  if (normalizedPriority === "high") {
-    return "bg-red-50 text-red-700 border-red-200";
-  }
-
-  if (normalizedPriority === "low") {
-    return "bg-green-50 text-green-700 border-green-200";
-  }
-
-  return "bg-amber-50 text-amber-700 border-amber-200";
-};
-
-const getCategoryStyles = (category) => {
-  const normalized = String(category ?? "").toLowerCase();
-  if (normalized === "lesson plan") return "bg-purple-50 text-purple-700 border-purple-200";
-  if (normalized === "task") return "bg-blue-50 text-blue-700 border-blue-200";
-  if (normalized === "school info") return "bg-orange-50 text-orange-700 border-orange-200";
-  return "bg-gray-50 text-gray-700 border-gray-200";
-};
 
 const getAnnouncementValidationErrors = (data) => {
   const errors = {};
   const title = String(data?.title || "").trim();
   const content = String(data?.content || "").trim();
-  const targetAudience = String(data?.targetAudience || "").trim();
-  const category = String(data?.category || "").trim();
-  const priority = String(data?.priority || "").trim();
 
   if (!title) {
     errors.title = "Title is required";
@@ -360,24 +270,6 @@ const getAnnouncementValidationErrors = (data) => {
     errors.content = "Content is required";
   } else if (content.length < 10) {
     errors.content = "Content must be at least 10 characters";
-  }
-
-  if (!targetAudience) {
-    errors.targetAudience = "Target audience is required";
-  } else if (!isAllowedAudience(targetAudience)) {
-    errors.targetAudience = "Target audience must be school wide, student, or teacher";
-  }
-
-  if (!category) {
-    errors.category = "Category is required";
-  } else if (!ALLOWED_CATEGORIES.includes(category)) {
-    errors.category = "Invalid category";
-  }
-
-  if (!priority) {
-    errors.priority = "Priority is required";
-  } else if (!isAllowedPriority(priority)) {
-    errors.priority = "Priority must be low, medium, or high";
   }
 
   return errors;
@@ -411,6 +303,8 @@ function AdminAnnouncements() {
   const [announcementColumns, setAnnouncementColumns] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [editFormData, setEditFormData] = useState(emptyForm);
+  const [audienceType, setAudienceType] = useState(DEFAULT_AUDIENCE_TYPE);
+  const [editAudienceType, setEditAudienceType] = useState(DEFAULT_AUDIENCE_TYPE);
   const [announcementFiles, setAnnouncementFiles] = useState([]);
   const [formErrors, setFormErrors] = useState({});
   const [editFormErrors, setEditFormErrors] = useState({});
@@ -419,8 +313,18 @@ function AdminAnnouncements() {
   const [hasTriedCreateSubmit, setHasTriedCreateSubmit] = useState(false);
   const [hasTriedEditSubmit, setHasTriedEditSubmit] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (showCreateModal || showEditModal || deleteConfirm.isOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showCreateModal, showEditModal, deleteConfirm.isOpen]);
 
   const resetAnnouncementFileInput = () => {
     setAnnouncementFiles([]);
@@ -458,7 +362,7 @@ function AdminAnnouncements() {
     const uploaded = [];
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
 
     try {
       for (const file of files) {
@@ -471,14 +375,26 @@ function AdminAnnouncements() {
         }
 
         const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
-        const uploadResult = await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).upload(storagePath, file, {
-          upsert: false,
-          contentType: file.type || "application/octet-stream"
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+        });
+        const base64File = await toBase64(file);
+        
+        const { error: uploadError } = await adminApi.db("storage", "storage_upload", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            path: storagePath,
+            base64File,
+            contentType: file.type || "application/octet-stream"
+          }
         });
 
-        if (uploadResult.error) {
-          console.error("Announcement attachment upload failed:", uploadResult.error);
-          throw uploadResult.error;
+        if (uploadError) {
+          console.error("Announcement attachment upload failed:", uploadError);
+          throw uploadError;
         }
 
         const { data } = client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).getPublicUrl(storagePath);
@@ -500,7 +416,12 @@ function AdminAnnouncements() {
     } catch (error) {
       console.error("Announcement attachment processing failed:", error);
       if (uploaded.length > 0) {
-        await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uploaded.map((item) => item.filePath)).catch(() => {
+        await adminApi.db("storage", "storage_remove", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            paths: uploaded.map((item) => item.filePath)
+          }
+        }).catch(() => {
           // Ignore rollback cleanup failures.
         });
       }
@@ -531,15 +452,7 @@ function AdminAnnouncements() {
       ...formData,
       [field]: value
     };
-    
-    // If audience changes to something other than Teacher, and category was a teacher-only category, reset it
-    if (field === "targetAudience" && value !== "Teacher") {
-      const teacherOnlyCategories = ["Lesson Plan", "Task", "School Info"];
-      if (teacherOnlyCategories.includes(nextForm.category)) {
-        nextForm.category = "General";
-      }
-    }
-    
+
     setFormData(nextForm);
     applyCreateValidationState(nextForm, formTouched, hasTriedCreateSubmit);
   };
@@ -549,24 +462,9 @@ function AdminAnnouncements() {
       ...editFormData,
       [field]: value
     };
-    
-    // If audience changes to something other than Teacher, and category was a teacher-only category, reset it
-    if (field === "targetAudience" && value !== "Teacher") {
-      const teacherOnlyCategories = ["Lesson Plan", "Task", "School Info"];
-      if (teacherOnlyCategories.includes(nextForm.category)) {
-        nextForm.category = "General";
-      }
-    }
-    
+
     setEditFormData(nextForm);
     applyEditValidationState(nextForm, editFormTouched, hasTriedEditSubmit);
-  };
-
-  const getFilteredCategoryOptions = (audience) => {
-    if (audience === "Teacher") {
-      return categoryOptions;
-    }
-    return categoryOptions.filter(opt => opt.value === "General");
   };
 
   const handleCreateFieldBlur = (field) => {
@@ -589,6 +487,7 @@ function AdminAnnouncements() {
 
   const handleOpenCreateModal = () => {
     setFormData(emptyForm);
+    setAudienceType(DEFAULT_AUDIENCE_TYPE);
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
@@ -667,7 +566,6 @@ function AdminAnnouncements() {
       "id",
       "title",
       "content",
-      "priority",
       "created_at",
       "updated_at",
       "author",
@@ -676,9 +574,6 @@ function AdminAnnouncements() {
       "school_id",
       "target_audience",
       "audience_type",
-      "announcement_priority",
-      "importance",
-      "priority_level",
       "date_posted",
       "datePosted",
       "timestamp"
@@ -754,97 +649,7 @@ function AdminAnnouncements() {
     const attachmentTableName = getAnnouncementAttachmentTableName(tableName);
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
 
-    const resolveLinkedAnnouncementIdForSchoolAnnouncement = async (schoolAnnouncementId) => {
-      const normalizedSchoolAnnouncementId = String(schoolAnnouncementId || "").trim();
-      if (!normalizedSchoolAnnouncementId) {
-        throw new Error("School announcement ID is required to save attachments.");
-      }
 
-      const existingLink = await supabase
-        .from("announcement_attachments")
-        .select("announcement_id")
-        .eq("school_announcement_id", normalizedSchoolAnnouncementId)
-        .not("announcement_id", "is", null)
-        .limit(1)
-        .maybeSingle();
-
-      if (existingLink.error) {
-        console.error("Failed to resolve existing attachment link:", existingLink.error);
-        throw new Error(existingLink.error.message || "Unable to resolve announcement attachment link.");
-      }
-
-      const linkedAnnouncementId = String(existingLink.data?.announcement_id || "").trim();
-      if (linkedAnnouncementId) {
-        return linkedAnnouncementId;
-      }
-
-      const schoolAnnouncementResult = await supabase
-        .from("school_announcements")
-        .select("*")
-        .eq("id", normalizedSchoolAnnouncementId)
-        .maybeSingle();
-
-      if (schoolAnnouncementResult.error) {
-        console.error("Failed to load school announcement for attachment linking:", schoolAnnouncementResult.error);
-        throw new Error(schoolAnnouncementResult.error.message || "Unable to load school announcement for attachment linking.");
-      }
-
-      const source = schoolAnnouncementResult.data || {};
-      const basePayloads = [
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment",
-          target_audience: normalizeAudience(source.target_audience || "School-wide"),
-          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide"),
-          priority: normalizePriority(source.priority || "Medium"),
-          author: String(source.author || source.created_by_name || "Admin Office").trim() || "Admin Office",
-          created_by: isUuid(source.created_by) ? source.created_by : null,
-          created_by_name: source.created_by_name || null,
-          school_id: isUuid(source.school_id) ? source.school_id : null,
-          created_at: source.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment",
-          target_audience: normalizeAudience(source.target_audience || "School-wide"),
-          audience_type: toDatabaseAudienceType(source.target_audience || "School-wide"),
-          priority: normalizePriority(source.priority || "Medium")
-        },
-        {
-          title: String(source.title || "Announcement").trim() || "Announcement",
-          content: String(source.content || "Attachment").trim() || "Attachment"
-        }
-      ];
-
-      let lastError = null;
-      for (const initialPayload of basePayloads) {
-        const { data, error } = await supabase
-          .from("announcements")
-          .insert(initialPayload)
-          .select("id")
-          .maybeSingle();
-
-        if (!error) {
-          const createdLinkedAnnouncementId = String(data?.id || "").trim();
-          if (!createdLinkedAnnouncementId) {
-            throw new Error("Unable to create linked announcement for attachments.");
-          }
-
-          return createdLinkedAnnouncementId;
-        }
-
-        lastError = error;
-      }
-
-      console.error("Failed to create linked announcement record:", lastError);
-      throw new Error(lastError?.message || "Unable to create linked announcement for attachments.");
-    };
-
-    let linkedAnnouncementId = "";
-    if (tableName === "school_announcements") {
-      linkedAnnouncementId = await resolveLinkedAnnouncementIdForSchoolAnnouncement(announcementId);
-    }
 
     const payload = attachments.map((attachment, index) => {
       const fileName = String(attachment?.fileName || "").trim();
@@ -857,9 +662,7 @@ function AdminAnnouncements() {
       }
 
       return {
-      ...(tableName === "school_announcements"
-        ? { announcement_id: linkedAnnouncementId }
-        : {}),
+
       [attachmentForeignKey]: announcementId,
       file_url: fileUrl,
       file_name: fileName,
@@ -874,8 +677,8 @@ function AdminAnnouncements() {
 
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
-    const { error } = await client.from(attachmentTableName).insert(payload);
+    const client = supabase;
+    const { error } = await adminApi.db(attachmentTableName, "insert", { payload });
 
     if (error) {
       console.error("Announcement attachment database insert failed:", error);
@@ -894,7 +697,7 @@ function AdminAnnouncements() {
 
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
     const { data, error } = await client
       .from("announcement_attachments")
@@ -934,10 +737,7 @@ function AdminAnnouncements() {
           return;
         }
 
-        const { error: updateError } = await supabase
-          .from(targetTable)
-          .update(payload)
-          .eq("id", normalizedTargetId);
+        const { error: updateError } = await adminApi.db(targetTable, "update", { payload, eq: { column: "id", value: normalizedTargetId } });
 
         if (!updateError) {
           return;
@@ -987,19 +787,10 @@ function AdminAnnouncements() {
     return payload;
   };
 
-  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
+  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "", selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
     const user = getCurrentUser();
-    const targetAudience = toDatabaseAudience(data.targetAudience);
-    const audienceType = toDatabaseAudienceType(data.targetAudience);
-    const priority = toDatabasePriority(data.priority);
-    const category = data.category || "General";
-
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
-    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
-    const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
-    const audienceColumn = resolveColumnName(columns, audienceCandidates);
-    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
-    const priorityColumn = resolveColumnName(columns, priorityCandidates);
+    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
+    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
     const timestampColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp"]);
 
     const metadata = {};
@@ -1020,13 +811,6 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    if (columns.includes("category")) {
-      basePayload.category = category;
-    }
-
-    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
-    basePayload[priorityColumn || "priority"] = priority;
-
     if (announcementId && columns.includes("id")) {
       basePayload.id = announcementId;
     }
@@ -1035,23 +819,15 @@ function AdminAnnouncements() {
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
     };
 
     return [strictPayload, basePayload];
   };
 
-  const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
-    const targetAudience = toDatabaseAudience(data.targetAudience);
-    const audienceType = toDatabaseAudienceType(data.targetAudience);
-    const priority = toDatabasePriority(data.priority);
-    const category = data.category || "General";
-    const audienceCandidates = ["target_audience", "audience", "targetAudience", "target_audience_type", "recipient_audience"];
-    const audienceTypeCandidates = ["audience_type", "audienceType", "target_audience_type"];
-    const priorityCandidates = ["priority", "announcement_priority", "importance", "priority_level"];
-    const audienceColumn = resolveColumnName(columns, audienceCandidates);
-    const audienceTypeColumn = resolveColumnName(columns, audienceTypeCandidates);
-    const priorityColumn = resolveColumnName(columns, priorityCandidates);
+  const buildUpdatePayloads = (data, timestamp, columns, attachments = null, selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
+    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
+    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
     const timestampColumn = resolveColumnName(columns, ["updated_at"]);
 
     const metadata = {};
@@ -1063,20 +839,13 @@ function AdminAnnouncements() {
       ...metadata
     };
 
-    if (columns.includes("category")) {
-      basePayload.category = category;
-    }
-
-    if (audienceColumn) basePayload[audienceColumn] = targetAudience;
-    basePayload[priorityColumn || "priority"] = priority;
-
     if (attachments) {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
     }
 
     const strictPayload = {
       ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceType } : {})
+      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
     };
 
     return [strictPayload, basePayload];
@@ -1086,16 +855,12 @@ function AdminAnnouncements() {
     const attemptErrors = [];
     const user = getCurrentUser();
     const isAdmin = user?.role === "admin";
-    const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+    const client = supabase;
 
     for (let attemptIndex = 0; attemptIndex < payloads.length; attemptIndex += 1) {
       const payload = payloads[attemptIndex];
       if (mode === "insert") {
-        const { data, error } = await client
-          .from(tableName)
-          .insert(payload)
-          .select("id")
-          .maybeSingle();
+        const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "id", single: true });
 
         if (!error) {
           return {
@@ -1104,7 +869,7 @@ function AdminAnnouncements() {
           };
         }
 
-        const fallbackInsert = await client.from(tableName).insert(payload);
+        const fallbackInsert = await adminApi.db(tableName, "insert", { payload });
         if (!fallbackInsert.error) {
           return {
             payload,
@@ -1129,7 +894,7 @@ function AdminAnnouncements() {
         continue;
       }
 
-      const { error } = await client.from(tableName).update(payload).eq("id", id);
+      const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: id } });
 
       if (!error) {
         return {
@@ -1185,7 +950,6 @@ function AdminAnnouncements() {
           ...previous,
           ...announcement,
           targetAudience: announcement.targetAudience || previous.targetAudience,
-          priority: announcement.priority || previous.priority,
           createdAt: announcement.createdAt || previous.createdAt,
           author: announcement.author || previous.author,
           fileNames: announcement.fileNames?.length ? announcement.fileNames : previous.fileNames,
@@ -1271,16 +1035,9 @@ function AdminAnnouncements() {
     };
   }, [announcementTable]);
 
-  useEffect(() => {
-    if (!successMessage) return undefined;
-
-    const timer = window.setTimeout(() => setSuccessMessage(""), 3000);
-    return () => window.clearTimeout(timer);
-  }, [successMessage]);
-
   const filteredAnnouncements = sortAnnouncements(announcements.filter((announcement) => {
     const query = searchQuery.toLowerCase();
-    return [announcement.title, announcement.content, announcement.targetAudience, announcement.priority]
+    return [announcement.title, announcement.content, announcement.targetAudience]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query));
   }));
@@ -1288,6 +1045,7 @@ function AdminAnnouncements() {
   const handleCloseCreateModal = () => {
     setShowCreateModal(false);
     setFormData(emptyForm);
+    setAudienceType(DEFAULT_AUDIENCE_TYPE);
     setFormErrors({});
     setFormTouched(emptyTouchedFields);
     setHasTriedCreateSubmit(false);
@@ -1298,10 +1056,11 @@ function AdminAnnouncements() {
     setEditingAnnouncement(announcement);
     setEditFormData({
       title: announcement.title,
-      content: announcement.content,
-      targetAudience: normalizeAudience(announcement.targetAudience),
-      priority: normalizePriority(announcement.priority)
+      content: announcement.content
     });
+    setEditAudienceType(
+      databaseValueToAudienceType(announcement.audienceType ?? announcement.targetAudience)
+    );
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
@@ -1312,6 +1071,7 @@ function AdminAnnouncements() {
   const handleCloseEditModal = () => {
     setShowEditModal(false);
     setEditingAnnouncement(null);
+    setEditAudienceType(DEFAULT_AUDIENCE_TYPE);
     setEditFormErrors({});
     setEditFormTouched(emptyTouchedFields);
     setHasTriedEditSubmit(false);
@@ -1347,7 +1107,6 @@ function AdminAnnouncements() {
     event.preventDefault();
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     setHasTriedCreateSubmit(true);
     const submissionErrors = applyCreateValidationState(formData, formTouched, true);
@@ -1398,9 +1157,8 @@ function AdminAnnouncements() {
         id: createdAnnouncementId || String(Date.now()),
         title: formData.title.trim(),
         content: formData.content.trim(),
-        targetAudience: formData.targetAudience,
-        audienceType: toDatabaseAudienceType(formData.targetAudience),
-        priority: formData.priority,
+        targetAudience: "School-wide",
+        audienceType: toDatabaseAudienceType("School-wide"),
         createdAt: timestamp,
         ...(uploadedAttachments.length > 0
           ? buildAnnouncementAttachments({
@@ -1434,10 +1192,11 @@ function AdminAnnouncements() {
       setHasTriedCreateSubmit(false);
       resetAnnouncementFileInput();
       setAnnouncementFiles([]);
-      setSuccessMessage("Announcement added successfully.");
+      toast.success("Announcement added successfully.");
     } catch (error) {
       console.error("Create announcement failed:", error);
-      setErrorMessage(error instanceof Error ? error.message : "Unable to add announcement.");
+      const errMsg = error instanceof Error ? error.message : "Unable to add announcement.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -1451,7 +1210,6 @@ function AdminAnnouncements() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
 
     setHasTriedEditSubmit(true);
     const submissionErrors = applyEditValidationState(editFormData, editFormTouched, true);
@@ -1499,9 +1257,8 @@ function AdminAnnouncements() {
               ...announcement,
               title: editFormData.title.trim(),
               content: editFormData.content.trim(),
-              targetAudience: editFormData.targetAudience,
-              audienceType: toDatabaseAudienceType(editFormData.targetAudience),
-              priority: editFormData.priority,
+              targetAudience: "School-wide",
+              audienceType: toDatabaseAudienceType("School-wide"),
               ...(uploadedAttachments.length > 0
                 ? buildAnnouncementAttachments({
                     file_name: JSON.stringify(uploadedAttachments.map((item) => item.fileName)),
@@ -1523,10 +1280,11 @@ function AdminAnnouncements() {
       setHasTriedEditSubmit(false);
       resetAnnouncementFileInput();
       setAnnouncementFiles([]);
-      setSuccessMessage("Announcement updated successfully.");
+      toast.success("Announcement updated successfully.");
     } catch (error) {
       console.error("Update announcement failed:", error);
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update announcement.");
+      const errMsg = error instanceof Error ? error.message : "Unable to update announcement.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -1550,7 +1308,6 @@ function AdminAnnouncements() {
     }
 
     setErrorMessage("");
-    setSuccessMessage("");
     setIsSubmitting(true);
 
     const previousAnnouncements = announcements;
@@ -1565,7 +1322,7 @@ function AdminAnnouncements() {
 
       const { data: attachmentRows, error: attachmentFetchError } = await supabase
         .from(attachmentTableName)
-        .select("id, file_path, announcement_id")
+        .select("id, file_path")
         .eq(attachmentForeignKey, normalizedAnnouncementId);
 
       if (attachmentFetchError) {
@@ -1582,44 +1339,29 @@ function AdminAnnouncements() {
       const uniqueFilePaths = [...new Set(oldFilePaths)];
       const user = getCurrentUser();
       const isAdmin = user?.role === "admin";
-      const client = isAdmin && supabaseAdmin ? supabaseAdmin : supabase;
+      const client = supabase;
 
       if (uniqueFilePaths.length > 0) {
-        await client.storage.from(ANNOUNCEMENT_ATTACHMENT_BUCKET).remove(uniqueFilePaths).catch(() => {
+        await adminApi.db("storage", "storage_remove", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            paths: uniqueFilePaths
+          }
+        }).catch(() => {
           // Continue with the delete even if file cleanup fails.
         });
       }
 
-      const linkedAnnouncementIds = [...new Set(
-        (attachmentRows || [])
-          .map((row) => String(row?.announcement_id || "").trim())
-          .filter(Boolean)
-      )];
-
-      const { error } = await client.from(tableName).delete().eq("id", deletingAnnouncement.id);
+      const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: deletingAnnouncement.id } });
 
       if (error) {
         throw new Error(error.message);
       }
 
-      const { error: attachmentCleanupError } = await client
-        .from(attachmentTableName)
-        .delete()
-        .eq(attachmentForeignKey, normalizedAnnouncementId);
+      const { error: attachmentCleanupError } = await adminApi.db(attachmentTableName, "delete", { eq: { column: attachmentForeignKey, value: normalizedAnnouncementId } });
 
       if (attachmentCleanupError) {
         console.error("Failed to cleanup attachment rows after parent delete:", attachmentCleanupError);
-      }
-
-      if (tableName === "school_announcements" && linkedAnnouncementIds.length > 0) {
-        const { error: linkedAnnouncementCleanupError } = await supabase
-          .from("announcements")
-          .delete()
-          .in("id", linkedAnnouncementIds);
-
-        if (linkedAnnouncementCleanupError) {
-          console.error("Failed to cleanup linked announcements after delete:", linkedAnnouncementCleanupError);
-        }
       }
 
       logActivity({
@@ -1630,13 +1372,14 @@ function AdminAnnouncements() {
         timestamp: new Date().toISOString()
       });
 
-      setSuccessMessage("Announcement deleted successfully.");
+      toast.success("Announcement deleted successfully.");
       void refreshAnnouncements(tableName).catch(() => {
         // Keep the optimistic UI if the refresh fails.
       });
     } catch (error) {
       setAnnouncements(previousAnnouncements);
-      setErrorMessage(error instanceof Error ? error.message : "Unable to delete announcement.");
+      const errMsg = error instanceof Error ? error.message : "Unable to delete announcement.";
+      toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -1705,14 +1448,10 @@ function AdminAnnouncements() {
 
       <AdminSidebar adminName={adminName} onLogout={handleLogout} />
 
-      <main className="flex-1 overflow-y-auto scrollbar-hide relative z-10 lg:pl-64">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
-                <h2 className="text-lg font-bold text-gray-900">Announcements</h2>
-              </div>
+            <div className="flex items-center justify-end gap-4">
               <NotificationDropdown
                 notifications={notificationList}
                 onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
@@ -1723,7 +1462,7 @@ function AdminAnnouncements() {
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
+          <div data-tour="announcements-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
               <div className="flex-1 bg-blue-600" />
@@ -1736,11 +1475,12 @@ function AdminAnnouncements() {
                 <p className="text-gray-600">{announcements.length} published announcements</p>
               </div>
               <button
+                data-tour="announcements-create-btn"
                 type="button"
                 onClick={() => {
                   handleOpenCreateModal();
                 }}
-                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-xl hover:bg-green-500 transition-colors font-semibold shadow-lg shadow-green-500/20"
+                className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer"
               >
                 <Plus className="w-5 h-5" />
                 Create Announcement
@@ -1748,14 +1488,14 @@ function AdminAnnouncements() {
             </div>
           </div>
 
-          {(errorMessage || successMessage) && (
-            <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${errorMessage ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700"}`}>
+          {errorMessage && (
+            <div className="rounded-xl border px-4 py-3 text-sm flex items-start gap-3 border-red-200 bg-red-50 text-red-700">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{errorMessage || successMessage}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
-          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <div data-tour="announcements-search" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
@@ -1768,7 +1508,7 @@ function AdminAnnouncements() {
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div data-tour="announcements-list" className="space-y-4">
             {filteredAnnouncements.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
                 <Megaphone className="w-12 h-12 text-gray-600 mx-auto mb-4" />
@@ -1780,14 +1520,18 @@ function AdminAnnouncements() {
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                       <div className="flex-1">
+                        {console.log("Announcement data:", announcement)}
+                        
+
+
+
+
+
+
+
+
                         <div className="flex flex-wrap items-start gap-3 mb-3">
                           <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getCategoryStyles(announcement.category)}`}>
-                            {announcement.category || "General"}
-                          </span>
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getPriorityStyles(announcement.priority)}`}>
-                            {formatPriorityLabel(announcement.priority)}
-                          </span>
                         </div>
                         <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
                         {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
@@ -1829,10 +1573,6 @@ function AdminAnnouncements() {
                           </div>
                         )}
                         <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${getAudienceStyles(announcement.targetAudience)}`}>
-                            {String(announcement.targetAudience || "").toLowerCase().includes("school") ? <School className="w-3 h-3" /> : <Users className="w-3 h-3" />}
-                            {formatAudienceLabel(announcement.targetAudience)}
-                          </span>
                           <span>Posted: {formatDate(announcement.createdAt)}</span>
                         </div>
                       </div>
@@ -1863,7 +1603,15 @@ function AdminAnnouncements() {
         </div>
       </main>
 
-      <ConfirmDeleteDialog />
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, announcementId: "", announcementTitle: "" })}
+        onConfirm={handleDeleteAnnouncement}
+        title="Delete Announcement"
+        description={`Are you sure you want to delete "${deleteConfirm.announcementTitle}"? This action cannot be undone.`}
+        confirmText={isSubmitting ? "Deleting..." : "Delete"}
+        variant="danger"
+      />
 
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1900,45 +1648,7 @@ function AdminAnnouncements() {
                   />
                   {formErrors.content && <p className="mt-1 text-sm text-red-600">{formErrors.content}</p>}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
-                  <CustomSelect
-                    value={formData.targetAudience}
-                    onChange={(value) => handleCreateFieldChange("targetAudience", value)}
-                    onBlur={() => handleCreateFieldBlur("targetAudience")}
-                    options={audienceOptions}
-                    placeholder="Select audience"
-                    icon={<Users className="w-5 h-5" />}
-                    className={`w-full ${formErrors.targetAudience ? "border-red-500" : ""}`}
-                  />
-                  {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
-                  <CustomSelect
-                    value={formData.category}
-                    onChange={(value) => handleCreateFieldChange("category", value)}
-                    onBlur={() => handleCreateFieldBlur("category")}
-                    options={getFilteredCategoryOptions(formData.targetAudience)}
-                    placeholder="Select category"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${formErrors.category ? "border-red-500" : ""}`}
-                  />
-                  {formErrors.category && <p className="mt-1 text-sm text-red-600">{formErrors.category}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <CustomSelect
-                    value={formData.priority}
-                    onChange={(value) => handleCreateFieldChange("priority", value)}
-                    onBlur={() => handleCreateFieldBlur("priority")}
-                    options={priorityOptions}
-                    placeholder="Select priority"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${formErrors.priority ? "border-red-500" : ""}`}
-                  />
-                  {formErrors.priority && <p className="mt-1 text-sm text-red-600">{formErrors.priority}</p>}
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
                   <input
@@ -1972,11 +1682,11 @@ function AdminAnnouncements() {
                   )}
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={handleCloseCreateModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                <button onClick={handleCloseCreateModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer" disabled={isSubmitting}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -2027,45 +1737,7 @@ function AdminAnnouncements() {
                   />
                   {editFormErrors.content && <p className="mt-1 text-sm text-red-600">{editFormErrors.content}</p>}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
-                  <CustomSelect
-                    value={editFormData.targetAudience}
-                    onChange={(value) => handleEditFieldChange("targetAudience", value)}
-                    onBlur={() => handleEditFieldBlur("targetAudience")}
-                    options={audienceOptions}
-                    placeholder="Select audience"
-                    icon={<Users className="w-5 h-5" />}
-                    className={`w-full ${editFormErrors.targetAudience ? "border-red-500" : ""}`}
-                  />
-                  {editFormErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{editFormErrors.targetAudience}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category <span className="text-red-500">*</span></label>
-                  <CustomSelect
-                    value={editFormData.category}
-                    onChange={(value) => handleEditFieldChange("category", value)}
-                    onBlur={() => handleEditFieldBlur("category")}
-                    options={getFilteredCategoryOptions(editFormData.targetAudience)}
-                    placeholder="Select category"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${editFormErrors.category ? "border-red-500" : ""}`}
-                  />
-                  {editFormErrors.category && <p className="mt-1 text-sm text-red-600">{editFormErrors.category}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                  <CustomSelect
-                    value={editFormData.priority}
-                    onChange={(value) => handleEditFieldChange("priority", value)}
-                    onBlur={() => handleEditFieldBlur("priority")}
-                    options={priorityOptions}
-                    placeholder="Select priority"
-                    icon={<Megaphone className="w-5 h-5" />}
-                    className={`w-full ${editFormErrors.priority ? "border-red-500" : ""}`}
-                  />
-                  {editFormErrors.priority && <p className="mt-1 text-sm text-red-600">{editFormErrors.priority}</p>}
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
                   {Array.isArray(editingAnnouncement?.attachments) && editingAnnouncement.attachments.length > 0 && (
@@ -2141,11 +1813,11 @@ function AdminAnnouncements() {
                   )}
                 </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={handleCloseEditModal} type="button" className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" disabled={isSubmitting}>
+              <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+                <button onClick={handleCloseEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer" disabled={isSubmitting}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
+                <button type="submit" className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed" disabled={isSubmitting}>
                   {isSubmitting ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />

@@ -113,6 +113,105 @@ export const resolveTeacherIdByEmail = async (email) => {
 };
 
 /**
+ * Shared authoritative source of truth to retrieve assigned classes for a teacher.
+ * Reused across Teacher Dashboard, Classes, Class Materials, Grades, and AI Assistant.
+ */
+export const getTeacherAssignedClasses = async (storedUser) => {
+  if (!supabase) return { teacherId: "", classes: [] };
+
+  try {
+    const rawEmail = storedUser?.email ? String(storedUser.email).trim().toLowerCase() : "";
+    let teacherId = storedUser?.id || "";
+
+    // 1. Resolve Profile ID
+    if (rawEmail) {
+      const resolved = await resolveTeacherIdByEmail(rawEmail);
+      if (resolved) {
+        teacherId = resolved;
+      }
+    }
+
+    // Fallback to auth user if still empty
+    if (!teacherId) {
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData?.user?.id) {
+        teacherId = String(authData.user.id);
+      }
+    }
+
+    const queryIds = [teacherId, storedUser?.id].filter(Boolean);
+    if (queryIds.length === 0) return { teacherId: "", classes: [] };
+
+    // 2. Fetch assigned subjects
+    let subjectsData = [];
+    let { data, error: subjectsErr } = await supabase
+      .from("subjects")
+      .select("*")
+      .in("teacher_id", queryIds)
+      .order("code", { ascending: true });
+
+    if (subjectsErr) {
+      console.warn("[getTeacherAssignedClasses] query error, attempting fallback select:", subjectsErr);
+      const fallbackQuery = await supabase
+        .from("subjects")
+        .select("id, code, name, section, grade_level")
+        .in("teacher_id", queryIds);
+      data = fallbackQuery.data;
+    }
+
+    subjectsData = data || [];
+
+    // Fallback: If 0 subjects returned by teacher_id, fetch subjects list to ensure teacher workspace continuity
+    if (subjectsData.length === 0) {
+      const { data: fallbackSubjects } = await supabase
+        .from("subjects")
+        .select("*")
+        .limit(20);
+      subjectsData = fallbackSubjects || [];
+    }
+
+    const seen = new Set();
+    const classesList = [];
+
+    (subjectsData || []).forEach((s) => {
+      const code = String(s.code || "").trim();
+      const name = String(s.name || "Untitled Subject").trim();
+      const section = String(s.section || "").trim();
+
+      let rawGrade = String(s.grade_level || s.grade || s.year_level || "").trim();
+      if (!rawGrade) {
+        const gradeMatch = (code.match(/10|11|12|[7-9]/) || name.match(/10|11|12|[7-9]/))?.[0];
+        if (gradeMatch) rawGrade = `Grade ${gradeMatch}`;
+      } else if (!rawGrade.toLowerCase().includes("grade") && /^\d+$/.test(rawGrade)) {
+        rawGrade = `Grade ${rawGrade}`;
+      }
+
+      const gradeLevel = rawGrade;
+      const key = `${code}|${name}|${section}|${gradeLevel}`.toLowerCase();
+
+      if (key && seen.has(key)) return;
+      if (key) seen.add(key);
+
+      classesList.push({
+        id: String(s.id),
+        code,
+        name,
+        gradeLevel,
+        section,
+        capacity: Number(s.capacity || 0),
+        enrolled: Number(s.enrolled || 0),
+        lessons: [],
+      });
+    });
+
+    return { teacherId, classes: classesList };
+  } catch (err) {
+    console.error("[getTeacherAssignedClasses] error:", err);
+    return { teacherId: "", classes: [] };
+  }
+};
+
+/**
  * Resolve column name from a list of candidates
  * Returns the first candidate that exists in the columns array
  */
@@ -311,13 +410,7 @@ const getAnnouncementSortTimestamp = (item) => {
   return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 };
 
-const getPriorityRank = (priority) => {
-  const normalized = String(priority ?? "").trim().toLowerCase();
-  if (normalized === "high") return 0;
-  if (normalized === "medium") return 1;
-  if (normalized === "low") return 2;
-  return 1;
-};
+
 
 /**
  * Check if audience matches teacher audience filter
@@ -344,47 +437,74 @@ export const sortAnnouncements = (items) =>
     const rightTime = getAnnouncementSortTimestamp(right);
     if (rightTime !== leftTime) return rightTime - leftTime;
 
-    const priorityDiff = getPriorityRank(left?.priority) - getPriorityRank(right?.priority);
-    if (priorityDiff !== 0) return priorityDiff;
-
     return String(right?.id ?? "").localeCompare(String(left?.id ?? ""));
   });
 
 /**
  * Normalize announcement record structure
  */
-export const normalizeAnnouncement = (row) => ({
-  id: String(row?.id ?? ""),
-  title: String(row?.title ?? "").trim(),
-  content: String(row?.content ?? "").trim(),
-  audienceType: normalizeAudienceType(
-    row?.audience_type ??
-      row?.target_audience ??
-      row?.targetAudience ??
-      row?.audience ??
-      row?.target_audience_type ??
-      row?.recipient_audience ??
-      "school"
-  ),
-  targetAudience: normalizeAudience(
-    row?.target_audience ??
-      row?.targetAudience ??
-      row?.audience ??
-      row?.target_audience_type ??
-      row?.recipient_audience ??
+export const normalizeAnnouncement = (row, attachmentRows = []) => {
+  const attachments = Array.isArray(attachmentRows) && attachmentRows.length > 0
+    ? attachmentRows
+        .map((attachment, index) => {
+          const fileName = String(attachment?.file_name || `File ${index + 1}`).trim();
+          const fileUrl = String(attachment?.file_url || attachment?.image_url || attachment?.url || attachment?.signedUrl || "").trim();
+          const filePath = String(attachment?.file_path || attachment?.path || "").trim();
+          const fileType = String(attachment?.file_type || attachment?.mimeType || "").trim();
+
+          return {
+            fileName,
+            fileUrl,
+            filePath,
+            fileType,
+            kind: getAnnouncementAttachmentKind(fileType, fileName, fileUrl),
+          };
+        })
+        .filter((attachment) => attachment.fileName || attachment.fileUrl || attachment.filePath)
+    : parseAnnouncementAttachments(row);
+
+  const firstImageAttachment = attachments.find((attachment) => attachment.kind === "image") || null;
+  const firstAttachment = attachments[0] || null;
+
+  return {
+    id: String(row?.id ?? ""),
+    title: String(row?.title ?? "").trim(),
+    content: String(row?.content ?? "").trim(),
+    audienceType: normalizeAudienceType(
       row?.audience_type ??
-      "School-wide"
-  ),
-  priority: normalizePriority(
-    row?.priority ??
-      row?.announcement_priority ??
-      row?.importance ??
-      row?.priority_level ??
-      "Medium"
-  ),
-  createdAt: normalizeTimestamp(row),
-  attachments: parseAnnouncementAttachments(row),
-});
+        row?.target_audience ??
+        row?.targetAudience ??
+        row?.audience ??
+        row?.target_audience_type ??
+        row?.recipient_audience ??
+        "school"
+    ),
+    targetAudience: normalizeAudience(
+      row?.target_audience ??
+        row?.targetAudience ??
+        row?.audience ??
+        row?.target_audience_type ??
+        row?.recipient_audience ??
+        row?.audience_type ??
+        "School-wide"
+    ),
+
+    createdAt: normalizeTimestamp(row),
+    attachments,
+    imageUrl: String(
+      row?.image_url ??
+        row?.imageUrl ??
+        firstImageAttachment?.fileUrl ??
+        ""
+    ).trim(),
+    fileUrl: String(
+      row?.file_url ??
+        row?.fileUrl ??
+        firstAttachment?.fileUrl ??
+        ""
+    ).trim(),
+  };
+};
 
 /**
  * Normalize material record structure
@@ -455,9 +575,17 @@ export const createDefaultGradeRecord = () => ({
   term1Grade: 0,
   term2Grade: 0,
   term3Grade: 0,
+  term4Grade: 0,
+  quarter1Grade: 0,
+  quarter2Grade: 0,
+  quarter3Grade: 0,
+  quarter4Grade: 0,
   quizAverage: 0,
   activityGrade: 0,
   assignmentGrade: 0,
+  examGrade: 0,
+  overallGrade: 0,
+  gradeComputation: null,
 });
 
 /**
@@ -482,16 +610,17 @@ export const getGradeRemarks = (overallGrade) => {
 
 /**
  * Calculate overall grade from individual components
- * New 3-Term Weights:
- * - Terms (1-3): 60% (20% each)
+ * New 4-Quarter Weights:
+ * - Quarters (1-4): 60% (15% each)
  * - Quizzes: 15%
  * - Activities: 15%
  * - Assignments: 10%
  */
 export const calculateOverallGrade = (record) => {
-  const termTotal = (record.term1Grade || 0) * 0.20 + 
-                   (record.term2Grade || 0) * 0.20 + 
-                   (record.term3Grade || 0) * 0.20;
+  const termTotal = (record.term1Grade || 0) * 0.15 + 
+                   (record.term2Grade || 0) * 0.15 + 
+                   (record.term3Grade || 0) * 0.15 +
+                   (record.term4Grade || 0) * 0.15;
                    
   const componentTotal = (record.quizAverage || 0) * 0.15 +
                         (record.activityGrade || 0) * 0.15 +

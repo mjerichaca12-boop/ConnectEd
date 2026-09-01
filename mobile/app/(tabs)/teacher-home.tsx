@@ -33,9 +33,6 @@ export default function TeacherHomeScreen() {
 
     const handleAction = (action: string) => {
         switch(action) {
-            case "Attendance":
-                router.push("/(tabs)/teacher/attendance" as Href);
-                break;
             case "Grades":
                 router.push("/(tabs)/teacher/grades" as Href);
                 break;
@@ -44,9 +41,6 @@ export default function TeacherHomeScreen() {
                 break;
             case "Message":
                 router.push("/(tabs)/messages" as Href);
-                break;
-            case "Meeting":
-                router.push("/(tabs)/teacher/meeting" as Href);
                 break;
             case "Materials":
                 router.push("/(tabs)/teacher/materials" as Href);
@@ -71,14 +65,6 @@ export default function TeacherHomeScreen() {
                 {/* Quick Actions Grid */}
                 <Text style={styles.sectionTitle}>Quick Actions</Text>
                 <View style={styles.grid}>
-                    <TouchableOpacity style={styles.actionCard} onPress={() => handleAction("Attendance")}>
-                        <Ionicons name="calendar" size={28} color={Colors.light.primary} />
-                        <View style={styles.actionTextContainer}>
-                            <Text style={styles.actionTitle}>Record Attendance</Text>
-                            <Text style={styles.actionDesc}>Mark today&apos;s attendance</Text>
-                        </View>
-                    </TouchableOpacity>
-
                     <TouchableOpacity style={styles.actionCard} onPress={() => handleAction("Grades")}>
                         <Ionicons name="trending-up" size={28} color="#3B82F6" />
                         <View style={styles.actionTextContainer}>

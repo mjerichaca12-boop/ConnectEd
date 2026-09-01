@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
+import { useAcademic } from "@/app/context/AcademicContext";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   sanitizeFileName,
@@ -48,10 +49,16 @@ const ACTIVITY_SUBJECT_OPTIONS = [
   { value: "chem", label: "Chemistry" }
 ];
 
-
+function normalizeMaterialRow(row) {
+  return {
+    ...row,
+    file_type: row.file_type || "OTHER"
+  };
+}
 
 function ClassMaterials() {
   const navigate = useNavigate();
+  const { activeSchoolYear, activeQuarter, viewMode, setViewMode } = useAcademic();
   const materialFileInputRef = useRef(null);
   const activityFileInputRef = useRef(null);
 
@@ -94,9 +101,15 @@ function ClassMaterials() {
     }
   };
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-
-  const fetchMaterials = async (resolvedTeacherId) => {
+  const fetchMaterials = useCallback(async (resolvedTeacherId) => {
     if (!supabase) {
       setMaterials([]);
       return;
@@ -111,22 +124,31 @@ function ClassMaterials() {
         .select("*")
         .order("created_at", { ascending: false });
 
-      if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
-        query = query.eq("teacher_id", resolvedTeacherId);
+      if (materialColumns.includes("school_year")) {
+        query = query.eq("school_year", activeSchoolYear);
+      }
+      
+      if (viewMode === "current" && materialColumns.includes("term")) {
+        query = query.eq("term", activeQuarter);
       }
 
-      if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+      if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
+        query = query.eq("teacher_id", resolvedTeacherId);
+      } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
         query = query.eq("created_by", resolvedTeacherId);
+      } else if (resolvedTeacherId) {
+        query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
       }
 
       let { data, error } = await query;
 
-      // Handle case where table doesn't exist or permissions issue
       if (error && (error.code === 'PGRST116' || error.status === 400)) {
         console.warn("class_materials table not accessible, showing empty state:", error);
-        setMaterials([]);
-        setMaterialError("");
-        setLoadingMaterials(false);
+        if (mountedRef.current) {
+          setMaterials([]);
+          setMaterialError("");
+          setLoadingMaterials(false);
+        }
         return;
       }
 
@@ -135,10 +157,10 @@ function ClassMaterials() {
 
         if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
           query = query.eq("teacher_id", resolvedTeacherId);
-        }
-
-        if (resolvedTeacherId && !materialColumns.includes("teacher_id") && materialColumns.includes("created_by")) {
+        } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
           query = query.eq("created_by", resolvedTeacherId);
+        } else if (resolvedTeacherId) {
+          query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
         }
 
         const fallbackResult = await query;
@@ -148,21 +170,30 @@ function ClassMaterials() {
 
       if (error) {
         console.error("Failed to fetch class materials:", error);
-        setMaterials([]);
-        setMaterialError("Unable to load class materials.");
-        setLoadingMaterials(false);
+        if (mountedRef.current) {
+          setMaterials([]);
+          setMaterialError("Unable to load class materials.");
+          setLoadingMaterials(false);
+        }
         return;
       }
 
-    setMaterials((data ?? []).map((row) => normalizeMaterialRow(row)));
-      setLoadingMaterials(false);
+      if (mountedRef.current) {
+        setMaterials((data ?? []).map((row) => normalizeMaterialRow(row)));
+        setMaterialError("");
+      }
     } catch (err) {
-      console.error("Unexpected error in fetchMaterials:", err);
-      setMaterials([]);
-      setMaterialError("Unexpected error loading materials.");
-      setLoadingMaterials(false);
+      console.error("Error fetching class materials:", err);
+      if (mountedRef.current) {
+        setMaterials([]);
+        setMaterialError("An unexpected error occurred while loading materials.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setLoadingMaterials(false);
+      }
     }
-  };
+  }, [materialColumns, activeSchoolYear, activeQuarter, viewMode]);
 
   const resolveMaterialColumns = async () => {
     if (!supabase) {
@@ -179,21 +210,20 @@ function ClassMaterials() {
       "file_path",
       "subject",
       "section",
-      "subject_id",
       "teacher_id",
       "created_by",
-      "created_at"
+      "created_at",
+      "school_year",
+      "term"
     ];
 
     const detected = [];
 
-    // First check if table exists by trying a simple query
     try {
       const { error: tableCheckError } = await supabase.from("class_materials").select("id", { count: "exact", head: true });
       
       if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400)) {
         console.warn("class_materials table not accessible, using default columns:", tableCheckError);
-        // Return default columns that might exist
         return ["id", "title", "description", "file_type", "file_url", "created_at"];
       }
     } catch (err) {
@@ -216,14 +246,6 @@ function ClassMaterials() {
     return detected;
   };
 
-  const getMaterialColumns = async () => {
-    if (materialColumns.length > 0) {
-      return materialColumns;
-    }
-
-    return resolveMaterialColumns();
-  };
-
   const fetchTeacherSubjects = async (resolvedTeacherId) => {
     if (!supabase || !resolvedTeacherId) {
       setSubjectOptions([]);
@@ -233,7 +255,7 @@ function ClassMaterials() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("id, code, name, section")
+      .select("code, name, section, grade_level")
       .eq("teacher_id", resolvedTeacherId)
       .order("code", { ascending: true });
 
@@ -254,7 +276,7 @@ function ClassMaterials() {
 
       if (subjectLabel && !subjectSet.has(subjectLabel)) {
         subjectSet.add(subjectLabel);
-        subjects.push({ value: item.id || subjectLabel, label: subjectLabel });
+        subjects.push({ value: subjectLabel, label: subjectLabel });
       }
 
       const sectionLabel = String(item.section || "").trim();
@@ -287,13 +309,18 @@ function ClassMaterials() {
       setTeacherId(resolvedTeacherId);
       await resolveMaterialColumns();
       await Promise.all([
-        fetchMaterials(resolvedTeacherId),
-        fetchTeacherSubjects(resolvedTeacherId)
+        fetchTeacherSubjects(resolvedTeacherId),
       ]);
     };
 
     initialize();
   }, [navigate]);
+
+  useEffect(() => {
+    if (teacherId) {
+      fetchMaterials(teacherId);
+    }
+  }, [fetchMaterials, teacherId]);
 
   useEffect(() => {
     if (!supabase || !teacherId) return;
@@ -397,6 +424,17 @@ function ClassMaterials() {
       return;
     }
 
+    if (materialFile.size === 0) {
+      setMaterialError("The selected file is empty.");
+      return;
+    }
+
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+    if (materialFile.size > MAX_FILE_SIZE) {
+      setMaterialError("File is too large. Maximum allowed size is 50 MB.");
+      return;
+    }
+
     if (!supabase) {
       setMaterialError("Database connection is unavailable.");
       return;
@@ -417,7 +455,7 @@ function ClassMaterials() {
       const storedFileName = `${timestamp}_${safeFileName}`;
       const filePath = `class-materials/${teacherId || "teacher"}/${storedFileName}`;
 
-      const columns = await getMaterialColumns();
+      const columns = await resolveMaterialColumns();
       const hasTeacherIdColumn = columns.includes("teacher_id");
       const hasCreatedByColumn = columns.includes("created_by");
 
@@ -459,12 +497,16 @@ function ClassMaterials() {
         payload.subject = materialForm.subject.trim() || null;
       }
 
-      if (columns.includes("subject_id")) {
-        payload.subject_id = materialForm.subject.trim() || null;
-      }
-
       if (columns.includes("section")) {
         payload.section = materialForm.section.trim() || null;
+      }
+
+      if (columns.includes("school_year")) {
+        payload.school_year = activeSchoolYear;
+      }
+
+      if (columns.includes("term")) {
+        payload.term = activeQuarter;
       }
 
       if (hasTeacherIdColumn) {
@@ -497,8 +539,12 @@ function ClassMaterials() {
           file_name: storedFileName
         };
 
-        if (columns.includes("subject_id")) {
-          fallbackPayload.subject_id = materialForm.subject.trim() || null;
+        if (columns.includes("school_year")) {
+          fallbackPayload.school_year = activeSchoolYear;
+        }
+
+        if (columns.includes("term")) {
+          fallbackPayload.term = activeQuarter;
         }
 
         if (hasTeacherIdColumn) {
@@ -613,6 +659,18 @@ function ClassMaterials() {
                   <Upload className="w-5 h-5" />
                   Upload Material
                 </button>
+              </div>
+              <div className="flex justify-end mb-4">
+                <div className="w-64">
+                  <CustomSelect
+                    value={viewMode}
+                    onChange={(val) => setViewMode(val)}
+                    options={[
+                      { label: "Current Quarter Only", value: "current" },
+                      { label: "All Quarters (History)", value: "all" }
+                    ]}
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
@@ -933,6 +991,7 @@ function ClassMaterials() {
                     {activityFileName || "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP (max 50MB)</p>
+                  <p className="text-xs text-gray-500">PDF, DOC, DOCX, ZIP</p>
                 </label>
               </div>
 

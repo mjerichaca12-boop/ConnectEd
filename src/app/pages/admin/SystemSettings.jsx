@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { Bell, Calendar, Shield, Database, Globe, Save, Snowflake, Sun } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/app/lib/supabaseClient";
+import { DEPED_DEFAULT_GRADE_SETTINGS, DEPED_SUBJECT_CATEGORIES } from "@/app/lib/depedGrading";
 function SystemSettings() {
   const navigate = useNavigate();
   const [adminName, setAdminName] = useState("");
@@ -16,6 +19,10 @@ function SystemSettings() {
     allowSelfEnrollment: true,
     requireApproval: true
   });
+  const [gradingSettings, setGradingSettings] = useState(DEPED_DEFAULT_GRADE_SETTINGS);
+  const [gradingLoading, setGradingLoading] = useState(false);
+  const [gradingSaving, setGradingSaving] = useState(false);
+  const [gradingError, setGradingError] = useState("");
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -30,6 +37,43 @@ function SystemSettings() {
     setAdminName(user.name);
     setTimeout(() => setLoading(false), 600);
   }, [navigate]);
+
+  useEffect(() => {
+    const loadGradingSettings = async () => {
+      if (!supabase) {
+        setGradingSettings(DEPED_DEFAULT_GRADE_SETTINGS);
+        return;
+      }
+
+      setGradingLoading(true);
+      const { data, error } = await supabase
+        .from("grading_settings")
+        .select("subject_category, written_works_weight, performance_tasks_weight, written_works_enabled, performance_tasks_enabled");
+
+      if (error || !data) {
+        console.warn("Failed to load grading settings:", error);
+        setGradingSettings(DEPED_DEFAULT_GRADE_SETTINGS);
+        setGradingLoading(false);
+        return;
+      }
+
+      const mapped = { ...DEPED_DEFAULT_GRADE_SETTINGS };
+      (data ?? []).forEach((row) => {
+        if (!row?.subject_category) return;
+        mapped[row.subject_category] = {
+          writtenWorksWeight: Number(row.written_works_weight ?? 0) || 0,
+          performanceTasksWeight: Number(row.performance_tasks_weight ?? 0) || 0,
+          writtenWorksEnabled: row.written_works_enabled !== false,
+          performanceTasksEnabled: row.performance_tasks_enabled !== false,
+        };
+      });
+
+      setGradingSettings(mapped);
+      setGradingLoading(false);
+    };
+
+    loadGradingSettings();
+  }, []);
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
@@ -37,20 +81,84 @@ function SystemSettings() {
   const handleSaveSettings = () => {
     alert("Settings saved successfully!");
   };
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="flex gap-1.5 justify-center mb-4">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-bounce" style={{animationDelay:'0ms'}} />
-            <div className="w-3 h-3 rounded-full bg-blue-500 animate-bounce" style={{animationDelay:'150ms'}} />
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-bounce" style={{animationDelay:'300ms'}} />
-          </div>
-          <p className="text-gray-500">Loading system settings...</p>
-        </div>
-      </div>
-    );
-  }
+
+  const updateCategorySetting = (category, field, value) => {
+    setGradingSettings((current) => ({
+      ...current,
+      [category]: {
+        ...(current[category] || DEPED_DEFAULT_GRADE_SETTINGS[category]),
+        [field]: value,
+      },
+    }));
+  };
+
+  const validateGradingSettings = () => {
+    for (const category of DEPED_SUBJECT_CATEGORIES) {
+      const config = gradingSettings[category] || DEPED_DEFAULT_GRADE_SETTINGS[category];
+      const total = Number(config.writtenWorksWeight || 0) + Number(config.performanceTasksWeight || 0);
+      if (Math.round(total * 100) / 100 !== 100) {
+        return `${category} must total 100%.`;
+      }
+    }
+
+    return "";
+  };
+
+  const handleSaveGradingSettings = async (overrideSettings = null) => {
+    const nextSettings = overrideSettings || gradingSettings;
+    const validationError = (() => {
+      for (const category of DEPED_SUBJECT_CATEGORIES) {
+        const config = nextSettings[category] || DEPED_DEFAULT_GRADE_SETTINGS[category];
+        const total = Number(config.writtenWorksWeight || 0) + Number(config.performanceTasksWeight || 0);
+        if (Math.round(total * 100) / 100 !== 100) {
+          return `${category} must total 100%.`;
+        }
+      }
+
+      return "";
+    })();
+    if (validationError) {
+      setGradingError(validationError);
+      return;
+    }
+
+    if (!supabase) {
+      setGradingError("Supabase client is not configured.");
+      return;
+    }
+
+    setGradingSaving(true);
+    setGradingError("");
+
+    try {
+      const payload = DEPED_SUBJECT_CATEGORIES.map((category) => ({
+        subject_category: category,
+        written_works_weight: Number(nextSettings[category]?.writtenWorksWeight || 0),
+        performance_tasks_weight: Number(nextSettings[category]?.performanceTasksWeight || 0),
+        written_works_enabled: nextSettings[category]?.writtenWorksEnabled !== false,
+        performance_tasks_enabled: nextSettings[category]?.performanceTasksEnabled !== false,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error } = await supabase.from("grading_settings").upsert(payload, { onConflict: "subject_category" });
+      if (error) throw error;
+
+      toast.success("Grading settings saved successfully.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save grading settings.";
+      setGradingError(message);
+      toast.error(message);
+    } finally {
+      setGradingSaving(false);
+    }
+  };
+
+  const handleRestoreDefaultGradingSettings = async () => {
+    setGradingSettings(DEPED_DEFAULT_GRADE_SETTINGS);
+    setGradingError("");
+    await handleSaveGradingSettings(DEPED_DEFAULT_GRADE_SETTINGS);
+  };
+
   return <div className="min-h-screen bg-gray-50 flex relative overflow-hidden">
       <div className="absolute inset-0 z-0 pointer-events-none">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-green-600/5 rounded-full blur-[150px]" />
@@ -194,6 +302,105 @@ function SystemSettings() {
   />
                   <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-500 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500 border border-gray-200" />
                 </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                  <Save className="w-6 h-6 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Grading Settings</h3>
+                  <p className="text-sm text-gray-500">DepEd JHS weights for Written Works and Performance Tasks by subject category.</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              {gradingLoading ? (
+                <p className="text-sm text-gray-500">Loading grading settings...</p>
+              ) : (
+                DEPED_SUBJECT_CATEGORIES.map((category) => {
+                  const config = gradingSettings[category] || DEPED_DEFAULT_GRADE_SETTINGS[category];
+                  return (
+                    <div key={category} className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-4">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div>
+                          <h4 className="font-semibold text-gray-900">{category}</h4>
+                          <p className="text-xs text-gray-500 mt-1">Total weight must remain 100%.</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => updateCategorySetting(category, "writtenWorksEnabled", !config.writtenWorksEnabled)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${config.writtenWorksEnabled ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}
+                          >
+                            Written Works {config.writtenWorksEnabled ? "On" : "Off"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCategorySetting(category, "performanceTasksEnabled", !config.performanceTasksEnabled)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${config.performanceTasksEnabled ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}
+                          >
+                            Performance Tasks {config.performanceTasksEnabled ? "On" : "Off"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-2">Written Works (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={config.writtenWorksWeight}
+                            onChange={(e) => updateCategorySetting(category, "writtenWorksWeight", Number(e.target.value || 0))}
+                            className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-500 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-2">Performance Tasks (%)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={config.performanceTasksWeight}
+                            onChange={(e) => updateCategorySetting(category, "performanceTasksWeight", Number(e.target.value || 0))}
+                            className="w-full px-4 py-3 bg-white text-gray-900 placeholder-gray-500 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
+                          />
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-gray-500">Current total: {Number(config.writtenWorksWeight || 0) + Number(config.performanceTasksWeight || 0)}%</p>
+                    </div>
+                  );
+                })
+              )}
+
+              {gradingError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{gradingError}</p>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleRestoreDefaultGradingSettings}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors border border-gray-200"
+                  disabled={gradingSaving}
+                >
+                  Restore Defaults
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveGradingSettings}
+                  className="px-4 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                  disabled={gradingSaving}
+                >
+                  {gradingSaving ? "Saving..." : "Save Grading Settings"}
+                </button>
               </div>
             </div>
           </div>

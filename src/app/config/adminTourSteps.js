@@ -1,0 +1,183 @@
+export const ADMIN_TOUR_STEPS = [
+  // ─── 1. ADMIN DASHBOARD & SYSTEM OVERVIEW ─────────────────────
+  {
+    id: "admin-dashboard-header",
+    targetSelector: '[data-tour="admin-dashboard-header"]',
+    fallbackTargetSelector: 'h1',
+    title: "Administrator Command Center",
+    description: "Welcome to the ConnectED Admin Portal! Monitor institution-wide academic status, enrollment metrics, and system activity in real time.",
+    placement: "bottom",
+    messageType: "info",
+    messageTitle: "Institution Status",
+    messageText: "Track active school year, current quarter, and overall school metrics.",
+    actionToRoute: "/admin/dashboard",
+  },
+  {
+    id: "admin-kpis",
+    targetSelector: '[data-tour="admin-kpi-grid"]',
+    fallbackTargetSelector: '[data-tour="admin-dashboard-header"]',
+    title: "School System Analytics",
+    description: "Overview of total registered students, active faculty members, configured subjects, and class section allocations across all grade levels.",
+    placement: "bottom",
+    messageType: "tip",
+    messageTitle: "Enrollment & Staffing",
+    messageText: "Monitor student counts, faculty allocations, and active sections.",
+  },
+
+  // ─── 2. STUDENT MANAGEMENT ─────────────────────────────────
+  {
+    id: "admin-students-nav",
+    targetSelector: '[data-tour="nav-students"]',
+    title: "Student Management Module",
+    description: "Manage student accounts, official LRN numbers, section enrollments, and academic status records.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "Student Registry",
+    messageText: "Click 'Next' to navigate to Student Management.",
+    actionToRoute: "/admin/students",
+  },
+  {
+    id: "admin-students-header",
+    targetSelector: '[data-tour="admin-students-header"]',
+    fallbackTargetSelector: 'h1',
+    title: "Student Account Directory",
+    description: "Search for registered students by name or LRN, register new student profiles, and update section placements.",
+    placement: "bottom",
+    messageType: "tip",
+    messageTitle: "Student Accounts",
+    messageText: "Filter by grade level or search for specific student records.",
+  },
+
+  // ─── 3. TEACHER MANAGEMENT ─────────────────────────────────
+  {
+    id: "admin-teachers-nav",
+    targetSelector: '[data-tour="nav-teachers"]',
+    title: "Faculty & Teacher Management",
+    description: "Create teacher credentials, verify accounts, assign subject loads, and manage department allocations.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "Faculty Roster",
+    messageText: "Click 'Next' to navigate to Faculty Management.",
+    actionToRoute: "/admin/teachers",
+  },
+  {
+    id: "admin-teachers-header",
+    targetSelector: '[data-tour="admin-teachers-header"]',
+    fallbackTargetSelector: 'h1',
+    title: "Teacher Verification & Roles",
+    description: "Approve pending teacher account requests, assign subject teaching loads, and reset passwords.",
+    placement: "bottom",
+    messageType: "warning",
+    messageTitle: "Faculty Accounts",
+    messageText: "Ensure all subject section assignments are configured before the term begins.",
+  },
+
+  // ─── 4. SUBJECT MANAGEMENT ─────────────────────────────────
+  {
+    id: "admin-subjects-nav",
+    targetSelector: '[data-tour="nav-subjects"]',
+    title: "Subject & Curriculum Management",
+    description: "Configure Junior High School curriculum subjects, course codes, unit weights, and grade level designations.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "DepEd Curriculum",
+    messageText: "Click 'Next' to navigate to Subject Management.",
+    actionToRoute: "/admin/subjects",
+  },
+  {
+    id: "admin-subjects-header",
+    targetSelector: '[data-tour="admin-subjects-header"]',
+    fallbackTargetSelector: 'h1',
+    title: "Curriculum Subject Directory",
+    description: "Add new subjects, edit course offerings, and map learning areas to Grade 7 through Grade 10 sections.",
+    placement: "bottom",
+    messageType: "tip",
+    messageTitle: "Subject Allocations",
+    messageText: "Curriculum subjects are automatically reflected in teacher gradebooks.",
+  },
+
+  // ─── 5. ANNOUNCEMENTS ──────────────────────────────────────
+  {
+    id: "admin-announcements-nav",
+    targetSelector: '[data-tour="nav-announcements"]',
+    title: "School Broadcast Announcements",
+    description: "Publish official school bulletins, emergency memos, and administrative notices to faculty and students.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "School Bulletins",
+    messageText: "Click 'Next' to navigate to Announcements.",
+    actionToRoute: "/admin/announcements",
+  },
+  {
+    id: "admin-announcements-header",
+    targetSelector: '[data-tour="admin-announcements-header"]',
+    fallbackTargetSelector: 'h1',
+    title: "Broadcast & Memo Hub",
+    description: "Post new announcements, upload PDF guidelines or memo images, and target broadcasts to specific roles.",
+    placement: "bottom",
+    messageType: "tip",
+    messageTitle: "Targeted Notices",
+    messageText: "Announcements appear instantly on teacher and student dashboards.",
+  },
+
+  // ─── 6. MESSAGES & COMMUNICATION ───────────────────────────
+  {
+    id: "admin-messages-nav",
+    targetSelector: '[data-tour="nav-messages"]',
+    title: "Direct Messages & Inbox",
+    description: "Communicate directly with teachers, staff, and students across the school network.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "Direct Messages",
+    messageText: "Click 'Next' to navigate to Messages.",
+    actionToRoute: "/admin/messages",
+  },
+
+  // ─── 7. ACADEMIC CALENDAR ──────────────────────────────────
+  {
+    id: "admin-calendar-nav",
+    targetSelector: '[data-tour="nav-calendar"]',
+    title: "Academic Calendar & Events",
+    description: "Schedule examination weeks, quarter grading deadlines, holiday breaks, and institutional events.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "School Schedule",
+    messageText: "Click 'Next' to navigate to Academic Calendar.",
+    actionToRoute: "/admin/calendar",
+  },
+
+  // ─── 8. ACADEMIC SETTINGS ─────────────────────────────────
+  {
+    id: "admin-academic-settings-nav",
+    targetSelector: '[data-tour="nav-academic-settings"]',
+    title: "Academic Settings & Terms",
+    description: "Configure active School Year terms, quarterly grading periods, section definitions, and system preferences.",
+    placement: "right",
+    messageType: "warning",
+    messageTitle: "System Configuration",
+    messageText: "Click 'Next' to navigate to Academic Settings.",
+    actionToRoute: "/admin/academic-settings",
+  },
+
+  // ─── 9. HELP CENTER & SUPPORT ─────────────────────────────
+  {
+    id: "admin-help-center-nav",
+    targetSelector: '[data-tour="nav-help-center"]',
+    title: "Help Center & System Tour",
+    description: "Access administrative documentation, user guides, FAQs, and restart guided module tours anytime.",
+    placement: "right",
+    messageType: "info",
+    messageTitle: "Support Hub",
+    messageText: "Click 'Next' to navigate to Help Center.",
+    actionToRoute: "/admin/help-center",
+  },
+
+  {
+    id: "admin-tour-finish",
+    targetSelector: null,
+    title: "System Tour Complete!",
+    description: "Congratulations! You have completed the ConnectED Administrator System Tour.\n\nYou can replay this guided tour anytime through the Help Center.",
+    isFinalStep: true,
+    finishButtonText: "Finish",
+  },
+];

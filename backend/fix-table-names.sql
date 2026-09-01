@@ -37,22 +37,7 @@ CREATE TABLE IF NOT EXISTS public.school_announcements (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS public.online_class_meetings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    subject_code TEXT,
-    subject TEXT,
-    title TEXT NOT NULL,
-    time TIMESTAMP WITH TIME ZONE NOT NULL,
-    duration TEXT DEFAULT '1h',
-    subject_id UUID REFERENCES public.subjects(id) ON DELETE CASCADE,
-    meeting_link TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
--- 3. REMOVE DUMMY DATA FROM MEETINGS (if matches known dummy)
-DELETE FROM public.online_class_meetings WHERE title = 'React Native Basics' AND subject = 'Mobile Dev';
-
--- 4. NOTIFICATION TRIGGERS
+-- 3. NOTIFICATION TRIGGERS
 
 -- Function to create notification for all users (global)
 CREATE OR REPLACE FUNCTION public.notify_all_users()

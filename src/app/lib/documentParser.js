@@ -1,20 +1,24 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import JSZip from 'jszip';
 
-// Configure PDF.js worker
+// Configure PDF.js worker using standard Vite syntax
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+  ).href;
 }
+
+// ── In-memory parse cache ──────────────────────────────────────
+// Keyed by "filename|filesize" to avoid re-processing the same file
+const _docCache = new Map();
+const _cacheKey = (file) => `${file.name}|${file.size}`;
+export const clearDocCache = () => _docCache.clear();
 
 export async function parsePDF(file) {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    
-    // Load PDF with worker
-    // disableStream + disableAutoFetch: fixes "ReadableStream is not iterable" on
-    // older mobile browsers (iOS Safari < 16.4) which lack ReadableStream async iteration.
-    // isOffscreenCanvasSupported: false fixes canvas errors on Android WebView / mobile Safari.
     const loadingTask = pdfjsLib.getDocument({
       data: arrayBuffer,
       isEvalSupported: false,
@@ -22,20 +26,15 @@ export async function parsePDF(file) {
       disableAutoFetch: true,
       isOffscreenCanvasSupported: false,
     });
-    
     const pdf = await loadingTask.promise;
     let fullText = '';
-    
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map(item => item.str)
-        .join(' ');
-      fullText += pageText + '\n';
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += `[Page ${i}]\n${pageText}\n\n`;
     }
-    
-    return fullText;
+    return fullText.trim();
   } catch (error) {
     console.error('Error parsing PDF:', error);
     throw new Error('Failed to parse PDF file: ' + error.message);
@@ -55,48 +54,66 @@ export async function parseWord(file) {
 
 export async function parsePowerPoint(file) {
   try {
-    // For PowerPoint files, we'll need to use a different approach
-    // Since direct PPT parsing in browser is complex, we'll extract text using a workaround
     const arrayBuffer = await file.arrayBuffer();
-    
-    // Convert to base64 and try to extract text
-    // This is a simplified approach - for production, consider using a proper PPT parser
-    const blob = new Blob([arrayBuffer], { type: file.type });
-    const text = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        // For PPT files, we'll need to inform user about limitations
-        // or implement a server-side parsing solution
-        resolve('PowerPoint file detected. Text extraction requires server-side processing. The file has been uploaded for AI analysis.');
-      };
-      reader.onerror = reject;
-      reader.readAsText(blob);
-    });
-    
-    return text;
+    const zip = await JSZip.loadAsync(arrayBuffer);
+
+    // Collect all slide XML files sorted by slide number
+    const slideFiles = Object.keys(zip.files)
+      .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/\d+/)?.[0] || '0', 10);
+        const numB = parseInt(b.match(/\d+/)?.[0] || '0', 10);
+        return numA - numB;
+      });
+
+    if (slideFiles.length === 0) {
+      return `[PowerPoint] No slide text could be extracted from ${file.name}.`;
+    }
+
+    const slideTexts = [];
+    for (let i = 0; i < slideFiles.length; i++) {
+      const xmlContent = await zip.files[slideFiles[i]].async('string');
+      // Extract all <a:t> text nodes from the slide XML
+      const textMatches = [...xmlContent.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)];
+      const slideText = textMatches.map(m => m[1]).join(' ').trim();
+      if (slideText) {
+        slideTexts.push(`[Slide ${i + 1}]\n${slideText}`);
+      }
+    }
+
+    return slideTexts.length > 0
+      ? slideTexts.join('\n\n')
+      : `[PowerPoint] Slides in ${file.name} appear to contain no extractable text (may be image-based).`;
   } catch (error) {
     console.error('Error parsing PowerPoint:', error);
-    throw new Error('Failed to parse PowerPoint file');
+    throw new Error('Failed to parse PowerPoint file: ' + error.message);
   }
 }
 
 export async function parseDocument(file) {
+  // Check cache first
+  const key = _cacheKey(file);
+  if (_docCache.has(key)) {
+    console.log(`[documentParser] Cache hit for: ${file.name}`);
+    return _docCache.get(key);
+  }
+
   const fileExtension = file.name.split('.').pop().toLowerCase();
-  const mimeType = file.type.toLowerCase();
-  
+  let result;
+
   try {
     switch (fileExtension) {
       case 'pdf':
-        return await parsePDF(file);
-      
+        result = await parsePDF(file);
+        break;
       case 'doc':
       case 'docx':
-        return await parseWord(file);
-      
+        result = await parseWord(file);
+        break;
       case 'ppt':
       case 'pptx':
-        return await parsePowerPoint(file);
-      
+        result = await parsePowerPoint(file);
+        break;
       case 'txt':
       case 'md':
       case 'csv':
@@ -108,21 +125,24 @@ export async function parseDocument(file) {
       case 'ods':
       case 'xls':
       case 'xlsx':
-        return await new Promise((resolve, reject) => {
+        result = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target.result);
           reader.onerror = reject;
           reader.readAsText(file);
         });
-      
+        break;
       default:
-        // For unsupported files, return a message indicating the file type
-        return `File uploaded: ${file.name} (${fileExtension.toUpperCase()} file). Text extraction not supported for this file type. The file has been uploaded for AI analysis.`;
+        result = `File uploaded: ${file.name} (${fileExtension.toUpperCase()} file). Text extraction not supported for this file type.`;
     }
   } catch (error) {
     console.error(`Error parsing ${fileExtension} file:`, error);
     throw error;
   }
+
+  // Store in cache
+  _docCache.set(key, result);
+  return result;
 }
 
 export function getSupportedFileTypes() {

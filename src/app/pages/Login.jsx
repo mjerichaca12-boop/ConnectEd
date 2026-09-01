@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Eye, EyeOff, Lock, User, ShieldAlert, Monitor, Smartphone } from "lucide-react";
-import { supabase, supabaseAdmin } from "../lib/supabaseClient";
+import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import {
   STATIC_ADMIN_EMAIL,
   getStaticAdminSessionUser,
@@ -21,9 +22,11 @@ const GoogleLogo = () => (
 const GOOGLE_OAUTH_INTENT_KEY = "connected_google_oauth_intent";
 
 function Login() {
-  const [formData, setFormData] = useState({ usernameOrEmail: "", password: "" });
+  const [formData, setFormData] = useState({ username: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({ username: "", password: "" });
+  const [touched, setTouched] = useState({ username: false, password: false });
   const [loading, setLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -69,7 +72,7 @@ function Login() {
     };
 
     // Use admin client to bypass RLS during profile creation
-    const client = supabaseAdmin || supabase;
+    const client = supabase;
     const { data, error } = await client
       .from("profiles")
       .insert(payload)
@@ -97,6 +100,12 @@ function Login() {
     const handleOAuthSession = async (session) => {
       if (oauthSessionProcessingRef.current) return;
       oauthSessionProcessingRef.current = true;
+
+      const oauthIntent = localStorage.getItem(GOOGLE_OAUTH_INTENT_KEY);
+      if (!oauthIntent) {
+        oauthSessionProcessingRef.current = false;
+        return;
+      }
       
       const email = session?.user?.email;
       if (!email) {
@@ -138,6 +147,10 @@ function Login() {
         const role = String(profile.role || "student").toLowerCase();
         const isMobile = window.innerWidth < 1024; // Use standard 1024 for dashboard redirect logic
 
+        if (role === "student") {
+          throw new Error("Student web access has been removed. Please contact an administrator if you need access.");
+        }
+
         // Check device restrictions
         if (role === "teacher" && isMobile) {
           throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
@@ -146,18 +159,26 @@ function Login() {
           throw new Error("The Student Portal is only accessible via Mobile devices.");
         }
 
+        const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
+        const isFirstLogin = !hasCompletedLoginSession;
+        if (isFirstLogin) {
+          localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
+        }
+
         const currentUser = {
           id: profile.id,
           name: profile.first_name + " " + (profile.last_name || ""),
           email: profile.email,
-          role: role
+          role: role,
+          avatar_url: profile.avatar_url || "",
+          isFirstLogin: isFirstLogin
         };
 
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
         
-        if (role === "admin") navigate("/admin/dashboard");
-        else if (role === "teacher") navigate("/teacher/dashboard");
-        else navigate("/dashboard");
+        if (role === "admin") navigate("/admin/dashboard", { replace: true });
+        else if (role === "teacher") navigate("/teacher/dashboard", { replace: true });
+        else throw new Error("Unsupported account role. Please contact an administrator.");
 
       } catch (err) {
         console.error("OAuth Error:", err);
@@ -166,11 +187,12 @@ function Login() {
       } finally {
         setGoogleLoading(false);
         oauthSessionProcessingRef.current = false;
+        localStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
       }
     };
 
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
+      if (session && localStorage.getItem(GOOGLE_OAUTH_INTENT_KEY)) {
         await handleOAuthSession(session);
       }
     });
@@ -180,9 +202,67 @@ function Login() {
     };
   }, [navigate]);
 
+  const RATE_LIMIT_KEY_PREFIX = "connected_login_rate_limit_";
+  const MAX_FAILED_ATTEMPTS = 5;
+  const LOCKOUT_DURATION_MS = 60 * 1000;
+
+  const getRateLimitState = (username) => {
+    if (!username) return { attempts: 0, lockoutUntil: 0 };
+    try {
+      const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+      const raw = localStorage.getItem(key);
+      if (!raw) return { attempts: 0, lockoutUntil: 0 };
+      return JSON.parse(raw);
+    } catch {
+      return { attempts: 0, lockoutUntil: 0 };
+    }
+  };
+
+  const recordFailedAttempt = (username) => {
+    if (!username) return;
+    const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+    const current = getRateLimitState(username);
+    const nextAttempts = current.attempts + 1;
+    const lockoutUntil = nextAttempts >= MAX_FAILED_ATTEMPTS ? Date.now() + LOCKOUT_DURATION_MS : 0;
+    localStorage.setItem(key, JSON.stringify({ attempts: nextAttempts, lockoutUntil }));
+  };
+
+  const clearRateLimitState = (username) => {
+    if (!username) return;
+    const key = RATE_LIMIT_KEY_PREFIX + String(username).trim().toLowerCase();
+    localStorage.removeItem(key);
+  };
+
+  const validateField = (name, value) => {
+    if (name === "username") {
+      const val = String(value || "").trim();
+      if (!val) return "Please enter your username or email address.";
+      if (value.includes(" ")) return "Username or email cannot contain spaces.";
+      if (val.length > 100) return "Username or email cannot exceed 100 characters.";
+      if (val.includes("@") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+        return "Please enter a valid email address.";
+      }
+    }
+    if (name === "password") {
+      if (!value) return "Please enter your password.";
+      if (value.length > 128) return "Password cannot exceed 128 characters.";
+    }
+    return "";
+  };
+
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
     setError("");
+    if (touched[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
+    }
+  };
+
+  const handleBlur = (e) => {
+    const { name, value } = e.target;
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
   };
 
   const handleGoogleSignIn = async () => {
@@ -191,64 +271,166 @@ function Login() {
       return;
     }
     setGoogleLoading(true);
+    localStorage.setItem(GOOGLE_OAUTH_INTENT_KEY, JSON.stringify({ startedAt: Date.now() }));
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin + "/login",
+        redirectTo: getAuthRedirectUrl("login"),
         queryParams: { prompt: "select_account" }
       }
     });
     if (error) {
       setGoogleError(error.message);
       setGoogleLoading(false);
+      localStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
     }
   };
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.usernameOrEmail || !formData.password) {
-      setError("Please fill in all fields.");
+    if (loading || isSubmittingRef.current) return;
+
+    const usernameErr = validateField("username", formData.username);
+    const passwordErr = validateField("password", formData.password);
+    setTouched({ username: true, password: true });
+    setFieldErrors({ username: usernameErr, password: passwordErr });
+    if (usernameErr || passwordErr) return;
+
+    const normalizedUsername = formData.username.trim().toLowerCase();
+    const rateState = getRateLimitState(normalizedUsername);
+
+    if (rateState.lockoutUntil && rateState.lockoutUntil > Date.now()) {
+      const remainingSec = Math.ceil((rateState.lockoutUntil - Date.now()) / 1000);
+      setError(`Too many failed login attempts. Please wait ${remainingSec} seconds before trying again.`);
       return;
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
-    const normalizedEmail = formData.usernameOrEmail.trim().toLowerCase();
 
-    // Static Admin Check
-    if (normalizedEmail === STATIC_ADMIN_EMAIL) {
-      const adminValidation = await validateStaticAdminCredentials(normalizedEmail, formData.password);
+    if (normalizedUsername === STATIC_ADMIN_EMAIL) {
+      const adminValidation = await validateStaticAdminCredentials(normalizedUsername, formData.password);
       if (adminValidation.ok) {
-        localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser()));
-        navigate("/admin/dashboard");
+        clearRateLimitState(normalizedUsername);
+        localStorage.setItem("currentUser", JSON.stringify(getStaticAdminSessionUser(adminValidation.token)));
+        navigate("/admin/dashboard", { replace: true });
+        isSubmittingRef.current = false;
         return;
       }
+      recordFailedAttempt(normalizedUsername);
       setError(adminValidation.message);
       setLoading(false);
+      isSubmittingRef.current = false;
       return;
     }
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
-        password: formData.password
-      });
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch (signOutError) {
+        console.warn("LOGIN signOut cleanup warning:", signOutError);
+      }
 
-      if (authError) {
-        setError("Invalid email or password. Please try again.");
+      let resolvedEmail = null;
+      if (normalizedUsername.includes("@")) {
+        resolvedEmail = normalizedUsername;
+      } else {
+        const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
+        if (rpcEmail) {
+          resolvedEmail = String(rpcEmail).trim().toLowerCase();
+        } else {
+          const { data: profData } = await supabase
+            .from("profiles")
+            .select("email")
+            .or(`username.ilike.${normalizedUsername},email.ilike.${normalizedUsername},employee_id.ilike.${normalizedUsername}`)
+            .maybeSingle();
+          if (profData?.email) {
+            resolvedEmail = String(profData.email).trim().toLowerCase();
+          }
+        }
+      }
+
+      const candidateEmails = [];
+      if (resolvedEmail) candidateEmails.push(resolvedEmail);
+      if (normalizedUsername.includes("@") && !candidateEmails.includes(normalizedUsername)) {
+        candidateEmails.push(normalizedUsername);
+      }
+      if (!normalizedUsername.includes("@")) {
+        const tempEmail = `${normalizedUsername}@temp.local`;
+        if (!candidateEmails.includes(tempEmail)) candidateEmails.push(tempEmail);
+        if (!candidateEmails.includes(normalizedUsername)) candidateEmails.push(normalizedUsername);
+      }
+
+      let authData = null;
+      let authError = null;
+      let authMessage = "";
+
+      for (const candidateEmail of candidateEmails) {
+        const { data: sData, error: sErr } = await supabase.auth.signInWithPassword({
+          email: candidateEmail,
+          password: formData.password
+        });
+
+        if (!sErr && sData?.session) {
+          authData = sData;
+          authError = null;
+          break;
+        } else {
+          authError = sErr;
+          authMessage = String(sErr?.message || "").toLowerCase();
+        }
+      }
+
+      if (authError || !authData) {
+        recordFailedAttempt(normalizedUsername);
+        const updatedRate = getRateLimitState(normalizedUsername);
+        if (updatedRate.lockoutUntil > Date.now()) {
+          setError("Too many login attempts. Please wait and try again later.");
+        } else if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
+          const remainingAttempts = Math.max(0, MAX_FAILED_ATTEMPTS - updatedRate.attempts);
+          setError(`Incorrect email or password. (${remainingAttempts} attempt(s) remaining)`);
+        } else if (authMessage.includes("email not confirmed")) {
+          setError("Please verify your email before signing in.");
+        } else if (authMessage.includes("fetch") || authMessage.includes("network") || authMessage.includes("failed to fetch")) {
+          setError("Unable to connect to the authentication service. Please check your internet connection.");
+        } else {
+          setError("We couldn't sign you in right now. Please try again.");
+        }
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .ilike("email", normalizedEmail)
-        .maybeSingle();
+      clearRateLimitState(normalizedUsername);
 
-      if (profileError || !profile) {
+      // Fetch profile by auth user ID first, fallback to resolved email
+      let profile = null;
+      const userId = authData.session?.user?.id;
+      if (userId) {
+        const { data: pById } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+        profile = pById;
+      }
+
+      if (!profile && resolvedEmail) {
+        const { data: pByEmail } = await supabase
+          .from("profiles")
+          .select("*")
+          .ilike("email", resolvedEmail)
+          .maybeSingle();
+        profile = pByEmail;
+      }
+
+      if (!profile) {
         await supabase.auth.signOut();
         setError("Account not found. Please sign up first.");
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
@@ -256,11 +438,19 @@ function Login() {
         await supabase.auth.signOut();
         setError("Your account is still pending admin approval.");
         setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
       const role = String(profile.role || "student").toLowerCase();
-      const isMobile = window.innerWidth <= 1280;
+      const isMobile = window.innerWidth < 768;
+
+      if (role === "student") {
+        await supabase.auth.signOut();
+        setError("Student web access has been removed. Please contact an administrator if you need access.");
+        setLoading(false);
+        return;
+      }
 
       if (role === "teacher" && isMobile) {
         await supabase.auth.signOut();
@@ -275,22 +465,37 @@ function Login() {
         return;
       }
 
+      const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
+      const isFirstLogin = !hasCompletedLoginSession;
+      if (isFirstLogin && profile.must_change_password !== true) {
+        localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
+      }
+
       localStorage.setItem("currentUser", JSON.stringify({
         id: profile.id,
         name: profile.first_name + " " + (profile.last_name || ""),
         email: profile.email,
         role: role,
-        must_change_password: profile.must_change_password
+        avatar_url: profile.avatar_url || "",
+        must_change_password: profile.must_change_password === true,
+        isFirstLogin: isFirstLogin
       }));
 
-      if (role === "admin") navigate("/admin/dashboard");
-      else if (role === "teacher") navigate("/teacher/dashboard");
-      else if (profile.must_change_password) navigate("/secure-account");
-      else navigate("/dashboard");
+      if (profile.must_change_password === true) {
+        navigate("/change-password", { replace: true });
+      } else if (role === "admin") {
+        navigate("/admin/dashboard", { replace: true });
+      } else if (role === "teacher") {
+        navigate("/teacher/dashboard", { replace: true });
+      } else {
+        throw new Error("Unsupported account role. Please contact an administrator.");
+      }
 
     } catch (err) {
-      setError("Login failed. Please check your credentials.");
+      console.error("LOGIN CATCH ERROR:", err);
+      setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.");
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -302,37 +507,31 @@ function Login() {
           <p className="text-gray-500 text-sm">Sign in to your educational portal</p>
         </div>
 
-        {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">{error}</div>}
-        {googleError && <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-xs">{googleError}</div>}
-
-        <button
-          onClick={handleGoogleSignIn}
-          disabled={googleLoading}
-          className="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-700 font-bold px-4 py-3.5 rounded-2xl border-2 border-emerald-500 transition-all shadow-sm mb-6 disabled:opacity-50"
-        >
-          <GoogleLogo />
-          {googleLoading ? "Connecting..." : "Continue with Google"}
-        </button>
-
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-          <span className="relative px-4 bg-white text-[10px] font-bold text-gray-400 uppercase tracking-widest">or use credentials</span>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Email or Username</label>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Username</label>
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                name="usernameOrEmail"
-                value={formData.usernameOrEmail}
+                name="username"
+                value={formData.username}
                 onChange={handleInputChange}
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
-                placeholder="Enter email"
+                onBlur={handleBlur}
+                className={`w-full pl-11 pr-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                  touched.username && fieldErrors.username
+                    ? "border-red-400 focus:ring-red-300 bg-red-50"
+                    : "border-gray-200 focus:ring-emerald-500"
+                }`}
+                placeholder="Enter your username"
               />
             </div>
+            {touched.username && fieldErrors.username && (
+              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                <span className="inline-block w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />
+                {fieldErrors.username}
+              </p>
+            )}
           </div>
 
           <div>
@@ -344,14 +543,38 @@ function Login() {
                 name="password"
                 value={formData.password}
                 onChange={handleInputChange}
-                className="w-full pl-11 pr-12 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all text-sm"
+                onBlur={handleBlur}
+                className={`w-full pl-11 pr-12 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                  touched.password && fieldErrors.password
+                    ? "border-red-400 focus:ring-red-300 bg-red-50"
+                    : "border-gray-200 focus:ring-emerald-500"
+                }`}
                 placeholder="••••••••"
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            {touched.password && fieldErrors.password ? (
+              <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                <span className="inline-block w-1 h-1 rounded-full bg-red-500 flex-shrink-0" />
+                {fieldErrors.password}
+              </p>
+            ) : (
+              <div className="mt-2 text-right">
+                <Link to="/forgot-password" className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:underline">
+                  Forgot Password?
+                </Link>
+              </div>
+            )}
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
+              <span className="mt-0.5 w-4 h-4 flex-shrink-0 text-red-500">&#9888;</span>
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
 
           <button
             type="submit"
@@ -361,6 +584,7 @@ function Login() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+
 
       </div>
     </div>
