@@ -96,18 +96,53 @@ export default function MessagesScreen() {
         };
     }, [refetchChats]);
 
-    // Filtering Logic
-    const filteredChats = Array.isArray(chats) ? chats.filter(chat => 
-        (chat?.partner_name || "").toLowerCase().includes(searchQuery.toLowerCase())
-    ) : [];
+    // Deduplicate & Filter Chats
+    const seenChatIds = new Set<string>();
+    const seenChatNames = new Set<string>();
+    const filteredChats: any[] = [];
 
-    const chatPartnerIds = new Set(chats.map(chat => chat?.partner_id));
-    const chatPartnerNames = new Set(chats.map(chat => (chat?.partner_name || "").toLowerCase().trim()));
-    const otherProfiles = Array.isArray(profiles) ? profiles.filter(profile => 
-        !chatPartnerIds.has(profile.id) && 
-        !chatPartnerNames.has((profile?.full_name || "").toLowerCase().trim()) &&
-        (profile?.full_name || "").toLowerCase().includes(searchQuery.toLowerCase())
-    ) : [];
+    if (Array.isArray(chats)) {
+        for (const chat of chats) {
+            if (!chat) continue;
+            const partnerId = String(chat.partner_id || chat.id || '');
+            const partnerName = String(chat.partner_name || '').toLowerCase().trim();
+            
+            if (partnerId && seenChatIds.has(partnerId)) continue;
+            if (partnerName && seenChatNames.has(partnerName)) continue;
+            
+            if (partnerId) seenChatIds.add(partnerId);
+            if (partnerName) seenChatNames.add(partnerName);
+
+            if (!searchQuery.trim() || partnerName.includes(searchQuery.toLowerCase().trim())) {
+                filteredChats.push(chat);
+            }
+        }
+    }
+
+    // Deduplicate & Filter Suggested Profiles
+    const seenSuggestedIds = new Set<string>(seenChatIds);
+    const seenSuggestedNames = new Set<string>(seenChatNames);
+    const otherProfiles: any[] = [];
+
+    if (Array.isArray(profiles)) {
+        for (const profile of profiles) {
+            if (!profile || !profile.id) continue;
+            const profId = String(profile.id);
+            const profName = String(profile.full_name || '').toLowerCase().trim();
+            const profRole = String(profile.role || '').toLowerCase().trim();
+            const nameRoleKey = `${profName}_${profRole}`;
+
+            if (seenSuggestedIds.has(profId)) continue;
+            if (profName && seenSuggestedNames.has(nameRoleKey)) continue;
+
+            seenSuggestedIds.add(profId);
+            if (profName) seenSuggestedNames.add(nameRoleKey);
+
+            if (!searchQuery.trim() || profName.includes(searchQuery.toLowerCase().trim()) || profRole.includes(searchQuery.toLowerCase().trim())) {
+                otherProfiles.push(profile);
+            }
+        }
+    }
 
     // Combine for FlatList
     const listData: any[] = [];
