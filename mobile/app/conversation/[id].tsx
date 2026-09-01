@@ -389,9 +389,15 @@ export default function ConversationScreen() {
             ? item.attachments
             : (item.file_url ? [{ file_url: item.file_url, file_name: item.file_name, file_type: item.file_type, file_size: item.file_size }] : []);
 
+        const hasAttachments = attachmentsList.length > 0;
+
         return (
             <View style={styles.messageWrapper}>
-                <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
+                <View style={[
+                    styles.messageBubble, 
+                    isMe ? styles.myMessage : styles.theirMessage,
+                    hasAttachments && styles.attachmentBubble
+                ]}>
                     
                     {/* Attachment Cards */}
                     {attachmentsList.map((att: any, attIdx: number) => {
@@ -446,7 +452,7 @@ export default function ConversationScreen() {
                                         activeOpacity={0.8}
                                     >
                                         <Ionicons name="open-outline" size={15} color={isMe ? "#FFFFFF" : Colors.light.primary} />
-                                        <Text style={[styles.actionButtonText, isMe ? styles.myActionButtonText : styles.theirActionButtonText]}>
+                                        <Text style={[styles.actionButtonText, isMe ? styles.myActionButtonText : styles.theirActionButtonText]} numberOfLines={1}>
                                             View
                                         </Text>
                                     </TouchableOpacity>
@@ -457,7 +463,7 @@ export default function ConversationScreen() {
                                         activeOpacity={0.8}
                                     >
                                         <Ionicons name="download-outline" size={15} color={isMe ? "#FFFFFF" : Colors.light.primary} />
-                                        <Text style={[styles.actionButtonText, isMe ? styles.myActionButtonText : styles.theirActionButtonText]}>
+                                        <Text style={[styles.actionButtonText, isMe ? styles.myActionButtonText : styles.theirActionButtonText]} numberOfLines={1}>
                                             Download
                                         </Text>
                                     </TouchableOpacity>
@@ -642,6 +648,10 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         marginBottom: 2,
     },
+    attachmentBubble: {
+        width: 270,
+        maxWidth: "88%",
+    },
     myMessage: {
         alignSelf: "flex-end",
         backgroundColor: "#059669", // Emerald Green matching screenshot
@@ -702,6 +712,7 @@ const styles = StyleSheet.create({
         padding: 10,
         marginBottom: 6,
         borderWidth: 1,
+        width: "100%",
     },
     myAttachmentCard: {
         backgroundColor: "rgba(0, 0, 0, 0.12)",
@@ -761,15 +772,18 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: "rgba(255, 255, 255, 0.2)",
+        height: 150,
+        width: "100%",
     },
     cardImagePreview: {
         width: '100%',
-        height: 140,
+        height: '100%',
     },
     attachmentActionRow: {
         flexDirection: 'row',
         gap: 8,
         marginTop: 10,
+        width: '100%',
     },
     attachmentActionButton: {
         flex: 1,
@@ -777,19 +791,21 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        paddingVertical: 7,
-        paddingHorizontal: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 8,
         borderRadius: 8,
+        minHeight: 36,
     },
     myActionButton: {
-        backgroundColor: "rgba(255, 255, 255, 0.2)",
+        backgroundColor: "rgba(255, 255, 255, 0.22)",
     },
     theirActionButton: {
-        backgroundColor: "rgba(255, 255, 255, 0.2)",
+        backgroundColor: "rgba(255, 255, 255, 0.22)",
     },
     actionButtonText: {
         fontSize: 13,
         fontWeight: '700',
+        letterSpacing: -0.2,
     },
     myActionButtonText: {
         color: "#FFFFFF",
