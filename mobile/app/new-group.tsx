@@ -27,24 +27,26 @@ export default function NewGroupScreen() {
 
     // Deduplicate and filter by search query
     const seenIds = new Set<string>();
-    const seenNames = new Set<string>();
+    const seenEmails = new Set<string>();
+    const query = searchQuery.trim().toLowerCase();
+
     const filteredProfiles = (Array.isArray(profiles) ? profiles : []).filter(p => {
         if (!p || !p.id || seenIds.has(p.id)) return false;
         seenIds.add(p.id);
 
         const fullName = String(p.full_name || '').toLowerCase().trim();
+        const email = String(p.email || '').toLowerCase().trim();
+        const username = String(p.username || '').toLowerCase().trim();
         const role = String(p.role || '').toLowerCase().trim();
-        const nameRoleKey = `${fullName}_${role}`;
 
-        if (fullName && fullName !== 'user' && seenNames.has(nameRoleKey)) {
-            return false;
-        }
-        if (fullName && fullName !== 'user') {
-            seenNames.add(nameRoleKey);
-        }
+        if (email && seenEmails.has(email)) return false;
+        if (email) seenEmails.add(email);
 
-        if (searchQuery.trim().length > 0) {
-            return fullName.includes(searchQuery.toLowerCase().trim()) || role.includes(searchQuery.toLowerCase().trim());
+        if (query.length > 0) {
+            return fullName.includes(query) || 
+                   email.includes(query) || 
+                   username.includes(query) || 
+                   role.includes(query);
         }
         return true;
     });
@@ -185,7 +187,9 @@ export default function NewGroupScreen() {
                                     </View>
                                     <View style={styles.userInfo}>
                                         <Text style={styles.userName}>{item.full_name}</Text>
-                                        <Text style={styles.userRole}>{item.role}</Text>
+                                        <Text style={styles.userRole}>
+                                            {item.role} {item.email ? `• ${item.email}` : (item.username ? `• @${item.username}` : '')}
+                                        </Text>
                                     </View>
                                     <Ionicons 
                                         name={isSelected ? "checkbox" : "square-outline"} 

@@ -10,7 +10,7 @@ import { useChatListQuery } from "../../src/hooks/query/messages/use-chat-list-q
 import { useSearchableProfilesQuery } from "../../src/hooks/query/profiles/use-searchable-profiles-query";
 import { supabase } from "../../src/lib/supabase";
 
-const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type }: any) => {
+const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type, email, username }: any) => {
     const router = useRouter();
 
     const handlePress = () => {
@@ -20,25 +20,57 @@ const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type }: a
         });
     };
 
+    const isTeacher = role === 'teacher';
+    const isAdmin = role === 'admin' || role === 'super_admin' || role === 'administrator';
+
     return (
         <TouchableOpacity style={styles.itemContainer} onPress={handlePress}>
-            <View style={[styles.avatar, isNew && { backgroundColor: '#F1F5F9' }]}>
-                <Ionicons name="person" size={24} color={isNew ? "#94A3B8" : "#FFF"} />
+            <View style={[
+                styles.avatar, 
+                isNew 
+                    ? { backgroundColor: isAdmin ? '#F3E8FF' : isTeacher ? '#E0F2FE' : '#F1F5F9' } 
+                    : { backgroundColor: isAdmin ? '#7C3AED' : isTeacher ? '#0284C7' : Colors.light.primary }
+            ]}>
+                <Ionicons 
+                    name={isAdmin ? "shield-checkmark" : isTeacher ? "school" : "person"} 
+                    size={22} 
+                    color={isNew ? (isAdmin ? "#7C3AED" : isTeacher ? "#0284C7" : "#64748B") : "#FFF"} 
+                />
             </View>
             <View style={styles.content}>
                 <View style={styles.headerRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                         <Text style={styles.name}>{name}</Text>
-                        <View style={[styles.roleBadge, { backgroundColor: role === 'teacher' ? '#E0F2FE' : '#F1F5F9' }]}>
-                            <Text style={[styles.roleText, { color: role === 'teacher' ? '#0369A1' : '#64748B' }]}>
-                                {role}
+                        <View style={[
+                            styles.roleBadge, 
+                            { 
+                                backgroundColor: isAdmin 
+                                    ? '#F3E8FF' 
+                                    : isTeacher 
+                                        ? '#E0F2FE' 
+                                        : '#F1F5F9' 
+                            }
+                        ]}>
+                            <Text style={[
+                                styles.roleText, 
+                                { 
+                                    color: isAdmin 
+                                        ? '#7C3AED' 
+                                        : isTeacher 
+                                            ? '#0369A1' 
+                                            : '#64748B' 
+                                }
+                            ]}>
+                                {role || 'student'}
                             </Text>
                         </View>
                     </View>
                     {time && <Text style={styles.time}>{time}</Text>}
                 </View>
                 <Text style={[styles.message, unread && styles.unreadMessage]} numberOfLines={1}>
-                    {isNew ? "Start a new conversation" : (
+                    {isNew ? (
+                        email ? `${email}` : (username ? `@${username}` : "Start a new conversation")
+                    ) : (
                         message || (role === 'image' ? 'Sent a photo' : 'Sent a file')
                     )}
                 </Text>
@@ -96,6 +128,8 @@ export default function MessagesScreen() {
         };
     }, [refetchChats]);
 
+    const query = searchQuery.trim().toLowerCase();
+
     // Deduplicate & Filter Chats
     const seenChatIds = new Set<string>();
     const seenChatNames = new Set<string>();
@@ -113,13 +147,18 @@ export default function MessagesScreen() {
             if (partnerId) seenChatIds.add(partnerId);
             if (partnerName) seenChatNames.add(partnerName);
 
-            if (!searchQuery.trim() || partnerName.includes(searchQuery.toLowerCase().trim())) {
+            const matchesQuery = !query || 
+                partnerName.includes(query) ||
+                String(chat.content || chat.message_text || '').toLowerCase().includes(query) ||
+                String(chat.partner_role || '').toLowerCase().includes(query);
+
+            if (matchesQuery) {
                 filteredChats.push(chat);
             }
         }
     }
 
-    // Deduplicate & Filter Suggested Profiles
+    // Deduplicate & Filter Suggested Profiles (search by Name, Email, Username, Role)
     const seenSuggestedIds = new Set<string>(seenChatIds);
     const seenSuggestedNames = new Set<string>(seenChatNames);
     const otherProfiles: any[] = [];
@@ -129,6 +168,8 @@ export default function MessagesScreen() {
             if (!profile || !profile.id) continue;
             const profId = String(profile.id);
             const profName = String(profile.full_name || '').toLowerCase().trim();
+            const profEmail = String(profile.email || '').toLowerCase().trim();
+            const profUsername = String(profile.username || '').toLowerCase().trim();
             const profRole = String(profile.role || '').toLowerCase().trim();
             const nameRoleKey = `${profName}_${profRole}`;
 
@@ -138,7 +179,13 @@ export default function MessagesScreen() {
             seenSuggestedIds.add(profId);
             if (profName) seenSuggestedNames.add(nameRoleKey);
 
-            if (!searchQuery.trim() || profName.includes(searchQuery.toLowerCase().trim()) || profRole.includes(searchQuery.toLowerCase().trim())) {
+            const matchesQuery = !query || 
+                profName.includes(query) || 
+                profEmail.includes(query) || 
+                profUsername.includes(query) || 
+                profRole.includes(query);
+
+            if (matchesQuery) {
                 otherProfiles.push(profile);
             }
         }
@@ -153,7 +200,7 @@ export default function MessagesScreen() {
 
     const showSuggested = isSearchFocused || searchQuery.trim().length > 0;
     if (showSuggested && otherProfiles.length > 0) {
-        listData.push({ type: 'header', title: searchQuery ? 'Other Users' : 'Suggested' });
+        listData.push({ type: 'header', title: searchQuery ? 'People & Accounts' : 'Suggested' });
         otherProfiles.forEach(profile => listData.push({ type: 'profile', ...profile }));
     }
 
@@ -174,7 +221,7 @@ export default function MessagesScreen() {
                     <Ionicons name="search" size={20} color="#94A3B8" />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search people..."
+                        placeholder="Search name, email, role (teacher/admin)..."
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholderTextColor="#94A3B8"
@@ -217,6 +264,8 @@ export default function MessagesScreen() {
                         <ChatItem
                             id={item.id}
                             name={item.full_name}
+                            email={item.email}
+                            username={item.username}
                             role={item.role}
                             isNew={true}
                         />
@@ -226,7 +275,7 @@ export default function MessagesScreen() {
                     <View style={styles.emptyContainer}>
                         <Ionicons name="chatbubbles-outline" size={64} color="#CBD5E1" />
                         <Text style={styles.emptyText}>
-                            {searchQuery ? "No matching users found." : "No conversations yet."}
+                            {searchQuery ? "No matching users or emails found." : "No conversations yet."}
                         </Text>
                     </View>
                 )}
@@ -264,7 +313,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         marginLeft: 8,
-        fontSize: 16,
+        fontSize: 15,
         color: Colors.light.text,
     },
     listContent: {
@@ -278,7 +327,7 @@ const styles = StyleSheet.create({
         marginBottom: Layout.spacing.m,
     },
     sectionHeader: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: "bold",
         color: "#64748B",
         textTransform: "uppercase",
@@ -316,10 +365,9 @@ const styles = StyleSheet.create({
         color: Colors.light.text,
     },
     roleBadge: {
-        paddingHorizontal: 6,
+        paddingHorizontal: 7,
         paddingVertical: 2,
-        borderRadius: 4,
-        marginLeft: 8,
+        borderRadius: 6,
     },
     roleText: {
         fontSize: 10,
@@ -331,7 +379,7 @@ const styles = StyleSheet.create({
         color: Colors.light.textSecondary,
     },
     message: {
-        fontSize: 14,
+        fontSize: 13,
         color: Colors.light.textSecondary,
     },
     unreadMessage: {

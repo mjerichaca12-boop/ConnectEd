@@ -6,7 +6,7 @@ export async function getAllSearchableProfiles() {
 
     const { data, error } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, middle_name, role, year_level, section, course')
+        .select('id, email, username, first_name, last_name, middle_name, role, year_level, section, course')
         .neq('id', userData.user.id)
         .order('last_name', { ascending: true });
 
@@ -16,24 +16,23 @@ export async function getAllSearchableProfiles() {
         const fullName = `${p.first_name || ''} ${p.middle_name || ''} ${p.last_name || ''}`.trim().replace(/\s+/g, ' ');
         return {
             ...p,
-            full_name: fullName || 'User'
+            email: p.email || '',
+            username: p.username || '',
+            full_name: fullName || p.username || p.email || 'User'
         };
     });
 
     const seenIds = new Set<string>();
-    const seenNames = new Set<string>();
+    const seenEmails = new Set<string>();
 
     return mapped.filter(p => {
         if (!p.id || seenIds.has(p.id)) return false;
         seenIds.add(p.id);
 
-        const nameRoleKey = `${p.full_name.toLowerCase().trim()}_${(p.role || '').toLowerCase().trim()}`;
-        if (p.full_name !== 'User' && seenNames.has(nameRoleKey)) {
-            return false;
-        }
-        if (p.full_name !== 'User') {
-            seenNames.add(nameRoleKey);
-        }
+        const emailKey = (p.email || '').toLowerCase().trim();
+        if (emailKey && seenEmails.has(emailKey)) return false;
+        if (emailKey) seenEmails.add(emailKey);
+
         return true;
     });
 }
