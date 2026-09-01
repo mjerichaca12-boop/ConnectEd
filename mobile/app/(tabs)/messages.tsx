@@ -160,7 +160,7 @@ export default function MessagesScreen() {
 
     // Deduplicate & Filter Suggested Profiles (search by Name, Email, Username, Role)
     const seenSuggestedIds = new Set<string>(seenChatIds);
-    const seenSuggestedNames = new Set<string>(seenChatNames);
+    const seenSuggestedBaseKeys = new Set<string>();
     const otherProfiles: any[] = [];
 
     if (Array.isArray(profiles)) {
@@ -168,19 +168,21 @@ export default function MessagesScreen() {
             if (!profile || !profile.id) continue;
             const profId = String(profile.id);
             const profName = String(profile.full_name || '').toLowerCase().trim();
+            const profBaseName = String(profile.base_name || `${profile.first_name || ''} ${profile.last_name || ''}`).toLowerCase().trim();
             const profEmail = String(profile.email || '').toLowerCase().trim();
             const profUsername = String(profile.username || '').toLowerCase().trim();
             const profRole = String(profile.role || '').toLowerCase().trim();
-            const nameRoleKey = `${profName}_${profRole}`;
+            const baseRoleKey = `${profBaseName || profName}_${profRole}`;
 
             if (seenSuggestedIds.has(profId)) continue;
-            if (profName && seenSuggestedNames.has(nameRoleKey)) continue;
+            if (profBaseName && seenSuggestedBaseKeys.has(baseRoleKey)) continue;
 
             seenSuggestedIds.add(profId);
-            if (profName) seenSuggestedNames.add(nameRoleKey);
+            if (profBaseName) seenSuggestedBaseKeys.add(baseRoleKey);
 
             const matchesQuery = !query || 
                 profName.includes(query) || 
+                profBaseName.includes(query) || 
                 profEmail.includes(query) || 
                 profUsername.includes(query) || 
                 profRole.includes(query);

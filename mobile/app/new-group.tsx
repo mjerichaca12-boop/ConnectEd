@@ -27,7 +27,7 @@ export default function NewGroupScreen() {
 
     // Deduplicate and filter by search query
     const seenIds = new Set<string>();
-    const seenEmails = new Set<string>();
+    const seenBaseKeys = new Set<string>();
     const query = searchQuery.trim().toLowerCase();
 
     const filteredProfiles = (Array.isArray(profiles) ? profiles : []).filter(p => {
@@ -35,15 +35,18 @@ export default function NewGroupScreen() {
         seenIds.add(p.id);
 
         const fullName = String(p.full_name || '').toLowerCase().trim();
+        const baseName = String(p.base_name || `${p.first_name || ''} ${p.last_name || ''}`).toLowerCase().trim();
         const email = String(p.email || '').toLowerCase().trim();
         const username = String(p.username || '').toLowerCase().trim();
         const role = String(p.role || '').toLowerCase().trim();
+        const baseRoleKey = `${baseName || fullName}_${role}`;
 
-        if (email && seenEmails.has(email)) return false;
-        if (email) seenEmails.add(email);
+        if (baseName && seenBaseKeys.has(baseRoleKey)) return false;
+        if (baseName) seenBaseKeys.add(baseRoleKey);
 
         if (query.length > 0) {
             return fullName.includes(query) || 
+                   baseName.includes(query) || 
                    email.includes(query) || 
                    username.includes(query) || 
                    role.includes(query);
