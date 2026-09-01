@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "mobile": "npm start --prefix mobile",
+    "mobile:clean": "npm run start --prefix mobile -- -c"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
