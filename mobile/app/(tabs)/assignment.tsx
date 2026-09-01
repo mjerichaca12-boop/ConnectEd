@@ -1130,7 +1130,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                                                 >
                                                                     <View style={[styles.reviewOptionCircle, circleStyle]}>
                                                                         <Text style={[styles.reviewOptionCircleText, circleTextStyle]}>
-                                                                            {opt.label}
+                                                                            {(() => {
+                                                                                const lbl = String(opt.label || '').trim();
+                                                                                if (lbl.toLowerCase() === 'true') return 'T';
+                                                                                if (lbl.toLowerCase() === 'false') return 'F';
+                                                                                if (lbl.length <= 2) return lbl.toUpperCase();
+                                                                                return lbl.charAt(0).toUpperCase();
+                                                                            })()}
                                                                         </Text>
                                                                     </View>
                                                                     <Text style={[styles.reviewOptionText, textStyle]}>
@@ -1282,7 +1288,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                         </View>
                     </View>
 
-                    <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 120 }}>
+                    <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 140 }}>
                         {/* Instruction Banner inside Quiz Player */}
                         <View style={{
                             backgroundColor: '#FFFFFF',
@@ -1450,7 +1456,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                                                         styles.quizOptionLetterText,
                                                                         isSelected && styles.quizOptionLetterTextSelected
                                                                     ]}>
-                                                                        {opt.label}
+                                                                        {(() => {
+                                                                            const lbl = String(opt.label || '').trim();
+                                                                            if (lbl.toLowerCase() === 'true') return 'T';
+                                                                            if (lbl.toLowerCase() === 'false') return 'F';
+                                                                            if (lbl.length <= 2) return lbl.toUpperCase();
+                                                                            return lbl.charAt(0).toUpperCase();
+                                                                        })()}
                                                                     </Text>
                                                                 </View>
                                                                 <Text style={[
@@ -1881,77 +1893,84 @@ const styles = StyleSheet.create({
     },
     quizQuestionCard: {
         backgroundColor: "#FFFFFF",
-        padding: 16,
-        borderRadius: 12,
+        padding: 18,
+        borderRadius: 16,
         marginBottom: 16,
         borderWidth: 1,
         borderColor: "#E2E8F0",
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.03,
-        shadowRadius: 2,
-        elevation: 1,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 2,
     },
     quizQuestionText: {
         fontSize: 16,
-        fontWeight: "600",
-        color: "#1E293B",
+        fontWeight: "700",
+        color: "#0F172A",
         marginBottom: 12,
         lineHeight: 22,
     },
     quizTextInput: {
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: "#E2E8F0",
-        borderRadius: 8,
-        padding: 12,
+        borderRadius: 10,
+        padding: 14,
         fontSize: 15,
         color: "#1E293B",
         backgroundColor: "#F8FAFC",
     },
     quizOptionsContainer: {
-        gap: 10,
+        gap: 12,
     },
     quizOptionButton: {
         flexDirection: "row",
         alignItems: "center",
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
+        paddingVertical: 14,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        borderWidth: 1.5,
         borderColor: "#E2E8F0",
-        backgroundColor: "#F8FAFC",
+        backgroundColor: "#FFFFFF",
+        minHeight: 52,
     },
     quizOptionButtonSelected: {
         borderColor: Colors.light.primary,
-        backgroundColor: Colors.light.primary + "08",
+        backgroundColor: Colors.light.primary + "0A",
     },
     quizOptionLetterCircle: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: "#E2E8F0",
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: "#F1F5F9",
+        borderWidth: 1,
+        borderColor: "#CBD5E1",
         alignItems: "center",
         justifyContent: "center",
         marginRight: 12,
     },
     quizOptionLetterCircleSelected: {
         backgroundColor: Colors.light.primary,
+        borderColor: Colors.light.primary,
     },
     quizOptionLetterText: {
         fontSize: 14,
-        fontWeight: "600",
-        color: "#475569",
+        fontWeight: "700",
+        color: "#334155",
+        textAlign: "center",
     },
     quizOptionLetterTextSelected: {
         color: "#FFFFFF",
     },
     quizOptionText: {
-        fontSize: 14,
-        color: "#475569",
+        fontSize: 15,
+        color: "#1E293B",
         flex: 1,
+        lineHeight: 20,
     },
     quizOptionTextSelected: {
         color: Colors.light.primary,
-        fontWeight: "600",
+        fontWeight: "700",
     },
     resultsDashboardContainer: {
         marginTop: 8,
