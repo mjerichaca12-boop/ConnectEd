@@ -406,25 +406,26 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
             // Also record in quiz_attempts table
             if (quizData && userId) {
-                const attemptPayload = {
-                    quiz_id: assignment.id,
-                    student_id: userId,
-                    score: Math.round(score),
-                    answers: selectedAnswers,
-                    status: 'completed'
-                };
+                try {
+                    const attemptPayload = {
+                        quiz_id: assignment.id,
+                        student_id: userId,
+                        score: Math.round(score),
+                        answers: selectedAnswers,
+                        status: 'Submitted'
+                    };
 
-                const { error: upsertError } = await supabase
-                    .from('quiz_attempts')
-                    .upsert(attemptPayload, { onConflict: 'quiz_id,student_id' });
-
-                if (upsertError) {
-                    const { error: insertError } = await supabase
+                    const { error: upsertError } = await supabase
                         .from('quiz_attempts')
-                        .insert(attemptPayload);
-                    if (insertError) {
-                        console.error("Failed to insert quiz attempt:", insertError.message);
+                        .upsert(attemptPayload, { onConflict: 'quiz_id,student_id' });
+
+                    if (upsertError) {
+                        await supabase
+                            .from('quiz_attempts')
+                            .insert(attemptPayload);
                     }
+                } catch (quizAttemptErr) {
+                    console.log("quiz_attempts optional sync:", quizAttemptErr);
                 }
             }
 
