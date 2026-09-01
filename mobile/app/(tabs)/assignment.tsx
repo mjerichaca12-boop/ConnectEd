@@ -403,38 +403,24 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
             // Also record in quiz_attempts table
             if (quizData && userData?.user?.id) {
+                const attemptPayload = {
+                    quiz_id: assignment.id,
+                    student_id: userData.user.id,
+                    score: Math.round(score),
+                    answers: selectedAnswers,
+                    status: 'completed'
+                };
+
                 const { error: upsertError } = await supabase
                     .from('quiz_attempts')
-                    .upsert({
-                        quiz_id: assignment.id,
-                        assignment_id: assignment.id,
-                        student_id: userData.user.id,
-                        user_id: userData.user.id,
-                        score: Math.round(score),
-                        correct_count: correctCount,
-                        total_questions: quizData.questions.length,
-                        answers: selectedAnswers,
-                        response_text: jsonText,
-                        status: 'completed'
-                    }, { onConflict: 'quiz_id,user_id' });
+                    .upsert(attemptPayload, { onConflict: 'quiz_id,student_id' });
 
                 if (upsertError) {
                     const { error: insertError } = await supabase
                         .from('quiz_attempts')
-                        .insert({
-                            quiz_id: assignment.id,
-                            assignment_id: assignment.id,
-                            student_id: userData.user.id,
-                            user_id: userData.user.id,
-                            score: Math.round(score),
-                            correct_count: correctCount,
-                            total_questions: quizData.questions.length,
-                            answers: selectedAnswers,
-                            response_text: jsonText,
-                            status: 'completed'
-                        });
+                        .insert(attemptPayload);
                     if (insertError) {
-                        console.error("Failed to insert quiz attempt fallback:", insertError.message);
+                        console.error("Failed to insert quiz attempt:", insertError.message);
                     }
                 }
             }

@@ -244,12 +244,12 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     const { data: quizAttempts } = await supabase
         .from('quiz_attempts')
         .select('*')
-        .eq('user_id', userData.user.id);
+        .eq('student_id', userData.user.id);
 
     const quizAttemptMap = new Map();
     (quizAttempts || []).forEach(att => {
-        if (att && (att.quiz_id || att.assignment_id)) {
-            quizAttemptMap.set(att.quiz_id || att.assignment_id, att);
+        if (att && (att.quiz_id || att.id)) {
+            quizAttemptMap.set(att.quiz_id || att.id, att);
         }
     });
 
@@ -260,13 +260,13 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     });
 
     (quizAttempts || []).forEach(att => {
-        const idKey = att.quiz_id || att.assignment_id;
+        const idKey = att.quiz_id || att.id;
         if (idKey && !resultsMap.has(idKey)) {
             resultsMap.set(idKey, {
                 assessment_id: idKey,
                 status: att.status || 'Graded',
                 grade_value: att.score,
-                feedback: `Quiz Score: ${att.score}% (${att.correct_count || 0}/${att.total_questions || 0})`
+                feedback: `Quiz Score: ${att.score}%`
             });
         }
     });
