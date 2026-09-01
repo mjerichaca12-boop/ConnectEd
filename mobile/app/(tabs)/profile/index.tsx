@@ -359,9 +359,13 @@ export default function ProfileScreen() {
                         <>
                             <View style={styles.infoRow}>
                                 <Text style={styles.label}>Year Level:</Text>
-                                <Text style={styles.value}>{resolvedYearLevel}</Text>
+                                <Text style={styles.value}>{resolvedYearLevel || "—"}</Text>
                             </View>
 
+                            <View style={styles.infoRow}>
+                                <Text style={styles.label}>Section:</Text>
+                                <Text style={styles.value}>{resolvedSection || "—"}</Text>
+                            </View>
                         </>
                     )}
 
