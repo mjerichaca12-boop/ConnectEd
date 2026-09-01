@@ -200,7 +200,13 @@ export default function AnnouncementDetailScreen() {
                     <View style={styles.divider} />
 
                     {announcement.image_url && (
-                        <Image source={{ uri: announcement.image_url }} style={styles.fullImage} resizeMode="contain" />
+                        <TouchableOpacity 
+                            onPress={() => openFileViewer(announcement.image_url, announcement.title || "Announcement Image")}
+                            activeOpacity={0.9}
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Image source={{ uri: announcement.image_url }} style={styles.fullImage} resizeMode="contain" />
+                        </TouchableOpacity>
                     )}
 
                     <Text style={styles.body}>{announcement.content}</Text>

@@ -1426,8 +1426,8 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                         </View>
                                         <TouchableOpacity 
                                             style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                                            onPress={async () => {
-                                                try { await Linking.openURL(publicUrl); } catch(e) {}
+                                            onPress={() => {
+                                                openFileViewer(publicUrl, assignment.file_name || "Teacher's Quiz Sheet");
                                             }}
                                         >
                                             <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>Open Full</Text>
@@ -1436,16 +1436,21 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                     </View>
 
                                     {isImg ? (
-                                        <Image 
-                                            source={{ uri: publicUrl }}
-                                            style={{ width: '100%', height: 350, backgroundColor: '#F8FAFC' }}
-                                            resizeMode="contain"
-                                        />
+                                        <TouchableOpacity 
+                                            activeOpacity={0.9} 
+                                            onPress={() => openFileViewer(publicUrl, assignment.file_name || "Teacher's Quiz Sheet")}
+                                        >
+                                            <Image 
+                                                source={{ uri: publicUrl }}
+                                                style={{ width: '100%', height: 350, backgroundColor: '#F8FAFC' }}
+                                                resizeMode="contain"
+                                            />
+                                        </TouchableOpacity>
                                     ) : (
                                         <TouchableOpacity 
                                             style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FAFAFA' }}
-                                            onPress={async () => {
-                                                try { await Linking.openURL(publicUrl); } catch(e) {}
+                                            onPress={() => {
+                                                openFileViewer(publicUrl, assignment.file_name || "Questions Document / PDF");
                                             }}
                                         >
                                             <Ionicons name="document-attach" size={32} color={Colors.light.primary} />
