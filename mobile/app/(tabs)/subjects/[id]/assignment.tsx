@@ -1074,13 +1074,27 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                         } catch (e) {
                             console.error("Failed to parse DATA_JSON:", e);
                         }
-                    } else if (hasAttemptedQuiz && quizAttemptData) {
+                    } else if ((hasAttemptedQuiz || assignment.assessment_type === 'quiz') && (quizAttemptData || (assignment.submission?.grade !== null && assignment.submission?.grade !== undefined))) {
+                        const score_ = quizAttemptData?.score ?? assignment.submission?.grade ?? 0;
+                        const answers_ = quizAttemptData?.answers ?? {};
+                        const questions_ = quizData?.questions || [];
+                        let cCount = 0;
+                        questions_.forEach((q: any) => {
+                            const studentAns = answers_[q.questionNumber];
+                            let isCorrect = false;
+                            if (q.questionType === 'Multiple Choice' || q.questionType === 'True/False') {
+                                isCorrect = studentAns === q.correctAnswer;
+                            } else if (q.questionType === 'Identification' || q.questionType === 'Short Answer') {
+                                isCorrect = String(studentAns || '').trim().toLowerCase() === String(q.correctAnswer || '').trim().toLowerCase();
+                            }
+                            if (isCorrect) cCount++;
+                        });
                         submissionData = {
-                            score: quizAttemptData.score,
-                            correctCount: quizAttemptData.correct_count,
-                            totalQuestions: quizAttemptData.total_questions,
-                            answers: quizAttemptData.answers,
-                            questions: quizData?.questions || []
+                            score: score_,
+                            correctCount: cCount || Math.round((score_ / 100) * (questions_.length || 1)),
+                            totalQuestions: questions_.length || 1,
+                            answers: answers_,
+                            questions: questions_
                         };
                     }
 

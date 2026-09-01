@@ -286,6 +286,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     return assignments.map((row: any) => {
         const myResult = resultsMap.get(row.id);
         const myAssessmentSub = assessmentSubMap.get(row.id);
+        const myQuizAttempt = quizAttemptMap.get(row.id);
         
         // Determine status
         let status: Assignment['status'] = "pending";
@@ -294,9 +295,9 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         
         if (rawStatus === 'returned') {
             status = 'returned';
-        } else if (rawStatus === 'graded' || rawStatus === 'passed' || rawStatus === 'failed' || (rawStatus !== 'pending' && myResult?.grade_value !== undefined && myResult?.grade_value !== null)) {
+        } else if (rawStatus === 'graded' || rawStatus === 'passed' || rawStatus === 'failed' || (rawStatus !== 'pending' && myResult?.grade_value !== undefined && myResult?.grade_value !== null) || (myQuizAttempt && myQuizAttempt.score !== undefined && myQuizAttempt.score !== null)) {
             status = 'graded';
-        } else if (rawStatus === 'submitted' || myAssessmentSub) {
+        } else if (rawStatus === 'submitted' || myAssessmentSub || myQuizAttempt) {
             status = 'submitted';
         }
         
@@ -366,6 +367,10 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         if (fileUrl && typeof fileUrl !== 'string') fileUrl = String(fileUrl);
         if (fileName && typeof fileName !== 'string') fileName = String(fileName);
 
+        const resolvedGrade = myResult?.grade_value !== undefined && myResult?.grade_value !== null
+            ? myResult.grade_value
+            : (myQuizAttempt?.score !== undefined && myQuizAttempt?.score !== null ? myQuizAttempt.score : null);
+
         return {
             id: row.id,
             subjectId: row.course_id,
@@ -377,12 +382,12 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             file_url: fileUrl,
             file_name: fileName,
             assessment_type: (String(row.assessment_type || row.type || "assignment").trim().toLowerCase()) as Assignment['assessment_type'],
-            submission: (myResult || myAssessmentSub) ? {
-                id: myResult?.id || myAssessmentSub?.id || row.id, // Fallback to assignment id if not graded yet
+            submission: (myResult || myAssessmentSub || myQuizAttempt) ? {
+                id: myResult?.id || myAssessmentSub?.id || myQuizAttempt?.id || row.id,
                 file_url: myAssessmentSub?.file_url || null,
-                grade: rawStatus === 'pending' ? null : (myResult?.grade_value !== undefined ? myResult.grade_value : null),
-                teacher_comment: feedbackMap.get(row.id) || myResult?.feedback || null,
-                status: myResult?.status || 'submitted',
+                grade: resolvedGrade,
+                teacher_comment: feedbackMap.get(row.id) || myResult?.feedback || (myQuizAttempt ? `Quiz Score: ${myQuizAttempt.score}%` : null),
+                status: myResult?.status || (myQuizAttempt ? 'graded' : 'submitted'),
                 response_text: myAssessmentSub?.response_text || null,
             } : null,
         };
