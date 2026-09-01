@@ -908,7 +908,7 @@ export function AdminMessages() {
       }
     }
 
-    const messageText = text || (uploadedAttachments.length > 0 ? `Sent ${uploadedAttachments.length} attachment(s)` : "");
+    const firstAttachment = uploadedAttachments[0] || null;
     
     let insertPayload;
     if (activeConversation.isGroup) {
@@ -918,6 +918,10 @@ export function AdminMessages() {
         conversation_id: activeConversation.id,
         message_text: messageText,
         content: messageText,
+        file_url: firstAttachment ? firstAttachment.file_url : null,
+        file_name: firstAttachment ? firstAttachment.file_name : null,
+        file_type: firstAttachment ? firstAttachment.file_type : null,
+        file_size: firstAttachment ? firstAttachment.file_size : null,
         timestamp: now,
         status: "sent"
       }];
@@ -928,6 +932,10 @@ export function AdminMessages() {
         conversation_id: null,
         message_text: messageText,
         content: messageText,
+        file_url: firstAttachment ? firstAttachment.file_url : null,
+        file_name: firstAttachment ? firstAttachment.file_name : null,
+        file_type: firstAttachment ? firstAttachment.file_type : null,
+        file_size: firstAttachment ? firstAttachment.file_size : null,
         timestamp: now,
         status: "sent"
       }));

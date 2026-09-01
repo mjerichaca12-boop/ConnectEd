@@ -285,7 +285,10 @@ export default function ConversationScreen() {
                cleanName.endsWith('.heic');
     };
 
-    const getAttachmentFileName = (fileUrl: string, content?: string) => {
+    const getAttachmentFileName = (fileUrl: string, content?: string, customFileName?: string) => {
+        if (customFileName && customFileName.trim()) {
+            return customFileName.trim();
+        }
         if (content && content.startsWith('Sent a document: ')) {
             return content.replace('Sent a document: ', '');
         }
@@ -295,8 +298,8 @@ export default function ConversationScreen() {
                 const parts = decoded.split('/');
                 const filenameWithQuery = parts[parts.length - 1];
                 const rawFilename = filenameWithQuery.split('?')[0];
-                // Strip timestamps e.g. 1787718518717- from storage filename
-                return rawFilename.replace(/^\d+-/, '');
+                // Strip timestamps e.g. 1787718518717- or 1787789104557_ from storage filename
+                return rawFilename.replace(/^\d+[-_]/, '');
             } catch (e) {
                 // Fallback
             }
@@ -380,40 +383,57 @@ export default function ConversationScreen() {
             }
         }
 
+        const attachmentsList = Array.isArray(item.attachments) && item.attachments.length > 0
+            ? item.attachments
+            : (item.file_url ? [{ file_url: item.file_url, file_name: item.file_name, file_type: item.file_type }] : []);
+
         return (
             <View style={styles.messageWrapper}>
                 <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
-                    {item.file_url && isImageAttachment(item.file_url, item.file_type) && (
-                        <TouchableOpacity onPress={() => handleSaveImage(item.file_url)}>
-                            <Image source={{ uri: item.file_url }} style={styles.messageImage} resizeMode="cover" />
-                        </TouchableOpacity>
-                    )}
-                    {item.file_url && !isImageAttachment(item.file_url, item.file_type) && (
-                        <TouchableOpacity 
-                            style={styles.fileContainer} 
-                            onPress={() => handleOpenFile(item.file_url, getAttachmentFileName(item.file_url, item.content))}
-                        >
-                            <Ionicons name="document-attach" size={24} color={isMe ? "#FFF" : Colors.light.primary} />
-                            <Text style={[styles.fileText, { color: isMe ? "#FFF" : Colors.light.text }]} numberOfLines={1}>
-                                {getAttachmentFileName(item.file_url, item.content)}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
+                    {attachmentsList.map((att: any, attIdx: number) => {
+                        const attUrl = att.file_url;
+                        const attType = att.file_type || item.file_type;
+                        const isImg = isImageAttachment(attUrl, attType) || isImageFileName(att.file_name || '');
+                        const fileName = getAttachmentFileName(attUrl, item.content, att.file_name);
+                        
+                        if (isImg) {
+                            return (
+                                <TouchableOpacity 
+                                    key={attIdx} 
+                                    onPress={() => handleSaveImage(attUrl)}
+                                    style={{ marginBottom: 4 }}
+                                >
+                                    <Image source={{ uri: attUrl }} style={styles.messageImage} resizeMode="cover" />
+                                </TouchableOpacity>
+                            );
+                        }
+                        return (
+                            <TouchableOpacity 
+                                key={attIdx}
+                                style={styles.fileContainer} 
+                                onPress={() => handleOpenFile(attUrl, fileName)}
+                            >
+                                <Ionicons name="document-attach" size={24} color={isMe ? "#FFF" : Colors.light.primary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={[styles.fileText, { color: isMe ? "#FFF" : Colors.light.text }]} numberOfLines={1}>
+                                        {fileName}
+                                    </Text>
+                                    <Text style={{ fontSize: 10, color: isMe ? "rgba(255,255,255,0.7)" : "#64748B" }}>
+                                        Tap to open or download
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+
                     <View style={styles.messageTextContainer}>
-                        <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
-                            {item.content || item.message_text || (item.file_type === 'image' ? 'Photo' : 'Document')}
-                        </Text>
-                        {(!item.file_url && (
-                            String(item.content || item.message_text || '').toLowerCase().includes('attachment') || 
-                            String(item.content || item.message_text || '').toLowerCase().includes('document:') || 
-                            String(item.content || item.message_text || '').toLowerCase().includes('photo')
-                        )) && (
-                            <Text style={{ fontSize: 10, color: '#EF4444', marginTop: 2, fontStyle: 'italic', fontWeight: 'bold' }}>
-                                ⚠️ Attachment upload failed on sender's device
+                        {Boolean(item.content || item.message_text) && (
+                            <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
+                                {item.content || item.message_text}
                             </Text>
                         )}
                         <Text style={[styles.timeText, isMe ? styles.myTimeText : styles.theirTimeText]}>
-                            {formatTime(item.created_at)}
+                            {formatTime(item.created_at || item.timestamp)}
                         </Text>
                     </View>
                 </View>
