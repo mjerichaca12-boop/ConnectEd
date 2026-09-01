@@ -100,11 +100,6 @@ function TeacherRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
 
   useEffect(() => {
-    if (isMobileDevice()) {
-      setStatus("device-restricted");
-      return;
-    }
-
     try {
       const rawUser = localStorage.getItem("currentUser");
       if (!rawUser) {
@@ -139,7 +134,6 @@ function TeacherRouteGuard({ children }) {
     );
   }
 
-  if (status === "device-restricted") return <DeviceRestricted role="Teacher" allowed="Desktop" />;
   if (status === "force-change") return <Navigate to="/change-password" replace />;
   if (status === "denied") return <Navigate to="/login" replace />;
 
@@ -150,11 +144,6 @@ function AdminRouteGuard({ children }) {
   const [status, setStatus] = useState("checking");
 
   useEffect(() => {
-    if (isMobileDevice()) {
-      setStatus("device-restricted");
-      return;
-    }
-
     try {
       const rawUser = localStorage.getItem("currentUser");
       if (!rawUser) {
@@ -182,7 +171,6 @@ function AdminRouteGuard({ children }) {
     );
   }
 
-  if (status === "device-restricted") return <DeviceRestricted role="Administrator" allowed="Desktop" />;
   if (status === "denied") return <Navigate to="/login" replace />;
 
   return children;
