@@ -12,8 +12,16 @@ export async function getAllSearchableProfiles() {
 
     if (error) throw error;
     
-    return (data || []).map(p => ({
+    const mapped = (data || []).map(p => ({
         ...p,
         full_name: `${p.first_name || ''} ${p.middle_name || ''} ${p.last_name || ''}`.trim().replace(/\s+/g, ' ')
     }));
+
+    const seen = new Set<string>();
+    return mapped.filter(p => {
+        const key = `${p.full_name.toLowerCase().trim()}_${(p.role || '').toLowerCase().trim()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }

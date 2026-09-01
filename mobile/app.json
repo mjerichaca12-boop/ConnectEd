@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.eurijiaosteam.connected"
+      "package": "com.eurijiaosteam.connected",
+      "versionCode": 1
     },
     "web": {
       "output": "static",

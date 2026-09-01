@@ -5,14 +5,14 @@ const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 
 const supabase = createClient(url, serviceKey);
 
-async function listAll() {
-  const { data: profiles, error: pError } = await supabase.from('profiles').select('id, email, username, first_name, last_name');
-  if (pError) console.error(pError);
-  else console.log('=== PROFILES ===\n', profiles);
+async function listRoutines() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .limit(1);
 
-  const { data: { users }, error: uError } = await supabase.auth.admin.listUsers();
-  if (uError) console.error(uError);
-  else console.log('=== AUTH USERS ===\n', users.map(u => ({ id: u.id, email: u.email })));
+  // Let's run a query on pg_catalog via direct query if possible, or information_schema
+  // Since Postgrest does not expose catalog tables, let's check if there is an rpc function by inspecting the OpenAPI docs or error messages
+  console.log("Supabase client active.");
 }
-
-listAll();
+listRoutines();

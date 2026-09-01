@@ -50,10 +50,7 @@ export default function AnnouncementDetailScreen() {
 
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (!session) return;
-            const email = session.user?.email;
             let role = session.user?.user_metadata?.role || "student";
-            if (email === "erijiao18@gmail.com") role = "teacher";
-            if (email === "euriqt214@gmail.com") role = "student";
             setIsTeacher(role === "teacher");
         });
     }, [id]);

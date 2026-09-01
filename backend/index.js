@@ -122,11 +122,7 @@ app.post("/auth/verify-otp", async (req, res) => {
         let userRole = 'student';
         const lowerEmail = email.toLowerCase();
         
-        if (lowerEmail === 'erijiao18@gmail.com') {
-            userRole = 'teacher';
-        } else if (lowerEmail === 'euriqt214@gmail.com') {
-            userRole = 'student';
-        } else if (lowerEmail.includes('teacher')) {
+        if (lowerEmail.includes('teacher')) {
             userRole = 'teacher';
         }
 
@@ -137,6 +133,10 @@ app.post("/auth/verify-otp", async (req, res) => {
 
         if (existingUser) {
             userId = existingUser.id;
+            const { data: prof } = await supabase.from('profiles').select('role').eq('id', existingUser.id).maybeSingle();
+            if (prof && prof.role) {
+                userRole = prof.role;
+            }
             // Update password temporarily to securely mint session token next, and enforce role
             await supabase.auth.admin.updateUserById(userId, { 
                 password: tempPassword,
@@ -187,11 +187,7 @@ app.post("/auth/direct-login", async (req, res) => {
         let userRole = 'student';
         const lowerEmail = email.toLowerCase();
         
-        if (lowerEmail === 'erijiao18@gmail.com') {
-            userRole = 'teacher';
-        } else if (lowerEmail === 'euriqt214@gmail.com') {
-            userRole = 'student';
-        } else if (lowerEmail.includes('teacher')) {
+        if (lowerEmail.includes('teacher')) {
             userRole = 'teacher';
         }
 
@@ -201,6 +197,10 @@ app.post("/auth/direct-login", async (req, res) => {
 
         if (existingUser) {
             userId = existingUser.id;
+            const { data: prof } = await supabase.from('profiles').select('role').eq('id', existingUser.id).maybeSingle();
+            if (prof && prof.role) {
+                userRole = prof.role;
+            }
             await supabase.auth.admin.updateUserById(userId, { 
                 password: tempPassword,
                 user_metadata: { role: userRole }

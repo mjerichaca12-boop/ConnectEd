@@ -88,18 +88,19 @@ export default function ProfileScreen() {
 
         // Role override
         let userRole: "student" | "teacher" = (user.user_metadata?.role as any) || "student";
-        if (email === "erijiao18@gmail.com") userRole = "teacher";
-        if (email === "euriqt214@gmail.com") userRole = "student";
         setRole(userRole);
 
         // Fetch profile row
         const { data: profile } = await supabase
             .from("profiles")
-            .select("first_name, last_name, year_level, section")
+            .select("first_name, last_name, year_level, section, role")
             .eq("id", user.id)
             .single();
 
         if (profile) {
+            if (profile.role) {
+                setRole(profile.role as "student" | "teacher");
+            }
             const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
             if (fullName) {
                 setDisplayName(fullName);
@@ -342,54 +343,23 @@ export default function ProfileScreen() {
                     )}
                 </View>
 
-                {/* Academic Info */}
+                {/* Student Info */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>
-                            {role === "teacher" ? "Professional Info" : "Academic Info"}
-                        </Text>
-                        <TouchableOpacity
-                            onPress={isEditingAcademic ? handleSaveAcademic : () => setIsEditingAcademic(true)}
-                            style={styles.editButton}
-                            disabled={isSavingAcademic}
-                        >
-                            {isSavingAcademic ? (
-                                <ActivityIndicator size="small" color={Colors.light.primary} />
-                            ) : (
-                                <Text style={styles.editButtonText}>
-                                    {isEditingAcademic ? "Save" : "Edit"}
-                                </Text>
-                            )}
-                        </TouchableOpacity>
+                        <Text style={styles.sectionTitle}>Student Info</Text>
                     </View>
 
                     {/* Name field — always shown */}
                     <View style={styles.infoRow}>
                         <Text style={styles.label}>Name:</Text>
-                        {isEditingAcademic ? (
-                            <TextInput
-                                style={styles.input}
-                                value={displayNameEdit}
-                                onChangeText={setDisplayNameEdit}
-                                placeholder="Full name"
-                                placeholderTextColor="#94A3B8"
-                            />
-                        ) : (
-                            <Text style={styles.value}>{displayName}</Text>
-                        )}
+                        <Text style={styles.value}>{displayName}</Text>
                     </View>
 
                     {role === "student" && (
                         <>
                             <View style={styles.infoRow}>
                                 <Text style={styles.label}>Year Level:</Text>
-                                {isEditingAcademic ? (
-                                    <Text style={[styles.value, { color: "#64748B" }]}>
-                                        {resolvedYearLevel} (Managed by Administrator)
-                                    </Text>
-                                ) : (
-                                    <Text style={styles.value}>{resolvedYearLevel}</Text>
-                                )}
+                                <Text style={styles.value}>{resolvedYearLevel}</Text>
                             </View>
 
                         </>

@@ -18,7 +18,13 @@
         "EXPO_PUBLIC_BACKEND_URL": "https://connected-backend-kwdl.onrender.com"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://pyeckxqaowusxcmeuolk.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5ZWNreHFhb3d1c3hjbWV1b2xrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM2NTM0NDIsImV4cCI6MjA4OTIyOTQ0Mn0.ZkFHTVu3NzjiEA2zhxC5HKqwn43ipp7sQ2kWTrtUfUI",
+        "EXPO_PUBLIC_BACKEND_URL": "https://connected-backend-kwdl.onrender.com"
+      }
+    }
   },
   "submit": {
     "production": {}

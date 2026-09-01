@@ -102,8 +102,10 @@ export default function MessagesScreen() {
     ) : [];
 
     const chatPartnerIds = new Set(chats.map(chat => chat?.partner_id));
+    const chatPartnerNames = new Set(chats.map(chat => (chat?.partner_name || "").toLowerCase().trim()));
     const otherProfiles = Array.isArray(profiles) ? profiles.filter(profile => 
         !chatPartnerIds.has(profile.id) && 
+        !chatPartnerNames.has((profile?.full_name || "").toLowerCase().trim()) &&
         (profile?.full_name || "").toLowerCase().includes(searchQuery.toLowerCase())
     ) : [];
 

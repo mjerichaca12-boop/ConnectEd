@@ -378,7 +378,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                 }
 
                 if (teacherSubError) {
-                    console.warn("teacher_assessment_submissions info (non-fatal):", teacherSubError.message);
+                    throw teacherSubError;
                 }
             }
 
@@ -457,8 +457,8 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             Alert.alert(
                 "Submission Complete", 
                 "Your work has been successfully submitted.",
-                [{ text: "OK", onPress: () => {
-                    queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+                [{ text: "OK", onPress: async () => {
+                    await queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
                     onBack("submitted");
                 }}]
             );
@@ -518,7 +518,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                 .eq('student_id', userId);
 
                             if (deleteTeacherSubError) {
-                                console.warn("Failed to delete from teacher_assessment_submissions:", deleteTeacherSubError);
+                                throw deleteTeacherSubError;
                             }
 
                             // 3. Delete record from teacher_assessment_grades to revert status to pending
@@ -529,7 +529,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                 .eq('student_id', userId);
 
                             if (deleteGradeError) {
-                                console.warn("Failed to delete from teacher_assessment_grades:", deleteGradeError);
+                                throw deleteGradeError;
                             }
 
                             let targetTab = "upcoming";
@@ -541,9 +541,14 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                                 }
                             }
 
-                            Alert.alert("Submission Undone", "Your submission has been undone successfully.");
-                            queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
-                            onBack(targetTab);
+                            Alert.alert(
+                                "Submission Undone", 
+                                "Your submission has been undone successfully.",
+                                [{ text: "OK", onPress: async () => {
+                                    await queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+                                    onBack(targetTab);
+                                }}]
+                            );
                         } catch (err: any) {
                             console.error("Undo submit error:", err);
                             Alert.alert("Error", err.message || "Failed to undo submission.");

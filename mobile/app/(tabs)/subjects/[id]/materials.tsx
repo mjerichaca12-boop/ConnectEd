@@ -181,9 +181,7 @@ export default function SubjectMaterials() {
     React.useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (!session) return;
-            const email = session.user?.email;
             let role = session.user?.user_metadata?.role || "student";
-            if (email === "erijiao18@gmail.com") role = "teacher";
             setIsTeacher(role === "teacher");
         });
     }, []);

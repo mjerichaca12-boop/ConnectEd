@@ -20,7 +20,6 @@ async function fixProfiles() {
         if (!existing) {
             console.log(`Missing profile for ${u.email} (${u.id}). Creating...`);
             let role = 'student';
-            if (u.email === 'erijiao18@gmail.com') role = 'teacher';
 
             // Extract name from email roughly if possible
             const nameParts = u.email.split('@')[0].split('.');
