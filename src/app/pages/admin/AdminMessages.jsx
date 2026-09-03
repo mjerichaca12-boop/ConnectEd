@@ -1232,7 +1232,7 @@ export function AdminMessages() {
 
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div data-tour="messages-header" className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
+          <div data-tour="messages-header" className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white/15 rounded-xl">
@@ -1240,7 +1240,7 @@ export function AdminMessages() {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold">Messages</h1>
-                  <p className="text-blue-100 text-sm">
+                  <p className="text-emerald-100 text-sm">
                     {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
                     {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
@@ -1271,12 +1271,12 @@ export function AdminMessages() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full pl-9 pr-3 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
                 <button
                   onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                  className="p-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0"
+                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
                   title="New Message"
                 >
                   <Plus className="w-4 h-4" />
@@ -1294,7 +1294,7 @@ export function AdminMessages() {
                       onClick={() => setActiveFilter(key)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
-                          ? "bg-blue-600 text-gray-900 shadow-sm"
+                          ? "bg-emerald-600 text-white shadow-sm"
                           : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                     >
@@ -1304,9 +1304,9 @@ export function AdminMessages() {
                         <span
                           className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] flex items-center justify-center ${
                             isActive
-                              ? "bg-white/25 text-gray-900"
+                              ? "bg-white/25 text-white"
                               : key === "unread"
-                              ? "bg-blue-500/20 text-blue-400"
+                              ? "bg-emerald-500/20 text-emerald-600 font-bold"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
@@ -1324,11 +1324,11 @@ export function AdminMessages() {
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
                     <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
                       {activeFilter === "videomeet" ? (
-                        <Video className="w-6 h-6 text-blue-400" />
+                        <Video className="w-6 h-6 text-emerald-600" />
                       ) : activeFilter === "mentions" ? (
-                        <AtSign className="w-6 h-6 text-blue-400" />
+                        <AtSign className="w-6 h-6 text-emerald-600" />
                       ) : (
-                        <MessageSquare className="w-6 h-6 text-blue-400" />
+                        <MessageSquare className="w-6 h-6 text-emerald-600" />
                       )}
                     </div>
                     <p className="text-sm font-medium text-gray-600 mb-1">
@@ -1354,17 +1354,17 @@ export function AdminMessages() {
                         onClick={() => handleSelectConv(conv)}
                         className={`w-full text-left px-4 py-3.5 hover:bg-gray-50 transition-colors ${
                           selectedConvId === conv.id
-                            ? "bg-blue-500/8 border-l-2 border-blue-500"
+                            ? "bg-emerald-50 border-l-2 border-emerald-500"
                             : ""
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="relative flex-shrink-0">
                             <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                                 conv.isVideoMeet
                                   ? "bg-gradient-to-br from-purple-500 to-indigo-600"
-                                  : "bg-gradient-to-br from-blue-500 to-indigo-600"
+                                  : "bg-gradient-to-br from-emerald-500 to-teal-600"
                               }`}
                             >
                               {conv.isVideoMeet ? (
@@ -1375,7 +1375,7 @@ export function AdminMessages() {
                             </div>
                             {conv.isVideoMeet && (
                               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-purple-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
-                                <Video className="w-1.5 h-1.5 text-gray-900" />
+                                <Video className="w-1.5 h-1.5 text-white" />
                               </span>
                             )}
                           </div>
@@ -1384,7 +1384,7 @@ export function AdminMessages() {
                               <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
+                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-emerald-600" : "text-gray-500"}`}>
                                 {getTimeLabel(conv.lastMessageTime)}
                               </span>
                             </div>
@@ -1395,7 +1395,7 @@ export function AdminMessages() {
                                   : conv.participantRole || "Teacher"}
                               </p>
                               {getUnreadCount(conv) > 0 && (
-                                <span className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
+                                <span className="w-2.5 h-2.5 bg-emerald-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
@@ -1421,16 +1421,16 @@ export function AdminMessages() {
                     <button
                       type="button"
                       onClick={() => setShowThread(false)}
-                      className="lg:hidden p-1.5 hover:bg-blue-100 rounded-lg transition-colors -ml-1 mr-1"
+                      className="lg:hidden p-1.5 hover:bg-emerald-100 rounded-lg transition-colors -ml-1 mr-1"
                       aria-label="Back to conversations"
                     >
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                         selectedConv.isVideoMeet
                           ? "bg-gradient-to-br from-purple-500 to-indigo-600"
-                          : "bg-gradient-to-br from-blue-500 to-indigo-600"
+                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
                       }`}
                     >
                       {selectedConv.isVideoMeet ? (
@@ -1443,11 +1443,11 @@ export function AdminMessages() {
                       <p className="font-semibold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1">
                         {selectedConv.isGroup ? (
-                          <><Users className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Group Conversation</span></>
+                          <><Users className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-600 font-medium">Group Conversation</span></>
                         ) : selectedConv.isVideoMeet ? (
                           <><Video className="w-3 h-3 text-purple-400" /> <span className="text-purple-400">Video Meet Chat</span></>
                         ) : (
-                          <><UserCog className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">{selectedConv.participantRole || "Teacher"}</span></>
+                          <><UserCog className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-600 font-medium">{selectedConv.participantRole || "Teacher"}</span></>
                         )}
                       </p>
                     </div>
@@ -1469,7 +1469,7 @@ export function AdminMessages() {
                     <div className="relative z-10">
                       <div className="absolute right-6 top-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
                         <button type="button" onClick={handleOpenRename} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
-                          <Edit2 className="w-4 h-4 text-blue-600" /> Rename Group
+                          <Edit2 className="w-4 h-4 text-emerald-600" /> Rename Group
                         </button>
                         <button type="button" onClick={() => { setDeleteMode("leave"); setShowGroupMenu(false); setShowDeleteConfirm(true); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
                           <X className="w-4 h-4 text-yellow-500" /> Leave Chat
@@ -1498,7 +1498,7 @@ export function AdminMessages() {
                             <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
                               <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
                                 isAdmin
-                                  ? "bg-blue-600 text-white rounded-br-sm"
+                                  ? "bg-emerald-600 text-white rounded-br-sm"
                                   : hasMention
                                   ? "bg-yellow-50 border border-yellow-200 text-gray-900 rounded-bl-sm"
                                   : "bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm"
@@ -1515,15 +1515,15 @@ export function AdminMessages() {
                                   <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
                                 )}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
-                                  <p className={`text-xs ${isAdmin ? "text-blue-100" : "text-gray-500"}`}>
+                                  <p className={`text-xs ${isAdmin ? "text-emerald-100" : "text-gray-500"}`}>
                                     {getTimeLabel(msg.time)}
                                   </p>
                                   {isAdmin && (
                                     <span className="flex-shrink-0" title={msg.isSeen ? "Seen" : "Sent"}>
                                       {msg.isSeen ? (
-                                        <CheckCheck className="w-3 h-3 text-blue-200" />
+                                        <CheckCheck className="w-3 h-3 text-emerald-100" />
                                       ) : (
-                                        <CheckCheck className="w-3 h-3 text-blue-300/50" />
+                                        <CheckCheck className="w-3 h-3 text-emerald-200/60" />
                                       )}
                                     </span>
                                   )}
@@ -1559,7 +1559,7 @@ export function AdminMessages() {
           )}
                     <div className="flex items-center gap-3">
                       <label className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer flex-shrink-0 group">
-                        <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
+                        <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-emerald-600" />
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -1575,12 +1575,12 @@ export function AdminMessages() {
                         onChange={(e) => setMessageInput(e.target.value)}
                         placeholder={`Message ${selectedConv.participantName}...`}
                         disabled={isUploading}
-                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60"
+                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent disabled:opacity-60"
                       />
                       <button
                         type="submit"
                         disabled={(!messageInput.trim() && attachmentFiles.length === 0) || isUploading}
-                        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                        className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                       >
                         {isUploading
                           ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -1592,14 +1592,14 @@ export function AdminMessages() {
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-center mb-4">
-                    <Shield className="w-8 h-8 text-blue-400" />
+                  <div className="w-16 h-16 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-center mb-4">
+                    <Shield className="w-8 h-8 text-emerald-600" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Admin Messaging</h3>
                   <p className="text-gray-500 text-sm mb-5">Select a conversation or start one with any teacher or student.</p>
                   <button
                     onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm"
                   >
                     <Plus className="w-4 h-4" />
                     New Message
@@ -1617,8 +1617,8 @@ export function AdminMessages() {
           <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
             <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
-                  <UserCog className="w-5 h-5 text-blue-400" />
+                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                  <UserCog className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">New Message</h3>
@@ -1642,7 +1642,7 @@ export function AdminMessages() {
                   value={recipientSearch}
                   onChange={(e) => setRecipientSearch(e.target.value)}
                   placeholder="Search teachers, students, or admins by name or email..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
             </div>
@@ -1663,15 +1663,15 @@ export function AdminMessages() {
                 <div className="divide-y divide-white/5">
                   {(recipientSearch ? filteredRecipients : allTeachers).map((person) => {
                     const hasConv = conversations.find((c) => c.participantId === person.id);
-                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-blue-500 to-indigo-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-green-500 to-emerald-600";
-                    const badgeColor = person.role === "teacher" ? "bg-blue-50 text-blue-700 border-blue-200" : person.role === "admin" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-green-50 text-green-700 border-green-200";
+                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-green-500 to-emerald-600";
+                    const badgeColor = person.role === "teacher" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : person.role === "admin" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-green-50 text-green-700 border-green-200";
                     return (
                       <button
                         key={person.id}
                         onClick={() => handleStartConversation(person)}
                         className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
                       >
-                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-gray-900 font-bold text-sm flex-shrink-0`}>
+                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
                           {person.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1681,10 +1681,10 @@ export function AdminMessages() {
                           </div>
                           <p className="text-xs text-gray-500 truncate">{person.email || person.role}</p>
                           {hasConv && (
-                            <p className="text-xs text-blue-400 font-medium mt-0.5">Existing conversation</p>
+                            <p className="text-xs text-emerald-600 font-medium mt-0.5">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-600 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -1698,7 +1698,7 @@ export function AdminMessages() {
       {showRenameModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-gray-100 bg-blue-600 text-white">
+            <div className="px-6 py-5 border-b border-gray-100 bg-emerald-600 text-white">
               <h3 className="text-lg font-bold">Rename Group</h3>
             </div>
             <div className="px-6 py-4 mt-2">
@@ -1708,12 +1708,12 @@ export function AdminMessages() {
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 placeholder="Group name..."
-                className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
             <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
               <button onClick={() => setShowRenameModal(false)} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
-              <button onClick={handleRenameSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-gray-900 rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
+              <button onClick={handleRenameSubmit} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
             </div>
           </div>
         </div>
