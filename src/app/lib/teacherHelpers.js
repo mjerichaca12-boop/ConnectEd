@@ -161,15 +161,6 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 
     subjectsData = data || [];
 
-    // Fallback: If 0 subjects returned by teacher_id, fetch subjects list to ensure teacher workspace continuity
-    if (subjectsData.length === 0) {
-      const { data: fallbackSubjects } = await supabase
-        .from("subjects")
-        .select("*")
-        .limit(20);
-      subjectsData = fallbackSubjects || [];
-    }
-
     const seen = new Set();
     const classesList = [];
 
