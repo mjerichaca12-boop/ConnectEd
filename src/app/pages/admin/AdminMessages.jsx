@@ -264,6 +264,24 @@ export function AdminMessages() {
     let fileSize = Number(row.file_size || 0);
     let text = String(row.message_text || "").trim();
 
+    const attachmentsList = Array.isArray(row?.message_attachments) && row.message_attachments.length > 0
+      ? row.message_attachments.map(a => ({
+          id: a.id,
+          url: a.file_url,
+          name: a.file_name,
+          type: a.file_type,
+          size: a.file_size,
+          kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+        }))
+      : [];
+
+    if (!fileUrl && attachmentsList.length > 0) {
+      fileUrl = attachmentsList[0].url || "";
+      fileName = attachmentsList[0].name || "";
+      fileType = attachmentsList[0].type || "";
+      fileSize = attachmentsList[0].size || 0;
+    }
+
     if (!fileUrl && row.content) {
       try {
         const contentObj = JSON.parse(row.content);
@@ -294,16 +312,7 @@ export function AdminMessages() {
       fileType: fileTypeValue,
       fileSize,
       attachmentKind: fileTypeValue ? (fileTypeValue.startsWith("image/") ? "image" : fileTypeValue.startsWith("video/") ? "video" : "document") : "",
-      attachments: Array.isArray(row?.message_attachments) 
-        ? row.message_attachments.map(a => ({
-            id: a.id,
-            url: a.file_url,
-            name: a.file_name,
-            type: a.file_type,
-            size: a.file_size,
-            kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-          }))
-        : [],
+      attachments: attachmentsList,
       isRead: Boolean(row.is_read),
       isSeen: isAdminSender || Boolean(row.is_read),
     };

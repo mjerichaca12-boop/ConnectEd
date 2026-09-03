@@ -323,10 +323,27 @@ function AttachmentCard({ att, isSelf, senderName }) {
   const [downloading, setDownloading] = useState(false);
 
   const url = att.url || att.file_url || "";
-  const name = att.name || att.file_name || "file";
+  let name = att.name || att.file_name || "";
   const size = att.size || att.file_size || 0;
   const fileType = att.type || att.file_type || "";
-  
+
+  if ((!name || name.toLowerCase() === "file" || name.toLowerCase() === "download" || name.toLowerCase() === "attachment file") && url) {
+    const urlPath = url.split("?")[0];
+    const segment = urlPath.split("/").pop();
+    if (segment && segment.includes("_")) {
+      const parts = segment.split("_");
+      if (/^\d{10,}$/.test(parts[0])) {
+        parts.shift();
+      }
+      const extracted = parts.join("_");
+      if (extracted) name = extracted;
+    } else if (segment && !segment.toLowerCase().includes("object")) {
+      name = segment;
+    }
+  }
+
+  if (!name || name === "file") name = "Attachment File";
+
   let kind = getAttachmentKind(fileType, name, url);
   if (kind === "document" && att.kind && att.kind !== "document") {
     kind = att.kind;
