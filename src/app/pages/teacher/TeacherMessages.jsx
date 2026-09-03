@@ -1046,11 +1046,32 @@ function TeacherMessages() {
           return;
         }
         
-        const publicUrlResult = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pyeckxqaowusxcmeuolk.supabase.co";
+        let filePublicUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
+        if (!filePublicUrl) {
+          filePublicUrl = `${supabaseUrl}/storage/v1/object/public/${MESSAGE_ATTACHMENT_BUCKET}/${filePath}`;
+        }
+        const ext = String(cleanedName || "").split(".").pop().toLowerCase();
+        let determinedType = file.type;
+        if (!determinedType || determinedType === "application/octet-stream") {
+          switch (ext) {
+            case "png": determinedType = "image/png"; break;
+            case "jpg": case "jpeg": determinedType = "image/jpeg"; break;
+            case "webp": determinedType = "image/webp"; break;
+            case "gif": determinedType = "image/gif"; break;
+            case "pdf": determinedType = "application/pdf"; break;
+            case "csv": determinedType = "text/csv"; break;
+            case "xls": case "xlsx": determinedType = "application/vnd.ms-excel"; break;
+            case "doc": case "docx": determinedType = "application/msword"; break;
+            case "mp4": determinedType = "video/mp4"; break;
+            default: determinedType = "application/octet-stream"; break;
+          }
+        }
+
         uploadedAttachments.push({
-          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_url: filePublicUrl,
           file_name: cleanedName,
-          file_type: String(file.type || "application/octet-stream").trim(),
+          file_type: determinedType,
           file_size: Number(file.size || 0),
         });
       }
@@ -1059,6 +1080,10 @@ function TeacherMessages() {
     }
 
     const firstAttachment = uploadedAttachments[0] || null;
+    const fileUrlVal = firstAttachment ? firstAttachment.file_url : null;
+    const fileNameVal = firstAttachment ? firstAttachment.file_name : null;
+    const fileTypeVal = firstAttachment ? firstAttachment.file_type : null;
+    const fileSizeVal = firstAttachment ? firstAttachment.file_size : null;
     
     let insertPayload;
     if (activeConversation.isGroup) {
@@ -1068,10 +1093,10 @@ function TeacherMessages() {
         conversation_id: activeConversation.id,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }];
@@ -1082,10 +1107,10 @@ function TeacherMessages() {
         conversation_id: null,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }));
@@ -1111,8 +1136,19 @@ function TeacherMessages() {
         for (const att of uploadedAttachments) {
           attachmentPayloads.push({
             message_id: msgRow.id,
-            ...att
+            file_url: att.file_url,
+            file_name: att.file_name,
+            file_type: att.file_type,
+            file_size: att.file_size
           });
+        }
+        if (firstAttachment) {
+          db.from(MESSAGE_TABLE).update({
+            file_url: firstAttachment.file_url,
+            file_name: firstAttachment.file_name,
+            file_type: firstAttachment.file_type,
+            file_size: firstAttachment.file_size
+          }).eq("id", msgRow.id).catch(err => console.warn("[TeacherMessages] Safety update error:", err));
         }
       }
       if (attachmentPayloads.length > 0) {

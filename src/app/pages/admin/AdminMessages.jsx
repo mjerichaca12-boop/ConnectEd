@@ -35,6 +35,24 @@ const sanitizeAttachmentFileName = (fileName) =>
   String(fileName)
     .replace(/[^a-zA-Z0-9.\-_]/g, "_")
     .replace(/_+/g, "_");
+
+const getMimeTypeFromName = (fileName) => {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  switch (ext) {
+    case "png": return "image/png";
+    case "jpg": case "jpeg": return "image/jpeg";
+    case "webp": return "image/webp";
+    case "gif": return "image/gif";
+    case "pdf": return "application/pdf";
+    case "csv": return "text/csv";
+    case "xls": case "xlsx": return "application/vnd.ms-excel";
+    case "doc": case "docx": return "application/msword";
+    case "mp4": return "video/mp4";
+    case "zip": case "rar": return "application/zip";
+    default: return "application/octet-stream";
+  }
+};
+
 const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
@@ -916,17 +934,29 @@ export function AdminMessages() {
           return;
         }
         
-        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pyeckxqaowusxcmeuolk.supabase.co";
+        let filePublicUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
+        if (!filePublicUrl) {
+          filePublicUrl = `${supabaseUrl}/storage/v1/object/public/${MESSAGE_ATTACHMENT_BUCKET}/${filePath}`;
+        }
+        const determinedType = (file.type && file.type !== "application/octet-stream") 
+          ? file.type 
+          : getMimeTypeFromName(cleanedName);
+
         uploadedAttachments.push({
-          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_url: filePublicUrl,
           file_name: cleanedName,
-          file_type: String(file.type || "application/octet-stream").trim(),
+          file_type: determinedType,
           file_size: Number(file.size || 0),
         });
       }
     }
 
     const firstAttachment = uploadedAttachments[0] || null;
+    const fileUrlVal = firstAttachment ? firstAttachment.file_url : null;
+    const fileNameVal = firstAttachment ? firstAttachment.file_name : null;
+    const fileTypeVal = firstAttachment ? firstAttachment.file_type : null;
+    const fileSizeVal = firstAttachment ? firstAttachment.file_size : null;
     
     let insertPayload;
     if (activeConversation.isGroup) {
@@ -936,10 +966,10 @@ export function AdminMessages() {
         conversation_id: activeConversation.id,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }];
@@ -950,10 +980,10 @@ export function AdminMessages() {
         conversation_id: null,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }));
@@ -980,8 +1010,22 @@ export function AdminMessages() {
         for (const att of uploadedAttachments) {
           attachmentPayloads.push({
             message_id: msgRow.id,
-            ...att
+            file_url: att.file_url,
+            file_name: att.file_name,
+            file_type: att.file_type,
+            file_size: att.file_size
           });
+        }
+        if (firstAttachment) {
+          adminApi.db("messages", "update", {
+            payload: {
+              file_url: firstAttachment.file_url,
+              file_name: firstAttachment.file_name,
+              file_type: firstAttachment.file_type,
+              file_size: firstAttachment.file_size
+            },
+            eq: { column: "id", value: msgRow.id }
+          }).catch(err => console.warn("[AdminMessages] Safety update error:", err));
         }
       }
       if (attachmentPayloads.length > 0) {
