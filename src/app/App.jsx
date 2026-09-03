@@ -243,7 +243,7 @@ export default function App() {
           <Route path="/messages" element={<Navigate to="/login" replace />} />
           <Route path="/profile" element={<Navigate to="/login" replace />} />
           <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
-          <Route path="/notifications" element={<Navigate to="/login" replace />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
 
           {/* Teacher Routes */}
           <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />

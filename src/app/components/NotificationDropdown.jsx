@@ -171,51 +171,44 @@ function NotificationDropdown({
 
       const key = getStorageKey(currentUser);
 
-      if (!currentUser || !currentUser.id) {
-        setNotifications([]);
-        return;
+      let effectiveUserId = currentUser?.id && isValidUuid(currentUser.id) ? currentUser.id : null;
+      if (!effectiveUserId && supabase?.auth?.getUser) {
+        try {
+          const { data: authData } = await supabase.auth.getUser();
+          if (authData?.user?.id && isValidUuid(authData.user.id)) {
+            effectiveUserId = authData.user.id;
+          }
+        } catch {}
+      }
+      if (!effectiveUserId && currentUser?.role === "admin") {
+        effectiveUserId = "11111111-1111-1111-1111-111111111111";
       }
 
-      if (supabase?.auth?.getUser) {
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData.session) {
-           return;
-        }
+      if (effectiveUserId && db()) {
+        try {
+          let query = db()
+            .from("notifications")
+            .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type");
 
-        const { data: authData } = await supabase.auth.getUser();
+          if (currentUser?.role === "admin") {
+            query = query.or(`user_id.eq.${effectiveUserId},user_id.eq.11111111-1111-1111-1111-111111111111`);
+          } else {
+            query = query.eq("user_id", effectiveUserId);
+          }
 
-        const authUser = authData?.user ?? null;
-        if (db() && isValidUuid(authUser?.id)) {
-          try {
-            const res = await db()
-              .from("notifications")
-              .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type")
-              .eq("user_id", authUser.id)
-              .order("created_at", { ascending: false })
-              .limit(100);
+          const res = await query.order("created_at", { ascending: false }).limit(100);
 
-            if (!res.error && res.data && isMounted) {
-              const mapped = res.data.map((n) => mapRow(n, currentUser?.role || authUser?.role));
-              let finalItems = dedupeNotifications(mapped);
-              
-              if (finalItems.length === 0) {
-                const stored = localStorage.getItem(key);
-                if (stored) {
-                  try {
-                    const parsed = JSON.parse(stored);
-                    if (parsed.length > 0) finalItems = parsed;
-                  } catch {}
-                }
-                if (finalItems.length === 0 && defaultNotifications?.length > 0) {
-                  finalItems = dedupeNotifications(defaultNotifications);
-                }
-              }
+          if (!res.error && res.data && isMounted) {
+            const mapped = res.data.map((n) => mapRow(n, currentUser?.role || "user"));
+            let finalItems = dedupeNotifications(mapped);
 
-              setNotifications(finalItems);
-              localStorage.setItem(key, JSON.stringify(finalItems));
-              return;
-            }
-          } catch {}
+            setNotifications(finalItems);
+            localStorage.setItem(key, JSON.stringify(finalItems));
+            onNotificationsChange?.(finalItems);
+            return;
+          }
+        } catch (err) {
+          console.warn("[NotificationDropdown] Error fetching notifications from DB:", err);
         }
       }
 
@@ -268,34 +261,64 @@ function NotificationDropdown({
   useEffect(() => {
     let channel = null;
     const user = getCurrentUser();
-    if (!supabase || !user?.id) return;
+    let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+    if (!effectiveUserId && user?.role === "admin") {
+      effectiveUserId = "11111111-1111-1111-1111-111111111111";
+    }
+
+    if (!supabase || !effectiveUserId) return;
 
     try {
       channel = supabase
-        .channel(`notifications-${user.id}`)
+        .channel(`notifications-${effectiveUserId}-${Date.now()}`)
         .on(
           "postgres_changes",
           {
-            event: "INSERT",
+            event: "*",
             schema: "public",
             table: "notifications",
-            filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
-            const newRow = payload.new;
-            if (!newRow || String(newRow.user_id) !== String(user.id)) return;
+            const newRow = payload.new || payload.old;
+            if (!newRow) return;
 
-            const item = mapRow(newRow, user.role);
-            setNotifications((prev) => {
-              const merged = dedupeNotifications([item, ...(prev || [])]);
-              localStorage.setItem(getStorageKey(user), JSON.stringify(merged));
-              onNotificationsChange?.(merged);
-              return merged;
-            });
+            const targetId = String(newRow.user_id || "");
+            const isMatch = targetId === String(effectiveUserId) ||
+                            (user?.role === "admin" && (targetId === "11111111-1111-1111-1111-111111111111" || targetId === effectiveUserId));
+
+            if (!isMatch) return;
+
+            if (payload.eventType === "INSERT") {
+              const item = mapRow(payload.new, user?.role);
+              setNotifications((prev) => {
+                const merged = dedupeNotifications([item, ...(prev || [])]);
+                localStorage.setItem(getStorageKey(user), JSON.stringify(merged));
+                onNotificationsChange?.(merged);
+                return merged;
+              });
+            } else if (payload.eventType === "UPDATE") {
+              const item = mapRow(payload.new, user?.role);
+              setNotifications((prev) => {
+                const updated = prev.map((n) => (n.id === item.id ? item : n));
+                localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
+                onNotificationsChange?.(updated);
+                return updated;
+              });
+            } else if (payload.eventType === "DELETE") {
+              const deletedId = String(payload.old?.id);
+              setNotifications((prev) => {
+                const filtered = prev.filter((n) => n.id !== deletedId);
+                localStorage.setItem(getStorageKey(user), JSON.stringify(filtered));
+                onNotificationsChange?.(filtered);
+                return filtered;
+              });
+            }
           }
         )
         .subscribe();
-    } catch {}
+    } catch (e) {
+      console.warn("[NotificationDropdown] Realtime subscription error:", e);
+    }
 
     return () => {
       try {
@@ -325,23 +348,18 @@ function NotificationDropdown({
     }
   };
 
+  const user = getCurrentUser();
+
   const handleNotificationClick = async (item) => {
     console.log("[NotificationDropdown] Notification item clicked:", item.id);
     try {
-      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
-      const authUser = authData?.user ?? null;
-
-      if (db() && isValidUuid(authUser?.id)) {
-        console.log("[NotificationDropdown] Updating is_read to true in DB for:", item.id);
-        const { error } = await db()
-          .from("notifications")
-          .update({ is_read: true })
-          .eq("id", item.id)
-          .eq("user_id", authUser.id);
-        
-        if (error) {
-          console.error("[NotificationDropdown] Failed to update read status in DB:", error);
+      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+      if (db() && item.id) {
+        let query = db().from("notifications").update({ is_read: true }).eq("id", item.id);
+        if (targetUserId && user?.role !== "admin") {
+          query = query.eq("user_id", targetUserId);
         }
+        await query;
       }
     } catch (err) {
       console.error("[NotificationDropdown] Failed to mark notification read in DB:", err);
@@ -369,18 +387,13 @@ function NotificationDropdown({
     const nextStatus = !item.isRead;
     console.log("[NotificationDropdown] Toggling read status to:", nextStatus, "for notification:", item.id);
     try {
-      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
-      const authUser = authData?.user ?? null;
-      if (db() && isValidUuid(authUser?.id)) {
-        const { error } = await db()
-          .from("notifications")
-          .update({ is_read: nextStatus })
-          .eq("id", item.id)
-          .eq("user_id", authUser.id);
-
-        if (error) {
-          console.error("[NotificationDropdown] Failed to toggle read status in DB:", error);
+      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+      if (db() && item.id) {
+        let query = db().from("notifications").update({ is_read: nextStatus }).eq("id", item.id);
+        if (targetUserId && user?.role !== "admin") {
+          query = query.eq("user_id", targetUserId);
         }
+        await query;
       }
     } catch (err) {
       console.error("[NotificationDropdown] Failed to toggle read status:", err);
@@ -398,18 +411,13 @@ function NotificationDropdown({
     e.stopPropagation();
     console.log("[NotificationDropdown] Deleting notification:", id);
     try {
-      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
-      const authUser = authData?.user ?? null;
-      if (db() && isValidUuid(authUser?.id)) {
-        const { error } = await db()
-          .from("notifications")
-          .delete()
-          .eq("id", id)
-          .eq("user_id", authUser.id);
-        
-        if (error) {
-          console.error("[NotificationDropdown] Failed to delete notification from DB:", error);
+      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+      if (db() && id) {
+        let query = db().from("notifications").delete().eq("id", id);
+        if (targetUserId && user?.role !== "admin") {
+          query = query.eq("user_id", targetUserId);
         }
+        await query;
       }
     } catch (err) {
       console.error("[NotificationDropdown] Failed to delete notification:", err);
@@ -424,19 +432,13 @@ function NotificationDropdown({
   const handleMarkAllRead = async () => {
     console.log("[NotificationDropdown] Marking all notifications as read.");
     try {
-      const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
-      const authUser = authData?.user ?? null;
-
-      if (db() && isValidUuid(authUser?.id)) {
-        const { error } = await db()
-          .from("notifications")
-          .update({ is_read: true })
-          .eq("user_id", authUser.id)
-          .eq("is_read", false);
-        
-        if (error) {
-          console.error("[NotificationDropdown] Failed to mark all read in DB:", error);
+      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+      if (db()) {
+        let query = db().from("notifications").update({ is_read: true }).eq("is_read", false);
+        if (targetUserId && user?.role !== "admin") {
+          query = query.eq("user_id", targetUserId);
         }
+        await query;
       }
     } catch (err) {
       console.error("[NotificationDropdown] Failed to mark all read in DB:", err);
@@ -474,8 +476,6 @@ function NotificationDropdown({
 
     return matchesCategory && matchesStatus;
   });
-
-  const user = getCurrentUser();
 
   return (
     <div className="relative" ref={dropdownRef}>

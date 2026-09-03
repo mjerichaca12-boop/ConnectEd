@@ -119,93 +119,127 @@ export function Notifications() {
 
   useEffect(() => {
     let isMounted = true;
+    let channel = null;
+
     const load = async () => {
       try {
         const raw = localStorage.getItem("currentUser");
         const user = raw ? JSON.parse(raw) : null;
-        
-        const { data: authData, error: authError } = supabase?.auth?.getUser ? await supabase.auth.getUser() : { data: null, error: null };
-        const authUser = authData?.user ?? null;
 
-        if (db() && isValidUuid(authUser?.id)) {
+        let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+        if (!effectiveUserId && supabase?.auth?.getUser) {
           try {
-            const candidateFields = ["message", "content", "body", "description", "text"];
-            let data = null;
-            let error = null;
-
-            for (const f of candidateFields) {
-              const sel = `id, user_id, type, title, ${f} as message, is_read, created_at`;
-              const res = await db()
-                .from("notifications")
-                .select(sel)
-                .eq("user_id", authUser.id)
-                .order("created_at", { ascending: false })
-                .limit(200);
-              data = res.data;
-              error = res.error;
-              if (!error) break;
+            const { data: authData } = await supabase.auth.getUser();
+            if (authData?.user?.id && isValidUuid(authData.user.id)) {
+              effectiveUserId = authData.user.id;
             }
+          } catch {}
+        }
 
-            if (!error && isMounted) {
-              setNotifications((data || []).map((n) => ({
+        if (db() && effectiveUserId) {
+          try {
+            const res = await db()
+              .from("notifications")
+              .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type")
+              .eq("user_id", effectiveUserId)
+              .order("created_at", { ascending: false })
+              .limit(200);
+
+            if (!res.error && res.data && isMounted) {
+              setNotifications(res.data.map((n) => ({
                 id: String(n.id),
                 type: String(n.type || ""),
                 title: String(n.title || ""),
-                message: String(n.message || ""),
+                message: String(n.body || n.message || ""),
                 isRead: Boolean(n.is_read),
                 timestamp: n.created_at,
-                path: getPathForType(n.type, user?.role),
+                path: getPathForType(n.type, "teacher"),
                 relatedId: n.related_id,
-                classId: n.class_id || n.related_id,
-                targetPage: n.target_page || getPathForType(n.type, user?.role),
+                classId: n.related_id,
+                targetPage: getPathForType(n.type, "teacher"),
               })));
               setLoading(false);
-              return;
             }
           } catch (err) {
-            console.error("[TeacherNotifications] Notification DB load error:", err);
+            console.error("[TeacherNotifications] DB load error:", err);
           }
         }
       } catch (err) {
-        console.error("[TeacherNotifications] Failed to load notifications from DB:", err);
+        console.error("[TeacherNotifications] Failed to load notifications:", err);
       }
 
-      // fallback
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      const key = `notifications_${user?.role || "guest"}_${isValidUuid(user?.id) ? user.id : "guest"}`;
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        setNotifications(dedupeNotifications(JSON.parse(stored)));
-      } else {
-        setNotifications([]);
-      }
       setLoading(false);
     };
+
     load();
-    return () => { isMounted = false; };
+
+    // Realtime subscription
+    try {
+      const raw = localStorage.getItem("currentUser");
+      const user = raw ? JSON.parse(raw) : null;
+      let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+
+      if (supabase && effectiveUserId) {
+        channel = supabase
+          .channel(`teacher-notifications-page-${effectiveUserId}-${Date.now()}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload) => {
+            const newRow = payload.new || payload.old;
+            if (!newRow || String(newRow.user_id) !== String(effectiveUserId)) return;
+
+            if (payload.eventType === "INSERT") {
+              const n = payload.new;
+              const newItem = {
+                id: String(n.id),
+                type: String(n.type || ""),
+                title: String(n.title || ""),
+                message: String(n.body || n.message || ""),
+                isRead: Boolean(n.is_read),
+                timestamp: n.created_at,
+                path: getPathForType(n.type, "teacher"),
+                relatedId: n.related_id,
+                classId: n.related_id,
+                targetPage: getPathForType(n.type, "teacher"),
+              };
+              setNotifications((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
+            } else if (payload.eventType === "UPDATE") {
+              const n = payload.new;
+              setNotifications((prev) => prev.map((item) => (item.id === String(n.id) ? { ...item, isRead: Boolean(n.is_read) } : item)));
+            } else if (payload.eventType === "DELETE") {
+              setNotifications((prev) => prev.filter((item) => item.id !== String(payload.old?.id)));
+            }
+          })
+          .subscribe();
+      }
+    } catch (e) {
+      console.warn("[TeacherNotifications] Realtime subscribe error:", e);
+    }
+
+    return () => {
+      isMounted = false;
+      if (channel && supabase) supabase.removeChannel(channel);
+    };
   }, []);
 
   const markRead = async (id, e) => {
     if (e) e.stopPropagation();
     try {
-      const { data: authData } = await supabase.auth.getUser();
-      const authUser = authData?.user;
-      if (db() && isValidUuid(authUser?.id)) {
-        await db().from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", authUser.id);
+      if (db() && id) {
+        await db().from("notifications").update({ is_read: true }).eq("id", id);
       }
     } catch (err) {
       console.error("[TeacherNotifications] Failed to mark read:", err);
     }
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
   };
 
   const markAllRead = async () => {
     try {
-      const { data: authData } = await supabase.auth.getUser();
-      const authUser = authData?.user;
-      if (db() && isValidUuid(authUser?.id)) {
-        await db().from("notifications").update({ is_read: true }).eq("user_id", authUser.id).eq("is_read", false);
+      const raw = localStorage.getItem("currentUser");
+      const user = raw ? JSON.parse(raw) : null;
+      let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
+
+      if (db() && effectiveUserId) {
+        await db().from("notifications").update({ is_read: true }).eq("user_id", effectiveUserId).eq("is_read", false);
       }
     } catch (err) {
       console.error("[TeacherNotifications] Failed to mark all read:", err);
@@ -216,13 +250,11 @@ export function Notifications() {
   const removeNotification = async (id, e) => {
     if (e) e.stopPropagation();
     try {
-      const { data: authData } = await supabase.auth.getUser();
-      const authUser = authData?.user;
-      if (db() && isValidUuid(authUser?.id)) {
-        await db().from("notifications").delete().eq("id", id).eq("user_id", authUser.id);
+      if (db() && id) {
+        await db().from("notifications").delete().eq("id", id);
       }
     } catch (err) {
-      console.error("[TeacherNotifications] Failed to delete notification:", err);
+      console.error("[TeacherNotifications] Failed to remove notification:", err);
     }
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
