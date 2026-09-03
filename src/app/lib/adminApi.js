@@ -109,10 +109,52 @@ export const adminApi = {
   },
 
   async db(table, action, options = {}) {
-    return this.fetchWithToken("/api/admin/db", {
+    const res = await this.fetchWithToken("/api/admin/db", {
       method: "POST",
       body: JSON.stringify({ table, action, ...options }),
     });
+
+    if (!res.error && res.data) {
+      return res;
+    }
+
+    console.warn(`[adminApi] /api/admin/db failed for action "${action}" on table "${table}", executing direct Supabase fallback:`, res.error?.message || res.error);
+
+    try {
+      let query = supabase.from(table);
+      const { payload, eq, neq, in: inArgs, or, is: isArgs, match, select, order, single } = options;
+
+      if (action === "select") {
+        query = query.select(select || "*");
+      } else if (action === "insert") {
+        query = query.insert(payload).select(select || "*");
+      } else if (action === "update") {
+        query = query.update(payload).select(select || "*");
+      } else if (action === "delete") {
+        query = query.delete();
+        if (select) query = query.select(select);
+      } else if (action === "upsert") {
+        query = query.upsert(payload).select(select || "*");
+      }
+
+      if (eq) query = query.eq(eq.column, eq.value);
+      if (neq) query = query.neq(neq.column, neq.value);
+      if (inArgs) query = query.in(inArgs.column, inArgs.value);
+      if (or) query = query.or(or);
+      if (isArgs) query = query.is(isArgs.column, isArgs.value);
+      if (match) query = query.match(match);
+      if (order) query = query.order(order.column, order.options);
+
+      if (single) {
+        const { data, error } = await query.maybeSingle();
+        return { data, error };
+      } else {
+        const { data, error } = await query;
+        return { data, error };
+      }
+    } catch (fbErr) {
+      return { data: null, error: fbErr };
+    }
   },
 
   async batchGenerateAccounts(studentsBatch) {
