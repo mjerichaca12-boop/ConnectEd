@@ -821,12 +821,13 @@ function AdminAnnouncements() {
     const basePayload = {
       title: data.title.trim(),
       content: data.content.trim(),
-      target_audience: audienceValue,
-      audience: audienceValue,
-      audience_type: audienceTypeValue,
-      target_audience_type: audienceTypeValue,
       ...metadata
     };
+
+    if (!columns.length || columns.includes("target_audience")) basePayload.target_audience = audienceValue;
+    if (columns.includes("audience")) basePayload.audience = audienceValue;
+    if (columns.includes("audience_type")) basePayload.audience_type = audienceTypeValue;
+    if (columns.includes("target_audience_type")) basePayload.target_audience_type = audienceTypeValue;
 
     if (announcementId && columns.includes("id")) {
       basePayload.id = announcementId;
@@ -848,12 +849,13 @@ function AdminAnnouncements() {
     const basePayload = {
       title: data.title.trim(),
       content: data.content.trim(),
-      target_audience: audienceValue,
-      audience: audienceValue,
-      audience_type: audienceTypeValue,
-      target_audience_type: audienceTypeValue,
       ...metadata
     };
+
+    if (!columns.length || columns.includes("target_audience")) basePayload.target_audience = audienceValue;
+    if (columns.includes("audience")) basePayload.audience = audienceValue;
+    if (columns.includes("audience_type")) basePayload.audience_type = audienceTypeValue;
+    if (columns.includes("target_audience_type")) basePayload.target_audience_type = audienceTypeValue;
 
     if (attachments) {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
@@ -1536,7 +1538,6 @@ function AdminAnnouncements() {
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                       <div className="flex-1">
-                        {console.log("Announcement data:", announcement)}
                         
 
 
