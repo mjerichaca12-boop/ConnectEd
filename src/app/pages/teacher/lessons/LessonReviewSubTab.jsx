@@ -221,51 +221,67 @@ export function LessonReviewSubTab({ lesson }) {
           <p className="text-gray-500 italic text-sm p-4 bg-gray-50 rounded-lg text-center">No required tasks for this lesson.</p>
         ) : (
           <div className="space-y-3">
-            {activities.map(act => (
-              <div key={act.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-xl border border-gray-200 bg-gray-50/50 gap-4">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${act.activity_type === 'Quiz' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {act.activity_type === 'Quiz' ? <CheckCircle className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">{act.title}</h4>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-                      <span className="uppercase font-semibold tracking-wider text-gray-400">{act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}</span>
-                      {act.points && <span className="flex items-center gap-1">• {act.points} Points</span>}
-                      {act.due && <span className="flex items-center gap-1 text-orange-600 font-medium">• Due: {new Date(act.due).toLocaleDateString()}</span>}
+            {activities.map(act => {
+              const isQuiz = act.activity_type === 'Quiz';
+              const isSeatwork = act.activity_type === 'Assessment' || act.activity_type === 'Seatwork';
+              const badgeLabel = isQuiz ? 'QUIZ' : isSeatwork ? 'SEATWORK' : 'ASSIGNMENT';
+
+              return (
+                <div key={act.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl border border-gray-200 bg-white hover:border-gray-300 shadow-sm transition-all gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                      isQuiz ? 'bg-emerald-50 text-emerald-600' : isSeatwork ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                    }`}>
+                      {isQuiz ? <CheckCircle className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
                     </div>
-                    {/* Render attachments if any */}
-                    {(() => {
-                      if (!act.attachment_url) return null;
-                      let parsed = [];
-                      try {
-                        parsed = JSON.parse(act.attachment_url);
-                      } catch(e) {
-                        parsed = [{ url: act.attachment_url, name: act.attachment_name || "Attachment" }];
-                      }
-                      if (parsed.length === 0) return null;
-                      return (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {parsed.map((f, i) => (
-                            <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white shadow-sm hover:bg-blue-50 hover:text-blue-700 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 hover:border-blue-200 transition-colors">
-                              <Download className="w-3.5 h-3.5" />
-                              <span className="truncate max-w-[150px]">{f.name}</span>
-                            </a>
-                          ))}
-                        </div>
-                      )
-                    })()}
+                    <div>
+                      <h4 className="font-bold text-gray-900 text-base">{act.title}</h4>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold tracking-wide uppercase border ${
+                          isQuiz 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : isSeatwork 
+                            ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                        }`}>
+                          {badgeLabel}
+                        </span>
+                        {act.points && <span className="text-xs text-gray-500 font-medium">• {act.points} Points</span>}
+                        {act.due && <span className="text-xs text-orange-600 font-medium">• Due: {new Date(act.due).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
+                      </div>
+                      {/* Render attachments if any */}
+                      {(() => {
+                        if (!act.attachment_url) return null;
+                        let parsed = [];
+                        try {
+                          parsed = JSON.parse(act.attachment_url);
+                        } catch(e) {
+                          parsed = [{ url: act.attachment_url, name: act.attachment_name || "Attachment" }];
+                        }
+                        if (parsed.length === 0) return null;
+                        return (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {parsed.map((f, i) => (
+                              <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white shadow-sm hover:bg-blue-50 hover:text-blue-700 rounded-lg text-xs font-medium text-gray-600 border border-gray-200 hover:border-blue-200 transition-colors">
+                                <Download className="w-3.5 h-3.5" />
+                                <span className="truncate max-w-[150px]">{f.name}</span>
+                              </a>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
+                  
+                  <button 
+                    className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
+                    onClick={() => toast.info(`This is a preview. The "${badgeLabel}" will open here for students.`)}
+                  >
+                    Start {badgeLabel === 'QUIZ' ? 'Quiz' : 'Assignment'}
+                  </button>
                 </div>
-                
-                <button 
-                  className="w-full sm:w-auto px-6 py-2.5 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                  onClick={() => toast.info(`This is a preview. The "${act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}" will open here for students.`)}
-                >
-                  Start Task
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

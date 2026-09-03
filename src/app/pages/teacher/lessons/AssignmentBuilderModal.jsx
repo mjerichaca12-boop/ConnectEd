@@ -252,7 +252,7 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-gray-900">{initialAssignmentId ? "Edit Task" : "Create Task"}</h2>
+              <h2 className="text-xl font-bold text-gray-900">{initialAssignmentId ? "Edit Assignment" : "Create Assignment"}</h2>
               <p className="text-xs text-gray-500">Configure instructions and submission rules</p>
             </div>
           </div>
@@ -481,9 +481,9 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
             type="submit"
             form="create-assignment-form"
             disabled={isSubmitting}
-            className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-60 flex items-center gap-2"
+            className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm disabled:opacity-60 flex items-center gap-2 cursor-pointer"
           >
-            {isSubmitting ? (initialAssignmentId ? "Updating..." : "Creating...") : (initialAssignmentId ? "Update Task" : "Create Task")}
+            {isSubmitting ? (initialAssignmentId ? "Updating..." : "Creating...") : (initialAssignmentId ? "Update Assignment" : "Create Assignment")}
           </button>
         </div>
 

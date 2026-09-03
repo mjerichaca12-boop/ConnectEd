@@ -47,26 +47,37 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
       let assignments = [];
 
       if (quizIds.length > 0) {
-        const { data: qData } = await supabase.from("quizzes").select("id, title").in("id", quizIds);
+        const { data: qData } = await supabase.from("quizzes").select("id, title, total_points").in("id", quizIds);
         quizzes = qData || [];
       }
       
       if (assignmentIds.length > 0) {
-        const { data: aData } = await supabase.from("assignments").select("id, title").in("id", assignmentIds);
+        const { data: aData } = await supabase.from("assignments").select("id, title, total_points, due_date, assignment_type").in("id", assignmentIds);
         assignments = aData || [];
       }
 
       const enrichedActivities = actData.map(act => {
         let title = null;
+        let points = null;
+        let dueDate = null;
+        let formatType = null;
         if (act.activity_type === 'Quiz') {
           const q = quizzes.find(q => q.id === act.activity_id);
-          if (q) title = q.title;
+          if (q) {
+            title = q.title;
+            points = q.total_points;
+          }
         } else {
           // Assignment, Activity, Assessment
           const a = assignments.find(a => a.id === act.activity_id);
-          if (a) title = a.title;
+          if (a) {
+            title = a.title;
+            points = a.total_points;
+            dueDate = a.due_date;
+            formatType = a.assignment_type;
+          }
         }
-        return { ...act, title };
+        return { ...act, title, points, dueDate, formatType };
       }).filter(act => act.title !== null); // Filter out orphaned records
 
       setActivities(enrichedActivities);
@@ -112,27 +123,27 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <button 
           onClick={() => { setSelectedActivity(null); setShowQuizModal(true); }}
-          className="flex-1 bg-white border border-green-200 hover:border-green-400 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all text-center group"
+          className="bg-white border border-emerald-200 hover:border-emerald-400 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all text-center group cursor-pointer"
         >
-          <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
-            <CheckCircle className="w-6 h-6 text-green-600" />
+          <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+            <CheckCircle className="w-6 h-6 text-emerald-600" />
           </div>
-          <h3 className="font-semibold text-gray-900">Create Quiz</h3>
+          <h3 className="font-bold text-gray-900 text-base">Create Quiz</h3>
           <p className="text-xs text-gray-500 mt-1">Multiple choice, true/false, etc.</p>
         </button>
 
         <button 
           onClick={() => { setSelectedActivity(null); setShowAssignmentModal(true); }}
-          className="flex-1 bg-white border border-blue-200 hover:border-blue-400 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all text-center group"
+          className="bg-white border border-blue-200 hover:border-blue-400 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all text-center group cursor-pointer"
         >
           <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
             <FileText className="w-6 h-6 text-blue-600" />
           </div>
-          <h3 className="font-semibold text-gray-900">Create Task/Assignment</h3>
-          <p className="text-xs text-gray-500 mt-1">File uploads, essays, etc.</p>
+          <h3 className="font-bold text-gray-900 text-base">Create Assignment</h3>
+          <p className="text-xs text-gray-500 mt-1">Assignments, file uploads, essays, etc.</p>
         </button>
       </div>
 
@@ -144,35 +155,66 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {activities.map((act) => (
-            <div key={act.id} className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between hover:border-gray-300 transition-colors shadow-sm">
-              <div className="flex items-center gap-4">
-                <div className={`p-2.5 rounded-lg ${act.activity_type === 'Quiz' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                  {act.activity_type === 'Quiz' ? <CheckCircle className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+          {activities.map((act) => {
+            const isQuiz = act.activity_type === 'Quiz';
+            const isSeatwork = act.activity_type === 'Assessment' || act.activity_type === 'Seatwork';
+            const badgeLabel = isQuiz ? 'QUIZ' : isSeatwork ? 'SEATWORK' : 'ASSIGNMENT';
+
+            return (
+              <div 
+                key={act.id} 
+                className="bg-white border border-gray-200 hover:border-gray-300 rounded-2xl p-4 sm:p-5 flex items-center justify-between transition-all shadow-sm hover:shadow"
+              >
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                    isQuiz ? 'bg-emerald-50 text-emerald-600' : isSeatwork ? 'bg-amber-50 text-amber-600' : 'bg-blue-50 text-blue-600'
+                  }`}>
+                    {isQuiz ? <CheckCircle className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-base text-gray-900 truncate">{act.title}</h4>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-bold tracking-wide uppercase border ${
+                        isQuiz 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          : isSeatwork 
+                          ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}>
+                        {badgeLabel}
+                      </span>
+                      {act.points ? (
+                        <span className="text-xs text-gray-500 font-medium">
+                          • {act.points} pts
+                        </span>
+                      ) : null}
+                      {act.dueDate ? (
+                        <span className="text-xs text-gray-500 font-medium">
+                          • Due {new Date(act.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">{act.title}</h4>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider">{act.activity_type === "Assessment" ? "Seatwork" : act.activity_type}</p>
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  <button 
+                    onClick={() => openEditModal(act)}
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                    title="Edit Activity"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setItemToDelete(act)}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    title="Delete Activity"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => openEditModal(act)}
-                  className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title="Edit Activity"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => setItemToDelete(act)}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Delete Activity"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
