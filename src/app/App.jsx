@@ -18,6 +18,7 @@ const Login = lazy(() => import("./pages/Login").then(m => ({ default: m.Login }
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword").then(m => ({ default: m.ForgotPassword })));
 const ChangePassword = lazy(() => import("./pages/ChangePassword").then(m => ({ default: m.ChangePassword })));
 const ResetPassword = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 
 // Teacher Pages
 const TeacherDashboard = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
