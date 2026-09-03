@@ -67,6 +67,47 @@ export const adminApi = {
     return this.fetchWithToken(`/api/admin/users?id=${id}`, { method: "DELETE" });
   },
 
+  async bulkDeleteStudents(studentIds) {
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return { data: { success: true, count: 0 }, error: null };
+    }
+    const res = await this.fetchWithToken("/api/admin/bulk-delete-students", {
+      method: "POST",
+      body: JSON.stringify({ student_ids: studentIds }),
+    });
+
+    if (!res.error) {
+      return res;
+    }
+
+    console.warn("[adminApi] /api/admin/bulk-delete-students failed or unavailable, executing Supabase batch fallback:", res.error?.message || res.error);
+
+    try {
+      const tablesToClean = [
+        { table: "notifications", col: "user_id" },
+        { table: "password_reset_logs", col: "user_id" },
+        { table: "conversation_participants", col: "profile_id" },
+        { table: "conversation_reads", col: "user_id" },
+        { table: "teacher_student_assignments", col: "student_id" },
+        { table: "teacher_student_grades", col: "student_id" },
+        { table: "teacher_assessment_submissions", col: "student_id" },
+        { table: "teacher_assessment_grades", col: "student_id" },
+        { table: "student_attendance", col: "student_id" },
+      ];
+
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < studentIds.length; i += BATCH_SIZE) {
+        const chunk = studentIds.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(tablesToClean.map(item => supabase.from(item.table).delete().in(item.col, chunk)));
+        await supabase.from("profiles").delete().in("id", chunk).eq("role", "student");
+      }
+
+      return { data: { success: true, count: studentIds.length }, error: null };
+    } catch (fallbackError) {
+      return { data: null, error: fallbackError };
+    }
+  },
+
   async db(table, action, options = {}) {
     return this.fetchWithToken("/api/admin/db", {
       method: "POST",

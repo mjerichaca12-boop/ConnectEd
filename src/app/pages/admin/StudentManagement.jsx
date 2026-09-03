@@ -1405,72 +1405,29 @@ function StudentManagement() {
     setIsBulkDeleting(true);
     try {
       const idsToDelete = Array.from(selectedStudentIds);
-      
-      const results = await Promise.allSettled(
-        idsToDelete.map(async (id) => {
-          // 1. Manually delete related records to prevent 409 Foreign Key Constraint Errors
-          // This is necessary if the Supabase schema lacks ON DELETE CASCADE for these tables.
-          const cleanupTables = [
-            { name: "notifications", col: "user_id" },
-            { name: "password_reset_logs", col: "user_id" },
-            { name: "conversation_participants", col: "profile_id" },
-            { name: "conversation_reads", col: "user_id" },
-            { name: "messages", col: "sender_id" },
-            { name: "teacher_student_grades", col: "student_id" },
-            { name: "teacher_assessment_submissions", col: "student_id" },
-            { name: "teacher_assessment_grades", col: "student_id" },
-          ];
+      const idsSet = new Set(idsToDelete);
 
-          for (const table of cleanupTables) {
-            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
-          }
+      const res = await adminApi.bulkDeleteStudents(idsToDelete);
+      if (res.error) {
+        throw res.error;
+      }
 
-          // 2. Delete the profile
-          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
-          if (profileError) throw profileError;
+      const successCount = res.data?.count || idsToDelete.length;
 
-          // 3. Fully delete the user from Auth
-          try {
-             await adminApi.deleteUser(id);
-          } catch (e) {
-             console.error("Non-fatal: Failed to delete auth user", e);
-          }
-        })
-      );
-
-      let successCount = 0;
-      let failureCount = 0;
-
-      results.forEach(result => {
-        if (result.status === "fulfilled") {
-          successCount++;
-        } else {
-          failureCount++;
-          console.error("Delete failed for a student:", result.reason);
-        }
+      logActivity({
+        actionType: "deleted",
+        entityType: "student",
+        entityName: `${successCount} students`,
+        details: { action: "bulk_delete", student_ids: idsToDelete },
+        timestamp: new Date().toISOString()
       });
 
-      if (successCount > 0) {
-        logActivity({
-          actionType: "deleted",
-          entityType: "student",
-          entityName: `${successCount} students`,
-          details: { action: "bulk_delete" },
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (failureCount === 0) {
-        toast.success(`Successfully deleted ${successCount} students.`);
-      } else if (successCount > 0) {
-        toast.warning(`Deleted ${successCount} students. ${failureCount} failed (likely due to linked records).`);
-      } else {
-        throw new Error(`Failed to delete students. They might have linked records (e.g., grades, messages) that prevent deletion.`);
-      }
-
+      // Optimistically update local state for instant UI responsiveness
+      setStudents(prev => prev.filter(s => !idsSet.has(s.id)));
       setSelectedStudentIds(new Set());
       setShowBulkDeleteConfirm(false);
-      await refreshStudents();
+
+      toast.success(`Successfully deleted ${successCount} student(s).`);
     } catch (err) {
       console.error("Bulk delete error:", err);
       toast.error(err.message || "Unable to bulk delete students.");
