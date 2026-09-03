@@ -19,7 +19,9 @@ const GoogleLogo = () => (
   </svg>
 );
 
-const GOOGLE_OAUTH_INTENT_KEY = "connected_google_oauth_intent";
+const isValidEmailFormat = (str) => {
+  return typeof str === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str.trim());
+};
 
 function Login() {
   const [formData, setFormData] = useState({ username: "", password: "" });
@@ -298,14 +300,21 @@ function Login() {
 
       // 3. Build candidate login emails
       const candidateEmails = [];
-      if (resolvedEmail) candidateEmails.push(resolvedEmail);
-      if (normalizedUsername.includes("@") && !candidateEmails.includes(normalizedUsername)) {
+      if (resolvedEmail && isValidEmailFormat(resolvedEmail)) {
+        candidateEmails.push(resolvedEmail);
+      }
+      if (normalizedUsername.includes("@") && isValidEmailFormat(normalizedUsername) && !candidateEmails.includes(normalizedUsername)) {
         candidateEmails.push(normalizedUsername);
       }
       if (!normalizedUsername.includes("@")) {
+        const domainEmail = `${normalizedUsername}@connectedlms.online`;
         const tempEmail = `${normalizedUsername}@temp.local`;
-        if (!candidateEmails.includes(tempEmail)) candidateEmails.push(tempEmail);
-        if (!candidateEmails.includes(normalizedUsername)) candidateEmails.push(normalizedUsername);
+        if (isValidEmailFormat(domainEmail) && !candidateEmails.includes(domainEmail)) {
+          candidateEmails.push(domainEmail);
+        }
+        if (isValidEmailFormat(tempEmail) && !candidateEmails.includes(tempEmail)) {
+          candidateEmails.push(tempEmail);
+        }
       }
 
       let authData = null;
