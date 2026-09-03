@@ -858,6 +858,7 @@ export function AdminMessages() {
   const handleSend = async (e) => {
     e.preventDefault();
     const text = String(messageInput || "").trim();
+    const messageText = text;
     const activeConversation = selectedConv;
     const adminSenderId = adminId || HARDCODED_ADMIN_ID;
     if ((!text && attachmentFiles.length === 0) || !activeConversation || !adminSenderId || !supabase) return;
@@ -1414,11 +1415,11 @@ export function AdminMessages() {
                                     <AtSign className="w-2.5 h-2.5" /> Mentioned you
                                   </p>
                                 )}
+                                {msg.text && !/^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()) && (
+                                  <p className="leading-relaxed mb-2 break-words">{msg.text}</p>
+                                )}
                                 {Boolean((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName || (msg.text && /^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()))) && (
                                   <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
-                                )}
-                                {msg.text && !/^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()) && (
-                                  <p className="leading-relaxed">{msg.text}</p>
                                 )}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
                                   <p className={`text-xs ${isAdmin ? "text-blue-100" : "text-gray-500"}`}>
