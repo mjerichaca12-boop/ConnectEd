@@ -468,6 +468,24 @@ export function AdminMessages() {
         let fileSize = Number(row.file_size || 0);
         let text = String(row.message_text || "").trim();
 
+        const attachmentsList = Array.isArray(row?.message_attachments) 
+          ? row.message_attachments.map(a => ({
+              id: a.id,
+              url: a.file_url,
+              name: a.file_name,
+              type: a.file_type,
+              size: a.file_size,
+              kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+            }))
+          : [];
+
+        if (!fileUrl && attachmentsList.length > 0) {
+          fileUrl = attachmentsList[0].url || "";
+          fileName = attachmentsList[0].name || "";
+          fileType = attachmentsList[0].type || "";
+          fileSize = attachmentsList[0].size || 0;
+        }
+
         // Try parsing content as JSON for file metadata if direct fields are empty
         if (!fileUrl && row.content) {
           try {
@@ -480,7 +498,6 @@ export function AdminMessages() {
               text = String(contentObj.message_text || "").trim();
             }
           } catch (e) {
-            // content is not JSON, use as text
             text = String(row.content || "").trim();
           }
         }
@@ -497,17 +514,8 @@ export function AdminMessages() {
           fileType: fileType,
           fileSize: fileSize,
           attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
+          status: String(row?.status || "sent").trim(),
+          attachments: attachmentsList,
         });
         
         // Update last message time

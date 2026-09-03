@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/app/lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
 import {
   X,
   ZoomIn,
@@ -617,13 +617,21 @@ export function MessageAttachmentPreview({ msg, isSelf }) {
   if (attachments.length === 0) {
     if (loadingAtts) {
       return (
-        <div className="flex items-center gap-2 p-2 rounded-xl bg-black/5 text-xs text-gray-500 animate-pulse">
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/10 text-xs text-white/80 animate-pulse">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           <span>Loading attachment...</span>
         </div>
       );
     }
-    return null;
+    if (msg.text && /^Sent (\d+ attachment\(s\)|an attachment|an image|a video)/i.test(String(msg.text).trim())) {
+      attachments.push({
+        name: "Attachment File",
+        url: "",
+        kind: "document"
+      });
+    } else {
+      return null;
+    }
   }
 
   return (

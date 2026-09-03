@@ -61,7 +61,30 @@ const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
   const cleanSender = String(row?.sender_id || "").toLowerCase();
   const cleanCurrent = String(currentTeacherId || "").toLowerCase();
   const fromTeacher = cleanSender === cleanCurrent;
-  const fileType = String(row?.file_type || "").trim();
+  
+  let fileUrl = String(row?.file_url || "").trim();
+  let fileName = String(row?.file_name || "").trim();
+  let fileType = String(row?.file_type || "").trim();
+  let fileSize = Number(row?.file_size || 0);
+
+  const attachmentsList = Array.isArray(row?.message_attachments) && row.message_attachments.length > 0
+    ? row.message_attachments.map(a => ({
+        id: a.id,
+        url: a.file_url,
+        name: a.file_name,
+        type: a.file_type,
+        size: a.file_size,
+        kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+      }))
+    : [];
+
+  if (!fileUrl && attachmentsList.length > 0) {
+    fileUrl = attachmentsList[0].url || "";
+    fileName = attachmentsList[0].name || "";
+    fileType = attachmentsList[0].type || "";
+    fileSize = attachmentsList[0].size || 0;
+  }
+
   const attachmentKind = fileType.startsWith("image/")
     ? "image"
     : fileType.startsWith("video/")
@@ -69,30 +92,22 @@ const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
       : fileType
         ? "document"
         : "";
+
   return {
     id: String(row?.id || `${Date.now()}_${Math.random()}`),
     from: fromTeacher ? "teacher" : "student",
     senderName: fromTeacher ? teacherDisplayName : "Recipient",
     text: String(row?.message_text || "").trim(),
     time: String(row?.timestamp || row?.created_at || new Date().toISOString()),
-    fileUrl: String(row?.file_url || "").trim(),
-    status: String(row?.status || "sent").trim(),
-    attachments: Array.isArray(row?.message_attachments) 
-      ? row.message_attachments.map(a => ({
-          id: a.id,
-          url: a.file_url,
-          name: a.file_name,
-          type: a.file_type,
-          size: a.file_size,
-          kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-        }))
-      : [],
-    fileName: String(row?.file_name || "").trim(),
+    fileUrl,
+    fileName,
     fileType,
-    fileSize: Number(row?.file_size || 0),
+    fileSize,
     attachmentKind,
+    status: String(row?.status || "sent").trim(),
+    attachments: attachmentsList,
     isRead: Boolean(row?.is_read),
-    isSeen: Boolean(row?.is_read || fromTeacher), // teacher's own messages are always "seen"
+    isSeen: Boolean(row?.is_read || fromTeacher),
   };
 };
 
