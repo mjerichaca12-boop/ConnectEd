@@ -933,12 +933,21 @@ export function AdminMessages() {
           setIsUploading(false);
           return;
         }
-        
+
+        const publicUrlData = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pyeckxqaowusxcmeuolk.supabase.co";
-        let filePublicUrl = String(publicUrlResult?.data?.publicUrl || "").trim();
-        if (!filePublicUrl) {
+        let filePublicUrl = String(publicUrlData?.data?.publicUrl || "").trim();
+        if (!filePublicUrl || filePublicUrl.endsWith("/null") || filePublicUrl.endsWith("/undefined")) {
           filePublicUrl = `${supabaseUrl}/storage/v1/object/public/${MESSAGE_ATTACHMENT_BUCKET}/${filePath}`;
         }
+
+        if (!filePublicUrl) {
+          console.error("[AdminMessages] Failed to generate storage URL for file:", file.name);
+          setPageError(`Failed to generate storage URL for ${file.name}`);
+          setIsUploading(false);
+          return;
+        }
+
         const determinedType = (file.type && file.type !== "application/octet-stream") 
           ? file.type 
           : getMimeTypeFromName(cleanedName);
@@ -952,7 +961,21 @@ export function AdminMessages() {
       }
     }
 
+    if (attachmentFiles.length > 0 && uploadedAttachments.length === 0) {
+      console.error("[AdminMessages] Attachment upload failed completely; aborting insert.");
+      setPageError("Attachment upload failed. Message was not sent.");
+      setIsUploading(false);
+      return;
+    }
+
     const firstAttachment = uploadedAttachments[0] || null;
+    if (attachmentFiles.length > 0 && (!firstAttachment || !firstAttachment.file_url)) {
+      console.error("[AdminMessages] Attachment URL is missing; aborting insert.");
+      setPageError("Attachment URL is missing. Message was not sent.");
+      setIsUploading(false);
+      return;
+    }
+
     const fileUrlVal = firstAttachment ? firstAttachment.file_url : null;
     const fileNameVal = firstAttachment ? firstAttachment.file_name : null;
     const fileTypeVal = firstAttachment ? firstAttachment.file_type : null;
@@ -1001,10 +1024,32 @@ export function AdminMessages() {
       error = err;
     }
 
-    if (error) {
+    if (error || !data || data.length === 0) {
       console.error("[AdminMessages] Supabase insert failed:", JSON.stringify(error, null, 2), error);
-      setPageError(`Failed to send: ${error.message}`);
-    } else if (data && uploadedAttachments.length > 0) {
+      setPageError(`Failed to save message: ${error?.message || "Database insert error"}`);
+      setIsUploading(false);
+      return;
+    }
+
+    if (attachmentFiles.length > 0 && firstAttachment) {
+      const insertedNullCol = data.some(row => !row.file_url);
+      if (insertedNullCol) {
+        console.warn("[AdminMessages] Inserted row returned null file_url; executing recovery update.");
+        for (const msgRow of data) {
+          await adminApi.db("messages", "update", {
+            payload: {
+              file_url: firstAttachment.file_url,
+              file_name: firstAttachment.file_name,
+              file_type: firstAttachment.file_type,
+              file_size: firstAttachment.file_size
+            },
+            eq: { column: "id", value: msgRow.id }
+          });
+        }
+      }
+    }
+
+    if (data && uploadedAttachments.length > 0) {
       const attachmentPayloads = [];
       for (const msgRow of data) {
         for (const att of uploadedAttachments) {
@@ -1015,17 +1060,6 @@ export function AdminMessages() {
             file_type: att.file_type,
             file_size: att.file_size
           });
-        }
-        if (firstAttachment) {
-          adminApi.db("messages", "update", {
-            payload: {
-              file_url: firstAttachment.file_url,
-              file_name: firstAttachment.file_name,
-              file_type: firstAttachment.file_type,
-              file_size: firstAttachment.file_size
-            },
-            eq: { column: "id", value: msgRow.id }
-          }).catch(err => console.warn("[AdminMessages] Safety update error:", err));
         }
       }
       if (attachmentPayloads.length > 0) {
