@@ -21,46 +21,30 @@ import { supabase } from "../../../../src/lib/supabase";
 import { useMyAssignmentsQuery } from "../../../../src/hooks/query/assignments/use-my-assignments-query";
 
 import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../../../src/utils/quiz-parser";
+import { AssessmentTypeBadge } from "../../../../src/components/common/AssessmentTypeBadge";
 
 const AssignmentItem = ({ title, dueDate, status, grade, assessmentType, onPress }: any) => {
     const isLate = status === "late";
     const hasGrade = typeof grade !== "undefined" && grade !== null;
-    const isQuiz = assessmentType === "quiz";
     return (
         <TouchableOpacity 
             style={[styles.itemContainer, isLate && styles.lateItemContainer]} 
             onPress={onPress}
         >
-            <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <View style={{ 
-                        backgroundColor: isQuiz ? '#EFF6FF' : '#F0FDF4', 
-                        paddingHorizontal: 6, 
-                        paddingVertical: 1, 
-                        borderRadius: 4,
-                        borderWidth: 0.5,
-                        borderColor: isQuiz ? '#BFDBFE' : '#BBF7D0'
-                    }}>
-                        <Text style={{ 
-                            fontSize: 9, 
-                            fontWeight: 'bold', 
-                            color: isQuiz ? '#1E40AF' : '#166534',
-                            textTransform: 'uppercase'
-                        }}>
-                            {assessmentType || 'task'}
-                        </Text>
-                    </View>
+            <View style={{ flex: 1, marginRight: 8 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                    <AssessmentTypeBadge type={assessmentType} />
                 </View>
                 <Text style={[styles.title, isLate && styles.lateText]}>{title}</Text>
                 <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
-            <View style={{ alignItems: "center", flexDirection: "row", gap: 8 }}>
+            <View style={{ alignItems: "flex-end", justifyContent: "flex-start", gap: 6 }}>
+                <StatusBadge status={status} />
                 {hasGrade && (
-                    <View style={{ backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: "#BBF7D0" }}>
+                    <View style={{ backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#BBF7D0" }}>
                         <Text style={{ color: "#166534", fontWeight: "bold", fontSize: 12 }}>Grade: {grade}</Text>
                     </View>
                 )}
-                <StatusBadge status={status} />
             </View>
         </TouchableOpacity>
     );
@@ -607,28 +591,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             <ScrollView contentContainerStyle={styles.detailedContent}>
                 <View style={styles.detailHeader}>
                     <View style={{ flex: 1 }}>
-                        <Text style={styles.detailTitle}>{assignment.title}</Text>
-                        <View style={{ 
-                            backgroundColor: assignment.assessment_type === 'quiz' ? '#EFF6FF' : '#F0FDF4', 
-                            paddingHorizontal: 8, 
-                            paddingVertical: 2, 
-                            borderRadius: 6,
-                            borderWidth: 1,
-                            borderColor: assignment.assessment_type === 'quiz' ? '#BFDBFE' : '#BBF7D0',
-                            alignSelf: 'flex-start',
-                            marginTop: 4
-                        }}>
-                            <Text style={{ 
-                                fontSize: 10, 
-                                fontWeight: 'bold', 
-                                color: assignment.assessment_type === 'quiz' ? '#1E40AF' : '#166534',
-                                textTransform: 'uppercase'
-                            }}>
-                                {assignment.assessment_type || 'task'}
-                            </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                            <AssessmentTypeBadge type={assignment.assessment_type} />
                         </View>
+                        <Text style={[styles.detailTitle, { marginBottom: 6 }]}>{assignment.title}</Text>
+                        <Text style={styles.date}>Due: {assignment.dueDate}</Text>
                     </View>
-                    <StatusBadge status={assignment.status} />
+                    <StatusBadge status={assignment.status} style={{ marginTop: 4 }} />
                 </View>
 
                 <View style={styles.instructionsContainer}>

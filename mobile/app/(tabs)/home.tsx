@@ -13,6 +13,7 @@ import { useMyEnrollmentsQuery } from "../../src/hooks/query/enrollments/use-my-
 import { useMyAssignmentsQuery } from "../../src/hooks/query/assignments/use-my-assignments-query";
 import { TaskSummarySection } from "../../src/components/sections/TaskSummarySection";
 import { useMaterialsQuery } from "../../src/hooks/query/materials/use-materials-query";
+import { AssessmentTypeBadge } from "../../src/components/common/AssessmentTypeBadge";
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -206,7 +207,10 @@ export default function HomeScreen() {
                                 activeOpacity={0.7}
                             >
                                 <View style={styles.deadlineInfo}>
-                                    <Text style={styles.deadlineSubject}>{item.subject}</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                        <Text style={styles.deadlineSubject}>{item.subject}</Text>
+                                        <AssessmentTypeBadge type={item.assessment_type || 'assignment'} size="small" />
+                                    </View>
                                     <Text style={styles.deadlineTitle} numberOfLines={1}>{item.title}</Text>
                                 </View>
                                 <View style={styles.deadlineDateContainer}>
@@ -234,32 +238,25 @@ export default function HomeScreen() {
                             <Text style={styles.emptyText}>No pending activities or quizzes.</Text>
                         </View>
                     ) : (
-                        pendingActivities.map((item) => {
-                            const isQuiz = item.assessment_type === 'quiz';
-                            return (
-                                <TouchableOpacity 
-                                    key={item.id} 
-                                    style={styles.activityCard}
-                                    onPress={() => router.push("/(tabs)/assignment" as any)}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={styles.activityInfo}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                                            <Text style={styles.activitySubject}>{item.subject}</Text>
-                                            <View style={[styles.typeBadge, { backgroundColor: isQuiz ? '#F3E8FF' : '#E0F2FE' }]}>
-                                                <Text style={[styles.typeBadgeText, { color: isQuiz ? '#7C3AED' : '#0369A1' }]}>
-                                                    {isQuiz ? 'Quiz' : 'Activity'}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                        <Text style={styles.activityTitle} numberOfLines={1}>{item.title}</Text>
+                        pendingActivities.map((item) => (
+                            <TouchableOpacity 
+                                key={item.id} 
+                                style={styles.activityCard}
+                                onPress={() => router.push("/(tabs)/assignment" as any)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.activityInfo}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                        <Text style={styles.activitySubject}>{item.subject}</Text>
+                                        <AssessmentTypeBadge type={item.assessment_type} size="small" />
                                     </View>
-                                    <View style={styles.activityDueDateContainer}>
-                                        <Text style={styles.activityDueDate}>Due: {item.dueDate}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        })
+                                    <Text style={styles.activityTitle} numberOfLines={1}>{item.title}</Text>
+                                </View>
+                                <View style={styles.activityDueDateContainer}>
+                                    <Text style={styles.activityDueDate}>Due: {item.dueDate}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ))
                     )}
                 </View>
 
