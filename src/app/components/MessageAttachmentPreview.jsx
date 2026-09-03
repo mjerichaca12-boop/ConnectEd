@@ -4,7 +4,7 @@
  * Supports: images (thumbnail + lightbox + zoom), PDFs (embedded viewer), documents (icon + metadata + view + download)
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   ZoomIn,
@@ -18,6 +18,7 @@ import {
   Archive,
   Sheet,
   Presentation,
+  Loader2,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -32,10 +33,8 @@ export function getAttachmentKind(fileType, fileName, fileUrl = "") {
   if (t === PDF_TYPE) return "pdf";
   if (VIDEO_TYPES.some((vt) => t === vt) || t.startsWith("video/")) return "video";
 
-  // Fallback to extension check if fileType is missing or generic (e.g. application/octet-stream)
   let ext = String(fileName || "").split(".").pop().toLowerCase();
   
-  // If no extension found in name, or name was just "file", try to extract it from the URL
   if (!ext || ext === String(fileName || "").toLowerCase() || ext === "file") {
     ext = String(fileUrl || "").split("?")[0].split(".").pop().toLowerCase();
   }
@@ -68,10 +67,104 @@ function getFileIcon(fileType, fileName) {
   return File;
 }
 
+/**
+ * Sanitizes a string for safe use as a filename in Windows/macOS/Linux OSes.
+ */
+export function sanitizeFileName(str) {
+  if (!str) return "attachment";
+  let clean = String(str).replace(/[\\/:*?"<>|]/g, "_").trim();
+  return clean || "attachment";
+}
+
+/**
+ * Formats a descriptive, clear filename while preserving the original extension.
+ */
+export function formatDescriptiveFileName(originalName, senderName = "", fileUrl = "") {
+  let name = String(originalName || "").trim();
+
+  const isGeneric = !name || name.toLowerCase() === "file" || name.toLowerCase() === "download" || /^[0-9a-f-]{24,}$/i.test(name);
+
+  let ext = "";
+  if (name.includes(".")) {
+    ext = name.split(".").pop().toLowerCase();
+  }
+  if (!ext && fileUrl) {
+    const urlPath = fileUrl.split("?")[0];
+    if (urlPath.includes(".")) {
+      ext = urlPath.split(".").pop().toLowerCase();
+    }
+  }
+
+  let baseName = name;
+  if (ext && baseName.toLowerCase().endsWith("." + ext)) {
+    baseName = baseName.slice(0, -(ext.length + 1));
+  }
+
+  baseName = sanitizeFileName(baseName);
+
+  if (isGeneric || !baseName || baseName.toLowerCase() === "file" || baseName.toLowerCase() === "download") {
+    baseName = "Attachment";
+  }
+
+  let formatted = baseName;
+  if (senderName) {
+    const cleanSender = sanitizeFileName(senderName).replace(/\s+/g, "");
+    if (!formatted.toLowerCase().startsWith("message_")) {
+      formatted = `Message_${cleanSender}_${formatted}`;
+    }
+  } else if (!formatted.toLowerCase().startsWith("message_")) {
+    formatted = `Message_Attachment_${formatted}`;
+  }
+
+  if (ext && !formatted.toLowerCase().endsWith("." + ext)) {
+    formatted = `${formatted}.${ext}`;
+  }
+
+  return formatted;
+}
+
+/**
+ * Downloads a file as a blob to force browsers to respect the custom filename for cross-origin URLs.
+ */
+export async function downloadAttachmentFile(url, rawFileName, senderName = "") {
+  if (!url) return;
+
+  const fileName = formatDescriptiveFileName(rawFileName, senderName, url);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => {
+      URL.revokeObjectURL(blobUrl);
+    }, 1000);
+  } catch (err) {
+    console.warn("[downloadAttachmentFile] Fallback to direct window link:", err);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
 // ─── Image Lightbox ────────────────────────────────────────────────────────────
 
-function ImageLightbox({ url, name, onClose }) {
+function ImageLightbox({ url, name, senderName, onClose }) {
   const [zoom, setZoom] = useState(1);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -81,6 +174,13 @@ function ImageLightbox({ url, name, onClose }) {
 
   const zoomIn = () => setZoom((z) => Math.min(z + 0.25, 4));
   const zoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.25));
+
+  const handleDownload = async (e) => {
+    e.stopPropagation();
+    setDownloading(true);
+    await downloadAttachmentFile(url, name, senderName);
+    setDownloading(false);
+  };
 
   return (
     <div
@@ -95,36 +195,37 @@ function ImageLightbox({ url, name, onClose }) {
         <p className="text-white/80 text-sm truncate max-w-xs">{name}</p>
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={zoomOut}
             disabled={zoom <= 0.25}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 cursor-pointer"
             title="Zoom out"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
           <span className="text-white/60 text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
           <button
+            type="button"
             onClick={zoomIn}
             disabled={zoom >= 4}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-40 cursor-pointer"
             title="Zoom in"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
-          <a
-            href={url}
-            download={name}
-            target="_blank"
-            rel="noreferrer"
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
-            title="Download"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Download className="w-4 h-4" />
-          </a>
           <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+            title="Download file with descriptive filename"
+          >
+            {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          </button>
+          <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
             title="Close"
           >
             <X className="w-4 h-4" />
@@ -151,12 +252,20 @@ function ImageLightbox({ url, name, onClose }) {
 
 // ─── PDF Viewer Modal ──────────────────────────────────────────────────────────
 
-function PdfViewerModal({ url, name, onClose }) {
+function PdfViewerModal({ url, name, senderName, onClose }) {
+  const [downloading, setDownloading] = useState(false);
+
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    await downloadAttachmentFile(url, name, senderName);
+    setDownloading(false);
+  };
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col bg-black/80 backdrop-blur-md">
@@ -168,24 +277,24 @@ function PdfViewerModal({ url, name, onClose }) {
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors cursor-pointer"
             title="Open in new tab"
           >
             <ExternalLink className="w-3.5 h-3.5" /> Open in new tab
           </a>
-          <a
-            href={url}
-            download={name}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
-            title="Download"
-          >
-            <Download className="w-3.5 h-3.5" /> Download
-          </a>
           <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors cursor-pointer"
+            title="Download file with descriptive filename"
+          >
+            {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Download
+          </button>
+          <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -207,23 +316,30 @@ function PdfViewerModal({ url, name, onClose }) {
 
 // ─── Single Attachment Card ────────────────────────────────────────────────────
 
-function AttachmentCard({ att, isSelf }) {
+function AttachmentCard({ att, isSelf, senderName }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const url = att.url || att.file_url || "";
   const name = att.name || att.file_name || "file";
   const size = att.size || att.file_size || 0;
   const fileType = att.type || att.file_type || "";
   
-  // Re-calculate kind robustly based on type and name to fix "generic document" bug
   let kind = getAttachmentKind(fileType, name, url);
   if (kind === "document" && att.kind && att.kind !== "document") {
-    kind = att.kind; // Use provided kind if our inference still says document but explicitly set otherwise
+    kind = att.kind;
   }
 
   const FileIcon = getFileIcon(fileType, name);
   const sizeLabel = formatFileSize(size);
+
+  const handleDownload = async (e) => {
+    e.stopPropagation();
+    setDownloading(true);
+    await downloadAttachmentFile(url, name, senderName);
+    setDownloading(false);
+  };
 
   // ── Image ──
   if (kind === "image") {
@@ -233,7 +349,7 @@ function AttachmentCard({ att, isSelf }) {
           <button
             type="button"
             onClick={() => setLightboxOpen(true)}
-            className="block rounded-xl overflow-hidden border border-white/20 shadow-md hover:shadow-lg transition-shadow focus:outline-none focus:ring-2 focus:ring-white/50"
+            className="block rounded-xl overflow-hidden border border-white/20 shadow-md hover:shadow-lg transition-shadow focus:outline-none focus:ring-2 focus:ring-white/50 cursor-pointer"
             title="Click to view full size"
           >
             <img
@@ -243,13 +359,11 @@ function AttachmentCard({ att, isSelf }) {
               loading="lazy"
               onError={(e) => { e.target.style.display = "none"; }}
             />
-            {/* Hover overlay */}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors rounded-xl flex items-center justify-center">
               <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
             </div>
           </button>
 
-          {/* Download button below image */}
           <div className="flex items-center justify-between mt-1.5 px-0.5">
             <p className={`text-[11px] truncate max-w-[160px] ${isSelf ? "text-white/70" : "text-gray-500"}`}>
               {name}
@@ -258,23 +372,21 @@ function AttachmentCard({ att, isSelf }) {
               {sizeLabel && (
                 <span className={`text-[10px] ${isSelf ? "text-white/50" : "text-gray-400"}`}>{sizeLabel}</span>
               )}
-              <a
-                href={url}
-                download={name}
-                target="_blank"
-                rel="noreferrer"
-                className={`p-1 rounded-md transition-colors ${isSelf ? "hover:bg-white/10 text-white/70" : "hover:bg-gray-200 text-gray-500"}`}
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className={`p-1 rounded-md transition-colors cursor-pointer ${isSelf ? "hover:bg-white/10 text-white/70" : "hover:bg-gray-200 text-gray-500"}`}
                 title="Download"
-                onClick={(e) => e.stopPropagation()}
               >
-                <Download className="w-3 h-3" />
-              </a>
+                {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              </button>
             </div>
           </div>
         </div>
 
         {lightboxOpen && (
-          <ImageLightbox url={url} name={name} onClose={() => setLightboxOpen(false)} />
+          <ImageLightbox url={url} name={name} senderName={senderName} onClose={() => setLightboxOpen(false)} />
         )}
       </>
     );
@@ -298,29 +410,29 @@ function AttachmentCard({ att, isSelf }) {
           </div>
           <div className="flex gap-1.5">
             <button
+              type="button"
               onClick={() => setPdfOpen(true)}
-              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors ${
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                 isSelf ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
               }`}
             >
               <ExternalLink className="w-3 h-3" /> View
             </button>
-            <a
-              href={url}
-              download={name}
-              target="_blank"
-              rel="noreferrer"
-              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors ${
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                 isSelf ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
               }`}
             >
-              <Download className="w-3 h-3" /> Download
-            </a>
+              {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} Download
+            </button>
           </div>
         </div>
 
         {pdfOpen && (
-          <PdfViewerModal url={url} name={name} onClose={() => setPdfOpen(false)} />
+          <PdfViewerModal url={url} name={name} senderName={senderName} onClose={() => setPdfOpen(false)} />
         )}
       </>
     );
@@ -340,16 +452,15 @@ function AttachmentCard({ att, isSelf }) {
         </video>
         <div className={`flex items-center justify-between px-2 py-1 ${isSelf ? "bg-white/10" : "bg-gray-50"}`}>
           <p className={`text-[11px] truncate max-w-[160px] ${isSelf ? "text-white/70" : "text-gray-500"}`}>{name}</p>
-          <a
-            href={url}
-            download={name}
-            target="_blank"
-            rel="noreferrer"
-            className={`p-1 rounded-md transition-colors ${isSelf ? "hover:bg-white/10 text-white/70" : "hover:bg-gray-200 text-gray-500"}`}
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className={`p-1 rounded-md transition-colors cursor-pointer ${isSelf ? "hover:bg-white/10 text-white/70" : "hover:bg-gray-200 text-gray-500"}`}
             title="Download"
           >
-            <Download className="w-3 h-3" />
-          </a>
+            {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+          </button>
         </div>
       </div>
     );
@@ -380,17 +491,16 @@ function AttachmentCard({ att, isSelf }) {
         >
           <ExternalLink className="w-3 h-3" /> View
         </a>
-        <a
-          href={url}
-          download={name}
-          target="_blank"
-          rel="noreferrer"
-          className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors ${
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className={`inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
             isSelf ? "bg-white/20 hover:bg-white/30 text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
           }`}
         >
-          <Download className="w-3 h-3" /> Download
-        </a>
+          {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} Download
+        </button>
       </div>
     </div>
   );
@@ -404,9 +514,8 @@ function AttachmentCard({ att, isSelf }) {
  *   isSelf     – true if this message was sent by the current user (controls color scheme)
  */
 export function MessageAttachmentPreview({ msg, isSelf }) {
-  // Priority: use msg.attachments[] if available (from message_attachments join)
-  // Fallback: use flat fields (file_url, file_name etc.) stored directly on the message row
   const attachments = [];
+  const senderName = msg?.senderName || msg?.sender_name || msg?.senderNameFormatted || "";
 
   if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
     msg.attachments.forEach((a) => attachments.push(a));
@@ -425,7 +534,7 @@ export function MessageAttachmentPreview({ msg, isSelf }) {
   return (
     <div className="mb-2 space-y-2">
       {attachments.map((att, idx) => (
-        <AttachmentCard key={att.id || idx} att={att} isSelf={isSelf} />
+        <AttachmentCard key={att.id || idx} att={att} isSelf={isSelf} senderName={senderName} />
       ))}
     </div>
   );
