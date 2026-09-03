@@ -1018,6 +1018,11 @@ function SubjectManagement() {
   };
 
   const handleExportToCSV = () => {
+    const gradeContext = selectedGradeLevel !== "All" ? `Grade${selectedGradeLevel}` : "AllGrades";
+    const sectionContext = selectedSection !== "All" ? `Section_${String(selectedSection).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `Course_Subjects_List_${gradeContext}_${sectionContext}_${dateStr}.csv`;
+
     const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Section", "Capacity", "Enrolled"];
     const rows = filteredSubjects.map((subject) => [
       subject.code,
@@ -1035,7 +1040,7 @@ function SubjectManagement() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `subjects_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", fileName);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();

@@ -83,7 +83,27 @@ export function sanitizeFileName(str) {
 export function formatDescriptiveFileName(originalName, senderName = "", fileUrl = "") {
   let name = String(originalName || "").trim();
 
-  const isGeneric = !name || name.toLowerCase() === "file" || name.toLowerCase() === "download" || /^[0-9a-f-]{24,}$/i.test(name);
+  // If name is generic/missing, attempt to extract true filename from Storage URL
+  if ((!name || name.toLowerCase() === "file" || name.toLowerCase() === "download" || name.toLowerCase() === "blob" || name.toLowerCase() === "attachment" || /^[0-9a-f-]{24,}$/i.test(name)) && fileUrl) {
+    try {
+      const cleanUrl = fileUrl.split("?")[0];
+      const segments = cleanUrl.split("/");
+      const lastSeg = segments[segments.length - 1];
+      if (lastSeg && lastSeg.includes(".")) {
+        const decoded = decodeURIComponent(lastSeg);
+        const nameWithoutTs = decoded.replace(/^\d{10,}_/, "");
+        if (nameWithoutTs && nameWithoutTs !== decoded && nameWithoutTs.includes(".")) {
+          name = nameWithoutTs;
+        } else {
+          name = decoded;
+        }
+      }
+    } catch (e) {
+      console.warn("[formatDescriptiveFileName] Error extracting name from URL:", e);
+    }
+  }
+
+  const isGeneric = !name || name.toLowerCase() === "file" || name.toLowerCase() === "download" || name.toLowerCase() === "blob" || /^[0-9a-f-]{24,}$/i.test(name);
 
   let ext = "";
   if (name.includes(".")) {
@@ -101,19 +121,26 @@ export function formatDescriptiveFileName(originalName, senderName = "", fileUrl
     baseName = baseName.slice(0, -(ext.length + 1));
   }
 
+  // Sanitize invalid filesystem characters while preserving readable spaces and hyphens
   baseName = sanitizeFileName(baseName);
 
-  if (isGeneric || !baseName || baseName.toLowerCase() === "file" || baseName.toLowerCase() === "download") {
+  if (isGeneric || !baseName || baseName.toLowerCase() === "file" || baseName.toLowerCase() === "download" || baseName.toLowerCase() === "blob") {
     baseName = "Attachment";
   }
 
   let formatted = baseName;
   if (senderName) {
-    const cleanSender = sanitizeFileName(senderName).replace(/\s+/g, "");
-    if (!formatted.toLowerCase().startsWith("message_")) {
-      formatted = `Message_${cleanSender}_${formatted}`;
+    const cleanSender = sanitizeFileName(senderName).replace(/\s+/g, "_");
+    if (cleanSender.toLowerCase() === "announcement") {
+      if (!formatted.toLowerCase().startsWith("announcement_")) {
+        formatted = `Announcement_${formatted}`;
+      }
+    } else {
+      if (!formatted.toLowerCase().startsWith("message_")) {
+        formatted = `Message_${cleanSender}_${formatted}`;
+      }
     }
-  } else if (!formatted.toLowerCase().startsWith("message_")) {
+  } else if (!formatted.toLowerCase().startsWith("message_") && !formatted.toLowerCase().startsWith("announcement_")) {
     formatted = `Message_Attachment_${formatted}`;
   }
 

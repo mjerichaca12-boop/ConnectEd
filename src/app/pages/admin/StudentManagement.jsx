@@ -763,7 +763,7 @@ function StudentManagement() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", "connected_student_masterlist_template.csv");
+    link.setAttribute("download", "Student_Masterlist_Import_Template.csv");
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -1588,6 +1588,10 @@ function StudentManagement() {
   }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
   const handleExportToCSV = () => {
+    const yearContext = yearFilter !== "All" ? `Grade${yearFilter}` : "AllGrades";
+    const sectionContext = sectionFilter !== "All" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const dateStr = new Date().toISOString().split("T")[0];
+
     if (activeTab === "Profiles") {
       const headers = ["Full Name", "Username", "LRN", "Year Level", "Section", "Status", "Created At"];
       const rows = filteredStudents.map((student) => [
@@ -1603,7 +1607,7 @@ function StudentManagement() {
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.setAttribute("href", URL.createObjectURL(blob));
-      link.setAttribute("download", `students_${new Date().toISOString().split("T")[0]}.csv`);
+      link.setAttribute("download", `Student_Records_${yearContext}_${sectionContext}_${dateStr}.csv`);
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
@@ -1622,7 +1626,7 @@ function StudentManagement() {
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.setAttribute("href", URL.createObjectURL(blob));
-      link.setAttribute("download", `masterlist_${new Date().toISOString().split("T")[0]}.csv`);
+      link.setAttribute("download", `Student_Masterlist_${yearContext}_${sectionContext}_${dateStr}.csv`);
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();

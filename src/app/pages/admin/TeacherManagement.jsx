@@ -1461,6 +1461,10 @@ function TeacherManagement() {
   };
 
   const handleExportToCSV = () => {
+    const statusContext = statusFilter !== "All" ? String(statusFilter).replace(/[^a-zA-Z0-9_\-]/g, "_") : "AllStatus";
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `Teacher_Masterlist_${statusContext}_${dateStr}.csv`;
+
     const headers = ["Teacher ID", "Teacher Name", "Assigned Subject", "Assigned Class/Section", "Status"];
     const rows = filteredTeachers.map((teacher) => [
       teacher.id,
@@ -1474,7 +1478,7 @@ function TeacherManagement() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `teachers_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", fileName);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
