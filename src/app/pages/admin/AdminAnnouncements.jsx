@@ -21,17 +21,20 @@ import {
   Paperclip,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
 const emptyForm = {
   title: "",
-  content: ""
+  content: "",
+  targetAudience: "School-wide"
 };
 
 const emptyTouchedFields = {
   title: false,
-  content: false
+  content: false,
+  targetAudience: false
 };
 
 const announcementTableCandidates = ["announcements", "school_announcements"];
@@ -58,8 +61,9 @@ const normalizeAudience = (value) => {
     .replace(/\s+/g, " ");
 
   if (normalized === "student" || normalized === "students") return "Students";
-  if (normalized === "teacher" || normalized === "teachers") return "Teacher";
+  if (normalized === "teacher" || normalized === "teachers") return "Teachers";
   if (normalized === "schoolwide" || normalized === "school wide") return "School-wide";
+  if (value === "Teacher") return "Teachers";
   if (ALLOWED_AUDIENCES.includes(value)) return value;
   return "School-wide";
 };
@@ -257,19 +261,24 @@ const getAnnouncementValidationErrors = (data) => {
   const errors = {};
   const title = String(data?.title || "").trim();
   const content = String(data?.content || "").trim();
+  const targetAudience = String(data?.targetAudience || "").trim();
 
   if (!title) {
     errors.title = "Title is required";
-  } else if (title.length < 5) {
-    errors.title = "Title must be at least 5 characters";
+  } else if (title.length < 3) {
+    errors.title = "Title must be at least 3 characters";
   } else if (title.length > 100) {
     errors.title = "Title must be at most 100 characters";
   }
 
   if (!content) {
     errors.content = "Content is required";
-  } else if (content.length < 10) {
-    errors.content = "Content must be at least 10 characters";
+  } else if (content.length < 5) {
+    errors.content = "Content must be at least 5 characters";
+  }
+
+  if (!targetAudience) {
+    errors.targetAudience = "Target Audience is required";
   }
 
   return errors;
@@ -787,10 +796,10 @@ function AdminAnnouncements() {
     return payload;
   };
 
-  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "", selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
+  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
     const user = getCurrentUser();
-    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
-    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
+    const audienceValue = normalizeAudience(data.targetAudience || "School-wide");
+    const audienceTypeValue = toDatabaseAudienceType(data.targetAudience || "School-wide");
     const timestampColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp"]);
 
     const metadata = {};
@@ -808,6 +817,10 @@ function AdminAnnouncements() {
     const basePayload = {
       title: data.title.trim(),
       content: data.content.trim(),
+      target_audience: audienceValue,
+      audience: audienceValue,
+      audience_type: audienceTypeValue,
+      target_audience_type: audienceTypeValue,
       ...metadata
     };
 
@@ -817,17 +830,12 @@ function AdminAnnouncements() {
 
     addAttachmentColumnsToPayload(basePayload, attachments, columns);
 
-    const strictPayload = {
-      ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
-    };
-
-    return [strictPayload, basePayload];
+    return [basePayload];
   };
 
-  const buildUpdatePayloads = (data, timestamp, columns, attachments = null, selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
-    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
-    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
+  const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
+    const audienceValue = normalizeAudience(data.targetAudience || "School-wide");
+    const audienceTypeValue = toDatabaseAudienceType(data.targetAudience || "School-wide");
     const timestampColumn = resolveColumnName(columns, ["updated_at"]);
 
     const metadata = {};
@@ -836,6 +844,10 @@ function AdminAnnouncements() {
     const basePayload = {
       title: data.title.trim(),
       content: data.content.trim(),
+      target_audience: audienceValue,
+      audience: audienceValue,
+      audience_type: audienceTypeValue,
+      target_audience_type: audienceTypeValue,
       ...metadata
     };
 
@@ -843,12 +855,7 @@ function AdminAnnouncements() {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
     }
 
-    const strictPayload = {
-      ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
-    };
-
-    return [strictPayload, basePayload];
+    return [basePayload];
   };
   const writeAnnouncement = async (tableName, mode, payloads, id) => {
     let lastError = null;
@@ -1056,7 +1063,8 @@ function AdminAnnouncements() {
     setEditingAnnouncement(announcement);
     setEditFormData({
       title: announcement.title,
-      content: announcement.content
+      content: announcement.content,
+      targetAudience: announcement.targetAudience || "School-wide"
     });
     setEditAudienceType(
       databaseValueToAudienceType(announcement.audienceType ?? announcement.targetAudience)
@@ -1153,12 +1161,14 @@ function AdminAnnouncements() {
         await syncAnnouncementInlineAttachmentColumns(tableName, createdAnnouncementId);
       }
 
+      const selectedAudience = normalizeAudience(formData.targetAudience || "School-wide");
+
       const nextAnnouncement = {
         id: createdAnnouncementId || String(Date.now()),
         title: formData.title.trim(),
         content: formData.content.trim(),
-        targetAudience: "School-wide",
-        audienceType: toDatabaseAudienceType("School-wide"),
+        targetAudience: selectedAudience,
+        audienceType: toDatabaseAudienceType(selectedAudience),
         createdAt: timestamp,
         ...(uploadedAttachments.length > 0
           ? buildAnnouncementAttachments({
@@ -1251,14 +1261,16 @@ function AdminAnnouncements() {
         await syncAnnouncementInlineAttachmentColumns(tableName, announcementId);
       }
 
+      const selectedAudience = normalizeAudience(editFormData.targetAudience || "School-wide");
+
       setAnnouncements((current) => sortAnnouncements(current.map((announcement) => (
         announcement.id === editingAnnouncement.id
           ? {
               ...announcement,
               title: editFormData.title.trim(),
               content: editFormData.content.trim(),
-              targetAudience: "School-wide",
-              audienceType: toDatabaseAudienceType("School-wide"),
+              targetAudience: selectedAudience,
+              audienceType: toDatabaseAudienceType(selectedAudience),
               ...(uploadedAttachments.length > 0
                 ? buildAnnouncementAttachments({
                     file_name: JSON.stringify(uploadedAttachments.map((item) => item.fileName)),
@@ -1530,8 +1542,20 @@ function AdminAnnouncements() {
 
 
 
-                        <div className="flex flex-wrap items-start gap-3 mb-3">
-                          <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                              announcement.targetAudience === "Students"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : announcement.targetAudience === "Teachers" || announcement.targetAudience === "Teacher"
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}>
+                              <Users className="w-3.5 h-3.5" />
+                              {announcement.targetAudience || "School-wide"}
+                            </span>
+                          </div>
                         </div>
                         <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
                         {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
@@ -1637,6 +1661,20 @@ function AdminAnnouncements() {
                   {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
+                  <select
+                    value={formData.targetAudience || "School-wide"}
+                    onChange={(event) => handleCreateFieldChange("targetAudience", event.target.value)}
+                    onBlur={() => handleCreateFieldBlur("targetAudience")}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium bg-white text-gray-900 ${formErrors.targetAudience ? "border-red-500" : "border-gray-300"}`}
+                  >
+                    <option value="School-wide">School-wide (Students & Teachers)</option>
+                    <option value="Students">Students Only</option>
+                    <option value="Teachers">Teachers Only</option>
+                  </select>
+                  {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>
                   <textarea
                     value={formData.content}
@@ -1724,6 +1762,20 @@ function AdminAnnouncements() {
                     placeholder="Enter announcement title"
                   />
                   {editFormErrors.title && <p className="mt-1 text-sm text-red-600">{editFormErrors.title}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
+                  <select
+                    value={editFormData.targetAudience || "School-wide"}
+                    onChange={(event) => handleEditFieldChange("targetAudience", event.target.value)}
+                    onBlur={() => handleEditFieldBlur("targetAudience")}
+                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium bg-white text-gray-900 ${editFormErrors.targetAudience ? "border-red-500" : "border-gray-300"}`}
+                  >
+                    <option value="School-wide">School-wide (Students & Teachers)</option>
+                    <option value="Students">Students Only</option>
+                    <option value="Teachers">Teachers Only</option>
+                  </select>
+                  {editFormErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{editFormErrors.targetAudience}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>
