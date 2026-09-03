@@ -9,8 +9,17 @@ import Button from "../../../src/components/common/Button";
 import AppHeader from "../../../src/components/common/AppHeader";
 import { supabase } from "../../../src/lib/supabase";
 import { useRouter, Href } from "expo-router";
+import { useMyEnrollmentsQuery } from "../../../src/hooks/query/enrollments/use-my-enrollments-query";
 
-// Simple setting option row
+/**
+ * Renders a standard profile navigation/action option row.
+ * 
+ * @param {object} props The component props.
+ * @param {string} props.label The label text to show.
+ * @param {() => void} props.onPress Callback function on press.
+ * @param {string} [props.icon] Optional Ionicons icon name.
+ * @param {React.ReactNode} [props.rightElement] Optional custom right side element.
+ */
 const ProfileOption = ({ label, onPress, icon, rightElement }: any) => (
     <TouchableOpacity style={styles.option} onPress={onPress}>
         <View style={styles.optionLeft}>
@@ -21,6 +30,10 @@ const ProfileOption = ({ label, onPress, icon, rightElement }: any) => (
     </TouchableOpacity>
 );
 
+/**
+ * Main Student/Teacher Profile tab screen showing academic information, 
+ * enrollment status, and security/preference settings.
+ */
 export default function ProfileScreen() {
     const router = useRouter();
 
@@ -36,7 +49,20 @@ export default function ProfileScreen() {
     const [displayNameEdit, setDisplayNameEdit] = useState(""); // editable name in academic section
     const [yearLevel, setYearLevel] = useState("3rd Year");
     const [section, setSection] = useState("A");
-    const [status, setStatus] = useState("Enrolled");
+    
+    // Enrollment query for dynamic status
+    const { data: enrollments, isLoading: isLoadingEnrollments } = useMyEnrollmentsQuery();
+
+    // Resolve dynamic year level and section from active enrollments (accepted or active)
+    const activeEnrollment = enrollments?.find(
+        e => e.status === 'accepted' || e.status === 'active' || e.status === 'Active'
+    );
+    const resolvedYearLevel = role === 'student' && activeEnrollment?.subjects?.grade_level 
+        ? activeEnrollment.subjects.grade_level 
+        : yearLevel;
+    const resolvedSection = role === 'student' && activeEnrollment?.section 
+        ? activeEnrollment.section 
+        : section;
 
     // Notifications state (persistent via profile)
     const [pushEnabled, setPushEnabled] = useState(false);
@@ -62,18 +88,19 @@ export default function ProfileScreen() {
 
         // Role override
         let userRole: "student" | "teacher" = (user.user_metadata?.role as any) || "student";
-        if (email === "erijiao18@gmail.com") userRole = "teacher";
-        if (email === "euriqt214@gmail.com") userRole = "student";
         setRole(userRole);
 
         // Fetch profile row
         const { data: profile } = await supabase
             .from("profiles")
-            .select("first_name, last_name, year_level, section")
+            .select("first_name, last_name, year_level, section, role")
             .eq("id", user.id)
             .single();
 
         if (profile) {
+            if (profile.role) {
+                setRole(profile.role as "student" | "teacher");
+            }
             const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
             if (fullName) {
                 setDisplayName(fullName);
@@ -311,82 +338,57 @@ export default function ProfileScreen() {
                     </View>
                     <Text style={styles.name}>{displayName}</Text>
                     <Text style={styles.studentId}>{userEmail || "Not signed in"}</Text>
-                    <Text style={styles.program}>
-                        {role === "teacher" ? "Senior Faculty" : "BS Computer Science"}
-                    </Text>
+                    {role === "teacher" && (
+                        <Text style={styles.program}>Senior Faculty</Text>
+                    )}
                 </View>
 
-                {/* Academic Info */}
+                {/* Student Info */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>
-                            {role === "teacher" ? "Professional Info" : "Academic Info"}
-                        </Text>
-                        <TouchableOpacity
-                            onPress={isEditingAcademic ? handleSaveAcademic : () => setIsEditingAcademic(true)}
-                            style={styles.editButton}
-                            disabled={isSavingAcademic}
-                        >
-                            {isSavingAcademic ? (
-                                <ActivityIndicator size="small" color={Colors.light.primary} />
-                            ) : (
-                                <Text style={styles.editButtonText}>
-                                    {isEditingAcademic ? "Save" : "Edit"}
-                                </Text>
-                            )}
-                        </TouchableOpacity>
+                        <Text style={styles.sectionTitle}>Student Info</Text>
                     </View>
 
                     {/* Name field — always shown */}
                     <View style={styles.infoRow}>
                         <Text style={styles.label}>Name:</Text>
-                        {isEditingAcademic ? (
-                            <TextInput
-                                style={styles.input}
-                                value={displayNameEdit}
-                                onChangeText={setDisplayNameEdit}
-                                placeholder="Full name"
-                                placeholderTextColor="#94A3B8"
-                            />
-                        ) : (
-                            <Text style={styles.value}>{displayName}</Text>
-                        )}
+                        <Text style={styles.value}>{displayName}</Text>
                     </View>
 
                     {role === "student" && (
                         <>
                             <View style={styles.infoRow}>
                                 <Text style={styles.label}>Year Level:</Text>
-                                {isEditingAcademic ? (
-                                    <TextInput
-                                        style={styles.input}
-                                        value={yearLevel}
-                                        onChangeText={setYearLevel}
-                                    />
-                                ) : (
-                                    <Text style={styles.value}>{yearLevel}</Text>
-                                )}
+                                <Text style={styles.value}>{resolvedYearLevel || "—"}</Text>
                             </View>
+
                             <View style={styles.infoRow}>
                                 <Text style={styles.label}>Section:</Text>
-                                {isEditingAcademic ? (
-                                    <TextInput
-                                        style={styles.input}
-                                        value={section}
-                                        onChangeText={setSection}
-                                    />
-                                ) : (
-                                    <Text style={styles.value}>{section}</Text>
-                                )}
+                                <Text style={styles.value}>{resolvedSection || "—"}</Text>
                             </View>
                         </>
                     )}
 
                     <View style={styles.infoRow}>
                         <Text style={styles.label}>Status:</Text>
-                        <Text style={[styles.value, { color: Colors.light.success }]}>
-                            {role === "teacher" ? "Active" : status}
-                        </Text>
+                        {role === "teacher" ? (
+                            <Text style={[styles.value, { color: Colors.light.success }]}>Active</Text>
+                        ) : (
+                            (() => {
+                                if (isLoadingEnrollments) return <ActivityIndicator size="small" color={Colors.light.primary} />;
+                                
+                                const activeEnrollments = enrollments?.filter(e => e.status === 'accepted') || [];
+                                const pendingEnrollments = enrollments?.filter(e => e.status === 'pending') || [];
+                                
+                                if (activeEnrollments.length > 0) {
+                                    return <Text style={[styles.value, { color: Colors.light.success }]}>Enrolled</Text>;
+                                } else if (pendingEnrollments.length > 0) {
+                                    return <Text style={[styles.value, { color: Colors.light.warning }]}>Pending Enrollment</Text>;
+                                } else {
+                                    return <Text style={[styles.value, { color: Colors.light.textSecondary }]}>Not Enrolled</Text>;
+                                }
+                            })()
+                        )}
                     </View>
                 </View>
 

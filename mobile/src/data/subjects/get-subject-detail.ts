@@ -8,6 +8,9 @@ export interface SubjectDetail {
     teacher_id: string;
     teacher_name: string;
     teacher_email?: string;
+    grade_level?: string;
+    schedule?: string;
+    section?: string;
 }
 
 export async function getSubjectDetail(id: string): Promise<SubjectDetail | null> {
@@ -35,13 +38,15 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
 
     let teacherProfile = subjectData.profiles as any;
     let teacherId = subjectData.teacher_id;
+    let section: string | undefined = undefined;
 
-    // 2. Fetch specific teacher from assignments if available (Priority)
+    // 2. Fetch enrollment/assignment for the active student to get the section
     if (userId) {
         const { data: assignmentData } = await supabase
             .from('teacher_student_assignments')
             .select(`
                 teacher_id,
+                section,
                 profiles:teacher_id (
                     first_name,
                     last_name,
@@ -50,11 +55,19 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
             `)
             .eq('subject_id', id)
             .eq('student_id', userId)
-            .single();
+            .maybeSingle();
 
-        if (assignmentData?.profiles) {
-            teacherProfile = assignmentData.profiles;
-            teacherId = assignmentData.teacher_id;
+        if (assignmentData) {
+            section = assignmentData.section || undefined;
+            // Optionally update teacher profile if dynamic assignments override is intended,
+            // but prioritize canonical subjects.teacher_id as primary source of truth.
+            if (assignmentData.profiles && assignmentData.teacher_id !== subjectData.teacher_id) {
+                // Keep subjects.profiles as canonical, but allow teacher assignment fallback if no subject teacher is assigned
+                if (!teacherProfile) {
+                    teacherProfile = assignmentData.profiles;
+                    teacherId = assignmentData.teacher_id;
+                }
+            }
         }
     }
 
@@ -70,5 +83,8 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
         teacher_id: teacherId,
         teacher_name: teacherName,
         teacher_email: teacherProfile?.email,
+        grade_level: subjectData.grade_level || undefined,
+        schedule: subjectData.schedule || undefined,
+        section: section,
     };
 }

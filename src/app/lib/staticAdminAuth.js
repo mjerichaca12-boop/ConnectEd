@@ -14,6 +14,16 @@ const STATIC_ADMIN_PASSWORD_HASH = String(import.meta.env.VITE_STATIC_ADMIN_PASS
 // Plaintext fallback used when crypto.subtle is unavailable (HTTP on LAN IP)
 const STATIC_ADMIN_PASSWORD = String(import.meta.env.VITE_STATIC_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD);
 
+export const STATIC_ADMIN_ALIASES = [
+  STATIC_ADMIN_EMAIL,
+  "admin",
+  "administrator",
+  "admin@connected.local",
+  "connected@admin.local",
+  "sadministrator01",
+  "sadministrator02"
+];
+
 const encoder = new TextEncoder();
 
 const toHex = (buffer) =>
@@ -25,7 +35,7 @@ export const normalizeEmail = (value) => String(value || "").trim().toLowerCase(
 
 export const isStaticAdminUser = (user) => {
   if (!user || user.role !== "admin") return false;
-  return normalizeEmail(user.email) === STATIC_ADMIN_EMAIL;
+  return STATIC_ADMIN_ALIASES.includes(normalizeEmail(user.email));
 };
 
 export const getStaticAdminSessionUser = (token) => ({
@@ -37,12 +47,12 @@ export const getStaticAdminSessionUser = (token) => ({
   token: token
 });
 
-export const validateStaticAdminCredentials = async (email, password) => {
-  const normalizedEmail = normalizeEmail(email);
+export const validateStaticAdminCredentials = async (identifier, password) => {
+  const normalized = normalizeEmail(identifier);
   const normalizedPassword = String(password || "");
 
-  if (normalizedEmail !== STATIC_ADMIN_EMAIL) {
-    return { ok: false, message: "Admin account email is incorrect." };
+  if (!STATIC_ADMIN_ALIASES.includes(normalized)) {
+    return { ok: false, message: "Admin account identifier is incorrect." };
   }
 
   if (!normalizedPassword) {

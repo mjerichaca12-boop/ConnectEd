@@ -45,6 +45,7 @@ export default function AllAnnouncementsScreen() {
                             content={item.content}
                             date={item.date}
                             author={item.author || "Faculty"}
+                            attachments={item.attachments}
                             onPress={() =>
                                 router.push({
                                     pathname: `/(tabs)/announcement/${item.id}`,

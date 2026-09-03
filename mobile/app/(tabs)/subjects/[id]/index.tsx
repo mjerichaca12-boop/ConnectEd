@@ -32,17 +32,25 @@ export default function SubjectOverview() {
                 <Text style={styles.sectionTitle}>Instructor</Text>
                 <View style={styles.row}>
                     <View style={styles.avatar} />
-                    <View>
-                        <Text style={styles.name}>{subject?.teacher_name || "Dr. Professor"}</Text>
-                        <Text style={styles.email}>{subject?.teacher_email || "professor@university.edu"}</Text>
+                    <View style={styles.infoCol}>
+                        <Text style={styles.name}>{subject?.teacher_name || "Unknown Teacher"}</Text>
+                        <Text style={styles.email}>{subject?.teacher_email || ""}</Text>
                     </View>
                 </View>
             </View>
 
+            {subject?.grade_level && (
+                <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>Year Level</Text>
+                    <Text style={styles.text}>{subject.grade_level}</Text>
+                </View>
+            )}
+
+
+
             <View style={styles.infoSection}>
                 <Text style={styles.sectionTitle}>Schedule</Text>
-                <Text style={styles.text}>Mon/Wed 10:00 AM - 11:30 AM</Text>
-                <Text style={styles.text}>Room 305 / Online</Text>
+                <Text style={styles.text}>{subject?.schedule || "TBA"}</Text>
             </View>
         </ScrollView>
     );
@@ -101,6 +109,9 @@ const styles = StyleSheet.create({
     email: {
         fontSize: 14,
         color: Colors.light.primary,
+    },
+    infoCol: {
+        flex: 1,
     },
     text: {
         fontSize: 16,

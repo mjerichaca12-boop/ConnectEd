@@ -70,11 +70,24 @@ export default async function handler(req, res) {
         updated_at: timestamp,
       };
 
-      const { data: subData, error: subError } = await supabase
+      let selectFields = "id, teacher_id, subject_id, assessment_id, student_id, submitted_at, updated_at, status";
+      let { data: subData, error: subError } = await supabase
         .from("teacher_assessment_submissions")
         .upsert(upsertPayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" })
-        .select("id, teacher_id, subject_id, assessment_id, student_id, submitted_at, updated_at, status")
+        .select(selectFields)
         .maybeSingle();
+
+      if (subError && subError.code === 'PGRST204') {
+        // Fallback for missing status column
+        selectFields = "id, teacher_id, subject_id, assessment_id, student_id, submitted_at, updated_at";
+        const { data: retryData, error: retryError } = await supabase
+          .from("teacher_assessment_submissions")
+          .upsert(upsertPayload, { onConflict: "teacher_id,subject_id,assessment_id,student_id" })
+          .select(selectFields)
+          .maybeSingle();
+        subData = retryData;
+        subError = retryError;
+      }
 
       if (subError) {
         console.error("[submission-feedback] failed to upsert submission:", subError);
@@ -87,10 +100,18 @@ export default async function handler(req, res) {
     // optionally update status based on action or providedStatus
     if (targetSubmissionId && (action === "close" || action === "return" || requestedStatus)) {
       const newStatus = action === "close" ? "closed" : (action === "return" ? "returned" : requestedStatus || "pending");
-      await supabase
+      const { error: updateError } = await supabase
         .from("teacher_assessment_submissions")
         .update({ status: newStatus, updated_at: timestamp })
         .eq("id", targetSubmissionId);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        // Fallback for missing status column
+        await supabase
+          .from("teacher_assessment_submissions")
+          .update({ updated_at: timestamp })
+          .eq("id", targetSubmissionId);
+      }
     }
 
     // upsert feedback (create or update)

@@ -30,7 +30,12 @@ export default function TabBar({ state, descriptors, navigation, onMenuPress, ro
         ];
 
     return (
-        <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+        <View style={[
+            styles.container, 
+            { 
+                paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 12) 
+            }
+        ]}>
             {items.map((item) => {
                 if (item.type === "route") {
                     const routeIndex = state.routes.findIndex((r) => r.name === item.name);
@@ -143,17 +148,16 @@ const styles = StyleSheet.create({
         backgroundColor: "#FFFFFF",
         borderTopWidth: 1,
         borderTopColor: "#E2E8F0",
-        height: Platform.OS === 'ios' ? 88 : 78,
-        alignItems: 'flex-start',
-        paddingTop: 8,
+        paddingTop: 10,
         justifyContent: 'space-between',
         paddingHorizontal: 4,
+        // Removed fixed height to allow safe area padding to work correctly
     },
     tabItem: {
         alignItems: "center",
         justifyContent: "center",
         flex: 1,
-        height: 50,
+        height: 44, // Consistent height for the interactive area
     },
     tabLabel: {
         fontSize: 9,

@@ -22,23 +22,20 @@ interface BottomSheetMenuProps {
     visible: boolean;
     onClose: () => void;
     role: "student" | "teacher" | null;
-    onChatbotPress?: () => void;
 }
 
 const STUDENT_MENU: MenuItem[] = [
     { label: "School Calendar", icon: "calendar-sharp", route: "/(tabs)/calendar" },
     { label: "Grades", icon: "school-outline", route: "/(tabs)/grades" },
-    { label: "Chatbot", icon: "chatbubble-ellipses-outline", route: "chatbot" },
     { label: "Profile", icon: "person-outline", route: "/(tabs)/profile" },
 ];
 
 const TEACHER_MENU: MenuItem[] = [
     { label: "School Calendar", icon: "calendar-sharp", route: "/(tabs)/calendar" },
-    { label: "Chatbot", icon: "chatbubble-ellipses-outline", route: "chatbot" },
     { label: "Faculty Profile", icon: "person-outline", route: "/(tabs)/profile" },
 ];
 
-export default function BottomSheetMenu({ visible, onClose, role, onChatbotPress }: BottomSheetMenuProps) {
+export default function BottomSheetMenu({ visible, onClose, role }: BottomSheetMenuProps) {
     const insets = useSafeAreaInsets();
     const router = useRouter();
 
@@ -46,11 +43,7 @@ export default function BottomSheetMenu({ visible, onClose, role, onChatbotPress
 
     const handleMenuPress = (route: string) => {
         onClose();
-        if (route === "chatbot") {
-            onChatbotPress?.();
-        } else {
-            router.push(route as any);
-        }
+        router.push(route as any);
     };
 
     return (

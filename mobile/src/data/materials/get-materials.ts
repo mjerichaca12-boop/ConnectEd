@@ -4,34 +4,54 @@ import { Material } from "../../types";
 export interface GetMaterialsArgs {
     subjectId?: string;
     teacherId?: string;
+    allowFallback?: boolean;
 }
 
-export async function getMaterials({ subjectId, teacherId }: GetMaterialsArgs): Promise<Material[]> {
+export async function getMaterials({ subjectId, teacherId, allowFallback = true }: GetMaterialsArgs): Promise<Material[]> {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    const isValidId = subjectId && uuidRegex.test(subjectId);
+    const isValidId = !!(subjectId && uuidRegex.test(subjectId));
 
-    console.log(`[materials] Fetching for ID: "${subjectId}", Valid: ${isValidId}`);
+    const isSubjectExplicit = subjectId && subjectId !== 'undefined' && subjectId !== '[id]';
+
+    if (isSubjectExplicit && !isValidId) {
+        console.warn(`[materials] Invalid subjectId provided: ${subjectId}`);
+        return [];
+    }
+
+    console.log(`[materials] Fetching for ID: "${subjectId}", Valid: ${isValidId}, Fallback: ${allowFallback}`);
 
     let data: any[] = [];
     let error: any = null;
 
     if (isValidId) {
+        // Fetch materials for specific subject
         const result = await supabase
-            .from('class_materials')
-            .select('*')
-            .eq('subject_id', subjectId);
+            .from('lesson_materials')
+            .select('*, lessons!inner(subject_id, week_number, title)')
+            .eq('lessons.subject_id', subjectId);
         data = result.data || [];
         error = result.error;
         console.log(`[materials] Subject-specific count: ${data.length}`);
+    } else if (teacherId) {
+        // Fetch materials for a specific teacher (when no subject is selected)
+        const result = await supabase
+            .from('lesson_materials')
+            .select('*, lessons!inner(teacher_id, subject_id, week_number, title)')
+            .eq('lessons.teacher_id', teacherId);
+        data = result.data || [];
+        error = result.error;
+        console.log(`[materials] Teacher-specific count: ${data.length}`);
     }
 
-    // FALLBACK: If ID is invalid OR no materials found for this subject, 
-    // fetch ALL materials so the user has something to show.
-    if (!isValidId || (!error && data.length === 0)) {
+    // Automatically disable fallback if a specific subject was requested, to prevent global leaks
+    const effectiveAllowFallback = allowFallback && !isSubjectExplicit;
+
+    // FALLBACK: Only run if allowed AND no materials found
+    if (effectiveAllowFallback && (!error && data.length === 0)) {
         console.log('[materials] Running Global Fallback (fetch all)...');
         const fallback = await supabase
-            .from('class_materials')
-            .select('*')
+            .from('lesson_materials')
+            .select('*, lessons(subject_id, week_number, title)')
             .limit(50);
         
         if (fallback.error) {
@@ -77,14 +97,37 @@ export async function getMaterials({ subjectId, teacherId }: GetMaterialsArgs): 
             }
         }
 
+        const lessonObj = m.lessons as any;
+        const subject_id = lessonObj?.subject_id || m.subject_id || '';
+        const week_number = lessonObj?.week_number || null;
+        const lesson_title = lessonObj?.title || '';
+
+        // Map type
+        let type: "pdf" | "doc" | "other" = "other";
+        const fileType = (m.file_type || "").toLowerCase();
+        const fileName = (m.file_name || "").toLowerCase();
+        if (fileType.includes("pdf") || fileName.endsWith(".pdf")) {
+            type = "pdf";
+        } else if (
+            fileType.includes("word") ||
+            fileType.includes("document") ||
+            fileName.endsWith(".doc") ||
+            fileName.endsWith(".docx")
+        ) {
+            type = "doc";
+        }
+
         return {
             id: m.id,
-            title: m.title || "Untitled Document",
-            type: m.type || "other",
+            title: m.file_name || "Untitled Document",
+            type,
             date: displayDate,
             file_url: finalUrl,
-            subject_id: m.subject_id,
+            subject_id,
             description: m.description || "",
+            created_at: m.created_at,
+            week_number,
+            lesson_title
         };
     });
 }

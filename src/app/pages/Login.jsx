@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Eye, EyeOff, Lock, User, ShieldAlert, Monitor, Smartphone } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Lock, User, ShieldAlert } from "lucide-react";
 import { getAuthRedirectUrl, supabase } from "../lib/supabaseClient";
-import { adminApi } from "@/app/lib/adminApi";
 import {
   STATIC_ADMIN_EMAIL,
+  STATIC_ADMIN_ALIASES,
   getStaticAdminSessionUser,
   normalizeEmail,
   validateStaticAdminCredentials
@@ -32,67 +32,6 @@ function Login() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const oauthSessionProcessingRef = useRef(false);
   const navigate = useNavigate();
-
-  const isMobileDevice = () => window.innerWidth < 1024;
-
-  const getGoogleUserDisplayName = (sessionUser, email) => {
-    const metadata = sessionUser?.user_metadata || {};
-    return metadata.full_name || metadata.name || email.split("@")[0] || "User";
-  };
-
-  const splitFullName = (fullName, email) => {
-    const parts = String(fullName || "").trim().split(" ");
-    if (parts.length === 1) return { firstName: parts[0], lastName: "User" };
-    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
-  };
-
-  const createProfileFromGoogle = async (sessionUser, email) => {
-    const normalizedEmail = email.toLowerCase();
-    
-    // Pick up the role from localStorage (switched from sessionStorage for mobile reliability)
-    const storedRole = localStorage.getItem("connected_signup_role");
-    const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
-    
-    // Clear the stored role after use
-    localStorage.removeItem("connected_signup_role");
-
-    const displayName = getGoogleUserDisplayName(sessionUser, normalizedEmail);
-    const { firstName, lastName } = splitFullName(displayName, normalizedEmail);
-
-    const payload = {
-      id: sessionUser.id,
-      email: normalizedEmail,
-      role: detectedRole,
-      first_name: firstName,
-      last_name: lastName,
-      status: "Active",
-      provider: "google",
-      is_verified: true,
-      created_at: new Date().toISOString()
-    };
-
-    // Use admin client to bypass RLS during profile creation
-    const client = supabase;
-    const { data, error } = await client
-      .from("profiles")
-      .insert(payload)
-      .select("*")
-      .single();
-
-    if (error) {
-      // If it already exists, just fetch it
-      const { data: existing } = await supabase
-        .from("profiles")
-        .select("*")
-        .ilike("email", normalizedEmail)
-        .maybeSingle();
-      
-      if (existing) return existing;
-      throw error;
-    }
-
-    return data;
-  };
 
   useEffect(() => {
     if (!supabase) return;
@@ -128,35 +67,50 @@ function Login() {
         if (existingProfile) {
           profile = existingProfile;
         } else {
-          // If no profile exists, check device restrictions BEFORE creating one
-          const isMobile = window.innerWidth <= 1280;
           const normalizedEmail = email.toLowerCase();
-          const storedRole = localStorage.getItem("connected_signup_role");
-          const detectedRole = storedRole || (normalizedEmail.includes("teacher") ? "teacher" : "student");
+          const detectedRole = normalizedEmail.includes("admin") ? "admin" : "teacher";
 
-          if (detectedRole === "student" && !isMobile) {
-            throw new Error("Student accounts cannot be created on Desktop. Please use a Mobile device.");
-          }
-          if (detectedRole === "teacher" && isMobile && window.innerWidth < 768) {
-            throw new Error("Teacher accounts should be created on Desktop for the best experience.");
-          }
+          const displayName = session?.user?.user_metadata?.full_name || session?.user?.user_metadata?.name || email.split("@")[0] || "Teacher";
+          const nameParts = displayName.trim().split(" ");
+          const firstName = nameParts[0] || "Teacher";
+          const lastName = nameParts.slice(1).join(" ") || "User";
 
-          profile = await createProfileFromGoogle(session.user, email);
+          const payload = {
+            id: session.user.id,
+            email: normalizedEmail,
+            role: detectedRole,
+            first_name: firstName,
+            last_name: lastName,
+            status: "Active",
+            provider: "google",
+            is_verified: true,
+            created_at: new Date().toISOString()
+          };
+
+          const { data: created, error: insertError } = await supabase
+            .from("profiles")
+            .insert(payload)
+            .select("*")
+            .single();
+
+          if (insertError) {
+            const { data: fallback } = await supabase
+              .from("profiles")
+              .select("*")
+              .ilike("email", normalizedEmail)
+              .maybeSingle();
+            profile = fallback;
+          } else {
+            profile = created;
+          }
         }
 
-        const role = String(profile.role || "student").toLowerCase();
-        const isMobile = window.innerWidth < 1024; // Use standard 1024 for dashboard redirect logic
+        if (!profile) throw new Error("Could not find or create user profile.");
+
+        const role = String(profile.role || "teacher").toLowerCase();
 
         if (role === "student") {
-          throw new Error("Student web access has been removed. Please contact an administrator if you need access.");
-        }
-
-        // Check device restrictions
-        if (role === "teacher" && isMobile) {
-          throw new Error("The Teacher Portal is only accessible via Desktop/Laptop.");
-        }
-        if (role === "student" && !isMobile) {
-          throw new Error("The Student Portal is only accessible via Mobile devices.");
+          throw new Error("Student accounts must use the ConnectEd Mobile App. Web portal is for Teachers and Administrators.");
         }
 
         const hasCompletedLoginSession = localStorage.getItem("hasCompletedLoginSession_" + profile.id);
@@ -167,7 +121,7 @@ function Login() {
 
         const currentUser = {
           id: profile.id,
-          name: profile.first_name + " " + (profile.last_name || ""),
+          name: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || (role === "admin" ? "Administrator" : "Teacher"),
           email: profile.email,
           role: role,
           avatar_url: profile.avatar_url || "",
@@ -239,9 +193,6 @@ function Login() {
       if (!val) return "Please enter your username or email address.";
       if (value.includes(" ")) return "Username or email cannot contain spaces.";
       if (val.length > 100) return "Username or email cannot exceed 100 characters.";
-      if (val.includes("@") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
-        return "Please enter a valid email address.";
-      }
     }
     if (name === "password") {
       if (!value) return "Please enter your password.";
@@ -263,27 +214,6 @@ function Login() {
     const { name, value } = e.target;
     setTouched((prev) => ({ ...prev, [name]: true }));
     setFieldErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
-  };
-
-  const handleGoogleSignIn = async () => {
-    if (!supabase) {
-      setGoogleError("Connection error: Supabase not configured.");
-      return;
-    }
-    setGoogleLoading(true);
-    localStorage.setItem(GOOGLE_OAUTH_INTENT_KEY, JSON.stringify({ startedAt: Date.now() }));
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: getAuthRedirectUrl("login"),
-        queryParams: { prompt: "select_account" }
-      }
-    });
-    if (error) {
-      setGoogleError(error.message);
-      setGoogleLoading(false);
-      localStorage.removeItem(GOOGLE_OAUTH_INTENT_KEY);
-    }
   };
 
   const isSubmittingRef = useRef(false);
@@ -310,7 +240,8 @@ function Login() {
     isSubmittingRef.current = true;
     setLoading(true);
 
-    if (normalizedUsername === STATIC_ADMIN_EMAIL) {
+    // 1. Check if identifier is a Static Admin alias
+    if (STATIC_ADMIN_ALIASES.includes(normalizedUsername)) {
       const adminValidation = await validateStaticAdminCredentials(normalizedUsername, formData.password);
       if (adminValidation.ok) {
         clearRateLimitState(normalizedUsername);
@@ -319,11 +250,7 @@ function Login() {
         isSubmittingRef.current = false;
         return;
       }
-      recordFailedAttempt(normalizedUsername);
-      setError(adminValidation.message);
-      setLoading(false);
-      isSubmittingRef.current = false;
-      return;
+      // If password did not match static admin, continue to check Supabase Auth in case account exists in DB
     }
 
     try {
@@ -333,25 +260,43 @@ function Login() {
         console.warn("LOGIN signOut cleanup warning:", signOutError);
       }
 
+      // 2. Resolve email from username or direct input
       let resolvedEmail = null;
+      let resolvedProfile = null;
+
       if (normalizedUsername.includes("@")) {
         resolvedEmail = normalizedUsername;
       } else {
-        const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
-        if (rpcEmail) {
-          resolvedEmail = String(rpcEmail).trim().toLowerCase();
-        } else {
-          const { data: profData } = await supabase
-            .from("profiles")
-            .select("email")
-            .or(`username.ilike.${normalizedUsername},email.ilike.${normalizedUsername},employee_id.ilike.${normalizedUsername}`)
-            .maybeSingle();
-          if (profData?.email) {
-            resolvedEmail = String(profData.email).trim().toLowerCase();
+        // Try RPC lookup first
+        try {
+          const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
+          if (rpcEmail) {
+            resolvedEmail = String(rpcEmail).trim().toLowerCase();
+          }
+        } catch (rpcErr) {
+          console.warn("RPC get_email_by_username error (fallback to profiles table):", rpcErr);
+        }
+
+        // Direct table query lookup if RPC didn't return
+        if (!resolvedEmail) {
+          try {
+            const { data: profData } = await supabase
+              .from("profiles")
+              .select("*")
+              .or(`username.ilike.${normalizedUsername},email.ilike.${normalizedUsername},employee_id.ilike.${normalizedUsername}`)
+              .maybeSingle();
+
+            if (profData?.email) {
+              resolvedEmail = String(profData.email).trim().toLowerCase();
+              resolvedProfile = profData;
+            }
+          } catch (profSelectErr) {
+            console.warn("Profiles lookup error:", profSelectErr);
           }
         }
       }
 
+      // 3. Build candidate login emails
       const candidateEmails = [];
       if (resolvedEmail) candidateEmails.push(resolvedEmail);
       if (normalizedUsername.includes("@") && !candidateEmails.includes(normalizedUsername)) {
@@ -390,13 +335,13 @@ function Login() {
           setError("Too many login attempts. Please wait and try again later.");
         } else if (authMessage.includes("invalid login credentials") || authMessage.includes("invalid")) {
           const remainingAttempts = Math.max(0, MAX_FAILED_ATTEMPTS - updatedRate.attempts);
-          setError(`Incorrect email or password. (${remainingAttempts} attempt(s) remaining)`);
+          setError(`Incorrect username/email or password. (${remainingAttempts} attempt(s) remaining)`);
         } else if (authMessage.includes("email not confirmed")) {
           setError("Please verify your email before signing in.");
         } else if (authMessage.includes("fetch") || authMessage.includes("network") || authMessage.includes("failed to fetch")) {
-          setError("Unable to connect to the authentication service. Please check your internet connection.");
+          setError("Unable to connect to authentication server. Please check your internet connection.");
         } else {
-          setError("We couldn't sign you in right now. Please try again.");
+          setError("Incorrect username/email or password.");
         }
         setLoading(false);
         isSubmittingRef.current = false;
@@ -405,8 +350,8 @@ function Login() {
 
       clearRateLimitState(normalizedUsername);
 
-      // Fetch profile by auth user ID first, fallback to resolved email
-      let profile = null;
+      // 4. Fetch profile by auth user ID first, fallback to resolved email
+      let profile = resolvedProfile;
       const userId = authData.session?.user?.id;
       if (userId) {
         const { data: pById } = await supabase
@@ -414,7 +359,7 @@ function Login() {
           .select("*")
           .eq("id", userId)
           .maybeSingle();
-        profile = pById;
+        if (pById) profile = pById;
       }
 
       if (!profile && resolvedEmail) {
@@ -423,45 +368,33 @@ function Login() {
           .select("*")
           .ilike("email", resolvedEmail)
           .maybeSingle();
-        profile = pByEmail;
+        if (pByEmail) profile = pByEmail;
       }
 
       if (!profile) {
         await supabase.auth.signOut();
-        setError("Account not found. Please sign up first.");
+        setError("User account profile not found. Please contact the administrator.");
         setLoading(false);
         isSubmittingRef.current = false;
         return;
       }
 
-      if (profile.status === "Pending") {
+      if (profile.status === "Pending" || profile.status === "Inactive" || profile.status === "Disabled") {
         await supabase.auth.signOut();
-        setError("Your account is still pending admin approval.");
+        setError("Your account is currently disabled or pending administrator approval.");
         setLoading(false);
         isSubmittingRef.current = false;
         return;
       }
 
-      const role = String(profile.role || "student").toLowerCase();
-      const isMobile = window.innerWidth < 768;
+      const role = String(profile.role || "teacher").toLowerCase();
 
+      // Direct students to the mobile app
       if (role === "student") {
         await supabase.auth.signOut();
-        setError("Student web access has been removed. Please contact an administrator if you need access.");
+        setError("Student accounts must sign in via the ConnectEd Mobile App. Web portal is for Teachers and Administrators.");
         setLoading(false);
-        return;
-      }
-
-      if (role === "teacher" && isMobile) {
-        await supabase.auth.signOut();
-        setError("Teachers can only sign in on Desktop.");
-        setLoading(false);
-        return;
-      }
-      if (role === "student" && !isMobile) {
-        await supabase.auth.signOut();
-        setError("Students can only sign in on Mobile.");
-        setLoading(false);
+        isSubmittingRef.current = false;
         return;
       }
 
@@ -471,9 +404,11 @@ function Login() {
         localStorage.setItem("hasCompletedLoginSession_" + profile.id, "true");
       }
 
+      const fullName = [profile.first_name, profile.middle_name, profile.last_name].map(p => String(p || "").trim()).filter(Boolean).join(" ");
+
       localStorage.setItem("currentUser", JSON.stringify({
         id: profile.id,
-        name: profile.first_name + " " + (profile.last_name || ""),
+        name: fullName || (role === "admin" ? "Administrator" : "Teacher"),
         email: profile.email,
         role: role,
         avatar_url: profile.avatar_url || "",
@@ -492,24 +427,30 @@ function Login() {
       }
 
     } catch (err) {
-      console.error("LOGIN CATCH ERROR:", err);
+      console.error("LOGIN ERROR:", err);
       setError(err instanceof Error ? err.message : "Login failed. Please check your credentials.");
+    } finally {
       setLoading(false);
       isSubmittingRef.current = false;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 border border-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-gray-50 to-blue-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-gray-100">
+        
+        {/* Brand Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">Connect<span className="text-emerald-600">Ed</span></h1>
-          <p className="text-gray-500 text-sm">Sign in to your educational portal</p>
+          <Link to="/" className="inline-block text-3xl font-extrabold text-gray-900 mb-2 tracking-tight hover:opacity-90 transition-opacity">
+            Connect<span className="text-emerald-600">Ed</span>
+          </Link>
+          <p className="text-gray-500 text-sm font-medium">Teacher & Administrator Portal</p>
         </div>
 
+        {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Username</label>
+            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Username or Email</label>
             <div className="relative">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -518,12 +459,14 @@ function Login() {
                 value={formData.username}
                 onChange={handleInputChange}
                 onBlur={handleBlur}
-                className={`w-full pl-11 pr-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                autoComplete="username"
+                autoCapitalize="none"
+                className={`w-full pl-11 pr-4 py-3.5 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm font-medium ${
                   touched.username && fieldErrors.username
                     ? "border-red-400 focus:ring-red-300 bg-red-50"
-                    : "border-gray-200 focus:ring-emerald-500"
+                    : "border-gray-200 focus:ring-emerald-500 focus:bg-white"
                 }`}
-                placeholder="Enter your username"
+                placeholder="Enter your username or email"
               />
             </div>
             {touched.username && fieldErrors.username && (
@@ -535,7 +478,7 @@ function Login() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Password</label>
+            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">Password</label>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -544,14 +487,20 @@ function Login() {
                 value={formData.password}
                 onChange={handleInputChange}
                 onBlur={handleBlur}
-                className={`w-full pl-11 pr-12 py-3 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm ${
+                autoComplete="current-password"
+                className={`w-full pl-11 pr-12 py-3.5 bg-gray-50 border rounded-xl focus:ring-2 outline-none transition-all text-sm font-medium ${
                   touched.password && fieldErrors.password
                     ? "border-red-400 focus:ring-red-300 bg-red-50"
-                    : "border-gray-200 focus:ring-emerald-500"
+                    : "border-gray-200 focus:ring-emerald-500 focus:bg-white"
                 }`}
                 placeholder="••••••••"
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
@@ -570,22 +519,28 @@ function Login() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2">
-              <span className="mt-0.5 w-4 h-4 flex-shrink-0 text-red-500">&#9888;</span>
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2.5 animate-shake">
+              <span className="mt-0.5 w-4 h-4 flex-shrink-0 text-red-500 font-bold">&#9888;</span>
+              <p className="text-sm text-red-700 font-medium">{error}</p>
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-200 transition-all disabled:opacity-50 mt-2"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-600/20 transition-all disabled:opacity-50 mt-2 cursor-pointer"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
-        
+        {/* Informative Footer */}
+        <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+          <p className="text-xs text-gray-400">
+            Student accounts access school via the <span className="font-semibold text-gray-600">ConnectEd Mobile App</span>.
+          </p>
+        </div>
+
       </div>
     </div>
   );

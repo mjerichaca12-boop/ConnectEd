@@ -72,7 +72,13 @@ export default function ChangePasswordScreen() {
             <AppHeader
                 title="Change Password"
                 showBack={true}
-                onBack={() => router.back()}
+                onBack={() => {
+                    if (router.canGoBack()) {
+                        router.back();
+                    } else {
+                        router.push("/(tabs)/profile" as any);
+                    }
+                }}
             />
             <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
@@ -170,7 +176,13 @@ export default function ChangePasswordScreen() {
                             style={[styles.modalBtn, !modalConfig.success && styles.modalBtnErr]}
                             onPress={() => {
                                 setModalConfig(p => ({ ...p, visible: false }));
-                                if (modalConfig.success) router.back();
+                                if (modalConfig.success) {
+                                    if (router.canGoBack()) {
+                                        router.back();
+                                    } else {
+                                        router.push("/(tabs)/profile" as any);
+                                    }
+                                }
                             }}
                         >
                             <Text style={styles.modalBtnText}>{modalConfig.success ? "Done" : "OK"}</Text>

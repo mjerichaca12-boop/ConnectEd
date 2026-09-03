@@ -2,19 +2,20 @@ import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator, StatusBar, Image } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Colors from "../../../src/constants/Colors";
-import AppHeader from "../../../src/components/common/AppHeader";
-import Button from "../../../src/components/common/Button";
+import Colors from "@/src/constants/Colors";
+import AppHeader from "@/src/components/common/AppHeader";
+import Button from "@/src/components/common/Button";
+import FileViewerModal from "@/src/components/common/FileViewerModal";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
-import { useAnnouncementsQuery } from "../../../src/hooks/query/announcements/use-announcements-query";
-import { useDeleteAnnouncementMutation } from "../../../src/hooks/query/announcements/use-delete-announcement-mutation";
-import { supabase } from "../../../src/lib/supabase";
+import { useAnnouncementsQuery } from "@/src/hooks/query/announcements/use-announcements-query";
+import { useDeleteAnnouncementMutation } from "@/src/hooks/query/announcements/use-delete-announcement-mutation";
+import { supabase } from "@/src/lib/supabase";
 import { decode } from 'base64-arraybuffer';
 
-import { getAnnouncementById } from "../../../src/data/announcements/get-announcement-by-id";
-import { Announcement } from "../../../src/types";
+import { getAnnouncementById } from "@/src/data/announcements/get-announcement-by-id";
+import { Announcement } from "@/src/types";
 
 export default function AnnouncementDetailScreen() {
     const { id, from } = useLocalSearchParams<{ id: string, from?: string }>();
@@ -23,7 +24,17 @@ export default function AnnouncementDetailScreen() {
     const [announcement, setAnnouncement] = useState<Announcement | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isDownloading, setIsDownloading] = useState(false);
-    
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerTitle, setViewerTitle] = useState<string | null>(null);
+    const [viewerVisible, setViewerVisible] = useState(false);
+
+    const openFileViewer = (url: string | null | undefined, title: string) => {
+        if (!url) return;
+        setViewerUrl(url);
+        setViewerTitle(title);
+        setViewerVisible(true);
+    };
+
     const deleteMutation = useDeleteAnnouncementMutation();
 
     useEffect(() => {
@@ -39,10 +50,7 @@ export default function AnnouncementDetailScreen() {
 
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (!session) return;
-            const email = session.user?.email;
             let role = session.user?.user_metadata?.role || "student";
-            if (email === "erijiao18@gmail.com") role = "teacher";
-            if (email === "euriqt214@gmail.com") role = "student";
             setIsTeacher(role === "teacher");
         });
     }, [id]);
@@ -51,7 +59,11 @@ export default function AnnouncementDetailScreen() {
         if (from === 'manage') {
             router.push('/(tabs)/teacher/announcements');
         } else {
-            router.back();
+            if (router.canGoBack()) {
+                router.back();
+            } else {
+                router.push('/(tabs)/home');
+            }
         }
     };
 
@@ -61,8 +73,8 @@ export default function AnnouncementDetailScreen() {
             "Are you sure you want to delete this announcement?",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Delete", 
+                {
+                    text: "Delete",
                     style: "destructive",
                     onPress: async () => {
                         try {
@@ -83,7 +95,7 @@ export default function AnnouncementDetailScreen() {
         try {
             setIsDownloading(true);
             const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            
+
             if (!storageDir) {
                 Linking.openURL(announcement.file_url);
                 return;
@@ -91,9 +103,9 @@ export default function AnnouncementDetailScreen() {
 
             const fileName = announcement.file_name || `attachment_${Date.now()}`;
             const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-            
+
             const { uri } = await FileSystem.downloadAsync(announcement.file_url, fileUri);
-            
+
             if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(uri);
             } else {
@@ -103,6 +115,37 @@ export default function AnnouncementDetailScreen() {
             console.error('Download error:', error);
             Alert.alert("Download Error", "Failed to download file. Opening in browser instead.");
             Linking.openURL(announcement.file_url);
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    const handleDownloadAttachment = async (attachment: any) => {
+        if (!attachment?.file_url) return;
+
+        try {
+            setIsDownloading(true);
+            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+
+            if (!storageDir) {
+                Linking.openURL(attachment.file_url);
+                return;
+            }
+
+            const fileName = attachment.file_name || `attachment_${Date.now()}`;
+            const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
+
+            const { uri } = await FileSystem.downloadAsync(attachment.file_url, fileUri);
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(uri);
+            } else {
+                Alert.alert("Success", "File downloaded successfully.");
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            Alert.alert("Download Error", "Failed to download file. Opening in browser instead.");
+            Linking.openURL(attachment.file_url);
         } finally {
             setIsDownloading(false);
         }
@@ -131,7 +174,7 @@ export default function AnnouncementDetailScreen() {
         <View style={styles.container}>
             <StatusBar barStyle="light-content" />
             <AppHeader title="Announcement" showBack={true} onBack={handleBack} />
-            
+
             <ScrollView contentContainerStyle={styles.content}>
                 <View style={styles.card}>
                     <View style={styles.header}>
@@ -142,7 +185,7 @@ export default function AnnouncementDetailScreen() {
                             </TouchableOpacity>
                         )}
                     </View>
-                    
+
                     <View style={styles.meta}>
                         <View style={styles.metaItem}>
                             <Ionicons name="person-outline" size={16} color="#64748B" />
@@ -153,33 +196,84 @@ export default function AnnouncementDetailScreen() {
                             <Text style={styles.metaText}>{announcement.date}</Text>
                         </View>
                     </View>
-                    
+
                     <View style={styles.divider} />
-                    
+
                     {announcement.image_url && (
-                        <Image source={{ uri: announcement.image_url }} style={styles.fullImage} resizeMode="contain" />
+                        <TouchableOpacity 
+                            onPress={() => openFileViewer(announcement.image_url, announcement.title || "Announcement Image")}
+                            activeOpacity={0.9}
+                            style={{ marginBottom: 16 }}
+                        >
+                            <Image source={{ uri: announcement.image_url }} style={styles.fullImage} resizeMode="contain" />
+                        </TouchableOpacity>
                     )}
-                    
+
                     <Text style={styles.body}>{announcement.content}</Text>
 
-                    {announcement.file_url && !announcement.image_url && (
+                    {announcement.attachments && announcement.attachments.length > 0 && (
+                        <View style={styles.attachmentsSection}>
+                            <Text style={styles.attachmentsTitle}>Attachments</Text>
+                            {announcement.attachments.map((att: any, index: number) => {
+                                // Skip the image if it's already displayed as the primary image
+                                if (att.file_url === announcement.image_url) return null;
+
+                                return (
+                                    <View key={index} style={styles.attachmentContainer}>
+                                        <TouchableOpacity 
+                                            style={styles.attachmentInfo}
+                                            onPress={() => openFileViewer(att.file_url, att.file_name || "Attachment")}
+                                        >
+                                            <Ionicons
+                                                name={att.file_type?.startsWith('image/') ? "image-outline" : "document-attach-outline"}
+                                                size={24}
+                                                color={Colors.light.primary}
+                                            />
+                                            <Text style={styles.attachmentName} numberOfLines={1}>
+                                                {att.file_name || "Attached File"}
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity 
+                                            style={styles.downloadButtonSmall}
+                                            onPress={() => handleDownloadAttachment(att)}
+                                        >
+                                            <Ionicons name="download-outline" size={20} color="#64748B" />
+                                        </TouchableOpacity>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    )}
+
+                    {announcement.file_url && !announcement.image_url && (!announcement.attachments || announcement.attachments.length === 0) && (
                         <View style={styles.attachmentContainer}>
-                            <View style={styles.attachmentInfo}>
+                            <TouchableOpacity 
+                                style={styles.attachmentInfo}
+                                onPress={() => openFileViewer(announcement.file_url, announcement.file_name || "Attachment")}
+                            >
                                 <Ionicons name="document-attach-outline" size={24} color={Colors.light.primary} />
                                 <Text style={styles.attachmentName} numberOfLines={1}>
                                     {announcement.file_name || "Attached File"}
                                 </Text>
-                            </View>
-                            <Button 
-                                title={isDownloading ? "Downloading..." : "Download Attachment"} 
-                                onPress={handleDownload} 
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={styles.downloadButtonSmall}
+                                onPress={handleDownload}
                                 disabled={isDownloading}
-                                style={{ marginTop: 16 }}
-                            />
+                            >
+                                <Ionicons name="download-outline" size={20} color="#64748B" />
+                            </TouchableOpacity>
                         </View>
                     )}
                 </View>
             </ScrollView>
+
+            <FileViewerModal 
+                visible={viewerVisible} 
+                onClose={() => setViewerVisible(false)} 
+                url={viewerUrl} 
+                fileName={viewerTitle} 
+            />
         </View>
     );
 }
@@ -266,7 +360,10 @@ const styles = StyleSheet.create({
         fontWeight: "bold",
     },
     attachmentContainer: {
-        marginTop: 24,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 12,
         padding: 16,
         backgroundColor: "#F8FAFC",
         borderRadius: 12,
@@ -276,7 +373,8 @@ const styles = StyleSheet.create({
     attachmentInfo: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 8,
+        flex: 1,
+        marginRight: 12,
     },
     attachmentName: {
         fontSize: 16,
@@ -284,5 +382,22 @@ const styles = StyleSheet.create({
         color: "#1E293B",
         marginLeft: 8,
         flex: 1,
+    },
+    attachmentsSection: {
+        marginTop: 24,
+        paddingTop: 24,
+        borderTopWidth: 1,
+        borderTopColor: "#F1F5F9",
+    },
+    attachmentsTitle: {
+        fontSize: 18,
+        fontWeight: "bold",
+        color: "#1E293B",
+        marginBottom: 16,
+    },
+    downloadButtonSmall: {
+        padding: 8,
+        backgroundColor: "#F1F5F9",
+        borderRadius: 8,
     },
 });

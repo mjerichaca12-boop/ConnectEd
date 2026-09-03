@@ -48,16 +48,29 @@ export function useCreateMaterialMutation() {
 
             const finalFileUrl = publicUrl;
 
-            // 2. Insert record into class_materials
+            // 2. Resolve lesson_id for the given subject_id
+            const { data: lessons, error: lessonErr } = await supabase
+                .from('lessons')
+                .select('id')
+                .eq('subject_id', subject_id)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (lessonErr || !lessons || lessons.length === 0) {
+                console.error("No lessons found for subject:", subject_id, lessonErr);
+                throw new Error("No lessons exist for this subject. Please create a lesson first.");
+            }
+
+            const lesson_id = lessons[0].id;
+
+            // 3. Insert record into lesson_materials
             const { data, error } = await supabase
-                .from('class_materials')
+                .from('lesson_materials')
                 .insert({
-                    title,
-                    description,
-                    type,
-                    subject_id,
-                    teacher_id: userData.user.id,
+                    lesson_id,
+                    file_name: title,
                     file_url: finalFileUrl,
+                    file_size: bytes.byteLength,
                     file_type
                 })
                 .select()

@@ -278,12 +278,11 @@ const ChatbotWidget = forwardRef<ChatbotWidgetRef, ChatbotWidgetProps>((props, r
                                 <Ionicons name="add" size={24} color={Colors.light.primary} />
                             </TouchableOpacity>
                             <TextInput
-                                style={styles.input}
+                                style={[styles.input, { maxHeight: 100 }]}
                                 placeholder="Type your message here..."
                                 value={input}
                                 onChangeText={setInput}
                                 multiline
-                                maxHeight={100}
                             />
                             <TouchableOpacity 
                                 style={[styles.sendButton, !input.trim() && styles.sendButtonDisabled]}

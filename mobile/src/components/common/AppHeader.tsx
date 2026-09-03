@@ -39,7 +39,11 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
         if (onBack) {
             onBack();
         } else {
-            router.back();
+            if (router.canGoBack()) {
+                router.back();
+            } else {
+                router.push("/(tabs)/home" as any);
+            }
         }
     };
 
@@ -154,7 +158,7 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: Colors.light.primary,
+        backgroundColor: Colors.light.forestGreen,
         paddingBottom: 8,
     },
     content: {
@@ -207,7 +211,7 @@ const styles = StyleSheet.create({
         borderRadius: 5,
         backgroundColor: "#EF4444", 
         borderWidth: 2,
-        borderColor: Colors.light.primary,
+        borderColor: Colors.light.forestGreen,
     },
     
     // Modal Styles

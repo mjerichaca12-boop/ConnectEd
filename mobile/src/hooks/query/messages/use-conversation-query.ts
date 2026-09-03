@@ -21,13 +21,14 @@ export function useConversationQuery(partnerId: string) {
             .on(
                 'postgres_changes',
                 {
-                    event: 'INSERT',
+                    event: '*',
                     schema: 'public',
                     table: 'messages',
                 },
                 async (payload) => {
-                    console.log('[messages] RT message received:', payload.new.id);
-                    const newMessage = payload.new;
+                    console.log('[messages] RT message received:', payload.eventType, ((payload.new || payload.old) as any)?.id);
+                    const newMessage = (payload.new || payload.old) as any;
+                    if (!newMessage) return;
                     const { data: { user } } = await supabase.auth.getUser();
                     if (!user) return;
 

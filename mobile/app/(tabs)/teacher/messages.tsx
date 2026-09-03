@@ -51,6 +51,7 @@ const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type }: a
 
 export default function TeacherMessagesScreen() {
     const [searchQuery, setSearchQuery] = useState("");
+    const [isSearchFocused, setIsSearchFocused] = useState(false);
     const { data: chats = [], isLoading: isChatsLoading, refetch: refetchChats } = useChatListQuery();
     const { data: profiles = [], isLoading: isProfilesLoading } = useSearchableProfilesQuery();
     const router = useRouter();
@@ -101,8 +102,10 @@ export default function TeacherMessagesScreen() {
     ) : [];
 
     const chatPartnerIds = new Set(chats.map(chat => chat?.partner_id));
+    const chatPartnerNames = new Set(chats.map(chat => (chat?.partner_name || "").toLowerCase().trim()));
     const otherProfiles = Array.isArray(profiles) ? profiles.filter(profile => 
         !chatPartnerIds.has(profile.id) && 
+        !chatPartnerNames.has((profile?.full_name || "").toLowerCase().trim()) &&
         (profile?.full_name || "").toLowerCase().includes(searchQuery.toLowerCase())
     ) : [];
 
@@ -113,7 +116,8 @@ export default function TeacherMessagesScreen() {
         filteredChats.forEach(chat => listData.push({ type: 'chat', ...chat }));
     }
 
-    if (otherProfiles.length > 0) {
+    const showSuggested = isSearchFocused || searchQuery.trim().length > 0;
+    if (showSuggested && otherProfiles.length > 0) {
         listData.push({ type: 'header', title: searchQuery ? 'Other Users' : 'Suggested' });
         otherProfiles.forEach(profile => listData.push({ type: 'profile', ...profile }));
     }
@@ -139,6 +143,8 @@ export default function TeacherMessagesScreen() {
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholderTextColor="#94A3B8"
+                        onFocus={() => setIsSearchFocused(true)}
+                        onBlur={() => setIsSearchFocused(false)}
                     />
                     {searchQuery.length > 0 && (
                         <TouchableOpacity onPress={() => setSearchQuery("")}>
