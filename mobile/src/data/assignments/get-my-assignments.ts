@@ -25,6 +25,12 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const isValidId = !!(subjectId && uuidRegex.test(subjectId));
+    const isSubjectExplicit = subjectId && subjectId !== 'undefined' && subjectId !== '[id]';
+
+    if (isSubjectExplicit && !isValidId) {
+        console.warn(`[assignments] Invalid subjectId provided: ${subjectId}`);
+        return [];
+    }
 
     if (!isValidId && allCourseIds.length === 0) {
         return [];
@@ -67,28 +73,21 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     let materialsQuery = supabase.from('class_materials').select('*');
     const { data: materialsData } = await materialsQuery;
 
-    // 1e. Fetch lessons to map lesson_id -> course_id (subject_id) for quizzes table
-    let lessonsQuery = supabase.from('lessons').select('*');
-    if (isValidId) {
-        lessonsQuery = lessonsQuery.or(`subject_id.eq.${subjectId},course_id.eq.${subjectId}`);
-    } else if (allCourseIds.length > 0) {
-        lessonsQuery = lessonsQuery.or(`subject_id.in.(${allCourseIds.join(',')}),course_id.in.(${allCourseIds.join(',')})`);
-    }
+    // 1e. Fetch ALL relevant lessons to accurately map lesson_id -> course_id (subject_id)
+    let lessonsQuery = supabase.from('lessons').select('id, subject_id, course_id, title, description, week_number');
     const { data: lessonsData } = await lessonsQuery;
 
     const lessonToCourseMap = new Map<string, string>();
     const lessonDetailsMap = new Map<string, any>();
-    const lessonIds: string[] = [];
     (lessonsData || []).forEach((l: any) => {
         if (l && l.id) {
-            lessonIds.push(l.id);
             lessonDetailsMap.set(l.id, l);
             const courseId = l.subject_id || l.course_id;
             if (courseId) lessonToCourseMap.set(l.id, courseId);
         }
     });
 
-    // 1f. Fetch from quizzes table using lesson_id, course_id, or select all
+    // 1f. Fetch from quizzes table
     let quizzesData: any[] = [];
     try {
         let quizzesQuery = supabase.from('quizzes').select('*');
@@ -116,17 +115,32 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         console.warn('[assignments] assignments table query exception:', e);
     }
 
-    // Merge datasets by ID
+    // Merge datasets by ID with STRICT subject verification
     const assignmentMap = new Map<string, any>();
 
     (rpcData || []).forEach((row: any) => {
         if (row && row.id) {
+            const rowCourseId = row.course_id || row.subject_id;
+            if (isValidId && rowCourseId && String(rowCourseId).toLowerCase() !== String(subjectId).toLowerCase()) {
+                return;
+            }
+            if (!isValidId && rowCourseId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) {
+                return;
+            }
             assignmentMap.set(row.id, { ...row });
         }
     });
 
     [...(directData || []), ...(classAsgData || [])].forEach((row: any) => {
         if (row && row.id) {
+            const rowCourseId = row.course_id || row.subject_id;
+            if (isValidId && rowCourseId && String(rowCourseId).toLowerCase() !== String(subjectId).toLowerCase()) {
+                return;
+            }
+            if (!isValidId && rowCourseId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) {
+                return;
+            }
+
             const existing = assignmentMap.get(row.id) || {};
             assignmentMap.set(row.id, {
                 ...existing,
@@ -143,13 +157,19 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
     });
 
-    // Process and merge rows from direct assignments table
+    // Process and merge rows from direct assignments table strictly mapped to their subject
     (directAssignmentsData || []).forEach((row: any) => {
         if (row && row.id) {
-            const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null) || (isValidId ? subjectId : (allCourseIds[0] || subjectId));
+            const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null);
             
-            // Only include assignment if it belongs to valid target subject or global feed
-            if (isValidId && mappedCourseId && String(mappedCourseId) !== String(subjectId)) {
+            // STRICT FILTERING: Do NOT attach if it doesn't belong to this subject!
+            if (!mappedCourseId) return;
+
+            if (isValidId && String(mappedCourseId).toLowerCase() !== String(subjectId).toLowerCase()) {
+                return;
+            }
+
+            if (!isValidId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(mappedCourseId).toLowerCase())) {
                 return;
             }
 
@@ -159,8 +179,8 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             assignmentMap.set(row.id, {
                 ...existing,
                 ...row,
-                course_id: mappedCourseId || existing.course_id,
-                subject_id: mappedCourseId || existing.subject_id || row.subject_id || row.course_id,
+                course_id: mappedCourseId,
+                subject_id: mappedCourseId,
                 title: row.title || (linkedLesson ? linkedLesson.title : null) || "Assignment",
                 description: row.description || (linkedLesson ? (linkedLesson.content || linkedLesson.description) : null) || existing.description || "Please complete this assignment.",
                 deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
@@ -172,19 +192,24 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
     });
 
-    // Process and merge rows from quizzes table
+    // Process and merge rows from quizzes table strictly mapped to their subject
     (quizzesData || []).forEach((row: any) => {
         if (row && row.id) {
-            const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null) || (isValidId ? subjectId : (allCourseIds[0] || subjectId));
+            const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null);
             
-            // Only include quiz if it belongs to valid target subject or global feed
-            if (isValidId && mappedCourseId && String(mappedCourseId) !== String(subjectId)) {
+            // STRICT FILTERING: Do NOT attach if it doesn't belong to this subject!
+            if (!mappedCourseId) return;
+
+            if (isValidId && String(mappedCourseId).toLowerCase() !== String(subjectId).toLowerCase()) {
+                return;
+            }
+
+            if (!isValidId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(mappedCourseId).toLowerCase())) {
                 return;
             }
 
             const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
 
-            // Extract real description/content from quiz row or linked lesson
             let quizDescription = row.questions || row.quiz_data || row.content || row.description || row.instructions;
             
             if (!quizDescription || quizDescription.trim().toUpperCase() === "EMPTY" || quizDescription.trim().toUpperCase() === "READ UPLOADED FILES.") {
@@ -197,8 +222,8 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             assignmentMap.set(row.id, {
                 ...existing,
                 ...row,
-                course_id: mappedCourseId || existing.course_id,
-                subject_id: mappedCourseId || existing.subject_id || row.subject_id || row.course_id,
+                course_id: mappedCourseId,
+                subject_id: mappedCourseId,
                 title: row.title || (linkedLesson ? linkedLesson.title : null) || "Quiz",
                 description: quizDescription || existing.description || "Please complete this quiz.",
                 deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
@@ -435,4 +460,10 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             } : null,
         };
     });
+
+    if (isValidId) {
+        return mappedAssignments.filter((a: any) => a.subjectId && String(a.subjectId).toLowerCase() === String(subjectId).toLowerCase());
+    }
+
+    return mappedAssignments.filter((a: any) => a.subjectId && allCourseIds.some(cid => String(cid).toLowerCase() === String(a.subjectId).toLowerCase()));
 }

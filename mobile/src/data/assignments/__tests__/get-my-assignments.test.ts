@@ -93,4 +93,42 @@ describe('getMyAssignments scoping', () => {
         expect(result).toHaveLength(1);
         expect(result[0].status).toBe('submitted');
     });
+
+    it('should strictly isolate assignments and not include items from other subjects', async () => {
+        const targetSubject = '550e8400-e29b-41d4-a716-446655440000';
+        const otherSubject = '660e8400-e29b-41d4-a716-446655440000';
+
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'enrollments') {
+                return mockBuilder([{ subject_id: targetSubject }, { subject_id: otherSubject }]);
+            }
+            if (table === 'lessons') {
+                return mockBuilder([
+                    { id: 'lesson-target', subject_id: targetSubject, title: 'Target Lesson' },
+                    { id: 'lesson-other', subject_id: otherSubject, title: 'Other Lesson' },
+                ]);
+            }
+            if (table === 'assignments') {
+                return mockBuilder([
+                    { id: 'asg-target', lesson_id: 'lesson-target', title: 'Target Asg' },
+                    { id: 'asg-other', lesson_id: 'lesson-other', title: 'Other Asg' },
+                ]);
+            }
+            if (table === 'quizzes') {
+                return mockBuilder([
+                    { id: 'quiz-target', lesson_id: 'lesson-target', title: 'Target Quiz' },
+                    { id: 'quiz-other', lesson_id: 'lesson-other', title: 'Other Quiz' },
+                ]);
+            }
+            return mockBuilder([]);
+        });
+
+        (supabase as any).rpc = vi.fn(() => mockBuilder([]));
+
+        const result = await getMyAssignments(targetSubject);
+        expect(result).toHaveLength(2); // Only Target Asg and Target Quiz
+        expect(result.map(a => a.id)).toEqual(expect.arrayContaining(['asg-target', 'quiz-target']));
+        expect(result.map(a => a.id)).not.toContain('asg-other');
+        expect(result.map(a => a.id)).not.toContain('quiz-other');
+    });
 });
