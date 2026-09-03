@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { supabase } from "@/app/lib/supabaseClient";
 import {
   X,
   ZoomIn,
@@ -514,10 +515,14 @@ function AttachmentCard({ att, isSelf, senderName }) {
  *   isSelf     – true if this message was sent by the current user (controls color scheme)
  */
 export function MessageAttachmentPreview({ msg, isSelf }) {
+  const [fetchedAtts, setFetchedAtts] = useState([]);
+  const [loadingAtts, setLoadingAtts] = useState(false);
+
   if (!msg) return null;
 
-  const attachments = [];
   const senderName = msg?.senderName || msg?.sender_name || msg?.senderNameFormatted || "";
+
+  const attachments = [];
 
   // 1. Collect valid items from msg.attachments if present
   if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
@@ -572,7 +577,54 @@ export function MessageAttachmentPreview({ msg, isSelf }) {
     } catch {}
   }
 
-  if (attachments.length === 0) return null;
+  // 4. Include on-the-fly fetched attachments if primary sources were empty
+  if (attachments.length === 0 && fetchedAtts.length > 0) {
+    fetchedAtts.forEach(a => attachments.push(a));
+  }
+
+  // 5. Self-healing useEffect: If attachments list is empty, but msg.id exists, fetch from Supabase
+  const msgId = msg.id;
+  useEffect(() => {
+    if (attachments.length === 0 && msgId && !String(msgId).startsWith("temp_")) {
+      let isMounted = true;
+      setLoadingAtts(true);
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from("message_attachments")
+            .select("id, file_url, file_name, file_type, file_size")
+            .eq("message_id", msgId);
+          if (isMounted && data && data.length > 0) {
+            setFetchedAtts(data.map(a => ({
+              id: a.id,
+              url: a.file_url,
+              name: a.file_name,
+              type: a.file_type,
+              size: a.file_size,
+              kind: getAttachmentKind(a.file_type, a.file_name, a.file_url)
+            })));
+          }
+        } catch (e) {
+          console.warn("[MessageAttachmentPreview] Self-healing fetch error:", e);
+        } finally {
+          if (isMounted) setLoadingAtts(false);
+        }
+      })();
+      return () => { isMounted = false; };
+    }
+  }, [msgId, attachments.length]);
+
+  if (attachments.length === 0) {
+    if (loadingAtts) {
+      return (
+        <div className="flex items-center gap-2 p-2 rounded-xl bg-black/5 text-xs text-gray-500 animate-pulse">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>Loading attachment...</span>
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="mb-2 space-y-2">

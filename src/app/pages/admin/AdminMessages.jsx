@@ -1406,10 +1406,12 @@ export function AdminMessages() {
                                     <AtSign className="w-2.5 h-2.5" /> Mentioned you
                                   </p>
                                 )}
-                                {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
-                                    <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
-                                  )}
-                                {msg.text && <p className="leading-relaxed">{msg.text}</p>}
+                                {Boolean((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName || (msg.text && /^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()))) && (
+                                  <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
+                                )}
+                                {msg.text && !/^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()) && (
+                                  <p className="leading-relaxed">{msg.text}</p>
+                                )}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
                                   <p className={`text-xs ${isAdmin ? "text-blue-100" : "text-gray-500"}`}>
                                     {getTimeLabel(msg.time)}
