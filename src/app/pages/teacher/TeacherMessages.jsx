@@ -1141,6 +1141,7 @@ function TeacherMessages() {
       }
     }
 
+    const firstAtt = uploadedAttachments[0] || null;
     const msg = {
       id: String(data?.[0]?.id || `${Date.now()}_${Math.random()}`),
       from: window.location.pathname.includes("admin") ? "admin" : "teacher",
@@ -1148,6 +1149,11 @@ function TeacherMessages() {
       text: messageText,
       time: String(data?.[0]?.timestamp || now),
       status: "sent",
+      fileUrl: firstAtt ? firstAtt.file_url : "",
+      fileName: firstAtt ? firstAtt.file_name : "",
+      fileType: firstAtt ? firstAtt.file_type : "",
+      fileSize: firstAtt ? firstAtt.file_size : 0,
+      attachmentKind: firstAtt ? (firstAtt.file_type?.startsWith('image/') ? 'image' : firstAtt.file_type?.startsWith('video/') ? 'video' : 'document') : "",
       attachments: uploadedAttachments.map(a => ({
         id: Math.random().toString(),
         url: a.file_url,
