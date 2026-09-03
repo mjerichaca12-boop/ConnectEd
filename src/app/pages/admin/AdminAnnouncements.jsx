@@ -13,14 +13,18 @@ import { useActivity } from "../../lib/ActivityContext";
 import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
 import {
   AlertTriangle,
+  Check,
   Edit,
+  File,
+  Globe,
+  GraduationCap,
   Loader2,
   Megaphone,
-  Plus,
-  File,
   Paperclip,
+  Plus,
   Search,
   Trash2,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
@@ -1661,18 +1665,71 @@ function AdminAnnouncements() {
                   {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
-                  <select
-                    value={formData.targetAudience || "School-wide"}
-                    onChange={(event) => handleCreateFieldChange("targetAudience", event.target.value)}
-                    onBlur={() => handleCreateFieldBlur("targetAudience")}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium bg-white text-gray-900 ${formErrors.targetAudience ? "border-red-500" : "border-gray-300"}`}
-                  >
-                    <option value="School-wide">School-wide (Students & Teachers)</option>
-                    <option value="Students">Students Only</option>
-                    <option value="Teachers">Teachers Only</option>
-                  </select>
-                  {formErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{formErrors.targetAudience}</p>}
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Target Audience <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: "School-wide",
+                        title: "School-wide",
+                        subtitle: "Students & Teachers",
+                        icon: Globe,
+                        color: "blue"
+                      },
+                      {
+                        id: "Students",
+                        title: "Students Only",
+                        subtitle: "Registered Students",
+                        icon: GraduationCap,
+                        color: "emerald"
+                      },
+                      {
+                        id: "Teachers",
+                        title: "Teachers Only",
+                        subtitle: "Faculty & Staff",
+                        icon: UserCheck,
+                        color: "purple"
+                      }
+                    ].map((option) => {
+                      const isSelected = (formData.targetAudience || "School-wide") === option.id;
+                      const IconComp = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleCreateFieldChange("targetAudience", option.id)}
+                          className={`relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                            isSelected
+                              ? option.color === "emerald"
+                                ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm"
+                                : option.color === "purple"
+                                ? "border-purple-500 bg-purple-50/50 ring-2 ring-purple-500/20 shadow-sm"
+                                : "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 shadow-sm"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className={`p-1.5 rounded-lg ${
+                              isSelected
+                                ? option.color === "emerald" ? "bg-emerald-100 text-emerald-700" : option.color === "purple" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}>
+                              <IconComp className="w-4 h-4" />
+                            </div>
+                            {isSelected && (
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white ${
+                                option.color === "emerald" ? "bg-emerald-600" : option.color === "purple" ? "bg-purple-600" : "bg-blue-600"
+                              }`}>
+                                <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-gray-900">{option.title}</span>
+                          <span className="text-xs text-gray-500 mt-0.5">{option.subtitle}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {formErrors.targetAudience && <p className="mt-1.5 text-xs text-red-600 font-medium">{formErrors.targetAudience}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>
@@ -1764,18 +1821,71 @@ function AdminAnnouncements() {
                   {editFormErrors.title && <p className="mt-1 text-sm text-red-600">{editFormErrors.title}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience <span className="text-red-500">*</span></label>
-                  <select
-                    value={editFormData.targetAudience || "School-wide"}
-                    onChange={(event) => handleEditFieldChange("targetAudience", event.target.value)}
-                    onBlur={() => handleEditFieldBlur("targetAudience")}
-                    className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium bg-white text-gray-900 ${editFormErrors.targetAudience ? "border-red-500" : "border-gray-300"}`}
-                  >
-                    <option value="School-wide">School-wide (Students & Teachers)</option>
-                    <option value="Students">Students Only</option>
-                    <option value="Teachers">Teachers Only</option>
-                  </select>
-                  {editFormErrors.targetAudience && <p className="mt-1 text-sm text-red-600">{editFormErrors.targetAudience}</p>}
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Target Audience <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: "School-wide",
+                        title: "School-wide",
+                        subtitle: "Students & Teachers",
+                        icon: Globe,
+                        color: "blue"
+                      },
+                      {
+                        id: "Students",
+                        title: "Students Only",
+                        subtitle: "Registered Students",
+                        icon: GraduationCap,
+                        color: "emerald"
+                      },
+                      {
+                        id: "Teachers",
+                        title: "Teachers Only",
+                        subtitle: "Faculty & Staff",
+                        icon: UserCheck,
+                        color: "purple"
+                      }
+                    ].map((option) => {
+                      const isSelected = (editFormData.targetAudience || "School-wide") === option.id;
+                      const IconComp = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleEditFieldChange("targetAudience", option.id)}
+                          className={`relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                            isSelected
+                              ? option.color === "emerald"
+                                ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm"
+                                : option.color === "purple"
+                                ? "border-purple-500 bg-purple-50/50 ring-2 ring-purple-500/20 shadow-sm"
+                                : "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 shadow-sm"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className={`p-1.5 rounded-lg ${
+                              isSelected
+                                ? option.color === "emerald" ? "bg-emerald-100 text-emerald-700" : option.color === "purple" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}>
+                              <IconComp className="w-4 h-4" />
+                            </div>
+                            {isSelected && (
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white ${
+                                option.color === "emerald" ? "bg-emerald-600" : option.color === "purple" ? "bg-purple-600" : "bg-blue-600"
+                              }`}>
+                                <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-gray-900">{option.title}</span>
+                          <span className="text-xs text-gray-500 mt-0.5">{option.subtitle}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editFormErrors.targetAudience && <p className="mt-1.5 text-xs text-red-600 font-medium">{editFormErrors.targetAudience}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>
