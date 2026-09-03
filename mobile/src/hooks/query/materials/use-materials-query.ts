@@ -11,18 +11,26 @@ export function useMaterialsQuery(args: GetMaterialsArgs) {
         const isValidUuid = !!(args.subjectId && uuidRegex.test(args.subjectId));
 
         const channelName = isValidUuid ? `materials-rt-${args.subjectId}` : 'materials-rt-global';
+        const invalidate = () => {
+            queryClient.invalidateQueries({ queryKey: ['materials'] });
+        };
+
         const channel = supabase
             .channel(channelName)
             .on(
                 'postgres_changes',
-                { 
-                    event: '*', 
-                    schema: 'public', 
-                    table: 'lesson_materials'
-                },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['materials', args.subjectId, args.teacherId] });
-                }
+                { event: '*', schema: 'public', table: 'lesson_materials' },
+                invalidate
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'materials' },
+                invalidate
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'class_materials' },
+                invalidate
             )
             .subscribe();
 

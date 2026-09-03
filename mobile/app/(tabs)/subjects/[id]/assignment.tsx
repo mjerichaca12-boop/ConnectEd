@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Image, TextInput, Modal, StatusBar } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Image, TextInput, Modal, StatusBar, RefreshControl } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useLocalSearchParams, useSegments, useRouter, useGlobalSearchParams } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -1603,9 +1604,15 @@ export default function SubjectAssignments() {
     const [activeTab, setActiveTab] = useState("upcoming");
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
 
-    const { data: assignments = [], isLoading, error } = useMyAssignmentsQuery({ subjectId });
+    const { data: assignments = [], isLoading, error, refetch, isRefetching } = useMyAssignmentsQuery({ subjectId });
 
-    if (isLoading) {
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
+
+    if (isLoading && !isRefetching) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <ActivityIndicator size="large" color={Colors.light.primary} />
@@ -1631,6 +1638,7 @@ export default function SubjectAssignments() {
                     if (nextTab) {
                         setActiveTab(nextTab);
                     }
+                    refetch();
                 }} 
             />
         );
@@ -1669,6 +1677,14 @@ export default function SubjectAssignments() {
                         onPress={() => setSelectedAssignment(item)}
                     />
                 )}
+                refreshControl={
+                    <RefreshControl 
+                        refreshing={isRefetching} 
+                        onRefresh={refetch} 
+                        tintColor={Colors.light.primary} 
+                        colors={[Colors.light.primary]} 
+                    />
+                }
                 ListEmptyComponent={() => (
                      <View style={styles.emptyContainer}>
                          <Text style={styles.emptyText}>No {activeTab} assignments found for this subject.</Text>

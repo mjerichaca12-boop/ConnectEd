@@ -16,7 +16,43 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
 
         const channel = supabase
             .channel(channelName)
-            // Listen for new/updated assignments
+            // Listen for changes/deletes on assignments table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'assignments' },
+                invalidate
+            )
+            // Listen for changes/deletes on quizzes table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'quizzes' },
+                invalidate
+            )
+            // Listen for changes/deletes on lesson_activities table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'lesson_activities' },
+                invalidate
+            )
+            // Listen for changes/deletes on lessons table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'lessons' },
+                invalidate
+            )
+            // Listen for changes/deletes on teacher_assessments table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'teacher_assessments' },
+                invalidate
+            )
+            // Listen for changes/deletes on class_assignments table
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'class_assignments' },
+                invalidate
+            )
+            // Listen for new/updated assignments_activity
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'assignments_activity' },
@@ -40,12 +76,11 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
                 { event: '*', schema: 'public', table: 'submissions' },
                 invalidate
             )
+            // Listen for quiz attempt changes
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'submissions' },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
-                }
+                { event: '*', schema: 'public', table: 'quiz_attempts' },
+                invalidate
             )
             .subscribe();
 

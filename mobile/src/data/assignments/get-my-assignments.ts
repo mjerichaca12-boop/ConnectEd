@@ -102,6 +102,20 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         console.warn('[assignments] quizzes table query exception:', e);
     }
 
+    // 1g. Fetch directly from assignments table (created by teachers in lessons)
+    let directAssignmentsData: any[] = [];
+    try {
+        let asgQuery = supabase.from('assignments').select('*');
+        const { data: aData, error: aErr } = await asgQuery;
+        if (!aErr && aData) {
+            directAssignmentsData = aData;
+        } else if (aErr) {
+            console.warn('[assignments] assignments table fetch info:', aErr.message);
+        }
+    } catch (e) {
+        console.warn('[assignments] assignments table query exception:', e);
+    }
+
     // Merge datasets by ID
     const assignmentMap = new Map<string, any>();
 
@@ -125,6 +139,35 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
                 file_name: row.file_name || row.attachment_name || existing.file_name || existing.attachment_name,
                 file_path: row.file_path || existing.file_path,
                 assessment_type: row.assessment_type || row.type || existing.assessment_type || existing.type,
+            });
+        }
+    });
+
+    // Process and merge rows from direct assignments table
+    (directAssignmentsData || []).forEach((row: any) => {
+        if (row && row.id) {
+            const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null) || (isValidId ? subjectId : (allCourseIds[0] || subjectId));
+            
+            // Only include assignment if it belongs to valid target subject or global feed
+            if (isValidId && mappedCourseId && String(mappedCourseId) !== String(subjectId)) {
+                return;
+            }
+
+            const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
+
+            const existing = assignmentMap.get(row.id) || {};
+            assignmentMap.set(row.id, {
+                ...existing,
+                ...row,
+                course_id: mappedCourseId || existing.course_id,
+                subject_id: mappedCourseId || existing.subject_id || row.subject_id || row.course_id,
+                title: row.title || (linkedLesson ? linkedLesson.title : null) || "Assignment",
+                description: row.description || (linkedLesson ? (linkedLesson.content || linkedLesson.description) : null) || existing.description || "Please complete this assignment.",
+                deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
+                file_url: row.file_url || row.attachment_url || (linkedLesson ? (linkedLesson.file_url || linkedLesson.attachment_url) : null) || existing.file_url || existing.attachment_url,
+                file_name: row.file_name || row.attachment_name || (linkedLesson ? (linkedLesson.file_name || linkedLesson.title) : null) || existing.file_name || existing.attachment_name,
+                file_path: row.file_path || existing.file_path,
+                assessment_type: row.assessment_type || 'assignment',
             });
         }
     });

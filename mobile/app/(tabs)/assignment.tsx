@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal, RefreshControl } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Colors from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
 import StatusBadge from "../../src/components/common/StatusBadge";
@@ -1538,7 +1539,13 @@ export default function AssignmentsScreen() {
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
     const [activeTab, setActiveTab] = useState("upcoming");
 
-    const { data: assignments = [], isLoading } = useMyAssignmentsQuery();
+    const { data: assignments = [], isLoading, refetch, isRefetching } = useMyAssignmentsQuery();
+
+    useFocusEffect(
+        useCallback(() => {
+            refetch();
+        }, [refetch])
+    );
     
     const tabs = [
         { id: "upcoming", label: "Upcoming" },
@@ -1555,12 +1562,13 @@ export default function AssignmentsScreen() {
                     if (nextTab) {
                         setActiveTab(nextTab);
                     }
+                    refetch();
                 }} 
             />
         );
     }
     
-    if (isLoading) {
+    if (isLoading && !isRefetching) {
         return (
             <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
                 <ActivityIndicator size="large" color={Colors.light.primary} />
@@ -1616,6 +1624,14 @@ export default function AssignmentsScreen() {
                         onPress={() => setSelectedAssignment(item)}
                     />
                 )}
+                refreshControl={
+                    <RefreshControl 
+                        refreshing={isRefetching} 
+                        onRefresh={refetch} 
+                        tintColor={Colors.light.primary} 
+                        colors={[Colors.light.primary]} 
+                    />
+                }
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
                         <Text style={styles.emptyText}>No {activeTab} assignments found.</Text>

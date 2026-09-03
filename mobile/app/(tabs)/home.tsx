@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,12 +18,14 @@ import { AssessmentTypeBadge } from "../../src/components/common/AssessmentTypeB
 export default function HomeScreen() {
     const router = useRouter();
     const [displayName, setDisplayName] = useState("Student");
-    const { data: announcementsData, isLoading: isAnnouncementsLoading, refetch: refetchAnnouncements } = useAnnouncementsQuery({ limit: 3 });
-    const { data: eventsData, isLoading: isEventsLoading } = useEventsQuery(3);
-    const { data: enrollments, isLoading: isEnrollmentsLoading } = useMyEnrollmentsQuery();
+    const [isRefreshing, setIsRefreshing] = useState(false);
     
-    const { data: assignments = [], isLoading: isAssignmentsLoading } = useMyAssignmentsQuery();
-    const { data: materialsData = [], isLoading: isMaterialsLoading } = useMaterialsQuery({ allowFallback: true });
+    const { data: announcementsData, isLoading: isAnnouncementsLoading, refetch: refetchAnnouncements } = useAnnouncementsQuery({ limit: 3 });
+    const { data: eventsData, isLoading: isEventsLoading, refetch: refetchEvents } = useEventsQuery(3);
+    const { data: enrollments, isLoading: isEnrollmentsLoading, refetch: refetchEnrollments } = useMyEnrollmentsQuery();
+    
+    const { data: assignments = [], isLoading: isAssignmentsLoading, refetch: refetchAssignments } = useMyAssignmentsQuery();
+    const { data: materialsData = [], isLoading: isMaterialsLoading, refetch: refetchMaterials } = useMaterialsQuery({ allowFallback: true });
     
     const announcements = announcementsData || [];
     const events = eventsData || [];
@@ -106,15 +108,33 @@ export default function HomeScreen() {
         }
     }, []);
 
-    // Re-load name every time this screen comes into focus
-    // (so profile name changes are reflected immediately)
+    const handleRefreshAll = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await Promise.all([
+                loadDisplayName(),
+                refetchAnnouncements(),
+                refetchAssignments(),
+                refetchMaterials(),
+                refetchEnrollments(),
+                refetchEvents(),
+            ]);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [loadDisplayName, refetchAnnouncements, refetchAssignments, refetchMaterials, refetchEnrollments, refetchEvents]);
+
+    // Re-load data every time this screen comes into focus
     useFocusEffect(
         useCallback(() => {
             loadDisplayName();
             refetchAnnouncements();
-        }, [loadDisplayName, refetchAnnouncements])
+            refetchAssignments();
+            refetchMaterials();
+            refetchEnrollments();
+            refetchEvents();
+        }, [loadDisplayName, refetchAnnouncements, refetchAssignments, refetchMaterials, refetchEnrollments, refetchEvents])
     );
-
 
     return (
         <View style={styles.container}>
@@ -128,6 +148,14 @@ export default function HomeScreen() {
                 style={styles.scrollContainer}
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefreshAll}
+                        tintColor={Colors.light.primary}
+                        colors={[Colors.light.primary]}
+                    />
+                }
             >
                 {/* Green Welcome Banner */}
                 <View style={styles.welcomeBanner}>

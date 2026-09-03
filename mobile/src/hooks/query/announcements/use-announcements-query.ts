@@ -16,18 +16,28 @@ export function useAnnouncementsQuery(args: GetAnnouncementsArgs = {}) {
 
     // Real-time: re-fetch when teacher/admin inserts or updates an announcement
     useEffect(() => {
-        const targetTable = args.subjectId ? 'class_announcements' : 'school_announcements';
-        const channelName = args.subjectId ? `class-announcements-rt-${args.subjectId}` : 'school-announcements-rt';
-        const filterStr = args.subjectId ? `class_id=eq.${args.subjectId}` : undefined;
+        const channelName = args.subjectId ? `announcements-rt-${args.subjectId}` : 'announcements-rt-global';
+
+        const invalidate = () => {
+            queryClient.invalidateQueries({ queryKey: ['announcements'] });
+        };
 
         const channel = supabase
             .channel(channelName)
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: targetTable, filter: filterStr },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['announcements'] });
-                }
+                { event: '*', schema: 'public', table: 'class_announcements' },
+                invalidate
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'school_announcements' },
+                invalidate
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'announcements' },
+                invalidate
             )
             .subscribe();
 
