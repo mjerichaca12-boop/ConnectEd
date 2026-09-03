@@ -45,7 +45,22 @@ describe('getMaterials data service', () => {
                     }))
                 };
             }
-            return {};
+            if (table === 'lessons') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            order: vi.fn(() => ({
+                                order: vi.fn(() => Promise.resolve({ data: [], error: null }))
+                            }))
+                        }))
+                    }))
+                };
+            }
+            return {
+                select: vi.fn(() => ({
+                    eq: vi.fn(() => Promise.resolve({ data: [], error: null }))
+                }))
+            };
         });
 
         const materials = await getMaterials({ subjectId: 'c5f69db9-b961-4dd7-b69c-089e00171bdc', allowFallback: false });

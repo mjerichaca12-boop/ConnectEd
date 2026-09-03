@@ -70,7 +70,15 @@ export interface Material {
     description?: string;
     created_at?: string;
     week_number?: number | null;
+    lesson_id?: string;
     lesson_title?: string;
+    lesson_topic?: string;
+    lesson_description?: string;
+    lesson_objectives?: string;
+    lesson_status?: string;
+    lesson_start_date?: string;
+    lesson_end_date?: string;
+    is_placeholder?: boolean;
 }
 
 export type Role = "Student" | "Teacher" | "Admin";
