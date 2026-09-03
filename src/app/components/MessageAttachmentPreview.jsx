@@ -514,19 +514,62 @@ function AttachmentCard({ att, isSelf, senderName }) {
  *   isSelf     – true if this message was sent by the current user (controls color scheme)
  */
 export function MessageAttachmentPreview({ msg, isSelf }) {
+  if (!msg) return null;
+
   const attachments = [];
   const senderName = msg?.senderName || msg?.sender_name || msg?.senderNameFormatted || "";
 
+  // 1. Collect valid items from msg.attachments if present
   if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
-    msg.attachments.forEach((a) => attachments.push(a));
-  } else if (msg.fileUrl || msg.fileName) {
-    attachments.push({
-      url: msg.fileUrl,
-      name: msg.fileName,
-      type: msg.fileType,
-      size: msg.fileSize,
-      kind: msg.attachmentKind || getAttachmentKind(msg.fileType),
+    msg.attachments.forEach((a) => {
+      const url = a.url || a.file_url || a.path || "";
+      const name = a.name || a.file_name || "file";
+      if (url || name) {
+        attachments.push({
+          id: a.id,
+          url: url,
+          name: name,
+          type: a.type || a.file_type || "",
+          size: a.size || a.file_size || 0,
+          kind: a.kind || getAttachmentKind(a.type || a.file_type, name, url),
+        });
+      }
     });
+  }
+
+  // 2. Always check flat file fields (fileUrl/file_url, fileName/file_name)
+  const flatUrl = msg.fileUrl || msg.file_url || "";
+  const flatName = msg.fileName || msg.file_name || "";
+  if (flatUrl || flatName) {
+    const alreadyExists = attachments.some(a => (flatUrl && a.url === flatUrl) || (flatName && a.name === flatName));
+    if (!alreadyExists) {
+      attachments.push({
+        url: flatUrl,
+        name: flatName || "file",
+        type: msg.fileType || msg.file_type || "",
+        size: msg.fileSize || msg.file_size || 0,
+        kind: msg.attachmentKind || getAttachmentKind(msg.fileType || msg.file_type, flatName, flatUrl),
+      });
+    }
+  }
+
+  // 3. Fallback check for JSON content containing file metadata
+  const textContent = msg.text || msg.content || msg.message_text || "";
+  if (attachments.length === 0 && typeof textContent === "string" && textContent.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(textContent.trim());
+      if (parsed.file_url || parsed.fileUrl) {
+        const url = parsed.file_url || parsed.fileUrl;
+        const name = parsed.file_name || parsed.fileName || "file";
+        attachments.push({
+          url: url,
+          name: name,
+          type: parsed.file_type || parsed.fileType || "",
+          size: parsed.file_size || parsed.fileSize || 0,
+          kind: getAttachmentKind(parsed.file_type || parsed.fileType, name, url),
+        });
+      }
+    } catch {}
   }
 
   if (attachments.length === 0) return null;
