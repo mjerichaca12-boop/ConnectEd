@@ -600,14 +600,29 @@ app.post("/auth/forgot-password", async (req, res) => {
     try {
         console.log(`[forgot-password] Request received for ${email}`);
 
-        // 1. Verify user exists in database first
-        const { data: usersData, error: listError } = await supabase.auth.admin.listUsers();
-        if (listError || !usersData?.users) {
-            throw new Error("Failed to scan user directory");
+        // 1. Verify user exists in database (check profiles table and auth users)
+        let targetEmail = email.trim().toLowerCase();
+        let targetUserId = null;
+
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, email, username")
+            .or(`email.ilike.${targetEmail},username.ilike.${targetEmail}`)
+            .maybeSingle();
+
+        if (profile) {
+            targetUserId = profile.id;
+            targetEmail = (profile.email || targetEmail).toLowerCase();
+        } else {
+            const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+            const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === targetEmail);
+            if (authUser) {
+                targetUserId = authUser.id;
+                targetEmail = authUser.email.toLowerCase();
+            }
         }
 
-        const authUser = usersData.users.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
-        if (!authUser) {
+        if (!targetUserId) {
             return res.status(404).json({ error: "No account found with this email address." });
         }
 
@@ -737,20 +752,33 @@ app.post("/auth/update-password", async (req, res) => {
             return res.status(401).json({ error: "Unauthorized operation or expired OTP session." });
         }
 
-        // 2. Find the user ID by email
-        const { data: usersData, error: listError } = await supabase.auth.admin.listUsers();
-        if (listError || !usersData?.users) {
-            throw new Error("Failed to scan user directory");
+        // 2. Find the user ID by email or profile
+        let targetUserId = null;
+        const normalizedEmail = email.trim().toLowerCase();
+
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("id, email, username")
+            .or(`email.ilike.${normalizedEmail},username.ilike.${normalizedEmail}`)
+            .maybeSingle();
+
+        if (profile) {
+            targetUserId = profile.id;
+        } else {
+            const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+            const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
+            if (authUser) {
+                targetUserId = authUser.id;
+            }
         }
 
-        const authUser = usersData.users.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
-        if (!authUser) {
+        if (!targetUserId) {
             return res.status(404).json({ error: "User account not found." });
         }
 
         // 3. Update the password server-to-server securely using Supabase Admin Auth API!
         const { error: updateError } = await supabase.auth.admin.updateUserById(
-            authUser.id,
+            targetUserId,
             { password: password }
         );
 

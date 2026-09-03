@@ -22,7 +22,7 @@ export default function LoginScreen() {
     const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
-        if (!email || !password) {
+        if (!email.trim() || !password) {
             alert("Please enter your username/ email address and password.");
             return;
         }
@@ -31,27 +31,25 @@ export default function LoginScreen() {
         try {
             const normalizedInput = email.trim().toLowerCase();
 
-            // First, find profile by email or username
-            const { data: profile, error: profileError } = await supabase
+            // 1. Try to find profile by email or username
+            const { data: profile } = await supabase
                 .from("profiles")
                 .select("id, role, must_change_password, email, username")
                 .or(`email.ilike.${normalizedInput},username.ilike.${normalizedInput}`)
                 .maybeSingle();
 
-            if (profileError || !profile) {
-                alert("Wrong password or email/username. Please check your credentials and try again.");
-                setIsLoading(false);
-                return;
+            let signInResult: any = null;
+
+            if (profile?.email) {
+                // Try signing in with the email from the profile first
+                signInResult = await supabase.auth.signInWithPassword({
+                    email: profile.email,
+                    password,
+                });
             }
 
-            // Try signing in with the email from the profile first
-            let signInResult = await supabase.auth.signInWithPassword({
-                email: profile.email,
-                password,
-            });
-
-            // Fallback: try logging in with username@temp.local if email sign-in fails and username exists
-            if (signInResult.error && profile.username) {
+            // Fallback 1: try logging in with username@temp.local if email sign-in fails
+            if ((!signInResult || signInResult.error) && profile?.username) {
                 const retryResult = await supabase.auth.signInWithPassword({
                     email: `${profile.username.toLowerCase()}@temp.local`,
                     password,
@@ -61,26 +59,49 @@ export default function LoginScreen() {
                 }
             }
 
-            if (signInResult.error) throw signInResult.error;
+            // Fallback 2: try signing in directly with the exact input entered
+            if (!signInResult || signInResult.error) {
+                const directResult = await supabase.auth.signInWithPassword({
+                    email: normalizedInput,
+                    password,
+                });
+                if (!directResult.error) {
+                    signInResult = directResult;
+                }
+            }
 
-            if (profile.role !== 'student') {
+            if (!signInResult || signInResult.error) {
+                alert("Wrong password or email/username. Please check your credentials and try again.");
+                setIsLoading(false);
+                return;
+            }
+
+            // Fetch the authenticated user's profile
+            const authUserId = signInResult.data?.user?.id;
+            let currentProfile = profile;
+            if (!currentProfile && authUserId) {
+                const { data: pData } = await supabase
+                    .from("profiles")
+                    .select("id, role, must_change_password, email, username")
+                    .eq("id", authUserId)
+                    .maybeSingle();
+                currentProfile = pData;
+            }
+
+            if (currentProfile && currentProfile.role && currentProfile.role !== 'student') {
                 await supabase.auth.signOut();
                 alert("Only student accounts are permitted to use the mobile application. Teachers must use the web portal.");
                 return;
             }
 
-            if (profile.must_change_password) {
+            if (currentProfile?.must_change_password) {
                 router.replace("/(auth)/secure-account" as Href);
             } else {
                 router.replace("/(tabs)/home" as Href);
             }
         } catch (error: any) {
-            console.log("Login failed: invalid credentials or network error");
-            if (error.message && error.message.toLowerCase().includes("credentials")) {
-                alert("Wrong password or email/username. Please check your credentials and try again.");
-            } else {
-                alert(error.message || "Wrong password or email/username.");
-            }
+            console.log("Login failed:", error);
+            alert("Wrong password or email/username. Please check your credentials and try again.");
         } finally {
             setIsLoading(false);
         }
@@ -103,8 +124,7 @@ export default function LoginScreen() {
                             placeholder="Username/Email Address"
                             placeholderTextColor="#94A3B8"
                             value={email}
-                            onChangeText={(text) => setEmail(text.replace(/\s/g, '').slice(0, 30))}
-                            maxLength={30}
+                            onChangeText={(text) => setEmail(text.trim())}
                             keyboardType="email-address"
                             autoCapitalize="none"
                         />
@@ -118,8 +138,7 @@ export default function LoginScreen() {
                             placeholder="Password"
                             placeholderTextColor="#94A3B8"
                             value={password}
-                            onChangeText={(text) => setPassword(text.replace(/\s/g, '').slice(0, 15))}
-                            maxLength={15}
+                            onChangeText={setPassword}
                             secureTextEntry={!showPassword}
                             autoCapitalize="none"
                         />
