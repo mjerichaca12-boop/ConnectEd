@@ -564,7 +564,7 @@ export function AdminMessages() {
         const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
         
         const { data: conversationData, error: convError } = await db
-          .from("groupchats")
+          .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
           .eq("is_group", true);
