@@ -17,6 +17,9 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
   // Fetch initial data
   const fetchData = async () => {
     if (!teacherId || !assignedSubjects.length || !supabase) {
+      setAssessments([]);
+      setSubmissions([]);
+      setGrades([]);
       setLoading(false);
       return;
     }

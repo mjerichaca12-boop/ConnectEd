@@ -53,6 +53,7 @@ import {
   Send,
   RefreshCw,
   ClipboardList,
+  Loader2,
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
@@ -1387,6 +1388,22 @@ export function ClassDetail() {
 
   useEffect(() => {
     let isMounted = true;
+
+    setLoading(true);
+    setClassData(null);
+    setAssignedStudents([]);
+    setMaterials([]);
+    setAssignments([]);
+    setAnnouncements([]);
+    setMetrics({
+      totalLessons: 0,
+      publishedLessons: 0,
+      activitiesCount: 0,
+      seatworksCount: 0,
+      assignmentsCount: 0,
+      quizzesCount: 0,
+      materialsCount: 0
+    });
 
     const initialize = async () => {
       const userData = localStorage.getItem("currentUser");
@@ -3700,6 +3717,17 @@ export function ClassDetail() {
   };
 
 
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
+          <p className="text-sm font-medium text-gray-600">Loading class details...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!classData) {
     return (

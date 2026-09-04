@@ -139,7 +139,7 @@ export function TeacherDashboard() {
   const fetchTeacherSubjects = async (id) => {
     if (!supabase || !id) {
       setAssignedSubjects([]);
-      return;
+      return [];
     }
 
     const { data, error } = await supabase
@@ -149,7 +149,8 @@ export function TeacherDashboard() {
 
     if (error) {
       console.error("Error fetching teacher subjects:", error);
-      return;
+      setAssignedSubjects([]);
+      return [];
     }
 
     const seen = new Set();
@@ -173,18 +174,33 @@ export function TeacherDashboard() {
     }
 
     setAssignedSubjects(uniqueSubjects);
+    return uniqueSubjects;
   };
 
-  const fetchTeacherStudentTotal = async (id) => {
+  const fetchTeacherStudentTotal = async (id, currentAssignedSubjects = []) => {
     if (!supabase || !id) {
       setTotalStudents(0);
       return;
     }
 
-    const { data, error } = await supabase
+    const activeSubjects = Array.isArray(currentAssignedSubjects) ? currentAssignedSubjects : assignedSubjects;
+    const subjectIds = (activeSubjects || []).map((s) => String(s.id)).filter(Boolean);
+
+    if (activeSubjects.length === 0) {
+      setTotalStudents(0);
+      return;
+    }
+
+    let query = supabase
       .from("teacher_student_assignments")
-      .select("student_id")
+      .select("student_id, subject_id")
       .eq("teacher_id", id);
+
+    if (subjectIds.length > 0) {
+      query = query.in("subject_id", subjectIds);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("Error fetching teacher student total:", error);
@@ -390,13 +406,14 @@ export function TeacherDashboard() {
 
   useEffect(() => {
     if (teacherId && activeSchoolYear && activeQuarter) {
+      fetchTeacherSubjects(teacherId).then((subs) => {
+        fetchTeacherStudentTotal(teacherId, subs || []);
+      });
       Promise.all([
         loadAnnouncements().then(rows => {
           setAnnouncements(rows);
           setAnnouncementsError("");
         }),
-        fetchTeacherSubjects(teacherId),
-        fetchTeacherStudentTotal(teacherId),
         fetchGradesEncodedTotal(teacherId),
         fetchLessonsCount(teacherId),
         fetchRecentGrades(teacherId)
