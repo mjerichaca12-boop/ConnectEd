@@ -1,5 +1,5 @@
 import React, { useEffect, useState, lazy, Suspense, Component } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
 import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
 import { AcademicProvider } from "./context/AcademicContext";
