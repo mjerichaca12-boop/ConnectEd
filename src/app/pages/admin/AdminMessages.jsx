@@ -234,10 +234,39 @@ export function AdminMessages() {
     resolveAdmin();
   }, []);
 
+const getDismissedConvIds = (userId) => {
+  if (!userId) return new Set();
+  try {
+    const raw = localStorage.getItem(`dismissed_conversations_${userId}`);
+    return new Set(JSON.parse(raw || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const addDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.add(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
+const removeDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.delete(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
   const saveConversations = (updated) => {
     const sorted = [...updated].sort(
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
+    conversationsRef.current = sorted;
     setConversations(sorted);
     try {
       localStorage.setItem("admin_conversations", JSON.stringify(sorted));
@@ -687,12 +716,15 @@ export function AdminMessages() {
         }
       }
       
-      // Combine direct messages and group conversations
-      const allConversations = [...conversationsByParticipant.values(), ...groupConversations];
+      const adminDismissedSet = getDismissedConvIds(currentAdminId);
+
+      // Combine direct messages and group conversations (respecting dismissedSet)
+      const allConversations = [...conversationsByParticipant.values(), ...groupConversations]
+        .filter((c) => !adminDismissedSet.has(c.id));
       
       const inMemory = conversationsRef.current || [];
       inMemory.forEach((c) => {
-        if (!allConversations.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+        if (!adminDismissedSet.has(c.id) && !allConversations.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
           allConversations.push(c);
         }
       });
@@ -701,13 +733,14 @@ export function AdminMessages() {
         const localKey = currentAdminId ? `admin_conversations_${currentAdminId}` : "admin_conversations";
         const local = JSON.parse(localStorage.getItem(localKey) || localStorage.getItem("admin_conversations") || "[]");
         local.forEach((lc) => {
-          if (!allConversations.some((existing) => existing.id === lc.id || (!lc.isGroup && existing.participantId === lc.participantId))) {
+          if (!adminDismissedSet.has(lc.id) && !allConversations.some((existing) => existing.id === lc.id || (!lc.isGroup && existing.participantId === lc.participantId))) {
             allConversations.push(lc);
           }
         });
       } catch(e) {}
 
-      saveConversations(allConversations);
+      const filteredFinal = allConversations.filter((c) => !adminDismissedSet.has(c.id));
+      saveConversations(filteredFinal);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
     }
@@ -745,17 +778,18 @@ export function AdminMessages() {
 
   const handleLeaveConversation = async () => {
     if (!selectedConv || !adminId) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(adminId, convId);
     try {
-      const { error } = await db
+      await db
         .from("conversation_participants")
         .delete()
-        .eq("conversation_id", selectedConv.id)
+        .eq("conversation_id", convId)
         .eq("profile_id", adminId);
       
-      if (error) throw error;
-      
-      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
-      setConversations(remaining);
+      const remaining = conversations.filter((c) => c.id !== convId);
+      conversationsRef.current = remaining;
+      saveConversations(remaining);
       setShowDeleteConfirm(false);
       setShowGroupMenu(false);
       setSelectedConvId(remaining.length ? remaining[0].id : null);
@@ -768,12 +802,18 @@ export function AdminMessages() {
 
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(adminId, convId);
     try { 
-      const { error } = await adminApi.db("conversations", "delete", { eq: { column: "id", value: selectedConv.id } });
-      if (error) throw error;
-      
-      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
-      setConversations(remaining);
+      await adminApi.db("conversations", "delete", { eq: { column: "id", value: convId } });
+      await db.from("groupchats").delete().eq("id", convId);
+      await db.from("conversations").delete().eq("id", convId);
+      await db.from("conversation_participants").delete().eq("conversation_id", convId);
+      await db.from("messages").delete().eq("conversation_id", convId);
+
+      const remaining = conversations.filter((c) => c.id !== convId);
+      conversationsRef.current = remaining;
+      saveConversations(remaining);
       setShowDeleteConfirm(false);
       setShowGroupMenu(false);
       setSelectedConvId(remaining.length ? remaining[0].id : null);

@@ -41,6 +41,34 @@ const FILTERS = [
 
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 
+const getDismissedConvIds = (userId) => {
+  if (!userId) return new Set();
+  try {
+    const raw = localStorage.getItem(`dismissed_conversations_${userId}`);
+    return new Set(JSON.parse(raw || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const addDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.add(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
+const removeDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.delete(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
 const buildProfileName = (row) => {
   const fullName = [row?.first_name, row?.middle_name, row?.last_name]
     .map((part) => String(part || "").trim())
@@ -319,6 +347,7 @@ function TeacherMessages() {
     const sorted = [...updated].sort(
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
+    conversationsRef.current = sorted;
     setConversations(sorted);
     const activeTeacherId = typeof teacherId !== 'undefined' && teacherId ? teacherId : null;
     if (activeTeacherId) {
@@ -664,6 +693,7 @@ function TeacherMessages() {
       });
 
       // Load group conversations
+      const dismissedSet = getDismissedConvIds(currentTeacherId);
       let groupConvList = [];
       const { data: participantRows, error: participantError } = await db
         .from("conversation_participants")
@@ -671,29 +701,32 @@ function TeacherMessages() {
         .eq("profile_id", currentTeacherId);
 
       if (!participantError && participantRows && participantRows.length > 0) {
-        const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id));
+        const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id))
+          .filter((id) => !dismissedSet.has(id));
 
-        const { data: conversationData } = await db
-          .from("conversations")
-          .select("id, name, is_group, created_by")
-          .in("id", conversationIds)
-          .eq("is_group", true);
-        if (conversationData) groupConvList.push(...conversationData);
+        if (conversationIds.length > 0) {
+          const { data: conversationData } = await db
+            .from("conversations")
+            .select("id, name, is_group, created_by")
+            .in("id", conversationIds)
+            .eq("is_group", true);
+          if (conversationData) groupConvList.push(...conversationData);
 
-        const { data: groupchatsData } = await db
-          .from("groupchats")
-          .select("id, name, is_group, created_by")
-          .in("id", conversationIds);
-        if (groupchatsData) {
-          groupchatsData.forEach((gc) => {
-            if (!groupConvList.some((existing) => existing.id === gc.id)) {
-              groupConvList.push(gc);
-            }
-          });
+          const { data: groupchatsData } = await db
+            .from("groupchats")
+            .select("id, name, is_group, created_by")
+            .in("id", conversationIds);
+          if (groupchatsData) {
+            groupchatsData.forEach((gc) => {
+              if (!groupConvList.some((existing) => existing.id === gc.id)) {
+                groupConvList.push(gc);
+              }
+            });
+          }
         }
       }
 
-      // ALSO fetch group conversations created by current user to avoid missing groups
+      // ALSO fetch group conversations created by current user to avoid missing groups (excluding dismissed ones)
       const { data: myCreatedGroups } = await db
         .from("conversations")
         .select("id, name, is_group, created_by")
@@ -702,7 +735,7 @@ function TeacherMessages() {
 
       if (myCreatedGroups && myCreatedGroups.length > 0) {
         myCreatedGroups.forEach((cg) => {
-          if (!groupConvList.some((existing) => existing.id === cg.id)) {
+          if (!dismissedSet.has(cg.id) && !groupConvList.some((existing) => existing.id === cg.id)) {
             groupConvList.push(cg);
           }
         });
@@ -715,11 +748,14 @@ function TeacherMessages() {
 
       if (myCreatedGroupchats && myCreatedGroupchats.length > 0) {
         myCreatedGroupchats.forEach((cg) => {
-          if (!groupConvList.some((existing) => existing.id === cg.id)) {
+          if (!dismissedSet.has(cg.id) && !groupConvList.some((existing) => existing.id === cg.id)) {
             groupConvList.push(cg);
           }
         });
       }
+
+      // Filter out any dismissed groups from groupConvList
+      groupConvList = groupConvList.filter((cg) => !dismissedSet.has(cg.id));
 
       for (const conv of groupConvList) {
         const { data: groupParticipants, error: groupPartError } = await db
@@ -772,26 +808,26 @@ function TeacherMessages() {
         });
       }
 
-      // Merge in-memory active conversations AND cached local storage conversations
+      // Merge in-memory active conversations AND cached local storage conversations (respecting dismissedSet)
       const allLoaded = Array.from(conversationsByParticipant.values());
       const inMemoryConvs = conversationsRef.current || [];
       inMemoryConvs.forEach((c) => {
-        if (!allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+        if (!dismissedSet.has(c.id) && !allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
           allLoaded.push(c);
         }
       });
       try {
         const cached = JSON.parse(localStorage.getItem(`teacher_conversations_${currentTeacherId}`) || "[]");
         cached.forEach((c) => {
-          if (!allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          if (!dismissedSet.has(c.id) && !allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
             allLoaded.push(c);
           }
         });
       } catch (e) {}
 
-      const mapped = allLoaded.sort(
-        (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
-      );
+      const mapped = allLoaded
+        .filter((c) => !dismissedSet.has(c.id))
+        .sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
       saveConversations(mapped);
       setSelectedConvId((prev) => {
@@ -979,6 +1015,7 @@ function TeacherMessages() {
     if (memberIds.length < 2) { setPageError("Select at least 2 users."); return; }
     const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const conversationId = `group_${uid}`;
+    removeDismissedConvId(teacherId, conversationId);
     const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
     
     const groupTitle = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
@@ -1448,12 +1485,14 @@ function TeacherMessages() {
 
   const handleLeaveConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(teacherId, convId);
     try {
-      await db.from("conversation_participants").delete().eq("conversation_id", selectedConv.id).eq("profile_id", teacherId);
+      await db.from("conversation_participants").delete().eq("conversation_id", convId).eq("profile_id", teacherId);
     } catch (err) {
       console.error("[TeacherMessages] Leave error:", err);
     }
-    const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+    const remaining = conversations.filter((c) => c.id !== convId);
     saveConversations(remaining);
     setShowDeleteConfirm(false);
     setShowGroupMenu(false);
@@ -1463,13 +1502,17 @@ function TeacherMessages() {
 
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(teacherId, convId);
     try { 
-      await db.from("groupchats").delete().eq("id", selectedConv.id);
-      await db.from("conversations").delete().eq("id", selectedConv.id);
+      await db.from("groupchats").delete().eq("id", convId);
+      await db.from("conversations").delete().eq("id", convId);
+      await db.from("conversation_participants").delete().eq("conversation_id", convId);
+      await db.from(MESSAGE_TABLE).delete().eq("conversation_id", convId);
     } catch (err) {
       console.error("[TeacherMessages] Delete error:", err);
     }
-    const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+    const remaining = conversations.filter((c) => c.id !== convId);
     saveConversations(remaining);
     setShowDeleteConfirm(false);
     setShowGroupMenu(false);
