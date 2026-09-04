@@ -64,6 +64,7 @@ function Classes() {
             : (subject.enrolled !== undefined ? subject.enrolled : 0)
         ),
         students: [],
+        capacity: Number(subject.capacity || 0),
         gradeLevel: rawGrade
       };
     });
@@ -400,7 +401,7 @@ function Classes() {
                     )}
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
-                      <span>{classItem.studentCount} / {classItem.capacity || 30} students enrolled</span>
+                      <span>{classItem.studentCount} / {classItem.capacity > 0 ? classItem.capacity : (classItem.capacity === 0 ? "∞" : classItem.capacity)} students enrolled</span>
                       {classItem.capacity > 0 && classItem.studentCount >= classItem.capacity && (
                         <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 rounded">Full</span>
                       )}

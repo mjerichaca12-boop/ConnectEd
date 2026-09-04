@@ -1703,7 +1703,7 @@ export function ClassDetail() {
       return;
     }
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -1798,7 +1798,7 @@ export function ClassDetail() {
     const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
     if (selectedStudents.length === 0) return;
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -1973,7 +1973,7 @@ export function ClassDetail() {
   const handleImportCSV = async () => {
     if (!supabase || !teacherProfileId || csvValidRecords.length === 0) return;
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -4020,9 +4020,9 @@ export function ClassDetail() {
             <div className="p-6">
               {/* STUDENTS TAB */}
               {activeTab === "students" && (() => {
-                const capacity = Number(classData?.capacity || 30);
+                const capacity = Number(classData?.capacity || 0);
                 const enrolledCount = activeStudentsList.length;
-                const availableSlots = Math.max(0, capacity - enrolledCount);
+                const availableSlots = capacity > 0 ? Math.max(0, capacity - enrolledCount) : "Unlimited";
                 const isClassFull = capacity > 0 && enrolledCount >= capacity;
 
                 return (
@@ -4032,7 +4032,7 @@ export function ClassDetail() {
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         <p className="text-sm text-gray-500 mt-0.5">
-                          {enrolledCount} / {capacity} Students
+                          {enrolledCount} / {capacity > 0 ? capacity : "∞"} Students
                           <span className="ml-2 font-medium">
                             ({isClassFull ? "0 slots available" : `${availableSlots} slot(s) available`})
                           </span>
@@ -4432,9 +4432,9 @@ export function ClassDetail() {
 
             <div className="p-6 overflow-y-auto flex-1">
               {(() => {
-                const capacity = Number(classData?.capacity || 30);
+                const capacity = Number(classData?.capacity || 0);
                 const currentEnrolled = assignedStudents.length;
-                const availableSlots = Math.max(0, capacity - currentEnrolled);
+                const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : Infinity;
                 const selectedCount = addStudentMode === "individual" ? selectedStudentIds.length : (addStudentMode === "masterlist" ? selectedMasterlistIds.length : csvValidRecords.length);
                 const isOverCapacity = capacity > 0 && selectedCount > availableSlots;
 
@@ -4443,7 +4443,7 @@ export function ClassDetail() {
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity} Enrolled ({availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full"})</span>
+                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity > 0 ? capacity : "∞"} Enrolled ({capacity > 0 ? (availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full") : "Unlimited"})</span>
                       </div>
                     </div>
 
