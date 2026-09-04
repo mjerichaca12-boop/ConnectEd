@@ -1310,10 +1310,12 @@ export function ClassDetail() {
         const queryFilter = !isNaN(Number(cleanClassId)) && Number(cleanClassId) > 0
           ? `subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId)}`
           : `subject_id.eq.${cleanClassId}`;
-        const { data: cmData, error: cmErr } = await supabase
+        let cmQuery = supabase
           .from("class_materials")
           .select("*")
           .or(queryFilter);
+        if (cleanTeacherId) cmQuery = cmQuery.eq("teacher_id", cleanTeacherId);
+        const { data: cmData, error: cmErr } = await cmQuery;
 
         if (cmErr) {
           if (cmErr.status === 404 || cmErr.code === "PGRST205" || cmErr.code === "42P01" || cmErr.status === 400) {

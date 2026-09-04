@@ -27,11 +27,12 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
     try {
       const subjectIds = assignedSubjects.map(s => s.id);
       
-      // 1. Fetch lessons for these subjects
+      // 1. Fetch lessons for these subjects created by this teacher
       const { data: lessonsData } = await supabase
         .from('lessons')
-        .select('id, subject_id, status')
-        .in('subject_id', subjectIds);
+        .select('id, subject_id, status, teacher_id')
+        .in('subject_id', subjectIds)
+        .eq('teacher_id', teacherId);
 
       const lessonIds = (lessonsData || []).map(l => String(l.id));
 
