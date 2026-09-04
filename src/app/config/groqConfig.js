@@ -4,12 +4,13 @@
 
 // Supported production models on Groq
 export const GROQ_MODELS = {
-  PRIMARY: "llama-3.1-8b-instant",
-  FALLBACK_1: "llama-3.3-70b-versatile",
+  PRIMARY: "groq/compound-mini",
+  FALLBACK_1: "groq/compound",
+  FALLBACK_2: "qwen/qwen3.8-27b",
 };
 
-// Maximum retry attempts per user request (Primary -> Fallback 1 -> Stop)
-export const MAX_AI_ATTEMPTS = 2;
+// Maximum retry attempts per user request (Primary -> Fallback 1 -> Fallback 2 -> Stop)
+export const MAX_AI_ATTEMPTS = 3;
 
 // Token & Context Budgets
 export const MAX_TOKENS = 1500;
@@ -33,10 +34,12 @@ export const parseGroqError = (error) => {
 
   const isRateLimit = status === 429 || message.includes("rate limit") || isTPD || isTPM;
 
-  const isDecommissioned = status === 400 && (
+  const isDecommissioned = (status === 400 || status === 404) && (
     message.includes("decommissioned") || 
     message.includes("model_decommissioned") || 
-    message.includes("deprecated")
+    message.includes("deprecated") ||
+    message.includes("does not exist") ||
+    message.includes("model_not_found")
   );
 
   return {
