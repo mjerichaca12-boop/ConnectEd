@@ -367,15 +367,14 @@ export const adminApi = {
         }
       }
 
-      // 2. Count current enrolled in profiles
+      // 2. Count current enrolled in profiles (source of truth)
       const { count: profileEnrolledCount } = await supabase
         .from("profiles")
         .select("id", { count: "exact", head: true })
         .eq("role", "student")
         .ilike("section", cleanSection);
 
-      const maxSubjectEnrolled = matchingSubs.reduce((max, s) => Math.max(max, Number(s.enrolled || 0)), 0);
-      const currentEnrolled = Math.max(profileEnrolledCount || 0, maxSubjectEnrolled);
+      const currentEnrolled = profileEnrolledCount || 0;
 
       // 3. Fetch target student records to deduplicate
       const targetTable = isMasterlist ? "student_masterlist" : "profiles";

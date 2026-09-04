@@ -191,15 +191,14 @@ function StudentManagement() {
           }
         }
 
-        // Count enrolled profiles in this grade & section
+        // Count enrolled profiles in this section (source of truth)
         const { count: profileEnrolledCount } = await db
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("role", "student")
           .ilike("section", cleanSection);
 
-        const maxSubjectEnrolled = matchingSubs.reduce((max, s) => Math.max(max, Number(s.enrolled || 0)), 0);
-        const currentEnrolled = Math.max(profileEnrolledCount || 0, maxSubjectEnrolled);
+        const currentEnrolled = profileEnrolledCount || 0;
 
         // Calculate deduplicated student count
         const alreadyEnrolledCount = selectedRows.filter(s => {
