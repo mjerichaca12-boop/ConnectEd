@@ -388,35 +388,13 @@ function AdminAnnouncements() {
 
         const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
         const contentType = file.type || "application/octet-stream";
-        let uploadError = null;
 
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = e => reject(e);
-        });
-        const base64File = await toBase64(file);
-
-        // Primary: Admin API upload using Service Role Key (bypasses RLS policies & handles static admin auth)
-        const { error: apiErr } = await adminApi.db("storage", "storage_upload", {
-          payload: {
-            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
-            path: storagePath,
-            base64File,
-            contentType
-          }
-        });
-
-        if (apiErr) {
-          console.warn("[AdminAnnouncements] Admin API storage upload notice, attempting direct storage upload:", apiErr.message || apiErr);
-          const { error: directErr } = await client.storage
-            .from(ANNOUNCEMENT_ATTACHMENT_BUCKET)
-            .upload(storagePath, file, { contentType, upsert: true });
-          uploadError = directErr;
-        } else {
-          uploadError = null;
-        }
+        const { error: uploadError } = await adminApi.uploadStorageFile(
+          ANNOUNCEMENT_ATTACHMENT_BUCKET,
+          storagePath,
+          file,
+          contentType
+        );
 
         if (uploadError) {
           console.error("Announcement attachment upload failed:", uploadError);

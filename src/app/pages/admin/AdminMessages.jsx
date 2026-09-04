@@ -956,26 +956,18 @@ const removeDismissedConvId = (userId, convId) => {
         }
         const cleanedName = sanitizeAttachmentFileName(file.name);
         const filePath = `${adminSenderId}/${activeConversation.participantId || "group"}/${Date.now()}_${cleanedName}`;
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = e => reject(e);
-        });
-        const base64File = await toBase64(file);
+        const contentType = file.type || "application/octet-stream";
         
-        const uploadResult = await adminApi.db("storage", "storage_upload", {
-          payload: {
-            bucket: MESSAGE_ATTACHMENT_BUCKET,
-            path: filePath,
-            base64File,
-            contentType: file.type || "application/octet-stream"
-          }
-        });
+        const { error: uploadError } = await adminApi.uploadStorageFile(
+          MESSAGE_ATTACHMENT_BUCKET,
+          filePath,
+          file,
+          contentType
+        );
           
-        if (uploadResult.error) {
-          console.error("Upload error:", uploadResult.error);
-          setPageError(`File upload failed: ${uploadResult.error.message}`);
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          setPageError(`File upload failed: ${uploadError.message || uploadError}`);
           setIsUploading(false);
           return;
         }

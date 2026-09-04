@@ -95,12 +95,17 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head, or, is: isArgs, match } = body;
 
-    if ((!table && action !== "storage_upload" && action !== "storage_remove") || !action) {
+    if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }
 
     let query;
-    if (action === "storage_upload") {
+    if (action === "create_signed_upload_url") {
+      const { bucket, path } = payload || {};
+      const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUploadUrl(path);
+      if (error) throw error;
+      return res.status(200).json(data);
+    } else if (action === "storage_upload") {
       const buffer = Buffer.from(payload.base64File, 'base64');
       const { data, error } = await supabaseAdmin.storage.from(payload.bucket).upload(payload.path, buffer, {
         contentType: payload.contentType,

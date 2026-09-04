@@ -178,6 +178,54 @@ export const adminApi = {
     }
   },
 
+  async uploadStorageFile(bucket, path, file, contentType = "application/octet-stream") {
+    // 1. Try direct Supabase client binary upload first (works for authenticated users with session)
+    try {
+      const { data: directData, error: directErr } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, { contentType, upsert: true });
+
+      if (!directErr && directData) {
+        return { data: directData, error: null };
+      }
+    } catch (e) {
+      // Continue to signed upload flow
+    }
+
+    // 2. Request signed upload URL token from admin API (bypasses RLS & avoids 413 Vercel payload size limit)
+    const signedRes = await this.db("storage", "create_signed_upload_url", {
+      payload: { bucket, path }
+    });
+
+    if (signedRes.error || !signedRes.data?.token) {
+      // Fallback: If create_signed_upload_url is unavailable, attempt small file base64 upload
+      if (file.size && file.size < 2.5 * 1024 * 1024) {
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = err => reject(err);
+        });
+        const base64File = await toBase64(file);
+        return this.db("storage", "storage_upload", {
+          payload: { bucket, path, base64File, contentType }
+        });
+      }
+      return { data: null, error: signedRes.error || new Error("Failed to generate signed upload authorization.") };
+    }
+
+    const { token } = signedRes.data;
+    const { data: uploadData, error: uploadErr } = await supabase.storage
+      .from(bucket)
+      .uploadToSignedUrl(path, token, file, { contentType, upsert: true });
+
+    if (uploadErr) {
+      return { data: null, error: uploadErr };
+    }
+
+    return { data: uploadData, error: null };
+  },
+
   async batchGenerateAccounts(studentsBatch) {
     return this.fetchWithToken("/api/admin/batch-accounts", {
       method: "POST",
