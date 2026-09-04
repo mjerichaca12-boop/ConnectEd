@@ -140,8 +140,106 @@ function StudentManagement() {
   const [showBulkAssignSectionModal, setShowBulkAssignSectionModal] = useState(false);
   const [targetBulkSection, setTargetBulkSection] = useState("");
   const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+  const [sectionCapacityInfo, setSectionCapacityInfo] = useState(null);
+  const [isLoadingCapacity, setIsLoadingCapacity] = useState(false);
 
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!showBulkAssignSectionModal || !targetBulkSection) {
+      setSectionCapacityInfo(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchCapacityInfo = async () => {
+      setIsLoadingCapacity(true);
+      try {
+        const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+        const currentList = activeTab === "Profiles" ? students : masterlist;
+        const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+        
+        const firstGrade = selectedRows[0]?.year_level || "";
+        const formattedGradeLevel = firstGrade ? `Grade ${firstGrade.replace(/\D/g, "")}` : "Grade 7";
+        const targetNormGradeNum = formattedGradeLevel.replace(/\D/g, "");
+        const cleanSection = formatSectionName(targetBulkSection);
+
+        if (!cleanSection) {
+          if (isMounted) {
+            setSectionCapacityInfo(null);
+            setIsLoadingCapacity(false);
+          }
+          return;
+        }
+
+        // Query subjects table for capacity
+        const { data: subsData } = await adminApi.db("subjects", "select", {
+          payload: "id, name, code, capacity, enrolled, grade_level, section"
+        });
+
+        const matchingSubs = (subsData || []).filter(s => {
+          const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+          const sSec = (s.section || "").trim().toLowerCase();
+          return sGradeNum === targetNormGradeNum && sSec === cleanSection.toLowerCase();
+        });
+
+        let capacity = 0;
+        if (matchingSubs.length > 0) {
+          const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+          if (caps.length > 0) {
+            capacity = Math.min(...caps);
+          }
+        }
+
+        // Count enrolled profiles in this grade & section
+        const { count: profileEnrolledCount } = await db
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "student")
+          .ilike("section", cleanSection);
+
+        const maxSubjectEnrolled = matchingSubs.reduce((max, s) => Math.max(max, Number(s.enrolled || 0)), 0);
+        const currentEnrolled = Math.max(profileEnrolledCount || 0, maxSubjectEnrolled);
+
+        // Calculate deduplicated student count
+        const alreadyEnrolledCount = selectedRows.filter(s => {
+          const studentSec = (s.section || "").trim().toLowerCase();
+          return studentSec === cleanSection.toLowerCase();
+        }).length;
+
+        const newStudentsCount = selectedSet.size - alreadyEnrolledCount;
+        const projectedEnrolled = currentEnrolled + newStudentsCount;
+        const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : "Unlimited";
+        const isExceeded = capacity > 0 && projectedEnrolled > capacity;
+
+        if (isMounted) {
+          setSectionCapacityInfo({
+            capacity,
+            currentEnrolled,
+            availableSlots,
+            newStudentsCount,
+            alreadyEnrolledCount,
+            totalSelected: selectedSet.size,
+            projectedEnrolled,
+            isExceeded,
+            cleanSection,
+            formattedGradeLevel,
+            matchingSubjects: matchingSubs
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching capacity info:", err);
+      } finally {
+        if (isMounted) setIsLoadingCapacity(false);
+      }
+    };
+
+    fetchCapacityInfo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showBulkAssignSectionModal, targetBulkSection, selectedStudentIds, selectedMasterlistIds, activeTab, students, masterlist]);
 
   useEffect(() => {
     if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal) {
@@ -522,6 +620,45 @@ function StudentManagement() {
 
     if ((lrnResult.data ?? []).length > 0) {
       errors.lrn = "LRN already exists";
+    }
+
+    if (formData.section && formData.year_level) {
+      const cleanSec = formatSectionName(formData.section);
+      const normGrade = normalizeYearLevel(formData.year_level);
+      if (cleanSec && normGrade) {
+        const originalStudent = excludeId ? students.find(s => s.id === excludeId) : null;
+        const isSameSection = originalStudent && (originalStudent.section || "").trim().toLowerCase() === cleanSec.toLowerCase();
+
+        if (!isSameSection) {
+          const { data: subsData } = await adminApi.db("subjects", "select", {
+            payload: "capacity, grade_level, section"
+          });
+
+          const matchingSubs = (subsData || []).filter(s => {
+            const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+            const sSec = (s.section || "").trim().toLowerCase();
+            return sGradeNum === normGrade && sSec === cleanSec.toLowerCase();
+          });
+
+          let capacity = 0;
+          if (matchingSubs.length > 0) {
+            const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+            if (caps.length > 0) capacity = Math.min(...caps);
+          }
+
+          if (capacity > 0) {
+            const { count: enrolledCount } = await db
+              .from("profiles")
+              .select("id", { count: "exact", head: true })
+              .eq("role", "student")
+              .ilike("section", cleanSec);
+
+            if ((enrolledCount || 0) >= capacity) {
+              errors.section = `Section ${cleanSec} is at full capacity (${enrolledCount}/${capacity} students).`;
+            }
+          }
+        }
+      }
     }
 
     return errors;
@@ -1106,44 +1243,38 @@ function StudentManagement() {
       return;
     }
 
+    if (sectionCapacityInfo?.isExceeded) {
+      toast.error(`Cannot assign section: Capacity for Section ${cleanSection} will be exceeded (${sectionCapacityInfo.projectedEnrolled}/${sectionCapacityInfo.capacity}).`);
+      return;
+    }
+
     setIsBulkAssigning(true);
     try {
       const selectedIds = Array.from(selectedSet);
+      const isMasterlist = activeTab !== "Profiles";
 
-      if (activeTab === "Profiles") {
-        const { error: updErr } = await adminApi.db("profiles", "update", {
-          payload: { section: cleanSection },
-          in: { column: "id", value: selectedIds }
-        });
-        if (updErr) throw updErr;
+      const res = await adminApi.bulkAssignSection({
+        gradeLevel: sectionCapacityInfo?.formattedGradeLevel || "Grade 7",
+        targetSection: cleanSection,
+        studentIds: selectedIds,
+        isMasterlist
+      });
 
-        const targetStudents = students.filter(s => selectedSet.has(s.id));
-        const targetLrns = targetStudents.map(s => s.lrn).filter(Boolean);
-        if (targetLrns.length > 0) {
-          await db.from("student_masterlist").update({ section: cleanSection }).in("lrn", targetLrns);
-        }
+      if (res.error) {
+        throw new Error(res.error.message || "Failed to assign section.");
+      }
 
-        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
-        setSelectedStudentIds(new Set());
-      } else {
-        const { error: updErr } = await adminApi.db("student_masterlist", "update", {
-          payload: { section: cleanSection },
-          in: { column: "id", value: selectedIds }
-        });
-        if (updErr) throw updErr;
-
-        const targetMaster = masterlist.filter(m => selectedSet.has(m.id));
-        const targetLrns = targetMaster.map(m => m.lrn).filter(Boolean);
-        if (targetLrns.length > 0) {
-          await db.from("profiles").update({ section: cleanSection }).in("lrn", targetLrns);
-        }
-
+      if (isMasterlist) {
         toast.success(`Successfully assigned ${selectedIds.length} masterlist record(s) to Section ${cleanSection}.`);
         setSelectedMasterlistIds(new Set());
+      } else {
+        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
+        setSelectedStudentIds(new Set());
       }
 
       setShowBulkAssignSectionModal(false);
       setTargetBulkSection("");
+      setSectionCapacityInfo(null);
       await refreshStudents();
     } catch (err) {
       console.error("Bulk section assignment error:", err);
@@ -2960,6 +3091,109 @@ function StudentManagement() {
                     Or click the settings icon in the section dropdown to create a new section for {formattedGradeLevel}.
                   </p>
                 </div>
+
+                {/* Section Capacity Information & Validation Card */}
+                {targetBulkSection && (
+                  <div className="space-y-3">
+                    {isLoadingCapacity ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center gap-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                        <span>Calculating section capacity...</span>
+                      </div>
+                    ) : sectionCapacityInfo ? (
+                      <div className={`p-4 rounded-xl border transition-all ${
+                        sectionCapacityInfo.isExceeded 
+                          ? "bg-red-50 border-red-200 text-red-900" 
+                          : sectionCapacityInfo.capacity > 0 && sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity >= 0.8
+                            ? "bg-amber-50 border-amber-200 text-amber-900"
+                            : "bg-indigo-50/60 border-indigo-100 text-indigo-950"
+                      }`}>
+                        <div className="flex items-center justify-between mb-2.5">
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Capacity & Enrollment Status</span>
+                          {sectionCapacityInfo.capacity === 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Unlimited Slots
+                            </span>
+                          ) : sectionCapacityInfo.isExceeded ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Exceeded
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Available
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Current Enrolled</span>
+                            <span className="text-sm font-bold text-gray-900">{sectionCapacityInfo.currentEnrolled}</span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Max Capacity</span>
+                            <span className="text-sm font-bold text-gray-900">
+                              {sectionCapacityInfo.capacity === 0 ? "∞ (Unlimited)" : sectionCapacityInfo.capacity}
+                            </span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Available Slots</span>
+                            <span className={`text-sm font-bold ${
+                              sectionCapacityInfo.availableSlots === 0 && sectionCapacityInfo.capacity > 0 
+                                ? "text-red-600" 
+                                : "text-emerald-600"
+                            }`}>
+                              {sectionCapacityInfo.availableSlots}
+                            </span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Projected Total</span>
+                            <span className={`text-sm font-bold ${sectionCapacityInfo.isExceeded ? "text-red-600" : "text-indigo-600"}`}>
+                              {sectionCapacityInfo.projectedEnrolled}
+                            </span>
+                          </div>
+                        </div>
+
+                        {sectionCapacityInfo.alreadyEnrolledCount > 0 && (
+                          <p className="text-[11px] text-gray-600 bg-white/60 p-2 rounded-md mb-2 border border-black/5">
+                            💡 <strong>Note:</strong> {sectionCapacityInfo.alreadyEnrolledCount} of {sectionCapacityInfo.totalSelected} selected student(s) already belong to Section {sectionCapacityInfo.cleanSection}. Only {sectionCapacityInfo.newStudentsCount} new student(s) will consume capacity slots.
+                          </p>
+                        )}
+
+                        {sectionCapacityInfo.capacity > 0 && (
+                          <div className="space-y-1">
+                            <div className="w-full bg-gray-200/80 rounded-full h-2 overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-300 ${
+                                  sectionCapacityInfo.isExceeded 
+                                    ? "bg-red-500" 
+                                    : sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity >= 0.8
+                                      ? "bg-amber-500"
+                                      : "bg-emerald-500"
+                                }`}
+                                style={{ width: `${Math.min(100, (sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-500 font-medium">
+                              <span>0</span>
+                              <span>{Math.round((sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity) * 100)}% Used</span>
+                              <span>{sectionCapacityInfo.capacity}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {sectionCapacityInfo.isExceeded && (
+                          <div className="mt-3 p-2.5 bg-red-100/80 border border-red-200 rounded-lg flex items-start gap-2 text-xs text-red-800">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <span>
+                              <strong>Cannot Assign:</strong> Adding {sectionCapacityInfo.newStudentsCount} student(s) exceeds Section {sectionCapacityInfo.cleanSection}&apos;s capacity of {sectionCapacityInfo.capacity}. ({sectionCapacityInfo.availableSlots} slot(s) remaining).
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
@@ -2974,8 +3208,8 @@ function StudentManagement() {
                 <button
                   type="button"
                   onClick={handleConfirmBulkAssignSection}
-                  disabled={isBulkAssigning || !targetBulkSection}
-                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+                  disabled={isBulkAssigning || !targetBulkSection || isLoadingCapacity || sectionCapacityInfo?.isExceeded}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isBulkAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isBulkAssigning ? "Assigning..." : `Assign to ${selectedSet.size} Student(s)`}

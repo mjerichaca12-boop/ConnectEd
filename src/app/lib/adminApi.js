@@ -330,5 +330,111 @@ export const adminApi = {
     } catch (fallbackError) {
       return { data: null, error: fallbackError };
     }
+  },
+
+  async bulkAssignSection({ gradeLevel, targetSection, studentIds, isMasterlist }) {
+    if (!targetSection || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return { data: null, error: new Error("Invalid parameters for section assignment.") };
+    }
+
+    const formatSection = (secStr) => {
+      const clean = String(secStr || "").trim();
+      if (!clean || clean.toLowerCase() === "unassigned" || clean.toLowerCase() === "unknown") return null;
+      return clean.split(/\s+/).map(w => /^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(" ");
+    };
+
+    const cleanSection = formatSection(targetSection);
+    if (!cleanSection) {
+      return { data: null, error: new Error("Please provide a valid section name.") };
+    }
+
+    const normGradeNum = (gradeLevel || "").replace(/\D/g, "");
+
+    try {
+      // 1. Fetch matching subjects for capacity
+      const { data: subsData } = await supabase.from("subjects").select("id, capacity, enrolled, grade_level, section");
+      const matchingSubs = (subsData || []).filter(s => {
+        const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+        const sSec = (s.section || "").trim().toLowerCase();
+        return sGradeNum === normGradeNum && sSec === cleanSection.toLowerCase();
+      });
+
+      let capacity = 0;
+      if (matchingSubs.length > 0) {
+        const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+        if (caps.length > 0) {
+          capacity = Math.min(...caps);
+        }
+      }
+
+      // 2. Count current enrolled in profiles
+      const { count: profileEnrolledCount } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "student")
+        .ilike("section", cleanSection);
+
+      const maxSubjectEnrolled = matchingSubs.reduce((max, s) => Math.max(max, Number(s.enrolled || 0)), 0);
+      const currentEnrolled = Math.max(profileEnrolledCount || 0, maxSubjectEnrolled);
+
+      // 3. Fetch target student records to deduplicate
+      const targetTable = isMasterlist ? "student_masterlist" : "profiles";
+      const { data: targetStudents } = await supabase
+        .from(targetTable)
+        .select("id, lrn, section")
+        .in("id", studentIds);
+
+      const alreadyEnrolledCount = (targetStudents || []).filter(s => {
+        const sec = (s.section || "").trim().toLowerCase();
+        return sec === cleanSection.toLowerCase();
+      }).length;
+
+      const newStudentsCount = studentIds.length - alreadyEnrolledCount;
+      const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : Infinity;
+      const projectedEnrolled = currentEnrolled + newStudentsCount;
+
+      // 4. Server-Side Capacity Guard
+      if (capacity > 0 && projectedEnrolled > capacity) {
+        return {
+          data: null,
+          error: new Error(`Cannot assign these students. Section ${cleanSection} only has ${availableSlots} available slot(s) remaining (capacity: ${capacity}, current: ${currentEnrolled}).`)
+        };
+      }
+
+      // 5. Perform Database Update
+      const { error: updateErr } = await this.db(targetTable, "update", {
+        payload: { section: cleanSection },
+        in: { column: "id", value: studentIds }
+      });
+      if (updateErr) throw updateErr;
+
+      // Sync across profiles and student_masterlist by LRN
+      const targetLrns = (targetStudents || []).map(s => s.lrn).filter(Boolean);
+      if (targetLrns.length > 0) {
+        const mirrorTable = isMasterlist ? "profiles" : "student_masterlist";
+        await supabase.from(mirrorTable).update({ section: cleanSection }).in("lrn", targetLrns);
+      }
+
+      // 6. Sync subjects table enrolled count
+      if (matchingSubs.length > 0) {
+        const matchingSubIds = matchingSubs.map(s => s.id);
+        await supabase.from("subjects").update({ enrolled: projectedEnrolled }).in("id", matchingSubIds);
+      }
+
+      return {
+        data: {
+          success: true,
+          count: studentIds.length,
+          newStudentsCount,
+          alreadyEnrolledCount,
+          currentEnrolled,
+          projectedEnrolled,
+          capacity
+        },
+        error: null
+      };
+    } catch (err) {
+      return { data: null, error: err };
+    }
   }
 };
