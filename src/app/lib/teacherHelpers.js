@@ -166,17 +166,29 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 
     if (subjectIds.length > 0) {
       try {
-        const { data: assignmentRows } = await supabase
-          .from("teacher_student_assignments")
-          .select("subject_id")
-          .eq("teacher_id", teacherId)
-          .in("subject_id", subjectIds);
+        const [assignmentRes, profilesRes] = await Promise.all([
+          supabase.from("teacher_student_assignments").select("subject_id, student_id").in("subject_id", subjectIds),
+          supabase.from("profiles").select("id, year_level, section").eq("role", "student")
+        ]);
 
-        (assignmentRows ?? []).forEach((row) => {
-          const key = String(row.subject_id || "");
-          if (key) {
-            enrollmentCounts.set(key, (enrollmentCounts.get(key) || 0) + 1);
-          }
+        const assignmentRows = assignmentRes.data || [];
+        const studentProfiles = profilesRes.data || [];
+
+        (subjectsData || []).forEach((s) => {
+          const key = String(s.id);
+          const normGradeNum = (s.grade_level || s.year_level || "").replace(/\D/g, "");
+          const cleanSec = (s.section || "").trim().toLowerCase();
+
+          const sectionStudentIds = studentProfiles.filter(p => {
+            const pGradeNum = (p.year_level || "").replace(/\D/g, "");
+            const pSec = (p.section || "").trim().toLowerCase();
+            return cleanSec && pSec === cleanSec && (!normGradeNum || pGradeNum === normGradeNum);
+          }).map(p => p.id);
+
+          const directStudentIds = assignmentRows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
+
+          const totalUnique = new Set([...sectionStudentIds, ...directStudentIds]).size;
+          enrollmentCounts.set(key, totalUnique);
         });
       } catch (err) {
         console.warn("[getTeacherAssignedClasses] error fetching enrollment counts:", err);
@@ -205,6 +217,10 @@ export const getTeacherAssignedClasses = async (storedUser) => {
       if (key && seen.has(key)) return;
       if (key) seen.add(key);
 
+      const computedEnrolled = enrollmentCounts.has(String(s.id))
+        ? enrollmentCounts.get(String(s.id))
+        : Number(s.enrolled || 0);
+
       classesList.push({
         id: String(s.id),
         code,
@@ -212,7 +228,7 @@ export const getTeacherAssignedClasses = async (storedUser) => {
         gradeLevel,
         section,
         capacity: Number(s.capacity || 0),
-        enrolled: Number(enrollmentCounts.get(String(s.id)) ?? 0),
+        enrolled: computedEnrolled,
         lessons: [],
       });
     });
