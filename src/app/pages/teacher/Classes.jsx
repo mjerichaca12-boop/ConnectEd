@@ -186,7 +186,7 @@ function Classes() {
   const { data: cachedClassesCards, loading: isCachedClassesLoading } = useCachedFetch(
     teacherEmail ? `teacher_classes_${teacherEmail}` : "teacher_classes_default",
     fetchTeacherClassesData,
-    { deps: [teacherEmail] }
+    { ttlMs: 0, deps: [teacherEmail] }
   );
 
   useEffect(() => {
@@ -215,6 +215,9 @@ function Classes() {
     let isMounted = true;
     let subjectsChannel;
     let assignmentChannel;
+
+    // Immediately fetch fresh real-time counts from Supabase on mount
+    loadTeacherSubjects(teacherId);
 
     const setupSubscription = async () => {
       subjectsChannel = supabase
@@ -273,11 +276,19 @@ function Classes() {
       }
     };
 
+    const handleWindowFocus = () => {
+      if (isMounted && teacherId) {
+        loadTeacherSubjects(teacherId);
+      }
+    };
+
     window.addEventListener("enrollment-changed", handleEnrollmentChanged);
+    window.addEventListener("focus", handleWindowFocus);
 
     return () => {
       isMounted = false;
       window.removeEventListener("enrollment-changed", handleEnrollmentChanged);
+      window.removeEventListener("focus", handleWindowFocus);
       if (subjectsChannel) {
         supabase.removeChannel(subjectsChannel);
       }

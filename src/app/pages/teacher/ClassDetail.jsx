@@ -537,6 +537,19 @@ export function ClassDetail() {
       };
     });
 
+    try {
+      const saved = localStorage.getItem("teacher_classes");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.map(c => String(c.id) === String(id) ? { ...c, studentCount: count, enrolled: count } : c);
+          localStorage.setItem("teacher_classes", JSON.stringify(updated));
+        }
+      }
+    } catch (e) {
+      console.warn("[syncStudentsIntoClassData] localStorage update error:", e);
+    }
+
     if (supabase && id && !String(id).startsWith("demo-")) {
       const queryId = !isNaN(Number(id)) ? Number(id) : id;
       supabase
