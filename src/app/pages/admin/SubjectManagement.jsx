@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { useCallback } from "react";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
-import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square } from "lucide-react";
+import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square, Archive, RotateCcw } from "lucide-react";
 
 const emptyForm = {
   code: "",
@@ -23,10 +23,11 @@ const emptyForm = {
   capacity: "",
   grade_level: "",
   section: "",
-  subject_category: DEPED_SUBJECT_CATEGORIES[0]
+  subject_category: DEPED_SUBJECT_CATEGORIES[0],
+  status: "Active"
 };
 
-const subjectSelectColumns = "id, code, name, description, teacher_id, capacity, enrolled, grade_level, section, subject_category, created_at, updated_at";
+const subjectSelectColumns = "id, code, name, description, teacher_id, capacity, enrolled, grade_level, section, subject_category, status, created_at, updated_at";
 const subjectTableCandidates = ["subjects"];
 
 function SubjectManagement() {
@@ -37,6 +38,7 @@ function SubjectManagement() {
   const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("active");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -45,6 +47,16 @@ function SubjectManagement() {
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [selectedSubjectForEnroll, setSelectedSubjectForEnroll] = useState(null);
   const [subjectToDelete, setSubjectToDelete] = useState(null);
+  const [subjectToArchive, setSubjectToArchive] = useState(null);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [subjectToUnarchive, setSubjectToUnarchive] = useState(null);
+  const [showUnarchiveConfirm, setShowUnarchiveConfirm] = useState(false);
+  const [isUnarchiving, setIsUnarchiving] = useState(false);
+  const [showBulkArchiveConfirm, setShowBulkArchiveConfirm] = useState(false);
+  const [isBulkArchiving, setIsBulkArchiving] = useState(false);
+  const [showBulkUnarchiveConfirm, setShowBulkUnarchiveConfirm] = useState(false);
+  const [isBulkUnarchiving, setIsBulkUnarchiving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [enrollmentLoading, setEnrollmentLoading] = useState(false);
   const [subjectFormData, setSubjectFormData] = useState(emptyForm);
@@ -109,7 +121,8 @@ function SubjectManagement() {
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
     })(),
     grade_level: String(subjectRow.grade_level || "").trim(),
-    subject_category: normalizeSubjectCategory(subjectRow.subject_category || "", subjectRow.name || subjectRow.code || "")
+    subject_category: normalizeSubjectCategory(subjectRow.subject_category || "", subjectRow.name || subjectRow.code || ""),
+    status: String(subjectRow.status || "Active").trim()
   });
 
   const buildSubjectDedupKey = (subjectRow) => {
@@ -488,7 +501,14 @@ function SubjectManagement() {
     navigate("/login");
   };
 
+  const activeSubjectsCount = subjects.filter((s) => String(s.status || "Active").toLowerCase() !== "archived").length;
+  const archivedSubjectsCount = subjects.filter((s) => String(s.status || "Active").toLowerCase() === "archived").length;
+
   const filteredSubjects = subjects.filter((subject) => {
+    const isArchived = String(subject.status || "Active").toLowerCase() === "archived";
+    if (activeTab === "active" && isArchived) return false;
+    if (activeTab === "archived" && !isArchived) return false;
+
     const search = searchQuery.toLowerCase();
     return (
       String(subject.name || "").toLowerCase().includes(search) ||
@@ -510,8 +530,163 @@ function SubjectManagement() {
     capacity: Number(normalizePositiveInteger(String(formData.capacity || ""))),
     grade_level: (formData.grade_level || "").trim(),
     section: (formData.section || "").trim() || null,
-    subject_category: normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || "")
+    subject_category: normalizeSubjectCategory(formData.subject_category || "", formData.name || formData.code || ""),
+    status: formData.status || "Active"
   });
+
+  const handleArchiveSubject = (subject) => {
+    setSubjectToArchive(subject);
+    setShowArchiveConfirm(true);
+  };
+
+  const handleConfirmArchive = async () => {
+    if (!subjectToArchive) return;
+    setIsArchiving(true);
+    try {
+      const tableName = await getSubjectTableName();
+      const { error } = await adminApi.db(tableName, "update", {
+        payload: { status: "Archived" },
+        eq: { column: "id", value: subjectToArchive.id }
+      });
+      if (error) throw error;
+
+      setSubjects((prev) =>
+        prev.map((s) => (s.id === subjectToArchive.id ? { ...s, status: "Archived" } : s))
+      );
+      setShowArchiveConfirm(false);
+      toast.success(`Subject "${subjectToArchive.code} - ${subjectToArchive.name}" archived successfully.`);
+      logActivity({
+        actionType: "archived",
+        entityType: "subject",
+        entityId: subjectToArchive.id,
+        entityName: `${subjectToArchive.code} - ${subjectToArchive.name}`,
+        details: { teacher: getTeacherNameById(subjectToArchive.teacher_id) },
+        timestamp: new Date().toISOString()
+      });
+      setSubjectToArchive(null);
+    } catch (error) {
+      toast.error(error?.message || "Failed to archive subject.");
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handleUnarchiveSubject = (subject) => {
+    setSubjectToUnarchive(subject);
+    setShowUnarchiveConfirm(true);
+  };
+
+  const handleConfirmUnarchive = async () => {
+    if (!subjectToUnarchive) return;
+    setIsUnarchiving(true);
+    try {
+      const tableName = await getSubjectTableName();
+      const { error } = await adminApi.db(tableName, "update", {
+        payload: { status: "Active" },
+        eq: { column: "id", value: subjectToUnarchive.id }
+      });
+      if (error) throw error;
+
+      setSubjects((prev) =>
+        prev.map((s) => (s.id === subjectToUnarchive.id ? { ...s, status: "Active" } : s))
+      );
+      setShowUnarchiveConfirm(false);
+      toast.success(`Subject "${subjectToUnarchive.code} - ${subjectToUnarchive.name}" restored to Active status.`);
+      logActivity({
+        actionType: "unarchived",
+        entityType: "subject",
+        entityId: subjectToUnarchive.id,
+        entityName: `${subjectToUnarchive.code} - ${subjectToUnarchive.name}`,
+        details: { teacher: getTeacherNameById(subjectToUnarchive.teacher_id) },
+        timestamp: new Date().toISOString()
+      });
+      setSubjectToUnarchive(null);
+    } catch (error) {
+      toast.error(error?.message || "Failed to unarchive subject.");
+    } finally {
+      setIsUnarchiving(false);
+    }
+  };
+
+  const handleBulkArchiveSubjects = async () => {
+    if (selectedSubjectIds.size === 0) return;
+    setIsBulkArchiving(true);
+    try {
+      const idsToArchive = Array.from(selectedSubjectIds);
+      const tableName = await getSubjectTableName();
+
+      const results = await Promise.allSettled(
+        idsToArchive.map(async (id) => {
+          const { error } = await adminApi.db(tableName, "update", {
+            payload: { status: "Archived" },
+            eq: { column: "id", value: id }
+          });
+          if (error) throw error;
+        })
+      );
+
+      let successCount = 0;
+      results.forEach((res) => {
+        if (res.status === "fulfilled") successCount++;
+      });
+
+      setSubjects((prev) =>
+        prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Archived" } : s))
+      );
+      setSelectedSubjectIds(new Set());
+      setShowBulkArchiveConfirm(false);
+
+      if (successCount === idsToArchive.length) {
+        toast.success(`Successfully archived ${successCount} subject(s).`);
+      } else {
+        toast.warning(`Archived ${successCount} out of ${idsToArchive.length} subject(s).`);
+      }
+    } catch (err) {
+      toast.error("Failed to archive selected subjects.");
+    } finally {
+      setIsBulkArchiving(false);
+    }
+  };
+
+  const handleBulkUnarchiveSubjects = async () => {
+    if (selectedSubjectIds.size === 0) return;
+    setIsBulkUnarchiving(true);
+    try {
+      const idsToUnarchive = Array.from(selectedSubjectIds);
+      const tableName = await getSubjectTableName();
+
+      const results = await Promise.allSettled(
+        idsToUnarchive.map(async (id) => {
+          const { error } = await adminApi.db(tableName, "update", {
+            payload: { status: "Active" },
+            eq: { column: "id", value: id }
+          });
+          if (error) throw error;
+        })
+      );
+
+      let successCount = 0;
+      results.forEach((res) => {
+        if (res.status === "fulfilled") successCount++;
+      });
+
+      setSubjects((prev) =>
+        prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Active" } : s))
+      );
+      setSelectedSubjectIds(new Set());
+      setShowBulkUnarchiveConfirm(false);
+
+      if (successCount === idsToUnarchive.length) {
+        toast.success(`Successfully restored ${successCount} subject(s) to Active.`);
+      } else {
+        toast.warning(`Restored ${successCount} out of ${idsToUnarchive.length} subject(s).`);
+      }
+    } catch (err) {
+      toast.error("Failed to restore selected subjects.");
+    } finally {
+      setIsBulkUnarchiving(false);
+    }
+  };
 
   const handleAddSubject = async (event) => {
     event.preventDefault();
@@ -631,8 +806,9 @@ function SubjectManagement() {
       teacher: String(subject.teacher_id || ""),
       capacity: String(subject.capacity || ""),
       grade_level: String(subject.grade_level || ""),
-        section: String(subject.section || ""),
-        subject_category: normalizeSubjectCategory(subject.subject_category || "", subject.name || subject.code || "")
+      section: String(subject.section || ""),
+      subject_category: normalizeSubjectCategory(subject.subject_category || "", subject.name || subject.code || ""),
+      status: String(subject.status || "Active")
     });
     setShowEditModal(true);
   };
@@ -1100,15 +1276,62 @@ function SubjectManagement() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-              <p className="text-gray-500 text-sm mb-1">Total Subjects</p>
-              <p className="text-3xl font-bold text-gray-900">{subjects.length}</p>
+              <p className="text-gray-500 text-sm mb-1">Active Subjects</p>
+              <p className="text-3xl font-bold text-gray-900">{activeSubjectsCount}</p>
+            </div>
+            <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <p className="text-gray-500 text-sm mb-1">Archived Subjects</p>
+              <p className="text-3xl font-bold text-amber-600">{archivedSubjectsCount}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
               <p className="text-gray-500 text-sm mb-1">Total Enrolled</p>
               <p className="text-3xl font-bold text-blue-400">{subjects.reduce((sum, s) => sum + Number(s.enrolled || 0), 0)}</p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 border-b border-gray-200 pb-1">
+            <button
+              onClick={() => { setActiveTab("active"); setSelectedSubjectIds(new Set()); }}
+              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === "active"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <span>Active Subjects</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>
+                {activeSubjectsCount}
+              </span>
+            </button>
+            <button
+              onClick={() => { setActiveTab("archived"); setSelectedSubjectIds(new Set()); }}
+              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === "archived"
+                  ? "border-amber-600 text-amber-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              <span>Archived Subjects</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === "archived" ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-600"}`}>
+                {archivedSubjectsCount}
+              </span>
+            </button>
+            <button
+              onClick={() => { setActiveTab("all"); setSelectedSubjectIds(new Set()); }}
+              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
+                activeTab === "all"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <span>All Subjects</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${activeTab === "all" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-600"}`}>
+                {subjects.length}
+              </span>
+            </button>
           </div>
 
           <div data-tour="subjects-list" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
@@ -1124,16 +1347,38 @@ function SubjectManagement() {
                 />
               </div>
               {selectedSubjectIds.size > 0 && (
-                <button
-                  onClick={() => setShowBulkDeleteConfirm(true)}
-                  disabled={isBulkDeleting}
-                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
-                >
-                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeTab !== "archived" && (
+                    <button
+                      onClick={() => setShowBulkArchiveConfirm(true)}
+                      disabled={isBulkArchiving}
+                      className="flex items-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors border border-amber-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                    >
+                      {isBulkArchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                      {isBulkArchiving ? "Archiving..." : `Archive Selected (${selectedSubjectIds.size})`}
+                    </button>
+                  )}
+                  {activeTab !== "active" && (
+                    <button
+                      onClick={() => setShowBulkUnarchiveConfirm(true)}
+                      disabled={isBulkUnarchiving}
+                      className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors border border-green-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                    >
+                      {isBulkUnarchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                      {isBulkUnarchiving ? "Restoring..." : `Restore Selected (${selectedSubjectIds.size})`}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    disabled={isBulkDeleting}
+                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                  >
+                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
+                  </button>
+                </div>
               )}
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 cursor-pointer">
                 <Download className="w-4 h-4" />
                 Export CSV
               </button>
@@ -1176,6 +1421,16 @@ function SubjectManagement() {
                           <h3 className="text-lg font-bold text-gray-900 mt-1">{subject.name}</h3>
                         </div>
                       </div>
+                      {String(subject.status || "Active").toLowerCase() === "archived" ? (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                          <Archive className="w-3 h-3" />
+                          Archived
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
+                          Active
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
@@ -1201,10 +1456,15 @@ function SubjectManagement() {
                         </div>
                       </div>
                       <div data-tour="subjects-actions" className="flex items-center gap-1.5">
-                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View"><Eye className="w-4 h-4 text-gray-600" /></button>
-                        <button onClick={() => handleOpenEnrollModal(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Enroll Students"><UserPlus className="w-4 h-4 text-blue-600" /></button>
-                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit"><Edit className="w-4 h-4 text-green-600" /></button>
-                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4 text-red-500" /></button>
+                        <button onClick={() => handleViewSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="View"><Eye className="w-4 h-4 text-gray-600" /></button>
+                        <button onClick={() => handleOpenEnrollModal(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="Enroll Students"><UserPlus className="w-4 h-4 text-blue-600" /></button>
+                        <button onClick={() => handleEditSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="Edit"><Edit className="w-4 h-4 text-green-600" /></button>
+                        {String(subject.status || "Active").toLowerCase() === "archived" ? (
+                          <button onClick={() => handleUnarchiveSubject(subject)} className="p-2 hover:bg-green-50 rounded-lg transition-colors cursor-pointer" title="Restore / Unarchive"><RotateCcw className="w-4 h-4 text-green-600" /></button>
+                        ) : (
+                          <button onClick={() => handleArchiveSubject(subject)} className="p-2 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer" title="Archive Subject"><Archive className="w-4 h-4 text-amber-600" /></button>
+                        )}
+                        <button onClick={() => handleDeleteSubject(subject)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="Delete"><Trash2 className="w-4 h-4 text-red-500" /></button>
                       </div>
                     </div>
                   </div>
@@ -1363,6 +1623,19 @@ function SubjectManagement() {
                     <input type="text" inputMode="numeric" value={editFormData.capacity} onChange={(e) => setEditFormData({ ...editFormData, capacity: normalizePositiveInteger(e.target.value) })} className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.capacity ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {editFormErrors.capacity && <p className="text-red-500 text-sm mt-1">{editFormErrors.capacity}</p>}
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <CustomSelect
+                      value={editFormData.status || "Active"}
+                      onChange={(value) => setEditFormData({ ...editFormData, status: value })}
+                      options={[
+                        { value: "Active", label: "Active" },
+                        { value: "Archived", label: "Archived" },
+                      ]}
+                      placeholder="Select status"
+                      className="w-full"
+                    />
+                  </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
                   <button onClick={handleCloseEditModal} type="button" className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer">Cancel</button>
@@ -1391,6 +1664,16 @@ function SubjectManagement() {
                     <p className="text-sm text-green-600 font-medium mb-1">{selectedSubject.code}</p>
                     <h4 className="text-2xl font-bold text-gray-900">{selectedSubject.name}</h4>
                   </div>
+                  {String(selectedSubject.status || "Active").toLowerCase() === "archived" ? (
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                      <Archive className="w-3.5 h-3.5" />
+                      Archived
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
+                      Active
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1450,6 +1733,52 @@ function SubjectManagement() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={showArchiveConfirm}
+        onClose={() => {
+          setShowArchiveConfirm(false);
+          setSubjectToArchive(null);
+        }}
+        onConfirm={handleConfirmArchive}
+        title="Archive Subject"
+        description={`Are you sure you want to archive ${subjectToArchive?.code} - ${subjectToArchive?.name}? Archived subjects will be hidden from active subject lists.`}
+        confirmText={isArchiving ? "Archiving..." : "Archive Subject"}
+        variant="warning"
+      />
+
+      <ConfirmDialog
+        isOpen={showUnarchiveConfirm}
+        onClose={() => {
+          setShowUnarchiveConfirm(false);
+          setSubjectToUnarchive(null);
+        }}
+        onConfirm={handleConfirmUnarchive}
+        title="Unarchive Subject"
+        description={`Are you sure you want to restore ${subjectToUnarchive?.code} - ${subjectToUnarchive?.name}? This will restore the subject to Active status.`}
+        confirmText={isUnarchiving ? "Restoring..." : "Restore Subject"}
+        variant="info"
+      />
+
+      <ConfirmDialog
+        isOpen={showBulkArchiveConfirm}
+        onClose={() => setShowBulkArchiveConfirm(false)}
+        onConfirm={handleBulkArchiveSubjects}
+        title="Archive Selected Subjects"
+        description={`Are you sure you want to archive ${selectedSubjectIds.size} selected subject(s)? They can be restored anytime from the Archived tab.`}
+        confirmText={isBulkArchiving ? "Archiving..." : "Archive All Selected"}
+        variant="warning"
+      />
+
+      <ConfirmDialog
+        isOpen={showBulkUnarchiveConfirm}
+        onClose={() => setShowBulkUnarchiveConfirm(false)}
+        onConfirm={handleBulkUnarchiveSubjects}
+        title="Restore Selected Subjects"
+        description={`Are you sure you want to restore ${selectedSubjectIds.size} selected subject(s) to Active status?`}
+        confirmText={isBulkUnarchiving ? "Restoring..." : "Restore All Selected"}
+        variant="info"
+      />
 
       <ConfirmDialog
         isOpen={showBulkDeleteConfirm}
