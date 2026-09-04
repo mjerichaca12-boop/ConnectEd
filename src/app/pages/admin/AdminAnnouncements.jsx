@@ -65,9 +65,8 @@ const normalizeAudience = (value) => {
     .replace(/\s+/g, " ");
 
   if (normalized === "student" || normalized === "students") return "Students";
-  if (normalized === "teacher" || normalized === "teachers") return "Teachers";
+  if (normalized === "teacher" || normalized === "teachers") return "Teacher";
   if (normalized === "schoolwide" || normalized === "school wide") return "School-wide";
-  if (value === "Teacher") return "Teachers";
   if (ALLOWED_AUDIENCES.includes(value)) return value;
   return "School-wide";
 };
@@ -1684,14 +1683,14 @@ function AdminAnnouncements() {
                         color: "emerald"
                       },
                       {
-                        id: "Teachers",
+                        id: "Teacher",
                         title: "Teachers Only",
                         subtitle: "Faculty & Staff",
                         icon: UserCheck,
                         color: "purple"
                       }
                     ].map((option) => {
-                      const isSelected = (formData.targetAudience || "School-wide") === option.id;
+                      const isSelected = normalizeAudience(formData.targetAudience || "School-wide") === option.id;
                       const IconComp = option.icon;
                       return (
                         <button
@@ -1840,14 +1839,14 @@ function AdminAnnouncements() {
                         color: "emerald"
                       },
                       {
-                        id: "Teachers",
+                        id: "Teacher",
                         title: "Teachers Only",
                         subtitle: "Faculty & Staff",
                         icon: UserCheck,
                         color: "purple"
                       }
                     ].map((option) => {
-                      const isSelected = (editFormData.targetAudience || "School-wide") === option.id;
+                      const isSelected = normalizeAudience(editFormData.targetAudience || "School-wide") === option.id;
                       const IconComp = option.icon;
                       return (
                         <button

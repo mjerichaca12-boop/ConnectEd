@@ -705,25 +705,6 @@ export function ClassDetail() {
         }
       }
 
-      // Also count direct class_materials if available
-      try {
-        const cleanSubId = subjectId;
-        const queryFilter = !isNaN(Number(cleanSubId)) && Number(cleanSubId) > 0
-          ? `subject_id.eq.${cleanSubId},subject_id.eq.${Number(cleanSubId)}`
-          : `subject_id.eq.${cleanSubId}`;
-
-        const { count: cmCount, error: cmErr } = await supabase
-          .from("class_materials")
-          .select("id", { count: "exact", head: true })
-          .or(queryFilter);
-
-        if (!cmErr && cmCount) {
-          materialsCount += cmCount;
-        }
-      } catch (e) {
-        console.warn("[fetchDashboardMetrics] class_materials query warning:", e);
-      }
-
       setMetrics({
         totalLessons,
         publishedLessons,

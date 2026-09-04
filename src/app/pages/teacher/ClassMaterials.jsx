@@ -13,6 +13,7 @@ import {
   resolveColumnName,
   resolveTeacherIdByEmail
 } from "@/app/lib/teacherHelpers";
+import { fetchClassMaterialsForTeacher } from "@/app/services/classMaterialsService";
 import {
   Upload,
   FileText,
@@ -110,8 +111,9 @@ function ClassMaterials() {
   }, []);
 
   const fetchMaterials = useCallback(async (resolvedTeacherId) => {
-    if (!supabase) {
+    if (!supabase || !resolvedTeacherId) {
       setMaterials([]);
+      setLoadingMaterials(false);
       return;
     }
 
@@ -119,67 +121,21 @@ function ClassMaterials() {
     setMaterialError("");
 
     try {
-      let query = supabase
-        .from("class_materials")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { materials: fetchedMaterials, isError, errorMessage } = await fetchClassMaterialsForTeacher({
+        teacherId: resolvedTeacherId,
+        selectedClass: selectedSubject?.id ? selectedSubject : null
+      });
 
-      if (materialColumns.includes("school_year")) {
-        query = query.eq("school_year", activeSchoolYear);
-      }
-      
-      if (viewMode === "current" && materialColumns.includes("term")) {
-        query = query.eq("term", activeQuarter);
-      }
-
-      if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
-        query = query.eq("teacher_id", resolvedTeacherId);
-      } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
-        query = query.eq("created_by", resolvedTeacherId);
-      } else if (resolvedTeacherId) {
-        query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
-      }
-
-      let { data, error } = await query;
-
-      if (error && (error.code === 'PGRST116' || error.status === 400)) {
-        console.warn("class_materials table not accessible, showing empty state:", error);
+      if (isError) {
         if (mountedRef.current) {
           setMaterials([]);
-          setMaterialError("");
-          setLoadingMaterials(false);
-        }
-        return;
-      }
-
-      if (error && isColumnMissingError(error)) {
-        query = supabase.from("class_materials").select("*");
-
-        if (resolvedTeacherId && materialColumns.includes("teacher_id")) {
-          query = query.eq("teacher_id", resolvedTeacherId);
-        } else if (resolvedTeacherId && materialColumns.includes("created_by")) {
-          query = query.eq("created_by", resolvedTeacherId);
-        } else if (resolvedTeacherId) {
-          query = query.or(`teacher_id.eq.${resolvedTeacherId},created_by.eq.${resolvedTeacherId}`);
-        }
-
-        const fallbackResult = await query;
-        data = fallbackResult.data;
-        error = fallbackResult.error;
-      }
-
-      if (error) {
-        console.error("Failed to fetch class materials:", error);
-        if (mountedRef.current) {
-          setMaterials([]);
-          setMaterialError("Unable to load class materials.");
-          setLoadingMaterials(false);
+          setMaterialError(errorMessage || "Unable to load class materials.");
         }
         return;
       }
 
       if (mountedRef.current) {
-        setMaterials((data ?? []).map((row) => normalizeMaterialRow(row)));
+        setMaterials(fetchedMaterials.map(row => normalizeMaterialRow(row)));
         setMaterialError("");
       }
     } catch (err) {
@@ -193,7 +149,7 @@ function ClassMaterials() {
         setLoadingMaterials(false);
       }
     }
-  }, [materialColumns, activeSchoolYear, activeQuarter, viewMode]);
+  }, [selectedSubject]);
 
   const resolveMaterialColumns = async () => {
     if (!supabase) {
