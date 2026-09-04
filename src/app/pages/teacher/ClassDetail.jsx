@@ -256,7 +256,7 @@ export function ClassDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isDemoMode, mockData } = useTourPreview();
-  const { activeSchoolYear, activeQuarter } = useAcademic();
+  const { activeSchoolYear, activeQuarter, viewMode } = useAcademic();
   const fileInputRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
 
