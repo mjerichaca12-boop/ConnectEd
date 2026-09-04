@@ -523,7 +523,7 @@ function SubjectManagement() {
     name: (formData.name || "").trim(),
     description: (formData.description || "").trim() || null,
     credits: formData.credits ? Number(normalizePositiveInteger(String(formData.credits))) : null,
-    teacher_id: (() => {
+    teacher_id: formData.status === "Archived" ? null : (() => {
       const t = (formData.teacher || "").trim();
       return (!t || t.toLowerCase() === "null" || t.toLowerCase() === "undefined") ? null : t;
     })(),
@@ -543,26 +543,42 @@ function SubjectManagement() {
     if (!subjectToArchive) return;
     setIsArchiving(true);
     try {
+      const previousTeacherId = subjectToArchive.teacher_id || "";
       const tableName = await getSubjectTableName();
       const { error } = await adminApi.db(tableName, "update", {
-        payload: { status: "Archived" },
+        payload: { status: "Archived", teacher_id: null },
         eq: { column: "id", value: subjectToArchive.id }
       });
       if (error) throw error;
 
       setSubjects((prev) =>
-        prev.map((s) => (s.id === subjectToArchive.id ? { ...s, status: "Archived" } : s))
+        prev.map((s) => (s.id === subjectToArchive.id ? { ...s, status: "Archived", teacher_id: null } : s))
       );
+      if (previousTeacherId) {
+        await refreshTeacherSubjectsFromDatabase([previousTeacherId]);
+      }
+      await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
+
       setShowArchiveConfirm(false);
-      toast.success(`Subject "${subjectToArchive.code} - ${subjectToArchive.name}" archived successfully.`);
+      toast.success(`Subject "${subjectToArchive.code} - ${subjectToArchive.name}" archived successfully and unassigned from teacher.`);
       logActivity({
         actionType: "archived",
         entityType: "subject",
         entityId: subjectToArchive.id,
         entityName: `${subjectToArchive.code} - ${subjectToArchive.name}`,
-        details: { teacher: getTeacherNameById(subjectToArchive.teacher_id) },
+        details: { teacher: getTeacherNameById(previousTeacherId) },
         timestamp: new Date().toISOString()
       });
+      if (previousTeacherId) {
+        logActivity({
+          actionType: "removed_subject_from_teacher",
+          entityType: "subject",
+          entityId: subjectToArchive.id,
+          entityName: `${subjectToArchive.code} - ${subjectToArchive.name}`,
+          details: { teacher: getTeacherNameById(previousTeacherId) },
+          timestamp: new Date().toISOString()
+        });
+      }
       setSubjectToArchive(null);
     } catch (error) {
       toast.error(error?.message || "Failed to archive subject.");
@@ -614,11 +630,17 @@ function SubjectManagement() {
     try {
       const idsToArchive = Array.from(selectedSubjectIds);
       const tableName = await getSubjectTableName();
+      const affectedTeacherIds = [...new Set(
+        subjects
+          .filter((s) => selectedSubjectIds.has(s.id))
+          .map((s) => s.teacher_id)
+          .filter(Boolean)
+      )];
 
       const results = await Promise.allSettled(
         idsToArchive.map(async (id) => {
           const { error } = await adminApi.db(tableName, "update", {
-            payload: { status: "Archived" },
+            payload: { status: "Archived", teacher_id: null },
             eq: { column: "id", value: id }
           });
           if (error) throw error;
@@ -631,13 +653,19 @@ function SubjectManagement() {
       });
 
       setSubjects((prev) =>
-        prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Archived" } : s))
+        prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Archived", teacher_id: null } : s))
       );
+
+      if (affectedTeacherIds.length > 0) {
+        await refreshTeacherSubjectsFromDatabase(affectedTeacherIds);
+      }
+      await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
+
       setSelectedSubjectIds(new Set());
       setShowBulkArchiveConfirm(false);
 
       if (successCount === idsToArchive.length) {
-        toast.success(`Successfully archived ${successCount} subject(s).`);
+        toast.success(`Successfully archived ${successCount} subject(s) and unassigned them from teachers.`);
       } else {
         toast.warning(`Archived ${successCount} out of ${idsToArchive.length} subject(s).`);
       }

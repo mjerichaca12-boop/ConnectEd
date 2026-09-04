@@ -412,8 +412,9 @@ function TeacherManagement() {
       throw new Error(error.message);
     }
 
-    setAvailableSubjects(data ?? []);
-    console.log("[TeacherManagement] fetched subjects:", (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name, grade_level: s.grade_level, year_level: s.year_level, grade: s.grade, year: s.year, section: s.section })));
+    const activeSubjects = (data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
+    setAvailableSubjects(activeSubjects);
+    console.log("[TeacherManagement] fetched active subjects:", activeSubjects.map((s) => ({ id: s.id, code: s.code, name: s.name, grade_level: s.grade_level, year_level: s.year_level, grade: s.grade, year: s.year, section: s.section })));
   };
 
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
@@ -428,7 +429,7 @@ function TeacherManagement() {
 
     const { data: subjectRows, error: subjectError } = await db
       .from("subjects")
-      .select("id, teacher_id")
+      .select("id, teacher_id, status")
       .in("teacher_id", uniqueTeacherIds);
 
     if (subjectError) {
@@ -437,7 +438,7 @@ function TeacherManagement() {
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
       const assignedSubjectIds = [...new Set((subjectRows ?? [])
-        .filter((subject) => String(subject.teacher_id) === String(teacherId))
+        .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived")
         .map((subject) => String(subject.id || "").trim())
         .filter(Boolean))];
 
@@ -736,7 +737,7 @@ function TeacherManagement() {
 
     return {
       teachers: formattedTeachers,
-      subjects: subjectsRes.data ?? []
+      subjects: (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived")
     };
   }, []);
 
