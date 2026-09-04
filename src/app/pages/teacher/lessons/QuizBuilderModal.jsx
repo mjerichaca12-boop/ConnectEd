@@ -275,6 +275,9 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
       if (questionsError) throw questionsError;
 
       toast.success(initialQuizId ? "Quiz updated successfully!" : "Quiz created successfully!");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("connected:assessments-changed", { detail: { lessonId } }));
+      }
       onSuccess();
     } catch (err) {
       console.error(err);

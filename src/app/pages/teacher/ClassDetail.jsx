@@ -1255,7 +1255,10 @@ export function ClassDetail() {
 
     // 1. Try to fetch from assignments_activity
     try {
-      const { data, error } = await supabase.from("assignments_activity").select("*");
+      const { data, error } = await supabase
+        .from("assignments_activity")
+        .select("*")
+        .eq("course_id", cleanClassId);
       if (!error && data) {
         const rows = (data ?? []).filter((row) => {
           const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
@@ -2970,6 +2973,9 @@ export function ClassDetail() {
       await fetchClassAssignments(effectiveTeacherId, classData);
       console.log("[ClassDetail] Refreshed assignments count:", assignments.length);
       setAsgSuccess("Assignment/Activity saved successfully.");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("connected:assessments-changed", { detail: { classId: id } }));
+      }
       resetAssignmentForm(true);
       setShowAssignmentModal(false);
     } catch (error) {

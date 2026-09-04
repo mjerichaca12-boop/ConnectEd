@@ -93,6 +93,9 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
       toast.success(`${itemToDelete.activity_type === "Assessment" ? "Seatwork" : itemToDelete.activity_type} deleted successfully`);
       loadActivities();
       if (onActivitiesChange) onActivitiesChange();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("connected:assessments-changed", { detail: { lessonId: lesson?.id } }));
+      }
     } catch (err) {
       console.error(err);
       toast.error(`Failed to delete ${itemToDelete.activity_type.toLowerCase()}`);

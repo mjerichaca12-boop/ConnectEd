@@ -440,10 +440,11 @@ export function AIAssistant() {
           try {
             const { data } = await supabase
               .from("assignments_activity")
-              .select("*");
+              .select("*")
+              .eq("course_id", String(classId).trim());
             acts = (data || []).filter(row => {
               const rowId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
-              return !classId || !rowId || rowId === String(classId).trim();
+              return rowId === String(classId).trim();
             });
           } catch (e) {
             console.warn("Could not query assignments_activity:", e);
