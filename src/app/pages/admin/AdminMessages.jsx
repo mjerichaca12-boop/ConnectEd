@@ -989,6 +989,21 @@ export function AdminMessages() {
     
     let insertPayload;
     if (activeConversation.isGroup) {
+      // Auto-ensure groupchats table row exists to satisfy messages_conversation_fk foreign key constraint
+      try {
+        await adminApi.db("groupchats", "upsert", {
+          payload: {
+            id: activeConversation.id,
+            name: activeConversation.participantName || "Group Chat",
+            is_group: true,
+            created_by: adminSenderId,
+          },
+          onConflict: "id"
+        });
+      } catch (gcCheckErr) {
+        console.warn("[AdminMessages] Auto-repair groupchats row notice:", gcCheckErr);
+      }
+
       insertPayload = [{
         sender_id: adminSenderId,
         receiver_id: null,

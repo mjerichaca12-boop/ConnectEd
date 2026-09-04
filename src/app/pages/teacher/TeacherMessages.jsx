@@ -679,6 +679,18 @@ function TeacherMessages() {
           .in("id", conversationIds)
           .eq("is_group", true);
         if (conversationData) groupConvList.push(...conversationData);
+
+        const { data: groupchatsData } = await db
+          .from("groupchats")
+          .select("id, name, is_group, created_by")
+          .in("id", conversationIds);
+        if (groupchatsData) {
+          groupchatsData.forEach((gc) => {
+            if (!groupConvList.some((existing) => existing.id === gc.id)) {
+              groupConvList.push(gc);
+            }
+          });
+        }
       }
 
       // ALSO fetch group conversations created by current user to avoid missing groups
@@ -690,6 +702,19 @@ function TeacherMessages() {
 
       if (myCreatedGroups && myCreatedGroups.length > 0) {
         myCreatedGroups.forEach((cg) => {
+          if (!groupConvList.some((existing) => existing.id === cg.id)) {
+            groupConvList.push(cg);
+          }
+        });
+      }
+
+      const { data: myCreatedGroupchats } = await db
+        .from("groupchats")
+        .select("id, name, is_group, created_by")
+        .eq("created_by", currentTeacherId);
+
+      if (myCreatedGroupchats && myCreatedGroupchats.length > 0) {
+        myCreatedGroupchats.forEach((cg) => {
           if (!groupConvList.some((existing) => existing.id === cg.id)) {
             groupConvList.push(cg);
           }
@@ -958,19 +983,42 @@ function TeacherMessages() {
     
     const groupTitle = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
     
-    // Insert conversation directly into database using Supabase client
+    // Insert conversation into database using Supabase client
     try {
-      const { error: convErr } = await db
-        .from("conversations")
-        .insert({
-          id: conversationId,
-          name: groupTitle,
-          is_group: true,
-          created_by: teacherId,
-        });
+      // 1. Insert into groupchats table (CRITICAL: satisfies foreign key constraints on conversation_participants & messages)
+      try {
+        const { error: gcErr } = await db
+          .from("groupchats")
+          .insert({
+            id: conversationId,
+            name: groupTitle,
+            is_group: true,
+            created_by: teacherId,
+          });
 
-      if (convErr) {
-        console.warn("[TeacherMessages] Conversation insert error:", convErr);
+        if (gcErr) {
+          console.warn("[TeacherMessages] groupchats insert notice:", gcErr);
+        }
+      } catch (e) {
+        console.warn("[TeacherMessages] groupchats insert exception:", e);
+      }
+
+      // 2. Insert into conversations table as well for backwards compatibility
+      try {
+        const { error: convErr } = await db
+          .from("conversations")
+          .insert({
+            id: conversationId,
+            name: groupTitle,
+            is_group: true,
+            created_by: teacherId,
+          });
+
+        if (convErr) {
+          console.warn("[TeacherMessages] Conversations insert error:", convErr);
+        }
+      } catch (e) {
+        console.warn("[TeacherMessages] Conversations insert exception:", e);
       }
 
       // Add all participants including the teacher who created it
@@ -1148,6 +1196,18 @@ function TeacherMessages() {
     
     let insertPayload;
     if (activeConversation.isGroup) {
+      // Auto-ensure groupchats table row exists to satisfy messages_conversation_fk foreign key constraint
+      try {
+        await db.from("groupchats").upsert({
+          id: activeConversation.id,
+          name: activeConversation.participantName || "Group Chat",
+          is_group: true,
+          created_by: currentTeacherId,
+        }, { onConflict: "id" });
+      } catch (gcCheckErr) {
+        console.warn("[TeacherMessages] Auto-repair groupchats row notice:", gcCheckErr);
+      }
+
       insertPayload = [{
         sender_id: currentTeacherId,
         receiver_id: null,
@@ -1374,6 +1434,7 @@ function TeacherMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
+      await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
       await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       saveConversations(updated);
@@ -1403,6 +1464,7 @@ function TeacherMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
+      await db.from("groupchats").delete().eq("id", selectedConv.id);
       await db.from("conversations").delete().eq("id", selectedConv.id);
     } catch (err) {
       console.error("[TeacherMessages] Delete error:", err);
