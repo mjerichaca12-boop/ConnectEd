@@ -124,8 +124,18 @@ export const adminApi = {
       const { payload, eq, neq, in: inArgs, or, is: isArgs, match, select, order, single } = options;
 
       if (action === "storage_upload") {
-        const { bucket, path, file, contentType } = payload || {};
-        const { data, error } = await supabase.storage.from(bucket).upload(path, file, { contentType, upsert: true });
+        const { bucket, path, file, base64File, contentType } = payload || {};
+        let uploadContent = file;
+        if (!uploadContent && base64File) {
+          const byteCharacters = atob(base64File);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          uploadContent = new Blob([byteArray], { type: contentType || "application/octet-stream" });
+        }
+        const { data, error } = await supabase.storage.from(bucket).upload(path, uploadContent, { contentType, upsert: true });
         return { data, error };
       } else if (action === "storage_remove") {
         const { bucket, paths } = payload || {};

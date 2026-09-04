@@ -390,30 +390,32 @@ function AdminAnnouncements() {
         const contentType = file.type || "application/octet-stream";
         let uploadError = null;
 
-        // Try direct Supabase client binary upload first (avoids base64 inflation & 413 Payload Too Large)
-        const { error: directErr } = await client.storage
-          .from(ANNOUNCEMENT_ATTACHMENT_BUCKET)
-          .upload(storagePath, file, { contentType, upsert: true });
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = e => reject(e);
+        });
+        const base64File = await toBase64(file);
 
-        if (directErr) {
-          console.warn("[AdminAnnouncements] Direct storage upload notice, attempting adminApi fallback:", directErr.message || directErr);
-          const toBase64 = (f) => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(f);
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = e => reject(e);
-          });
-          const base64File = await toBase64(file);
-          
-          const { error: apiErr } = await adminApi.db("storage", "storage_upload", {
-            payload: {
-              bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
-              path: storagePath,
-              base64File,
-              contentType
-            }
-          });
-          uploadError = apiErr;
+        // Primary: Admin API upload using Service Role Key (bypasses RLS policies & handles static admin auth)
+        const { error: apiErr } = await adminApi.db("storage", "storage_upload", {
+          payload: {
+            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+            path: storagePath,
+            base64File,
+            contentType
+          }
+        });
+
+        if (apiErr) {
+          console.warn("[AdminAnnouncements] Admin API storage upload notice, attempting direct storage upload:", apiErr.message || apiErr);
+          const { error: directErr } = await client.storage
+            .from(ANNOUNCEMENT_ATTACHMENT_BUCKET)
+            .upload(storagePath, file, { contentType, upsert: true });
+          uploadError = directErr;
+        } else {
+          uploadError = null;
         }
 
         if (uploadError) {
