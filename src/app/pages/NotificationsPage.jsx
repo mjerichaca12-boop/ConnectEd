@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { 
   Bell, 
   MessageCircle, 
@@ -12,12 +12,16 @@ import {
   Check,
   ArrowLeft
 } from "lucide-react";
-
-const db = () => supabase;
-
-const isValidUuid = (value) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+import {
+  resolveCurrentUserId,
+  fetchUserNotifications,
+  markNotificationAsRead,
+  toggleNotificationReadStatus,
+  markAllNotificationsAsRead,
+  deleteNotification,
+  getNotificationNavigationPath,
+  deduplicateNotifications,
+} from "@/app/services/notificationService";
 
 const getCurrentUser = () => {
   try {
@@ -28,26 +32,11 @@ const getCurrentUser = () => {
   }
 };
 
-const mapRow = (row, role) => {
-  const typeStr = String(row.type || "system").toLowerCase();
-  return {
-    id: String(row.id),
-    title: String(row.title || "Notification"),
-    message: String(row.body || row.message || ""),
-    time: String(row.created_at || new Date().toISOString()),
-    isRead: Boolean(row.is_read),
-    type: typeStr,
-    relatedId: row.related_id,
-    relatedType: row.related_type,
-    userRole: role || "student"
-  };
-};
-
 const getTypeIcon = (type) => {
-  const t = String(type).toLowerCase();
+  const t = String(type || "").toLowerCase();
   if (t.includes("message")) return <MessageCircle className="w-5 h-5 text-blue-500" />;
   if (t.includes("assignment") || t.includes("grade")) return <CheckCircle className="w-5 h-5 text-green-500" />;
-  if (t.includes("alert") || t.includes("system")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
+  if (t.includes("alert") || t.includes("system") || t.includes("announcement")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
   return <Info className="w-5 h-5 text-gray-500" />;
 };
 
@@ -62,137 +51,137 @@ const formatTimeAgo = (dateString) => {
   return `${Math.floor(diffInSeconds / 86400)}d ago`;
 };
 
-function NotificationsPage() {
+export function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const user = getCurrentUser();
 
-  const loadNotifications = async () => {
-    setLoading(true);
-    let userId = user?.id && isValidUuid(user.id) ? user.id : null;
-    if (!userId && supabase?.auth?.getUser) {
-      try {
-        const { data } = await supabase.auth.getUser();
-        if (data?.user?.id && isValidUuid(data.user.id)) {
-          userId = data.user.id;
-        }
-      } catch {}
+  const loadNotifications = useCallback(async () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+      setLoading(false);
+      return;
     }
-
-    if (userId && db()) {
-      try {
-        let query = db()
-          .from("notifications")
-          .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type");
-
-        if (user?.role === "admin") {
-          query = query.or(`user_id.eq.${userId},user_id.eq.11111111-1111-1111-1111-111111111111`);
-        } else {
-          query = query.eq("user_id", userId);
-        }
-
-        const { data, error } = await query.order("created_at", { ascending: false }).limit(100);
-        if (!error && data) {
-          setNotifications(data.map((n) => mapRow(n, user?.role)));
-          setLoading(false);
-          return;
-        }
-      } catch (err) {
-        console.error("Failed to load notifications:", err);
-      }
-    }
+    const items = await fetchUserNotifications(currentUser);
+    setNotifications(items);
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [loadNotifications]);
+
+  // Window event listener for instant multi-component reactivity
+  useEffect(() => {
+    const handleNotificationEvent = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+
+      if (detail.action === "read" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === String(detail.notificationId) ? { ...n, isRead: true } : n))
+        );
+      } else if (detail.action === "toggle" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === String(detail.notificationId) ? { ...n, isRead: detail.nextReadStatus } : n
+          )
+        );
+      } else if (detail.action === "mark_all_read") {
+        setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      } else if (detail.action === "delete" && detail.notificationId) {
+        setNotifications((prev) => prev.filter((n) => n.id !== String(detail.notificationId)));
+      } else {
+        loadNotifications();
+      }
+    };
+
+    window.addEventListener("connected_notification_change", handleNotificationEvent);
+    return () => window.removeEventListener("connected_notification_change", handleNotificationEvent);
+  }, [loadNotifications]);
 
   // Real-time subscription
   useEffect(() => {
     let channel = null;
-    let userId = user?.id && isValidUuid(user.id) ? user.id : null;
-    if (!userId && user?.role === "admin") {
-      userId = "11111111-1111-1111-1111-111111111111";
-    }
+    let isMounted = true;
 
-    if (!supabase || !userId) return;
+    const setupRealtime = async () => {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !supabase) return;
 
-    try {
-      channel = supabase
-        .channel(`notifications-page-${userId}-${Date.now()}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "notifications" },
-          (payload) => {
-            const newRow = payload.new || payload.old;
-            if (!newRow) return;
-            const targetId = String(newRow.user_id || "");
-            const isMatch = targetId === String(userId) || (user?.role === "admin" && (targetId === "11111111-1111-1111-1111-111111111111" || targetId === userId));
-            if (!isMatch) return;
+      const userId = await resolveCurrentUserId(currentUser);
+      if (!userId || !isMounted) return;
 
-            if (payload.eventType === "INSERT") {
-              const item = mapRow(payload.new, user?.role);
-              setNotifications((prev) => [item, ...prev.filter((n) => n.id !== item.id)]);
-            } else if (payload.eventType === "UPDATE") {
-              const item = mapRow(payload.new, user?.role);
-              setNotifications((prev) => prev.map((n) => (n.id === item.id ? item : n)));
-            } else if (payload.eventType === "DELETE") {
-              setNotifications((prev) => prev.filter((n) => n.id !== String(payload.old?.id)));
+      try {
+        channel = supabase
+          .channel(`notifications-general-page-${userId}-${Date.now()}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${userId}`,
+            },
+            () => {
+              if (isMounted) {
+                loadNotifications();
+              }
             }
-          }
-        )
-        .subscribe();
-    } catch (e) {
-      console.warn("Realtime setup error on notifications page:", e);
-    }
+          )
+          .subscribe();
+      } catch (e) {
+        console.warn("Realtime setup error on notifications page:", e);
+      }
+    };
+
+    setupRealtime();
 
     return () => {
+      isMounted = false;
       if (channel && supabase) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [loadNotifications]);
 
   const handleToggleRead = async (item) => {
+    const currentUser = getCurrentUser();
     const nextStatus = !item.isRead;
-    try {
-      if (db() && item.id) {
-        await db().from("notifications").update({ is_read: nextStatus }).eq("id", item.id);
-      }
-    } catch (err) {
-      console.error("Failed to toggle read status:", err);
-    }
-    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, isRead: nextStatus } : n)));
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: nextStatus } : n))
+    );
+    await toggleNotificationReadStatus(currentUser, item.id, item.isRead);
   };
 
   const handleDelete = async (id) => {
-    try {
-      if (db() && id) {
-        await db().from("notifications").delete().eq("id", id);
-      }
-    } catch (err) {
-      console.error("Failed to delete notification:", err);
-    }
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    await deleteNotification(currentUser, id);
   };
 
   const handleMarkAllRead = async () => {
-    let userId = user?.id && isValidUuid(user.id) ? user.id : null;
-    try {
-      if (db()) {
-        let query = db().from("notifications").update({ is_read: true }).eq("is_read", false);
-        if (userId && user?.role !== "admin") query = query.eq("user_id", userId);
-        await query;
-      }
-    } catch (err) {
-      console.error("Failed to mark all read:", err);
-    }
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await markAllNotificationsAsRead(currentUser);
   };
 
-  const filtered = notifications.filter((n) => {
+  const handleNotificationClick = async (item) => {
+    const currentUser = getCurrentUser();
+    if (!item.isRead) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+      );
+      await markNotificationAsRead(currentUser, item.id);
+    }
+    const currentPath = window.location.pathname;
+    const targetPath = getNotificationNavigationPath(item, currentUser?.role, currentPath);
+    if (targetPath && targetPath !== currentPath) {
+      navigate(targetPath);
+    }
+  };
+
+  const filtered = deduplicateNotifications(notifications).filter((n) => {
     if (categoryFilter !== "all" && !n.type.includes(categoryFilter)) return false;
     if (statusFilter === "unread" && n.isRead) return false;
     if (statusFilter === "read" && !n.isRead) return false;
@@ -209,7 +198,7 @@ function NotificationsPage() {
           <div className="flex items-center gap-4">
             <button 
               onClick={() => navigate(-1)} 
-              className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600"
+              className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-600 cursor-pointer"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -228,7 +217,7 @@ function NotificationsPage() {
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl transition-colors"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl transition-colors cursor-pointer"
             >
               <Check className="w-4 h-4" />
               Mark all as read
@@ -243,7 +232,7 @@ function NotificationsPage() {
               <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
                   categoryFilter === cat
                     ? "bg-gray-900 text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -258,7 +247,7 @@ function NotificationsPage() {
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
                   statusFilter === st
                     ? "bg-emerald-600 text-white"
                     : "text-gray-500 hover:bg-gray-100"
@@ -286,7 +275,8 @@ function NotificationsPage() {
             {filtered.map((item) => (
               <div
                 key={item.id}
-                className={`p-4 rounded-xl border transition-all flex items-start justify-between gap-4 ${
+                onClick={() => handleNotificationClick(item)}
+                className={`p-4 rounded-xl border transition-all flex items-start justify-between gap-4 cursor-pointer ${
                   item.isRead ? "bg-white border-gray-200" : "bg-emerald-50/40 border-emerald-200 shadow-sm"
                 }`}
               >
@@ -306,23 +296,23 @@ function NotificationsPage() {
                     <p className="text-xs text-gray-600 leading-relaxed">{item.message}</p>
                     <div className="flex items-center gap-1.5 text-xs text-gray-400 pt-1">
                       <Clock className="w-3.5 h-3.5" />
-                      <span>{formatTimeAgo(item.time)}</span>
+                      <span>{formatTimeAgo(item.createdAt || item.timestamp)}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    onClick={() => handleToggleRead(item)}
+                    onClick={(e) => { e.stopPropagation(); handleToggleRead(item); }}
                     title={item.isRead ? "Mark as unread" : "Mark as read"}
-                    className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+                    className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors cursor-pointer"
                   >
                     <Check className={`w-4 h-4 ${item.isRead ? "text-emerald-600" : "text-gray-400"}`} />
                   </button>
                   <button
-                    onClick={() => handleDelete(item.id)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
                     title="Delete notification"
-                    className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-colors"
+                    className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -335,5 +325,3 @@ function NotificationsPage() {
     </div>
   );
 }
-
-export { NotificationsPage };

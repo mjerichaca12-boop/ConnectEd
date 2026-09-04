@@ -1,119 +1,27 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, X, MessageSquare, FileSpreadsheet, BookOpen, Calendar, AlertCircle, Trash2, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
-
-const db = () => supabase;
-
-const isValidUuid = (value) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+import {
+  resolveCurrentUserId,
+  fetchUserNotifications,
+  markNotificationAsRead,
+  toggleNotificationReadStatus,
+  markAllNotificationsAsRead,
+  deleteNotification,
+  getNotificationNavigationPath,
+  deduplicateNotifications,
+  getNotificationStorageKey,
+} from "@/app/services/notificationService";
 
 const getCurrentUser = () => {
   try {
     const raw = localStorage.getItem("currentUser");
-    if (!raw) return null;
-    const user = JSON.parse(raw);
-    if (user?.role === "admin" && !isValidUuid(user?.id)) {
-      user.id = "11111111-1111-1111-1111-111111111111"; // Patch for old admin sessions
-    }
-    return user;
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 };
-
-const getStorageKey = (user) => {
-  const role = user?.role || "guest";
-  let id = isValidUuid(user?.id) ? user.id : "guest";
-  if (role === "admin" && id === "guest") id = "11111111-1111-1111-1111-111111111111"; // Fallback for old sessions
-  return `notifications_${role}_${id}_v2`;
-};
-
-const dedupeNotifications = (items) => {
-  const seen = new Set();
-  return (Array.isArray(items) ? items : []).filter((item) => {
-    const id = String(item?.id || "").trim();
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-};
-
-const getPathForType = (type, role) => {
-  switch (type) {
-    case "announcement":
-      return role === "teacher" ? "/teacher/announcements" : role === "admin" ? "/admin/announcements" : "/announcements";
-    case "messages":
-      return role === "teacher" ? "/teacher/messages" : role === "admin" ? "/admin/messages" : "/messages";
-    case "grades":
-      return role === "teacher" ? "/teacher/grades" : "/grades";
-    case "assignments":
-      return role === "teacher" ? "/teacher/classes" : "/subjects";
-    default:
-      return role === "teacher" ? "/teacher/notifications" : role === "admin" ? "/admin/notifications" : "/notifications";
-  }
-};
-
-const getViewAllPath = (role) => {
-  if (role === "admin") return "/admin/notifications";
-  if (role === "teacher") return "/teacher/notifications";
-  return "/notifications";
-};
-
-const getNotificationNavigationPath = (notification, role, currentPath = "") => {
-  const type = String(notification.type || "").toLowerCase();
-  const classId = notification.classId || notification.relatedId || notification.related_id;
-  const targetPage = notification.targetPage || notification.path;
-
-  const isTeacher = role === "teacher";
-  const isAdmin = role === "admin";
-
-  switch (type) {
-    case "assignment":
-    case "assignments":
-      if (classId) {
-        return isTeacher ? `/teacher/class/${classId}` : `/classes/${classId}`;
-      }
-      return isTeacher ? "/teacher/classes" : "/subjects";
-
-    case "announcement":
-    case "announcements":
-      return isTeacher ? "/teacher/announcements" : isAdmin ? "/admin/announcements" : "/announcements";
-
-    case "messages":
-    case "message":
-      return isTeacher ? "/teacher/messages" : isAdmin ? "/admin/messages" : "/messages";
-
-    case "grades":
-    case "grade":
-      return isTeacher ? "/teacher/grades" : "/grades";
-
-    default:
-      if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
-        return targetPage;
-      }
-      if (currentPath && currentPath !== "/teacher/notifications" && currentPath !== "/admin/notifications" && currentPath !== "/notifications") {
-        return currentPath;
-      }
-      return isTeacher ? "/teacher/dashboard" : isAdmin ? "/admin/dashboard" : "/";
-  }
-};
-
-const mapRow = (n, role) => ({
-  id: String(n.id),
-  userId: String(n.user_id || ""),
-  type: String(n.type || "").toLowerCase(),
-  title: String(n.title || ""),
-  message: String(n.body || n.message || ""),
-  isRead: Boolean(n.is_read),
-  timestamp: new Date(n.created_at).toLocaleString(),
-  createdAt: n.created_at,
-  path: getPathForType(n.type, role),
-  relatedId: n.related_id,
-  classId: n.class_id || n.related_id,
-  targetPage: n.target_page || getPathForType(n.type, role),
-});
 
 const getIconForType = (type) => {
   const t = String(type || "").toLowerCase().trim();
@@ -139,113 +47,45 @@ const getIconForType = (type) => {
   }
 };
 
-function NotificationDropdown({
-  notifications: defaultNotifications,
+const getViewAllPath = (role) => {
+  if (role === "admin") return "/admin/notifications";
+  if (role === "teacher") return "/teacher/notifications";
+  return "/notifications";
+};
+
+export function NotificationDropdown({
   onMarkAsRead,
   onNotificationsChange
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all"); // "all", "unread", "read"
-  const [lastViewedAt, setLastViewedAt] = useState(() => localStorage.getItem("notifications_last_viewed") || null);
+  const [statusFilter, setStatusFilter] = useState("all");
   const dropdownRef = useRef(null);
-  const audioRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    audioRef.current = null;
-  }, []);
+  const loadNotifications = useCallback(async () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
+    const items = await fetchUserNotifications(currentUser);
+    setNotifications(items);
+    onNotificationsChange?.(items);
+  }, [onNotificationsChange]);
 
   useEffect(() => {
-    let isMounted = true;
-    let authSubscription = null;
-
-    const load = async () => {
-      const currentUser = getCurrentUser();
-
-      if (currentUser?.role === "admin" && !isValidUuid(currentUser.id)) {
-        currentUser.id = "11111111-1111-1111-1111-111111111111"; // Patch for old admin sessions
-      }
-
-      const key = getStorageKey(currentUser);
-
-      let effectiveUserId = currentUser?.id && isValidUuid(currentUser.id) ? currentUser.id : null;
-      if (!effectiveUserId && supabase?.auth?.getUser) {
-        try {
-          const { data: authData } = await supabase.auth.getUser();
-          if (authData?.user?.id && isValidUuid(authData.user.id)) {
-            effectiveUserId = authData.user.id;
-          }
-        } catch {}
-      }
-      if (!effectiveUserId && currentUser?.role === "admin") {
-        effectiveUserId = "11111111-1111-1111-1111-111111111111";
-      }
-
-      if (effectiveUserId && db()) {
-        try {
-          let query = db()
-            .from("notifications")
-            .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type");
-
-          if (currentUser?.role === "admin") {
-            query = query.or(`user_id.eq.${effectiveUserId},user_id.eq.11111111-1111-1111-1111-111111111111`);
-          } else {
-            query = query.eq("user_id", effectiveUserId);
-          }
-
-          const res = await query.order("created_at", { ascending: false }).limit(100);
-
-          if (!res.error && res.data && isMounted) {
-            const mapped = res.data.map((n) => mapRow(n, currentUser?.role || "user"));
-            let finalItems = dedupeNotifications(mapped);
-
-            setNotifications(finalItems);
-            localStorage.setItem(key, JSON.stringify(finalItems));
-            onNotificationsChange?.(finalItems);
-            return;
-          }
-        } catch (err) {
-          console.warn("[NotificationDropdown] Error fetching notifications from DB:", err);
-        }
-      }
-
-      if (!isMounted) return;
-
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        try {
-          setNotifications(dedupeNotifications(JSON.parse(stored)));
-        } catch {
-          setNotifications([]);
-        }
-      } else {
-        const initial = dedupeNotifications(defaultNotifications || []);
-        localStorage.setItem(key, JSON.stringify(initial));
-        setNotifications(initial);
-      }
-    };
-
-    load();
+    loadNotifications();
 
     if (supabase?.auth?.onAuthStateChange) {
       const { data } = supabase.auth.onAuthStateChange(() => {
-        if (isMounted) {
-          load();
-        }
+        loadNotifications();
       });
-      authSubscription = data?.subscription || null;
+      return () => {
+        data?.subscription?.unsubscribe?.();
+      };
     }
+  }, [loadNotifications]);
 
-    return () => {
-      isMounted = false;
-      try {
-        authSubscription?.unsubscribe?.();
-      } catch {}
-    };
-  }, []);
-
+  // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -256,126 +96,106 @@ function NotificationDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Realtime subscription for new notifications
+  // Listen to custom window notification events for instant multi-component sync
+  useEffect(() => {
+    const handleNotificationEvent = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+
+      if (detail.action === "read" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === String(detail.notificationId) ? { ...n, isRead: true } : n))
+        );
+      } else if (detail.action === "toggle" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === String(detail.notificationId) ? { ...n, isRead: detail.nextReadStatus } : n
+          )
+        );
+      } else if (detail.action === "mark_all_read") {
+        setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      } else if (detail.action === "delete" && detail.notificationId) {
+        setNotifications((prev) => prev.filter((n) => n.id !== String(detail.notificationId)));
+      } else {
+        loadNotifications();
+      }
+    };
+
+    window.addEventListener("connected_notification_change", handleNotificationEvent);
+    return () => window.removeEventListener("connected_notification_change", handleNotificationEvent);
+  }, [loadNotifications]);
+
+  // Realtime Supabase subscription for user notifications
   useEffect(() => {
     let channel = null;
-    const user = getCurrentUser();
-    let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-    if (!effectiveUserId && user?.role === "admin") {
-      effectiveUserId = "11111111-1111-1111-1111-111111111111";
-    }
+    let isSubscribed = true;
 
-    if (!supabase || !effectiveUserId) return;
+    const setupRealtime = async () => {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !supabase) return;
 
-    try {
-      channel = supabase
-        .channel(`notifications-${effectiveUserId}-${Date.now()}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "notifications",
-          },
-          (payload) => {
-            const newRow = payload.new || payload.old;
-            if (!newRow) return;
+      const userId = await resolveCurrentUserId(currentUser);
+      if (!userId || !isSubscribed) return;
 
-            const targetId = String(newRow.user_id || "");
-            const isMatch = targetId === String(effectiveUserId) ||
-                            (user?.role === "admin" && (targetId === "11111111-1111-1111-1111-111111111111" || targetId === effectiveUserId));
-
-            if (!isMatch) return;
-
-            if (payload.eventType === "INSERT") {
-              const item = mapRow(payload.new, user?.role);
-              setNotifications((prev) => {
-                const merged = dedupeNotifications([item, ...(prev || [])]);
-                localStorage.setItem(getStorageKey(user), JSON.stringify(merged));
-                onNotificationsChange?.(merged);
-                return merged;
-              });
-            } else if (payload.eventType === "UPDATE") {
-              const item = mapRow(payload.new, user?.role);
-              setNotifications((prev) => {
-                const updated = prev.map((n) => (n.id === item.id ? item : n));
-                localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
-                onNotificationsChange?.(updated);
-                return updated;
-              });
-            } else if (payload.eventType === "DELETE") {
-              const deletedId = String(payload.old?.id);
-              setNotifications((prev) => {
-                const filtered = prev.filter((n) => n.id !== deletedId);
-                localStorage.setItem(getStorageKey(user), JSON.stringify(filtered));
-                onNotificationsChange?.(filtered);
-                return filtered;
-              });
+      try {
+        channel = supabase
+          .channel(`notifications-${userId}-${Date.now()}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${userId}`,
+            },
+            () => {
+              if (isSubscribed) {
+                loadNotifications();
+              }
             }
-          }
-        )
-        .subscribe();
-    } catch (e) {
-      console.warn("[NotificationDropdown] Realtime subscription error:", e);
-    }
+          )
+          .subscribe();
+      } catch (e) {
+        console.warn("[NotificationDropdown] Realtime subscription error:", e);
+      }
+    };
+
+    setupRealtime();
 
     return () => {
-      try {
-        if (channel && supabase) {
-          supabase.removeChannel(channel);
-        }
-      } catch {}
+      isSubscribed = false;
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, []);
+  }, [loadNotifications]);
 
+  // Total unread count for current user
   const totalUnreadCount = notifications.filter((n) => !n.isRead).length;
 
-  // Unseen notifications badge count (Unread notifications created after lastViewedAt)
-  const unseenNotifications = notifications.filter(
-    (n) => !n.isRead && (!lastViewedAt || new Date(n.createdAt || n.timestamp) > new Date(lastViewedAt))
-  );
-  const badgeCount = unseenNotifications.length;
+  // Unread badge count is ALWAYS equal to totalUnreadCount!
+  // Opening the dropdown menu DOES NOT mark notifications as read or clear the badge.
+  const badgeCount = totalUnreadCount;
 
   const handleToggleOpen = () => {
-    const nextState = !isOpen;
-    setIsOpen(nextState);
-    if (nextState) {
-      const nowStr = new Date().toISOString();
-      localStorage.setItem("notifications_last_viewed", nowStr);
-      setLastViewedAt(nowStr);
-      console.log("[NotificationDropdown] Resetting unseen badge count. lastViewedAt set to:", nowStr);
-    }
+    setIsOpen((prev) => !prev);
   };
 
-  const user = getCurrentUser();
+  const currentUser = getCurrentUser();
 
   const handleNotificationClick = async (item) => {
-    console.log("[NotificationDropdown] Notification item clicked:", item.id);
-    try {
-      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-      if (db() && item.id) {
-        let query = db().from("notifications").update({ is_read: true }).eq("id", item.id);
-        if (targetUserId && user?.role !== "admin") {
-          query = query.eq("user_id", targetUserId);
-        }
-        await query;
-      }
-    } catch (err) {
-      console.error("[NotificationDropdown] Failed to mark notification read in DB:", err);
+    if (!item.isRead) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+      );
+      await markNotificationAsRead(currentUser, item.id);
+      onMarkAsRead?.(item.id);
     }
 
-    const updated = dedupeNotifications(notifications).map((n) =>
-      n.id === item.id ? { ...n, isRead: true } : n
-    );
-    setNotifications(updated);
-    localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
-    onMarkAsRead?.(item.id);
-    onNotificationsChange?.(updated);
     setIsOpen(false);
 
     const currentPath = window.location.pathname;
-    const targetPath = getNotificationNavigationPath(item, user?.role, currentPath);
-    console.log("[NotificationDropdown] Navigating from", currentPath, "to", targetPath);
+    const targetPath = getNotificationNavigationPath(item, currentUser?.role, currentPath);
     if (targetPath && targetPath !== currentPath) {
       navigate(targetPath);
     }
@@ -384,72 +204,24 @@ function NotificationDropdown({
   const handleToggleReadStatus = async (e, item) => {
     e.stopPropagation();
     const nextStatus = !item.isRead;
-    console.log("[NotificationDropdown] Toggling read status to:", nextStatus, "for notification:", item.id);
-    try {
-      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-      if (db() && item.id) {
-        let query = db().from("notifications").update({ is_read: nextStatus }).eq("id", item.id);
-        if (targetUserId && user?.role !== "admin") {
-          query = query.eq("user_id", targetUserId);
-        }
-        await query;
-      }
-    } catch (err) {
-      console.error("[NotificationDropdown] Failed to toggle read status:", err);
-    }
-
-    const updated = notifications.map((n) =>
-      n.id === item.id ? { ...n, isRead: nextStatus } : n
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === item.id ? { ...n, isRead: nextStatus } : n))
     );
-    setNotifications(updated);
-    localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
-    onNotificationsChange?.(updated);
+    await toggleNotificationReadStatus(currentUser, item.id, item.isRead);
   };
 
   const handleDeleteNotification = async (e, id) => {
     e.stopPropagation();
-    console.log("[NotificationDropdown] Deleting notification:", id);
-    try {
-      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-      if (db() && id) {
-        let query = db().from("notifications").delete().eq("id", id);
-        if (targetUserId && user?.role !== "admin") {
-          query = query.eq("user_id", targetUserId);
-        }
-        await query;
-      }
-    } catch (err) {
-      console.error("[NotificationDropdown] Failed to delete notification:", err);
-    }
-
-    const updated = notifications.filter((n) => n.id !== id);
-    setNotifications(updated);
-    localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
-    onNotificationsChange?.(updated);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    await deleteNotification(currentUser, id);
   };
 
   const handleMarkAllRead = async () => {
-    console.log("[NotificationDropdown] Marking all notifications as read.");
-    try {
-      let targetUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-      if (db()) {
-        let query = db().from("notifications").update({ is_read: true }).eq("is_read", false);
-        if (targetUserId && user?.role !== "admin") {
-          query = query.eq("user_id", targetUserId);
-        }
-        await query;
-      }
-    } catch (err) {
-      console.error("[NotificationDropdown] Failed to mark all read in DB:", err);
-    }
-
-    const updated = dedupeNotifications(notifications).map((n) => ({ ...n, isRead: true }));
-    setNotifications(updated);
-    localStorage.setItem(getStorageKey(user), JSON.stringify(updated));
-    onNotificationsChange?.(updated);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await markAllNotificationsAsRead(currentUser);
   };
 
-  const filtered = dedupeNotifications(notifications).filter((n) => {
+  const filtered = deduplicateNotifications(notifications).filter((n) => {
     // 1. Category Filter
     let matchesCategory = false;
     if (categoryFilter === "all") {
@@ -485,16 +257,16 @@ function NotificationDropdown({
         className="relative p-2 hover:bg-green-50 rounded-xl transition-colors cursor-pointer"
         aria-label="Notifications"
       >
-        <Bell className="w-6 h-6 text-gray-500 group-hover:text-green-600" />
+        <Bell className="w-6 h-6 text-gray-500 hover:text-green-600 transition-colors" />
         {badgeCount > 0 && (
-          <span className="absolute -top-1 -right-1 text-[10px] bg-red-500 text-white rounded-full px-1.5 py-[2px] font-bold">
+          <span className="absolute -top-1 -right-1 text-[10px] bg-red-500 text-white rounded-full px-1.5 py-[2px] font-bold shadow-sm">
             {badgeCount}
           </span>
         )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 py-2">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 z-50 py-2 animate-in fade-in slide-in-from-top-2 duration-150">
           {/* Header */}
           <div className="px-4 py-2 border-b border-gray-100">
             <div className="flex items-center justify-between">
@@ -508,7 +280,7 @@ function NotificationDropdown({
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => { setIsOpen(false); navigate(getViewAllPath(user?.role)); }}
+                  onClick={() => { setIsOpen(false); navigate(getViewAllPath(currentUser?.role)); }}
                   className="text-xs text-green-600 hover:text-green-700 font-semibold whitespace-nowrap cursor-pointer"
                 >
                   History
@@ -550,8 +322,8 @@ function NotificationDropdown({
                     Mark all read
                   </button>
                 )}
-                {(user?.role === "admin" 
-                  ? ["all", "messages", "users", "system"] 
+                {(currentUser?.role === "admin" 
+                  ? ["all", "messages", "system"] 
                   : ["all", "assignments", "messages", "grades", "system"]
                 ).map((cat) => (
                   <button
@@ -571,7 +343,7 @@ function NotificationDropdown({
           </div>
 
           {/* Notifications List */}
-          <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
+          <div className="max-h-72 overflow-y-auto divide-y divide-gray-50 select-scrollbar">
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-500">
                 No notifications matching filters
@@ -579,7 +351,7 @@ function NotificationDropdown({
             ) : (
               filtered.map((item, index) => (
                 <div
-                  key={`${item.id}-notification-${index}`}
+                  key={`${item.id}-notif-${index}`}
                   className={`group relative px-4 py-3 hover:bg-green-50/30 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-3 ${
                     !item.isRead ? "bg-green-50/20" : ""
                   }`}
@@ -587,7 +359,7 @@ function NotificationDropdown({
                   {/* Status Indicator Dot */}
                   <div className="pt-1.5">
                     {!item.isRead ? (
-                      <span className="block w-2 h-2 rounded-full bg-emerald-500" />
+                      <span className="block w-2 h-2 rounded-full bg-emerald-500 shadow-sm" />
                     ) : (
                       <span className="block w-2 h-2 rounded-full border border-gray-300" />
                     )}
@@ -642,5 +414,3 @@ function NotificationDropdown({
     </div>
   );
 }
-
-export { NotificationDropdown };

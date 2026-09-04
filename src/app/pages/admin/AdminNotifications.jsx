@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { adminApi } from "@/app/lib/adminApi";
 import { useNavigate } from "react-router-dom";
 import { 
-  X, 
   Bell, 
   MessageCircle, 
   CheckCircle, 
@@ -13,82 +11,30 @@ import {
   Trash2,
   Check
 } from "lucide-react";
+import {
+  resolveCurrentUserId,
+  fetchUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  deleteNotification,
+  getNotificationNavigationPath,
+  deduplicateNotifications,
+} from "@/app/services/notificationService";
 
-const db = () => supabase;
-
-const isValidUuid = (value) =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-
-const getPathForType = (type, role) => {
-  switch (type) {
-    case "announcement":
-      return role === "teacher" ? "/teacher/announcements" : role === "admin" ? "/admin/announcements" : "/announcements";
-    case "messages":
-      return role === "teacher" ? "/teacher/messages" : role === "admin" ? "/admin/messages" : "/messages";
-    case "grades":
-      return role === "teacher" ? "/teacher/grades" : "/grades";
-    case "assignments":
-      return role === "teacher" ? "/teacher/classes" : "/subjects";
-    default:
-      return role === "teacher" ? "/teacher/notifications" : role === "admin" ? "/admin/notifications" : "/notifications";
+const getCurrentUser = () => {
+  try {
+    const raw = localStorage.getItem("currentUser");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-};
-
-const getNotificationNavigationPath = (notification, role, currentPath = "") => {
-  const type = String(notification.type || "").toLowerCase();
-  const classId = notification.classId || notification.relatedId || notification.related_id;
-  const targetPage = notification.targetPage || notification.path;
-
-  const isTeacher = role === "teacher";
-  const isAdmin = role === "admin";
-
-  switch (type) {
-    case "assignment":
-    case "assignments":
-      if (classId) {
-        return isTeacher ? `/teacher/class/${classId}` : `/classes/${classId}`;
-      }
-      return isTeacher ? "/teacher/classes" : "/subjects";
-
-    case "announcement":
-    case "announcements":
-      return isTeacher ? "/teacher/announcements" : isAdmin ? "/admin/announcements" : "/announcements";
-
-    case "messages":
-    case "message":
-      return isTeacher ? "/teacher/messages" : isAdmin ? "/admin/messages" : "/messages";
-
-    case "grades":
-    case "grade":
-      return isTeacher ? "/teacher/grades" : "/grades";
-
-    default:
-      if (targetPage && targetPage !== "/teacher/notifications" && targetPage !== "/admin/notifications" && targetPage !== "/notifications") {
-        return targetPage;
-      }
-      if (currentPath && currentPath !== "/teacher/notifications" && currentPath !== "/admin/notifications" && currentPath !== "/notifications") {
-        return currentPath;
-      }
-      return isTeacher ? "/teacher/dashboard" : isAdmin ? "/admin/dashboard" : "/";
-  }
-};
-
-const dedupeNotifications = (items) => {
-  const seen = new Set();
-  return (Array.isArray(items) ? items : []).filter((item) => {
-    const id = String(item?.id || "").trim();
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
 };
 
 const getTypeIcon = (type) => {
-  const t = String(type).toLowerCase();
-  if (t.includes('message')) return <MessageCircle className="w-5 h-5 text-blue-500" />;
-  if (t.includes('assignment') || t.includes('grade')) return <CheckCircle className="w-5 h-5 text-green-500" />;
-  if (t.includes('alert') || t.includes('system')) return <AlertCircle className="w-5 h-5 text-orange-500" />;
+  const t = String(type || "").toLowerCase();
+  if (t.includes("message")) return <MessageCircle className="w-5 h-5 text-blue-500" />;
+  if (t.includes("assignment") || t.includes("grade")) return <CheckCircle className="w-5 h-5 text-green-500" />;
+  if (t.includes("alert") || t.includes("system") || t.includes("announcement")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
   return <Info className="w-5 h-5 text-gray-500" />;
 };
 
@@ -97,7 +43,7 @@ const formatTimeAgo = (dateString) => {
   const now = new Date();
   const diffInSeconds = Math.floor((now - date) / 1000);
   
-  if (diffInSeconds < 60) return 'Just now';
+  if (diffInSeconds < 60) return "Just now";
   
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
@@ -117,176 +63,136 @@ export function AdminNotifications() {
   const [filter, setFilter] = useState("all");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    let isMounted = true;
-    let channel = null;
-
-    const load = async () => {
-      try {
-        const raw = localStorage.getItem("currentUser");
-        const user = raw ? JSON.parse(raw) : null;
-
-        let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : null;
-        if (!effectiveUserId && supabase?.auth?.getUser) {
-          try {
-            const { data: authData } = await supabase.auth.getUser();
-            if (authData?.user?.id && isValidUuid(authData.user.id)) {
-              effectiveUserId = authData.user.id;
-            }
-          } catch {}
-        }
-        if (!effectiveUserId) {
-          effectiveUserId = "11111111-1111-1111-1111-111111111111";
-        }
-
-        if (db() && effectiveUserId) {
-          try {
-            let res = await db()
-              .from("notifications")
-              .select("id, user_id, type, title, body, message, is_read, created_at, related_id, related_type")
-              .or(`user_id.eq.${effectiveUserId},user_id.eq.11111111-1111-1111-1111-111111111111`)
-              .order("created_at", { ascending: false })
-              .limit(200);
-
-            if (!res.error && res.data && isMounted) {
-              setNotifications(res.data.map((n) => ({
-                id: String(n.id),
-                type: String(n.type || ""),
-                title: String(n.title || ""),
-                message: String(n.body || n.message || ""),
-                isRead: Boolean(n.is_read),
-                timestamp: n.created_at,
-                path: getPathForType(n.type, "admin"),
-                relatedId: n.related_id,
-                classId: n.related_id,
-                targetPage: getPathForType(n.type, "admin"),
-              })));
-              setLoading(false);
-            }
-          } catch (err) {
-            console.error("[AdminNotifications] DB load error:", err);
-          }
-        }
-      } catch (err) {
-        console.error("[AdminNotifications] Failed to load notifications:", err);
-      }
-
+  const load = useCallback(async () => {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
       setLoading(false);
+      return;
+    }
+    const items = await fetchUserNotifications(currentUser);
+    setNotifications(items);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Window event listener for instant multi-component reactivity
+  useEffect(() => {
+    const handleNotificationEvent = (e) => {
+      const detail = e.detail;
+      if (!detail) return;
+
+      if (detail.action === "read" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === String(detail.notificationId) ? { ...n, isRead: true } : n))
+        );
+      } else if (detail.action === "toggle" && detail.notificationId) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === String(detail.notificationId) ? { ...n, isRead: detail.nextReadStatus } : n
+          )
+        );
+      } else if (detail.action === "mark_all_read") {
+        setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      } else if (detail.action === "delete" && detail.notificationId) {
+        setNotifications((prev) => prev.filter((n) => n.id !== String(detail.notificationId)));
+      } else {
+        load();
+      }
     };
 
-    load();
+    window.addEventListener("connected_notification_change", handleNotificationEvent);
+    return () => window.removeEventListener("connected_notification_change", handleNotificationEvent);
+  }, [load]);
 
-    // Subscribe to Realtime notifications
-    try {
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : "11111111-1111-1111-1111-111111111111";
+  // Realtime Supabase subscription for admin user notifications
+  useEffect(() => {
+    let channel = null;
+    let isMounted = true;
 
-      channel = supabase
-        .channel(`admin-notifications-page-${Date.now()}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload) => {
-          const newRow = payload.new || payload.old;
-          if (!newRow) return;
-          const targetId = String(newRow.user_id || "");
-          const isMatch = targetId === String(effectiveUserId) || targetId === "11111111-1111-1111-1111-111111111111";
-          if (!isMatch) return;
+    const setupRealtime = async () => {
+      const currentUser = getCurrentUser();
+      if (!currentUser || !supabase) return;
 
-          if (payload.eventType === "INSERT") {
-            const n = payload.new;
-            const newItem = {
-              id: String(n.id),
-              type: String(n.type || ""),
-              title: String(n.title || ""),
-              message: String(n.body || n.message || ""),
-              isRead: Boolean(n.is_read),
-              timestamp: n.created_at,
-              path: getPathForType(n.type, "admin"),
-              relatedId: n.related_id,
-              classId: n.related_id,
-              targetPage: getPathForType(n.type, "admin"),
-            };
-            setNotifications((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
-          } else if (payload.eventType === "UPDATE") {
-            const n = payload.new;
-            setNotifications((prev) => prev.map((item) => (item.id === String(n.id) ? { ...item, isRead: Boolean(n.is_read) } : item)));
-          } else if (payload.eventType === "DELETE") {
-            setNotifications((prev) => prev.filter((item) => item.id !== String(payload.old?.id)));
-          }
-        })
-        .subscribe();
-    } catch (e) {
-      console.warn("[AdminNotifications] Realtime subscribe error:", e);
-    }
+      const userId = await resolveCurrentUserId(currentUser);
+      if (!userId || !isMounted) return;
+
+      try {
+        channel = supabase
+          .channel(`admin-notifications-page-${userId}-${Date.now()}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${userId}`,
+            },
+            () => {
+              if (isMounted) {
+                load();
+              }
+            }
+          )
+          .subscribe();
+      } catch (e) {
+        console.warn("[AdminNotifications] Realtime subscribe error:", e);
+      }
+    };
+
+    setupRealtime();
 
     return () => {
       isMounted = false;
       if (channel && supabase) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [load]);
 
   const markRead = async (id, e) => {
     if (e) e.stopPropagation();
-    try {
-      if (db() && id) {
-        await db().from("notifications").update({ is_read: true }).eq("id", id);
-      }
-    } catch (err) {
-      console.error("[AdminNotifications] Failed to mark read:", err);
-    }
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+    await markNotificationAsRead(currentUser, id);
   };
 
   const markAllRead = async () => {
-    try {
-      const raw = localStorage.getItem("currentUser");
-      const user = raw ? JSON.parse(raw) : null;
-      let effectiveUserId = user?.id && isValidUuid(user.id) ? user.id : "11111111-1111-1111-1111-111111111111";
-
-      if (db()) {
-        await db().from("notifications").update({ is_read: true }).or(`user_id.eq.${effectiveUserId},user_id.eq.11111111-1111-1111-1111-111111111111`);
-      }
-    } catch (err) {
-      console.error("[AdminNotifications] Failed to mark all read:", err);
-    }
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await markAllNotificationsAsRead(currentUser);
   };
 
   const removeNotification = async (id, e) => {
     if (e) e.stopPropagation();
-    try {
-      if (db() && id) {
-        await db().from("notifications").delete().eq("id", id);
-      }
-    } catch (err) {
-      console.error("[AdminNotifications] Failed to remove notification:", err);
-    }
+    const currentUser = getCurrentUser();
     setNotifications((prev) => prev.filter((n) => n.id !== id));
+    await deleteNotification(currentUser, id);
   };
   
   const handleNotificationClick = async (n) => {
+    const currentUser = getCurrentUser();
     if (!n.isRead) {
       await markRead(n.id);
     }
-    const rawUser = localStorage.getItem("currentUser");
-    const currentUser = rawUser ? JSON.parse(rawUser) : null;
     const targetPath = getNotificationNavigationPath(n, currentUser?.role, window.location.pathname);
     if (targetPath && targetPath !== window.location.pathname) {
       navigate(targetPath);
     }
   };
 
-  const filtered = notifications.filter((n) => {
-    if (filter === 'all') return true;
-    const t = String(n.type || '').toLowerCase().trim();
-    if (filter === 'unread') return !n.isRead;
-    if (filter === 'messages' && (t === 'messages' || t === 'message')) return true;
-    if (filter === 'assignments' && (t === 'assignments' || t === 'assignment')) return true;
-    if (filter === 'grades' && (t === 'grades' || t === 'grade')) return true;
-    if (filter === 'system' && (t === 'system' || t === 'announcement' || t === 'announcements')) return true;
+  const filtered = deduplicateNotifications(notifications).filter((n) => {
+    if (filter === "all") return true;
+    const t = String(n.type || "").toLowerCase().trim();
+    if (filter === "unread") return !n.isRead;
+    if (filter === "messages" && (t === "messages" || t === "message" || t === "chat")) return true;
+    if (filter === "assignments" && (t === "assignments" || t === "assignment")) return true;
+    if (filter === "grades" && (t === "grades" || t === "grade")) return true;
+    if (filter === "system" && (t === "system" || t === "announcement" || t === "announcements" || t === "event")) return true;
     return t === filter;
   });
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
     <div className="min-h-screen bg-gray-50/50 p-4 md:p-8">
@@ -305,10 +211,10 @@ export function AdminNotifications() {
             <p className="text-gray-500 text-sm mt-1">Manage your system alerts and messages</p>
           </div>
           
-          {notifications.length > 0 && (
+          {notifications.length > 0 && unreadCount > 0 && (
             <button 
               onClick={markAllRead} 
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:text-emerald-600 transition-colors shadow-sm text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:text-emerald-600 transition-colors shadow-sm text-sm font-medium cursor-pointer"
             >
               <Check className="w-4 h-4" />
               Mark all as read
@@ -323,23 +229,23 @@ export function AdminNotifications() {
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">Filters</h3>
             <div className="flex flex-row md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
               {[
-                { id: 'all', label: 'All Notifications' },
-                { id: 'unread', label: 'Unread Only' },
-                { id: 'messages', label: 'Messages' },
-                { id: 'system', label: 'System & Announcements' }
-              ].map(f => (
+                { id: "all", label: "All Notifications" },
+                { id: "unread", label: "Unread Only" },
+                { id: "messages", label: "Messages" },
+                { id: "system", label: "System & Announcements" }
+              ].map((f) => (
                 <button
                   key={f.id}
                   onClick={() => setFilter(f.id)}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer ${
                     filter === f.id 
-                      ? 'bg-emerald-50 text-emerald-700' 
-                      : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900'
+                      ? "bg-emerald-50 text-emerald-700" 
+                      : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900"
                   }`}
                 >
                   {f.label}
-                  {f.id === 'unread' && unreadCount > 0 && (
-                    <span className="bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {f.id === "unread" && unreadCount > 0 && (
+                    <span className="bg-emerald-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
                       {unreadCount}
                     </span>
                   )}
@@ -374,7 +280,7 @@ export function AdminNotifications() {
                     key={n.id} 
                     onClick={() => handleNotificationClick(n)}
                     className={`group relative p-4 sm:p-5 flex gap-4 transition-all hover:bg-gray-50 cursor-pointer ${
-                      !n.isRead ? 'bg-emerald-50/30' : ''
+                      !n.isRead ? "bg-emerald-50/30" : ""
                     }`}
                   >
                     {!n.isRead && (
@@ -383,7 +289,7 @@ export function AdminNotifications() {
                     
                     <div className="shrink-0 mt-1">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        !n.isRead ? 'bg-white shadow-sm' : 'bg-gray-50'
+                        !n.isRead ? "bg-white shadow-sm" : "bg-gray-50"
                       }`}>
                         {getTypeIcon(n.type)}
                       </div>
@@ -392,7 +298,7 @@ export function AdminNotifications() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <h4 className={`text-sm font-semibold mb-1 ${!n.isRead ? 'text-gray-900' : 'text-gray-700'}`}>
+                          <h4 className={`text-sm font-semibold mb-1 ${!n.isRead ? "text-gray-900" : "text-gray-700"}`}>
                             {n.title}
                           </h4>
                           <p className="text-sm text-gray-600 line-clamp-2">
@@ -410,7 +316,7 @@ export function AdminNotifications() {
                             {!n.isRead && (
                               <button 
                                 onClick={(e) => markRead(n.id, e)}
-                                className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors tooltip-trigger"
+                                className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
                                 title="Mark as read"
                               >
                                 <CheckCircle className="w-4 h-4" />
@@ -418,7 +324,7 @@ export function AdminNotifications() {
                             )}
                             <button 
                               onClick={(e) => removeNotification(n.id, e)}
-                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
                               title="Delete notification"
                             >
                               <Trash2 className="w-4 h-4" />
