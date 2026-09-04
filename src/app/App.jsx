@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import React, { useEffect, useState, lazy, Suspense, Component } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { ActivityProvider } from "./lib/ActivityContext";
 import { UnreadMessagesProvider } from "./contexts/UnreadMessagesContext";
@@ -8,19 +8,29 @@ import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 
+const handleChunkError = () => {
+  if (typeof window === "undefined") return;
+  const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
+  const now = Date.now();
+  if (now - lastReload > 3000) {
+    sessionStorage.setItem("chunk_reload_time", String(now));
+    const targetUrl = new URL(window.location.href);
+    targetUrl.searchParams.set("_v", String(now));
+    window.location.replace(targetUrl.toString());
+  }
+};
+
 if (typeof window !== "undefined") {
   window.addEventListener("unhandledrejection", (event) => {
     const reason = event?.reason;
     const msg = String(reason?.message || reason || "");
     if (
       /failed to fetch dynamically imported module/i.test(msg) ||
-      /expected a javascript-or-wasm module script/i.test(msg)
+      /expected a javascript-or-wasm module script/i.test(msg) ||
+      /importing a module script failed/i.test(msg)
     ) {
-      const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
-      if (Date.now() - lastReload > 5000) {
-        sessionStorage.setItem("chunk_reload_time", String(Date.now()));
-        window.location.reload();
-      }
+      event.preventDefault();
+      handleChunkError();
     }
   });
 
@@ -28,13 +38,10 @@ if (typeof window !== "undefined") {
     const msg = String(event?.message || "");
     if (
       /failed to load module script/i.test(msg) ||
-      /expected a javascript-or-wasm module script/i.test(msg)
+      /expected a javascript-or-wasm module script/i.test(msg) ||
+      /failed to fetch dynamically imported module/i.test(msg)
     ) {
-      const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
-      if (Date.now() - lastReload > 5000) {
-        sessionStorage.setItem("chunk_reload_time", String(Date.now()));
-        window.location.reload();
-      }
+      handleChunkError();
     }
   }, true);
 }
@@ -42,28 +49,78 @@ if (typeof window !== "undefined") {
 const safeLazy = (importFn) => {
   return lazy(async () => {
     try {
-      const module = await importFn();
-      return module;
+      return await importFn();
     } catch (error) {
-      const msg = String(error?.message || error || "");
-      const isChunkError =
-        error?.name === "ChunkLoadError" ||
-        /failed to fetch dynamically imported module/i.test(msg) ||
-        /expected a javascript-or-wasm module script/i.test(msg) ||
-        /importing a module script failed/i.test(msg);
+      try {
+        await new Promise((r) => setTimeout(r, 150));
+        return await importFn();
+      } catch (retryError) {
+        const msg = String(retryError?.message || retryError || error?.message || "");
+        const isChunkError =
+          retryError?.name === "ChunkLoadError" ||
+          /failed to fetch dynamically imported module/i.test(msg) ||
+          /expected a javascript-or-wasm module script/i.test(msg) ||
+          /importing a module script failed/i.test(msg);
 
-      if (isChunkError) {
-        const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
-        if (Date.now() - lastReload > 5000) {
-          sessionStorage.setItem("chunk_reload_time", String(Date.now()));
-          window.location.reload();
+        if (isChunkError) {
+          handleChunkError();
           return new Promise(() => {});
         }
+        throw retryError;
       }
-      throw error;
     }
   });
 };
+
+class ChunkErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    const msg = String(error?.message || error || "");
+    if (
+      /failed to fetch dynamically imported module/i.test(msg) ||
+      /expected a javascript-or-wasm module script/i.test(msg) ||
+      /importing a module script failed/i.test(msg)
+    ) {
+      handleChunkError();
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6 text-center">
+          <div className="max-w-md bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-4">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center font-bold text-xl">
+              ↻
+            </div>
+            <h2 className="text-xl font-bold text-gray-900">App Update Available</h2>
+            <p className="text-sm text-gray-600">
+              A new version of ConnectEd has been published. Click below to load the latest changes.
+            </p>
+            <button
+              onClick={() => {
+                sessionStorage.removeItem("chunk_reload_time");
+                window.location.replace(window.location.pathname + "?_v=" + Date.now());
+              }}
+              className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl text-sm transition-colors cursor-pointer shadow-sm"
+            >
+              Refresh & Update
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Route-level Code Splitting for Performance
 const LandingPage = safeLazy(() => import("./pages/LandingPage").then(m => ({ default: m.LandingPage })));
@@ -264,64 +321,66 @@ export default function App() {
         <ModuleTourFinishModal />
         <ResumeTourModal />
         <TourDemoModeBanner />
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/landing" element={<LandingPage />} />
-          <Route path="/privacy-policy" element={<SitePolicy />} />
-          <Route path="/terms-of-service" element={<TermsOfService />} />
-          <Route path="/contact" element={<ContactUs />} />
-          <Route path="/support" element={<Support />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/change-password" element={<ChangePassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+      <ChunkErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/landing" element={<LandingPage />} />
+            <Route path="/privacy-policy" element={<SitePolicy />} />
+            <Route path="/terms-of-service" element={<TermsOfService />} />
+            <Route path="/contact" element={<ContactUs />} />
+            <Route path="/support" element={<Support />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/change-password" element={<ChangePassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          <Route path="/admin" element={<Navigate to="/login" replace />} />
+            <Route path="/admin" element={<Navigate to="/login" replace />} />
 
-          <Route path="/dashboard" element={<Navigate to="/login" replace />} />
-          <Route path="/subjects" element={<Navigate to="/login" replace />} />
-          <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
-          <Route path="/grades" element={<Navigate to="/login" replace />} />
-          <Route path="/announcements" element={<Navigate to="/login" replace />} />
-          <Route path="/content" element={<Navigate to="/login" replace />} />
-          <Route path="/materials" element={<Navigate to="/login" replace />} />
-          <Route path="/messages" element={<Navigate to="/login" replace />} />
-          <Route path="/profile" element={<Navigate to="/login" replace />} />
-          <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/dashboard" element={<Navigate to="/login" replace />} />
+            <Route path="/subjects" element={<Navigate to="/login" replace />} />
+            <Route path="/subject/:id" element={<Navigate to="/login" replace />} />
+            <Route path="/grades" element={<Navigate to="/login" replace />} />
+            <Route path="/announcements" element={<Navigate to="/login" replace />} />
+            <Route path="/content" element={<Navigate to="/login" replace />} />
+            <Route path="/materials" element={<Navigate to="/login" replace />} />
+            <Route path="/messages" element={<Navigate to="/login" replace />} />
+            <Route path="/profile" element={<Navigate to="/login" replace />} />
+            <Route path="/ai-assistant" element={<Navigate to="/login" replace />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
 
-          {/* Teacher Routes */}
-          <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />
-          <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
-          <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
-          <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
-          <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
-          <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
-          <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
-          <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
-          <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
-          <Route path="/teacher/help-center" element={<TeacherRouteGuard><TeacherHelpCenter /></TeacherRouteGuard>} />
+            {/* Teacher Routes */}
+            <Route path="/teacher/dashboard" element={<TeacherRouteGuard><TeacherDashboard /></TeacherRouteGuard>} />
+            <Route path="/teacher/classes" element={<TeacherRouteGuard><Classes /></TeacherRouteGuard>} />
+            <Route path="/teacher/class/:id" element={<TeacherRouteGuard><ClassDetail /></TeacherRouteGuard>} />
+            <Route path="/teacher/grades" element={<TeacherRouteGuard><GradesManagement /></TeacherRouteGuard>} />
+            <Route path="/teacher/announcements" element={<TeacherRouteGuard><TeacherAnnouncements /></TeacherRouteGuard>} />
+            <Route path="/teacher/materials" element={<TeacherRouteGuard><ClassMaterials /></TeacherRouteGuard>} />
+            <Route path="/teacher/messages" element={<TeacherRouteGuard><TeacherMessages /></TeacherRouteGuard>} />
+            <Route path="/teacher/notifications" element={<TeacherRouteGuard><Notifications /></TeacherRouteGuard>} />
+            <Route path="/teacher/profile" element={<TeacherRouteGuard><TeacherProfile /></TeacherRouteGuard>} />
+            <Route path="/teacher/help-center" element={<TeacherRouteGuard><TeacherHelpCenter /></TeacherRouteGuard>} />
 
-          {/* Admin Routes */}
-          <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
-          <Route path="/admin/students" element={<AdminRouteGuard><StudentManagement /></AdminRouteGuard>} />
-          <Route path="/admin/teachers" element={<AdminRouteGuard><TeacherManagement /></AdminRouteGuard>} />
-          <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
-          <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
-          <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
-          <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
+            {/* Admin Routes */}
+            <Route path="/admin/dashboard" element={<AdminRouteGuard><AdminDashboard /></AdminRouteGuard>} />
+            <Route path="/admin/students" element={<AdminRouteGuard><StudentManagement /></AdminRouteGuard>} />
+            <Route path="/admin/teachers" element={<AdminRouteGuard><TeacherManagement /></AdminRouteGuard>} />
+            <Route path="/admin/subjects" element={<AdminRouteGuard><SubjectManagement /></AdminRouteGuard>} />
+            <Route path="/admin/announcements" element={<AdminRouteGuard><AdminAnnouncements /></AdminRouteGuard>} />
+            <Route path="/admin/calendar" element={<AdminRouteGuard><AdminCalendar /></AdminRouteGuard>} />
+            <Route path="/admin/academic-settings" element={<AdminRouteGuard><AdminAcademicSettings /></AdminRouteGuard>} />
 
-          <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
-          <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
-          <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
-          <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
-          <Route path="/admin/help-center" element={<AdminRouteGuard><HelpCenter /></AdminRouteGuard>} />
+            <Route path="/admin/settings" element={<AdminRouteGuard><SystemSettings /></AdminRouteGuard>} />
+            <Route path="/admin/password-resets" element={<AdminRouteGuard><AdminPasswordResets /></AdminRouteGuard>} />
+            <Route path="/admin/messages" element={<AdminRouteGuard><AdminMessages /></AdminRouteGuard>} />
+            <Route path="/admin/notifications" element={<AdminRouteGuard><AdminNotifications /></AdminRouteGuard>} />
+            <Route path="/admin/help-center" element={<AdminRouteGuard><HelpCenter /></AdminRouteGuard>} />
 
-          {/* Teacher AI */}
-          <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
-        </Routes>
-      </Suspense>
+            {/* Teacher AI */}
+            <Route path="/teacher/ai-assistant" element={<TeacherRouteGuard><AIAssistant /></TeacherRouteGuard>} />
+          </Routes>
+        </Suspense>
+      </ChunkErrorBoundary>
       </Router>
       </ModuleTourProvider>
       </TeacherTourProvider>
