@@ -328,7 +328,9 @@ function AuthRecoveryListener() {
         if (event === "PASSWORD_RECOVERY") {
           console.log("[AuthRecoveryListener] PASSWORD_RECOVERY event received! Redirecting to /reset-password");
           if (window.location.pathname !== "/reset-password") {
-            navigate("/reset-password", { replace: true });
+            const h = window.location.hash || "";
+            const s = window.location.search || "";
+            navigate(`/reset-password${s}${h}`, { replace: true });
           }
         }
       });

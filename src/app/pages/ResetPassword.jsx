@@ -127,13 +127,31 @@ export function ResetPassword() {
     setIsSubmitting(true);
 
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        password: newPassword
+      const trimmedPassword = newPassword.trim();
+      const { data: updateData, error: updateError } = await supabase.auth.updateUser({
+        password: trimmedPassword
       });
 
       if (updateError) throw updateError;
 
-      toast.success("Password updated successfully! Please log in.");
+      const updatedUser = updateData?.user;
+      if (updatedUser?.id) {
+        try {
+          await supabase
+            .from("profiles")
+            .update({
+              must_change_password: false,
+              needs_password_change: false,
+              force_password_change: false,
+              last_password_reset: new Date().toISOString()
+            })
+            .eq("id", updatedUser.id);
+        } catch (profErr) {
+          console.warn("[ResetPassword] Profile update warning:", profErr);
+        }
+      }
+
+      toast.success("Password updated successfully! Please log in with your new password.");
       await supabase.auth.signOut();
       localStorage.removeItem("currentUser");
       navigate("/login");

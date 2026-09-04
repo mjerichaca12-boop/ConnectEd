@@ -17,13 +17,9 @@ function ForgotPassword() {
     e.preventDefault();
     if (loading || isSubmittingRef.current) return;
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setError("Please enter your email address.");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError("Please enter a valid email address.");
+    let targetInput = email.trim().toLowerCase();
+    if (!targetInput) {
+      setError("Please enter your username or email address.");
       return;
     }
 
@@ -32,6 +28,33 @@ function ForgotPassword() {
     setError("");
 
     try {
+      let resolvedEmail = targetInput;
+
+      if (!targetInput.includes("@")) {
+        // Resolve username to email
+        try {
+          const safeUsername = targetInput.replace(/[(),"]/g, "").trim();
+          const { data: profData } = await supabase
+            .from("profiles")
+            .select("email")
+            .or(`username.ilike.${safeUsername},email.ilike.${safeUsername}`)
+            .maybeSingle();
+
+          if (profData?.email) {
+            resolvedEmail = profData.email.trim().toLowerCase();
+          }
+        } catch (e) {
+          console.warn("[ForgotPassword] Username lookup notice:", e);
+        }
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedEmail)) {
+        setError("Could not find a valid email address associated with that username/email.");
+        setLoading(false);
+        isSubmittingRef.current = false;
+        return;
+      }
+
       const redirectTo = getAuthRedirectUrl("reset-password");
 
       // Attempt to send password reset via serverless API
@@ -43,7 +66,7 @@ function ForgotPassword() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            email: trimmedEmail,
+            email: resolvedEmail,
             redirectTo
           })
         });
@@ -71,7 +94,7 @@ function ForgotPassword() {
 
       // Fallback to client-side Supabase auth reset if serverless API call didn't succeed
       if (!apiSuccess) {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, { redirectTo });
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(resolvedEmail, { redirectTo });
         if (resetError) {
           console.warn("Client fallback reset error:", resetError.message);
         }

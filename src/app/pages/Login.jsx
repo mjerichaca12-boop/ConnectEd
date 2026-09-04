@@ -287,7 +287,7 @@ function Login() {
             const { data: profData } = await supabase
               .from("profiles")
               .select("*")
-              .or(`username.eq."${safeUsername}",email.eq."${safeUsername}",employee_id.eq."${safeUsername}"`)
+              .or(`username.ilike.${safeUsername},email.ilike.${safeUsername}`)
               .maybeSingle();
 
             if (profData?.email) {
