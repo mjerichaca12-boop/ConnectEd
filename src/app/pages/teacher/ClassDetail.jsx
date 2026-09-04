@@ -54,6 +54,7 @@ import {
   RefreshCw,
   ClipboardList,
   Loader2,
+  Edit3,
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
@@ -687,13 +688,40 @@ export function ClassDetail() {
           quizzesCount = activities.filter(a => a.activity_type === "Quiz").length;
         }
 
-        // 3. Fetch lesson materials count
-        const { count: matCount, error: matError } = await supabase
-          .from("lesson_materials")
-          .select("*", { count: "exact", head: true })
-          .in("lesson_id", activeLessonIds);
+        // 3. Fetch lesson materials count across all lessons for this subject
+        const { data: allSubjectLessons } = await supabase
+          .from("lessons")
+          .select("id")
+          .eq("subject_id", subjectId);
 
-        if (!matError) materialsCount = matCount || 0;
+        const allSubjectLessonIds = (allSubjectLessons || []).map(l => l.id);
+        if (allSubjectLessonIds.length > 0) {
+          const { count: matCount, error: matError } = await supabase
+            .from("lesson_materials")
+            .select("id", { count: "exact", head: true })
+            .in("lesson_id", allSubjectLessonIds);
+
+          if (!matError) materialsCount = matCount || 0;
+        }
+      }
+
+      // Also count direct class_materials if available
+      try {
+        const cleanSubId = subjectId;
+        const queryFilter = !isNaN(Number(cleanSubId)) && Number(cleanSubId) > 0
+          ? `subject_id.eq.${cleanSubId},subject_id.eq.${Number(cleanSubId)}`
+          : `subject_id.eq.${cleanSubId}`;
+
+        const { count: cmCount, error: cmErr } = await supabase
+          .from("class_materials")
+          .select("id", { count: "exact", head: true })
+          .or(queryFilter);
+
+        if (!cmErr && cmCount) {
+          materialsCount += cmCount;
+        }
+      } catch (e) {
+        console.warn("[fetchDashboardMetrics] class_materials query warning:", e);
       }
 
       setMetrics({
@@ -1360,15 +1388,11 @@ export function ClassDetail() {
         }
       }
 
-      // 2. Fetch lessons for subject
+      // 2. Fetch lessons for subject (retrieve all lessons under this subject so materials are never lost)
       let lessonsQuery = supabase
         .from("lessons")
         .select("id, title, topic")
         .eq("subject_id", cleanClassId);
-
-      if (cleanTeacherId) lessonsQuery = lessonsQuery.eq("teacher_id", cleanTeacherId);
-      if (activeSchoolYear) lessonsQuery = lessonsQuery.eq("school_year", activeSchoolYear);
-      if (viewMode === "current" && activeQuarter) lessonsQuery = lessonsQuery.eq("term", activeQuarter);
 
       const { data: lessonsData } = await lessonsQuery;
 
@@ -2110,6 +2134,39 @@ export function ClassDetail() {
     setPendingDeleteStudent(null);
   };
 
+  const ensureSubjectLesson = async (subjectId, teacherId) => {
+    if (!supabase || !subjectId) return null;
+    const cleanId = !isNaN(Number(subjectId)) ? Number(subjectId) : subjectId;
+    const { data: existing } = await supabase
+      .from("lessons")
+      .select("id")
+      .eq("subject_id", cleanId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.id) return existing.id;
+
+    const { data: created, error } = await supabase
+      .from("lessons")
+      .insert({
+        subject_id: cleanId,
+        teacher_id: teacherId || null,
+        school_year: activeSchoolYear || null,
+        term: activeQuarter || null,
+        title: "General Class Materials",
+        status: "Published"
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("[ensureSubjectLesson] Error creating fallback lesson:", error);
+      return null;
+    }
+
+    return created?.id;
+  };
+
   // Upload Material
   const handleAddMaterial = async () => {
     const title = String(matForm.title || "").trim();
@@ -2173,7 +2230,7 @@ export function ClassDetail() {
           if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
             setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
           } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-            setMatError(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads for authenticated users.`);
+            setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
           } else {
             setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
           }
@@ -2203,7 +2260,7 @@ export function ClassDetail() {
         });
       }
 
-      // Γ£à FIXED: Use FIRST file URL as plain string (not JSON array)
+      // FIXED: Use FIRST file URL as plain string (not JSON array)
       const firstFileUrl = uploadedFiles[0]?.fileUrl;
 
       const columns = await getMaterialColumns();
@@ -2211,11 +2268,11 @@ export function ClassDetail() {
         title,
         description: String(matForm.description || "").trim() || null,
         file_type: fileType,
-        file_url: firstFileUrl,  // ≡ƒæê Plain URL string - CRITICAL FIX
-        teacher_id: effectiveTeacherId  // ≡ƒæê Always include
+        file_url: firstFileUrl,  // FIXED Plain URL string - CRITICAL FIX
+        teacher_id: effectiveTeacherId  // Always include
       };
 
-      // Γ£à FIXED: Conditionally add fields ONLY if columns exist
+      // FIXED: Conditionally add fields ONLY if columns exist
       if (columns.includes("file_name")) {
         payload.file_name = uploadedFiles[0]?.fileName;  // Single file
       }
@@ -2226,9 +2283,6 @@ export function ClassDetail() {
 
       if (columns.includes("subject_id")) {
         payload.subject_id = classData?.id || classData?.subject_id || null;
-        if (!payload.subject_id) {
-          console.warn("[ClassDetail] No subject_id found in classData:", classData);
-        }
       }
 
       if (columns.includes("class_id")) {
@@ -2256,38 +2310,72 @@ export function ClassDetail() {
         payload.created_at = new Date().toISOString();
       }
 
-      console.log("[ClassDetail] Γ£à FIXED DB insert payload:", payload);
+      let insertedRecord = null;
+      let saveError = null;
 
-      const insertResult = await supabase
-        .from("class_materials")
-        .insert(payload)
-        .select("id, *")
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from("class_materials")
+          .insert(payload)
+          .select("id, *")
+          .single();
 
-      console.log("[ClassDetail] DB insert response:", insertResult);
-
-      if (insertResult.error) {
-        console.error("[ClassDetail] DB insert failed:", insertResult.error);
-        const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
-        if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-          setMatError(`RLS policy violation. Check: 1) subject_id present? 2) file_url is plain string? 3) teacher_id matches auth.uid()`);
+        if (!error && data) {
+          insertedRecord = data;
         } else {
-          setMatError(`Failed to save: ${insertResult.error.message}`);
+          saveError = error;
         }
-
-        // Rollback storage
-        if (uploadedFiles.length > 0) {
-          await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
-        }
-        return;
+      } catch (err) {
+        saveError = err;
       }
 
-      if (insertResult.data) {
-        const normalized = normalizeMaterialRecord(insertResult.data);
+      if (saveError || !insertedRecord) {
+        console.warn("[ClassDetail] class_materials insert notice, attempting lesson_materials fallback:", saveError?.message || saveError);
+        const cleanSubId = classData?.id || classData?.subject_id || id;
+        const targetLessonId = await ensureSubjectLesson(cleanSubId, effectiveTeacherId);
+
+        if (targetLessonId) {
+          const lmPayload = {
+            lesson_id: targetLessonId,
+            file_name: title || uploadedFiles[0]?.fileName || "Attached Material",
+            file_url: firstFileUrl,
+            file_size: matFiles[0]?.size || 0,
+            file_type: fileType || matFiles[0]?.type || "application/pdf"
+          };
+
+          const { data: lmData, error: lmErr } = await supabase
+            .from("lesson_materials")
+            .insert(lmPayload)
+            .select("*")
+            .single();
+
+          if (lmErr) {
+            console.error("[ClassDetail] Fallback insert to lesson_materials failed:", lmErr);
+            setMatError(`Failed to save material: ${lmErr.message}`);
+            if (uploadedFiles.length > 0) {
+              await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+            }
+            return;
+          }
+
+          insertedRecord = lmData;
+          saveError = null;
+        } else {
+          setMatError(`Failed to save material: ${saveError?.message || "Could not resolve lesson or subject ID"}`);
+          if (uploadedFiles.length > 0) {
+            await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+          }
+          return;
+        }
+      }
+
+      if (insertedRecord) {
+        const normalized = normalizeMaterialRecord(insertedRecord);
         setMaterials((current) => [normalized, ...current]);
       }
 
       await fetchClassMaterials(teacherProfileId, classData);
+      await fetchDashboardMetrics(effectiveTeacherId || teacherProfileId, id);
       setMatSuccess("Material uploaded successfully!");
       resetMaterialForm(true);
       setShowMaterialModal(false);
@@ -3794,6 +3882,7 @@ export function ClassDetail() {
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
     { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
+    { id: "materials", label: "Materials", icon: <FileText className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
   ];
 
@@ -3955,16 +4044,12 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => {
-                      setMatError("");
-                      setMatSuccess("");
-                      setShowMaterialModal(true);
-                    }}
+                    onClick={() => setActiveTab("materials")}
                     className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
                       <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <BookOpen className="w-4 h-4 text-white" />
+                        <FileText className="w-4 h-4 text-white" />
                       </div>
                       Materials
                     </div>
@@ -4176,6 +4261,122 @@ export function ClassDetail() {
                     teacherId={teacherProfileId} 
                     onLessonsChange={() => fetchDashboardMetrics(teacherProfileId, id)}
                   />
+                </div>
+              )}
+
+              {/* MATERIALS TAB */}
+              {activeTab === "materials" && (
+                <div data-tour="class-detail-materials-content" className="space-y-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">Class Materials</h3>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        Access and manage uploaded learning resources, reference files, and documents for this class.
+                      </p>
+                    </div>
+                    <button
+                      onClick={openCreateMaterialModal}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload Material
+                    </button>
+                  </div>
+
+                  {materials.length === 0 ? (
+                    <div className="text-center py-16 bg-gray-50/50 rounded-2xl border-2 border-dashed border-gray-200">
+                      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <h4 className="text-base font-semibold text-gray-800 mb-1">No materials uploaded yet</h4>
+                      <p className="text-sm text-gray-500 max-w-md mx-auto mb-5">
+                        Upload slides, reading materials, guidelines, or reference files so students can view and download them anytime.
+                      </p>
+                      <button
+                        onClick={openCreateMaterialModal}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Upload First Material
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {materials.map((mat) => {
+                        const fileUrl = mat.fileUrl || mat.url || (Array.isArray(mat.fileUrls) && mat.fileUrls[0]) || "#";
+                        const fileTitle = mat.title || mat.fileName || "Class Material";
+                        const fileCategory = mat.fileType || mat.category || "Document";
+                        const lessonName = mat.lesson_title || "General";
+                        const dateFormatted = mat.created_at
+                          ? new Date(mat.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "Recent";
+
+                        return (
+                          <div
+                            key={mat.id || Math.random()}
+                            className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md transition-all flex flex-col justify-between group"
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className="p-3 bg-green-50 text-green-600 rounded-xl group-hover:scale-105 transition-transform">
+                                  <FileText className="w-6 h-6" />
+                                </div>
+                                <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-[11px] font-bold rounded-lg uppercase tracking-wider">
+                                  {fileCategory}
+                                </span>
+                              </div>
+
+                              <h4 className="text-base font-bold text-gray-900 mb-1 line-clamp-1" title={fileTitle}>
+                                {fileTitle}
+                              </h4>
+
+                              {mat.description && (
+                                <p className="text-xs text-gray-500 mb-3 line-clamp-2 leading-relaxed">
+                                  {mat.description}
+                                </p>
+                              )}
+
+                              <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
+                                <span>Lesson: <strong className="text-gray-600">{lessonName}</strong></span>
+                                <span>&bull;</span>
+                                <span>{dateFormatted}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
+                              {fileUrl && fileUrl !== "#" ? (
+                                <a
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-semibold rounded-xl text-xs transition-colors"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  View / Download
+                                </a>
+                              ) : (
+                                <span className="flex-1 text-center py-2 text-xs text-gray-400 italic">No Link</span>
+                              )}
+
+                              <button
+                                onClick={() => openEditMaterialModal(mat)}
+                                title="Edit Material"
+                                className="p-2 text-gray-500 hover:text-green-600 hover:bg-gray-100 rounded-xl transition-colors"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+
+                              <button
+                                onClick={() => requestDeleteMaterial(mat.id)}
+                                title="Delete Material"
+                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               {/* ANNOUNCEMENTS TAB */}
@@ -4790,6 +4991,166 @@ export function ClassDetail() {
         cancelText="Cancel"
         type="danger"
       />
+
+      {/* ••••• CREATE / EDIT MATERIAL MODAL ••••• */}
+      {showMaterialModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <FileText className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isEditingMaterial ? "Edit Material" : "Upload Class Material"}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {isEditingMaterial ? "Update resource details and links" : "Add learning resources for your students"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowMaterialModal(false);
+                  resetMaterialForm();
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {matError && (
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-xs text-red-700 font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{matError}</span>
+                </div>
+              )}
+
+              {matSuccess && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-700 font-medium">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{matSuccess}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Material Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chapter 1: Introduction to Biology"
+                  value={matForm.title}
+                  onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Category / File Type
+                </label>
+                <select
+                  value={matForm.fileType}
+                  onChange={(e) => setMatForm({ ...matForm, fileType: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
+                >
+                  <option value="PDF">PDF Document</option>
+                  <option value="DOCX">Word Document (DOCX)</option>
+                  <option value="PPTX">Presentation (PPTX)</option>
+                  <option value="Video">Video File</option>
+                  <option value="Audio">Audio Recording</option>
+                  <option value="Link">External Link / URL</option>
+                  <option value="Other">Other Resource</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Description (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide instructions or background details about this material..."
+                  value={matForm.description}
+                  onChange={(e) => setMatForm({ ...matForm, description: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Attach File {!isEditingMaterial && <span className="text-red-500">*</span>}
+                </label>
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-green-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600 mb-1">Click to select files from your device</p>
+                  <p className="text-[10px] text-gray-400">PDF, DOCX, PPTX, Images, MP4 (Max 50MB)</p>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setMatFiles(files);
+                      setMatFileNames(files.map((file) => file.name));
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+                {matFileNames.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {matFileNames.map((name, i) => (
+                      <div key={i} className="flex items-center justify-between bg-green-50/50 border border-green-100 rounded-lg px-3 py-1.5 text-xs text-green-800 font-medium">
+                        <span className="truncate max-w-[280px]">{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextFiles = Array.from(matFiles).filter((_, idx) => idx !== i);
+                            setMatFiles(nextFiles);
+                            setMatFileNames(nextFiles.map(f => f.name));
+                          }}
+                          className="text-red-500 hover:text-red-700 font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
+              <button
+                onClick={() => {
+                  setShowMaterialModal(false);
+                  resetMaterialForm();
+                }}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={isEditingMaterial ? handleUpdateMaterial : handleAddMaterial}
+                disabled={isUploadingMaterial || (!isEditingMaterial && matFiles.length === 0 && !matForm.title)}
+                className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                {isUploadingMaterial ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <span>{isEditingMaterial ? "Save Changes" : "Upload Material"}</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
