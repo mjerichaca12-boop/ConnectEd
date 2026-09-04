@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
+import { BookOpen, ChevronDown, Check, GraduationCap } from "lucide-react";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { FileUploadZone } from "@/app/components/ai/FileUploadZone";
 import { ClassMaterialsLoader } from "@/app/components/ai/ClassMaterialsLoader";
@@ -40,11 +41,9 @@ I generate **lesson-aware** responses based on your actual subjects, lessons, an
 
 const formatGradeLabel = (level) => {
   if (!level) return "";
-  const str = String(level).trim();
-  if (str.toLowerCase().startsWith("grade")) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-  return `Grade ${str}`;
+  let str = String(level).trim();
+  str = str.replace(/^(grade\s*)+/i, "").trim();
+  return str ? `Grade ${str}` : "";
 };
 
 // Check if query is an analytics request (only needs Class context, bypasses Lesson/Materials)
@@ -78,6 +77,148 @@ const isGenerationRequest = (text) => {
 
   return true;
 };
+
+function ClassContextDropdown({ teacherClasses = [], selectedClassId = "", onSelectClass }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  const activeClass = useMemo(
+    () => teacherClasses.find((c) => c.id === selectedClassId) || null,
+    [teacherClasses, selectedClassId]
+  );
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    function handleEscape(event) {
+      if (event.key === "Escape") setIsOpen(false);
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleEscape);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  const activeLabel = activeClass
+    ? `${activeClass.name} — ${formatGradeLabel(activeClass.gradeLevel)} ${activeClass.section}`.trim()
+    : "Select Class Context...";
+
+  return (
+    <div className="relative inline-block text-left" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className={`inline-flex items-center justify-between gap-2.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 shadow-sm border ${
+          activeClass
+            ? "bg-emerald-50/90 border-emerald-300 text-emerald-900 hover:bg-emerald-100/80 hover:border-emerald-400"
+            : "bg-gray-50 border-gray-250 text-gray-600 hover:bg-emerald-50/40 hover:border-emerald-300"
+        } ${isOpen ? "ring-2 ring-emerald-500/20 border-emerald-400 shadow-md" : ""}`}
+      >
+        <div className="flex items-center gap-2 truncate max-w-[220px] sm:max-w-[300px]">
+          <BookOpen className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+          <span className="truncate">{activeLabel}</span>
+        </div>
+        <ChevronDown
+          className={`w-3.5 h-3.5 flex-shrink-0 text-emerald-700 transition-transform duration-200 ${
+            isOpen ? "rotate-180 text-emerald-600" : ""
+          }`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white border border-gray-200/90 rounded-2xl shadow-xl z-50 overflow-hidden py-1.5 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="px-3.5 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/60">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-gray-400">
+              Active Class Context
+            </span>
+            {activeClass && (
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                Connected
+              </span>
+            )}
+          </div>
+
+          <div className="max-h-64 overflow-y-auto select-scrollbar py-1">
+            {/* Clear Context */}
+            <button
+              type="button"
+              onClick={() => {
+                onSelectClass("");
+                setIsOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 flex items-center justify-between text-left transition-colors text-xs ${
+                !selectedClassId
+                  ? "bg-emerald-50 text-emerald-900 font-bold border-l-4 border-emerald-500"
+                  : "text-gray-600 hover:bg-gray-50 border-l-4 border-transparent"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`p-1.5 rounded-lg border ${!selectedClassId ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-gray-100 text-gray-500 border-gray-200"}`}>
+                  <GraduationCap className="w-3.5 h-3.5" />
+                </div>
+                <span className="truncate font-medium">Select Class Context...</span>
+              </div>
+              {!selectedClassId && <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 ml-2" />}
+            </button>
+
+            {/* List of Classes */}
+            {teacherClasses.map((cls) => {
+              const isSelected = cls.id === selectedClassId;
+              const formattedGrade = formatGradeLabel(cls.gradeLevel);
+
+              return (
+                <button
+                  key={cls.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectClass(cls.id);
+                    setIsOpen(false);
+                  }}
+                  className={`w-full px-3.5 py-2.5 flex items-center justify-between text-left transition-colors text-xs ${
+                    isSelected
+                      ? "bg-emerald-50/90 text-emerald-900 font-bold border-l-4 border-emerald-600"
+                      : "text-gray-700 hover:bg-emerald-50/40 hover:text-gray-900 border-l-4 border-transparent"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`p-1.5 rounded-lg border flex-shrink-0 ${
+                        isSelected
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : "bg-gray-100 text-gray-500 border-gray-200"
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold truncate leading-snug text-xs">
+                        {cls.name}
+                      </p>
+                      <p className="text-[10px] text-gray-500 font-medium leading-none mt-0.5">
+                        {formattedGrade} {cls.section ? `· ${cls.section}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 ml-2" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AIAssistant() {
   const navigate = useNavigate();
@@ -1434,11 +1575,11 @@ export function AIAssistant() {
 
               {/* Class Context Selector Dropdown */}
               <div className="flex items-center gap-2 pl-4 border-l border-gray-200">
-                <span className="text-xs font-bold text-gray-500">Current Class:</span>
-                <select
-                  value={settings.selectedClassId || ""}
-                  onChange={(e) => {
-                    const clsId = e.target.value;
+                <span className="text-xs font-bold text-gray-500">Class:</span>
+                <ClassContextDropdown
+                  teacherClasses={teacherClasses}
+                  selectedClassId={settings.selectedClassId}
+                  onSelectClass={(clsId) => {
                     if (!clsId) {
                       handleChangeContext();
                     } else {
@@ -1461,15 +1602,7 @@ export function AIAssistant() {
                       }
                     }
                   }}
-                  className="bg-emerald-50/60 border border-emerald-300 text-emerald-900 rounded-xl px-3 py-1.5 text-xs font-bold shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer"
-                >
-                  <option value="">Select Class Context...</option>
-                  {teacherClasses.map((cls) => (
-                    <option key={cls.id} value={cls.id}>
-                      {cls.name} — Grade {cls.gradeLevel} {cls.section}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
 
