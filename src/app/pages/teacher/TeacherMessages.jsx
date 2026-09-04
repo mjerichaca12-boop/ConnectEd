@@ -6,9 +6,8 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
-import { adminApi } from "@/app/lib/adminApi";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
-// Use service role client if available to bypass RLS issues for reliable messaging
+// Use Supabase client for teacher operations
 const db = supabase;
 import {
   Search,
@@ -959,26 +958,19 @@ function TeacherMessages() {
     
     const groupTitle = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
     
-    // Insert conversation into database via adminApi with direct fallback
+    // Insert conversation directly into database using Supabase client
     try {
-      let convRes = await adminApi.db("conversations", "insert", {
-        payload: {
+      const { error: convErr } = await db
+        .from("conversations")
+        .insert({
           id: conversationId,
           name: groupTitle,
           is_group: true,
           created_by: teacherId,
-        }
-      });
-      
-      if (convRes.error) {
-        await db
-          .from("conversations")
-          .insert({
-            id: conversationId,
-            name: groupTitle,
-            is_group: true,
-            created_by: teacherId,
-          });
+        });
+
+      if (convErr) {
+        console.warn("[TeacherMessages] Conversation insert error:", convErr);
       }
 
       // Add all participants including the teacher who created it
@@ -988,19 +980,14 @@ function TeacherMessages() {
         profile_id: profileId,
       }));
 
-      // Use adminApi to bypass client RLS restrictions on conversation_participants
-      let partRes = await adminApi.db("conversation_participants", "insert", {
-        payload: participantInserts
-      });
-
-      if (partRes.error) {
-        console.warn("[TeacherMessages] adminApi participant insert error, attempting fallback:", partRes.error);
+      // Non-blocking insert for conversation participants
+      try {
         const { error: partError } = await db
           .from("conversation_participants")
           .insert(participantInserts);
 
         if (partError) {
-          console.warn("[TeacherMessages] Direct participant insert blocked by RLS policies, inserting per-user:", partError);
+          console.warn("[TeacherMessages] Participant insert notice (individual fallback):", partError);
           for (const pId of allParticipantIds) {
             try {
               await db.from("conversation_participants").insert({ conversation_id: conversationId, profile_id: pId });
@@ -1009,6 +996,8 @@ function TeacherMessages() {
             }
           }
         }
+      } catch (pErr) {
+        console.warn("[TeacherMessages] Participant insert exception:", pErr);
       }
     } catch (error) {
       console.warn("[TeacherMessages] Non-fatal database notice during group chat creation:", error);
@@ -1385,10 +1374,7 @@ function TeacherMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      let res = await adminApi.db("conversations", "update", { payload: { name: newName }, eq: { column: "id", value: selectedConv.id } });
-      if (res.error) {
-        await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
-      }
+      await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
       saveConversations(updated);
       setShowRenameModal(false);
@@ -1402,10 +1388,7 @@ function TeacherMessages() {
   const handleLeaveConversation = async () => {
     if (!selectedConv) return;
     try {
-      let res = await adminApi.db("conversation_participants", "delete", { eq: { column: "conversation_id", value: selectedConv.id }, in: { column: "profile_id", value: [teacherId] } });
-      if (res.error) {
-        await db.from("conversation_participants").delete().eq("conversation_id", selectedConv.id).eq("profile_id", teacherId);
-      }
+      await db.from("conversation_participants").delete().eq("conversation_id", selectedConv.id).eq("profile_id", teacherId);
     } catch (err) {
       console.error("[TeacherMessages] Leave error:", err);
     }
@@ -1420,10 +1403,7 @@ function TeacherMessages() {
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
     try { 
-      let res = await adminApi.db("conversations", "delete", { eq: { column: "id", value: selectedConv.id } });
-      if (res.error) {
-        await db.from("conversations").delete().eq("id", selectedConv.id);
-      }
+      await db.from("conversations").delete().eq("id", selectedConv.id);
     } catch (err) {
       console.error("[TeacherMessages] Delete error:", err);
     }

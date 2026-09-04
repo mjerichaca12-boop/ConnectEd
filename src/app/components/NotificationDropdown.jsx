@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, X, MessageSquare, FileSpreadsheet, BookOpen, Calendar, AlertCircle, Trash2, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { adminApi } from "@/app/lib/adminApi";
 
 const db = () => supabase;
 
