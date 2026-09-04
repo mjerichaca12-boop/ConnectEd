@@ -8,44 +8,70 @@ import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 
+const safeLazy = (importFn) => {
+  return lazy(async () => {
+    try {
+      const module = await importFn();
+      sessionStorage.removeItem("chunk_reload_retry");
+      return module;
+    } catch (error) {
+      const msg = String(error?.message || "");
+      const isChunkError =
+        error?.name === "ChunkLoadError" ||
+        /failed to fetch dynamically imported module/i.test(msg) ||
+        /expected a javascript-or-wasm module script/i.test(msg);
+
+      if (isChunkError) {
+        const hasReloaded = sessionStorage.getItem("chunk_reload_retry");
+        if (!hasReloaded) {
+          sessionStorage.setItem("chunk_reload_retry", "true");
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      throw error;
+    }
+  });
+};
+
 // Route-level Code Splitting for Performance
-const LandingPage = lazy(() => import("./pages/LandingPage").then(m => ({ default: m.LandingPage })));
-const SitePolicy = lazy(() => import("./pages/SitePolicy").then(m => ({ default: m.SitePolicy })));
-const TermsOfService = lazy(() => import("./pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
-const ContactUs = lazy(() => import("./pages/ContactUs").then(m => ({ default: m.ContactUs })));
-const Support = lazy(() => import("./pages/Support").then(m => ({ default: m.Support })));
-const Login = lazy(() => import("./pages/Login").then(m => ({ default: m.Login })));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword").then(m => ({ default: m.ForgotPassword })));
-const ChangePassword = lazy(() => import("./pages/ChangePassword").then(m => ({ default: m.ChangePassword })));
-const ResetPassword = lazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
-const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
+const LandingPage = safeLazy(() => import("./pages/LandingPage").then(m => ({ default: m.LandingPage })));
+const SitePolicy = safeLazy(() => import("./pages/SitePolicy").then(m => ({ default: m.SitePolicy })));
+const TermsOfService = safeLazy(() => import("./pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
+const ContactUs = safeLazy(() => import("./pages/ContactUs").then(m => ({ default: m.ContactUs })));
+const Support = safeLazy(() => import("./pages/Support").then(m => ({ default: m.Support })));
+const Login = safeLazy(() => import("./pages/Login").then(m => ({ default: m.Login })));
+const ForgotPassword = safeLazy(() => import("./pages/ForgotPassword").then(m => ({ default: m.ForgotPassword })));
+const ChangePassword = safeLazy(() => import("./pages/ChangePassword").then(m => ({ default: m.ChangePassword })));
+const ResetPassword = safeLazy(() => import("./pages/ResetPassword").then(m => ({ default: m.ResetPassword })));
+const NotificationsPage = safeLazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 
 // Teacher Pages
-const TeacherDashboard = lazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
-const Classes = lazy(() => import("./pages/teacher/Classes").then(m => ({ default: m.Classes })));
-const ClassDetail = lazy(() => import("./pages/teacher/ClassDetail").then(m => ({ default: m.ClassDetail })));
-const GradesManagement = lazy(() => import("./pages/teacher/GradesManagement").then(m => ({ default: m.GradesManagement })));
-const TeacherAnnouncements = lazy(() => import("./pages/teacher/TeacherAnnouncements").then(m => ({ default: m.TeacherAnnouncements })));
-const ClassMaterials = lazy(() => import("./pages/teacher/ClassMaterials").then(m => ({ default: m.ClassMaterials })));
-const TeacherMessages = lazy(() => import("./pages/teacher/TeacherMessages").then(m => ({ default: m.TeacherMessages })));
-const TeacherProfile = lazy(() => import("./pages/teacher/TeacherProfile").then(m => ({ default: m.TeacherProfile })));
-const Notifications = lazy(() => import("./pages/teacher/Notifications").then(m => ({ default: m.Notifications })));
-const AIAssistant = lazy(() => import("./pages/teacher/AIAssistant").then(m => ({ default: m.AIAssistant })));
-const TeacherHelpCenter = lazy(() => import("./pages/teacher/TeacherHelpCenter").then(m => ({ default: m.TeacherHelpCenter })));
+const TeacherDashboard = safeLazy(() => import("./pages/teacher/TeacherDashboard").then(m => ({ default: m.TeacherDashboard })));
+const Classes = safeLazy(() => import("./pages/teacher/Classes").then(m => ({ default: m.Classes })));
+const ClassDetail = safeLazy(() => import("./pages/teacher/ClassDetail").then(m => ({ default: m.ClassDetail })));
+const GradesManagement = safeLazy(() => import("./pages/teacher/GradesManagement").then(m => ({ default: m.GradesManagement })));
+const TeacherAnnouncements = safeLazy(() => import("./pages/teacher/TeacherAnnouncements").then(m => ({ default: m.TeacherAnnouncements })));
+const ClassMaterials = safeLazy(() => import("./pages/teacher/ClassMaterials").then(m => ({ default: m.ClassMaterials })));
+const TeacherMessages = safeLazy(() => import("./pages/teacher/TeacherMessages").then(m => ({ default: m.TeacherMessages })));
+const TeacherProfile = safeLazy(() => import("./pages/teacher/TeacherProfile").then(m => ({ default: m.TeacherProfile })));
+const Notifications = safeLazy(() => import("./pages/teacher/Notifications").then(m => ({ default: m.Notifications })));
+const AIAssistant = safeLazy(() => import("./pages/teacher/AIAssistant").then(m => ({ default: m.AIAssistant })));
+const TeacherHelpCenter = safeLazy(() => import("./pages/teacher/TeacherHelpCenter").then(m => ({ default: m.TeacherHelpCenter })));
 
 // Admin Pages
-const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
-const StudentManagement = lazy(() => import("./pages/admin/StudentManagement").then(m => ({ default: m.StudentManagement })));
-const TeacherManagement = lazy(() => import("./pages/admin/TeacherManagement").then(m => ({ default: m.TeacherManagement })));
-const SubjectManagement = lazy(() => import("./pages/admin/SubjectManagement").then(m => ({ default: m.SubjectManagement })));
-const AdminAnnouncements = lazy(() => import("./pages/admin/AdminAnnouncements").then(m => ({ default: m.AdminAnnouncements })));
-const AdminCalendar = lazy(() => import("./pages/admin/AdminCalendar").then(m => ({ default: m.AdminCalendar })));
-const AdminAcademicSettings = lazy(() => import("./pages/admin/AdminAcademicSettings"));
-const SystemSettings = lazy(() => import("./pages/admin/SystemSettings").then(m => ({ default: m.SystemSettings })));
-const AdminPasswordResets = lazy(() => import("./pages/admin/AdminPasswordResets").then(m => ({ default: m.AdminPasswordResets })));
-const AdminMessages = lazy(() => import("./pages/admin/AdminMessages").then(m => ({ default: m.AdminMessages })));
-const AdminNotifications = lazy(() => import("./pages/admin/AdminNotifications").then(m => ({ default: m.AdminNotifications })));
-const HelpCenter = lazy(() => import("./pages/admin/HelpCenter").then(m => ({ default: m.HelpCenter })));
+const AdminDashboard = safeLazy(() => import("./pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard })));
+const StudentManagement = safeLazy(() => import("./pages/admin/StudentManagement").then(m => ({ default: m.StudentManagement })));
+const TeacherManagement = safeLazy(() => import("./pages/admin/TeacherManagement").then(m => ({ default: m.TeacherManagement })));
+const SubjectManagement = safeLazy(() => import("./pages/admin/SubjectManagement").then(m => ({ default: m.SubjectManagement })));
+const AdminAnnouncements = safeLazy(() => import("./pages/admin/AdminAnnouncements").then(m => ({ default: m.AdminAnnouncements })));
+const AdminCalendar = safeLazy(() => import("./pages/admin/AdminCalendar").then(m => ({ default: m.AdminCalendar })));
+const AdminAcademicSettings = safeLazy(() => import("./pages/admin/AdminAcademicSettings"));
+const SystemSettings = safeLazy(() => import("./pages/admin/SystemSettings").then(m => ({ default: m.SystemSettings })));
+const AdminPasswordResets = safeLazy(() => import("./pages/admin/AdminPasswordResets").then(m => ({ default: m.AdminPasswordResets })));
+const AdminMessages = safeLazy(() => import("./pages/admin/AdminMessages").then(m => ({ default: m.AdminMessages })));
+const AdminNotifications = safeLazy(() => import("./pages/admin/AdminNotifications").then(m => ({ default: m.AdminNotifications })));
+const HelpCenter = safeLazy(() => import("./pages/admin/HelpCenter").then(m => ({ default: m.HelpCenter })));
 
 const PageLoader = () => (
   <div className="min-h-screen bg-gray-50 flex items-center justify-center">
