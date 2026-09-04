@@ -1,5 +1,5 @@
 import { supabase } from "@/app/lib/supabaseClient";
-import { isColumnMissingError } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, getTeacherAuthorizedSubjectIds } from "@/app/lib/teacherHelpers";
 
 /**
  * Standardize File Type Detection based on extension or mime_type/file_type
@@ -50,13 +50,42 @@ export const fetchClassMaterialsForTeacher = async ({
   }
 
   try {
-    // 1. Fetch lessons for teacher's selected class (or all assigned subjects)
-    let lessonsQuery = supabase.from("lessons").select("id, subject_id, title, topic");
-    if (selectedClass && selectedClass.id) {
-      lessonsQuery = lessonsQuery.eq("subject_id", selectedClass.id);
+    // 1. Resolve teacher's authorized subject IDs
+    const authorizedSubjectIds = await getTeacherAuthorizedSubjectIds(teacherId);
+    if (authorizedSubjectIds.length === 0) {
+      return {
+        materials: [],
+        totalCount: 0,
+        fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
+        lessonCounts: {},
+        isError: false,
+        errorMessage: ""
+      };
     }
 
-    const { data: lessonsData, error: lessonsErr } = await lessonsQuery;
+    // Determine target subject IDs strictly filtered by teacher's authorization
+    let targetSubjectIds = authorizedSubjectIds;
+    if (selectedClass && selectedClass.id) {
+      const selectedIdStr = String(selectedClass.id).trim();
+      if (!authorizedSubjectIds.includes(selectedIdStr)) {
+        console.warn(`[classMaterialsService] Blocked unauthorized class materials query: ${selectedIdStr} by teacher ${teacherId}`);
+        return {
+          materials: [],
+          totalCount: 0,
+          fileTypeCounts: { PDF: 0, PPTX: 0, DOCX: 0, XLSX: 0, IMAGE: 0, VIDEO: 0, ZIP: 0, OTHER: 0 },
+          lessonCounts: {},
+          isError: false,
+          errorMessage: ""
+        };
+      }
+      targetSubjectIds = [selectedIdStr];
+    }
+
+    // 2. Fetch lessons ONLY for targetSubjectIds
+    const { data: lessonsData, error: lessonsErr } = await supabase
+      .from("lessons")
+      .select("id, subject_id, title, topic")
+      .in("subject_id", targetSubjectIds);
 
     if (lessonsErr) {
       console.warn("[classMaterialsService] Lessons query notice:", lessonsErr);

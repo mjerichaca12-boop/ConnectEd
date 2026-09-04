@@ -230,6 +230,102 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 };
 
 /**
+ * Get authorized subject IDs for a teacher (strictly owned/assigned subjects)
+ */
+export const getTeacherAuthorizedSubjectIds = async (teacherIdOrUser) => {
+  if (!supabase || !teacherIdOrUser) return [];
+
+  try {
+    let queryIds = [];
+    if (typeof teacherIdOrUser === "object" && teacherIdOrUser !== null) {
+      const { teacherId, classes } = await getTeacherAssignedClasses(teacherIdOrUser);
+      if (classes && classes.length > 0) {
+        return classes.map((c) => String(c.id)).filter(Boolean);
+      }
+      if (teacherId) queryIds.push(teacherId);
+    } else if (typeof teacherIdOrUser === "string" && teacherIdOrUser.trim()) {
+      queryIds.push(teacherIdOrUser.trim());
+    }
+
+    if (queryIds.length === 0) return [];
+
+    const { data: subjectsData, error } = await supabase
+      .from("subjects")
+      .select("id")
+      .in("teacher_id", queryIds);
+
+    if (error || !subjectsData) {
+      console.warn("[getTeacherAuthorizedSubjectIds] Error fetching subjects:", error);
+      return [];
+    }
+
+    return subjectsData.map((s) => String(s.id)).filter(Boolean);
+  } catch (err) {
+    console.error("[getTeacherAuthorizedSubjectIds] unexpected error:", err);
+    return [];
+  }
+};
+
+/**
+ * Get authorized lesson IDs for a teacher (under teacher's assigned subjects)
+ */
+export const getTeacherAuthorizedLessonIds = async (teacherIdOrUser) => {
+  if (!supabase || !teacherIdOrUser) return [];
+
+  try {
+    const subjectIds = await getTeacherAuthorizedSubjectIds(teacherIdOrUser);
+    if (subjectIds.length === 0) return [];
+
+    const { data: lessonsData, error } = await supabase
+      .from("lessons")
+      .select("id")
+      .in("subject_id", subjectIds);
+
+    if (error || !lessonsData) {
+      console.warn("[getTeacherAuthorizedLessonIds] Error fetching lessons:", error);
+      return [];
+    }
+
+    return lessonsData.map((l) => String(l.id)).filter(Boolean);
+  } catch (err) {
+    console.error("[getTeacherAuthorizedLessonIds] unexpected error:", err);
+    return [];
+  }
+};
+
+/**
+ * Verify if a teacher is authorized to access a given class material or file
+ */
+export const verifyTeacherFileAccess = async (teacherIdOrUser, { materialId, lessonId }) => {
+  if (!supabase || !teacherIdOrUser) return false;
+
+  try {
+    const authorizedLessonIds = await getTeacherAuthorizedLessonIds(teacherIdOrUser);
+    if (authorizedLessonIds.length === 0) return false;
+
+    if (lessonId) {
+      return authorizedLessonIds.includes(String(lessonId).trim());
+    }
+
+    if (materialId) {
+      const { data: materialData, error } = await supabase
+        .from("lesson_materials")
+        .select("lesson_id")
+        .eq("id", materialId)
+        .maybeSingle();
+
+      if (error || !materialData || !materialData.lesson_id) return false;
+      return authorizedLessonIds.includes(String(materialData.lesson_id).trim());
+    }
+
+    return false;
+  } catch (err) {
+    console.error("[verifyTeacherFileAccess] unexpected error:", err);
+    return false;
+  }
+};
+
+/**
  * Resolve column name from a list of candidates
  * Returns the first candidate that exists in the columns array
  */

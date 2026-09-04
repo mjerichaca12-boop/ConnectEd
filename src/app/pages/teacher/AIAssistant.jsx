@@ -11,7 +11,7 @@ import { detectUserIntent, resolveContextForIntent } from "@/app/services/teache
 import { AIEvaluationPanel } from "@/app/components/ai/AIEvaluationPanel";
 import { parseDocument } from "@/app/lib/documentParser";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
-import { getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
+import { getTeacherAssignedClasses, verifyTeacherFileAccess } from "@/app/lib/teacherHelpers";
 import { fetchClassMaterialsForTeacher } from "@/app/services/classMaterialsService";
 import { supabase } from "@/app/lib/supabaseClient";
 
@@ -383,6 +383,11 @@ export function AIAssistant() {
                 const loadedContents = [];
                 for (const mat of les.materials) {
                   try {
+                    const isAuthorized = await verifyTeacherFileAccess(activeTeacherId || storedUser, { materialId: mat.id, lessonId: mat.lessonId });
+                    if (!isAuthorized) {
+                      console.warn("Blocked unauthorized URL param material auto-load:", mat.title);
+                      continue;
+                    }
                     let fileBlob = null;
                     if (mat.filePath) {
                       const { data } = await supabase.storage.from(STORAGE_BUCKET).download(mat.filePath);
@@ -677,6 +682,12 @@ export function AIAssistant() {
 
     for (const mat of materialsToLoad) {
       try {
+        const isAuthorized = await verifyTeacherFileAccess(activeTeacherId || storedUser, { materialId: mat.id, lessonId: mat.lessonId });
+        if (!isAuthorized) {
+          console.warn("Blocked unauthorized material load attempt in loadMaterialsToContext:", mat.title);
+          continue;
+        }
+
         let fileBlob = null;
         if (mat.filePath) {
           const { data, error } = await supabase.storage
