@@ -619,11 +619,16 @@ export function ClassDetail() {
     if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) return;
     try {
       // 1. Fetch lessons count
-      const { data: lessons, error: lessonsError } = await supabase
+      let lessonsQuery = supabase
         .from("lessons")
         .select("id, status")
         .eq("subject_id", subjectId)
         .eq("teacher_id", teacherId);
+
+      if (activeSchoolYear) lessonsQuery = lessonsQuery.eq("school_year", activeSchoolYear);
+      if (viewMode === "current" && activeQuarter) lessonsQuery = lessonsQuery.eq("term", activeQuarter);
+
+      const { data: lessons, error: lessonsError } = await lessonsQuery;
 
       if (lessonsError) throw lessonsError;
 
@@ -1320,10 +1325,16 @@ export function ClassDetail() {
       }
 
       // 2. Fetch lessons for subject
-      const { data: lessonsData } = await supabase
+      let lessonsQuery = supabase
         .from("lessons")
         .select("id, title, topic")
         .eq("subject_id", cleanClassId);
+
+      if (cleanTeacherId) lessonsQuery = lessonsQuery.eq("teacher_id", cleanTeacherId);
+      if (activeSchoolYear) lessonsQuery = lessonsQuery.eq("school_year", activeSchoolYear);
+      if (viewMode === "current" && activeQuarter) lessonsQuery = lessonsQuery.eq("term", activeQuarter);
+
+      const { data: lessonsData } = await lessonsQuery;
 
       const lessonMap = new Map();
       (lessonsData || []).forEach(l => {
