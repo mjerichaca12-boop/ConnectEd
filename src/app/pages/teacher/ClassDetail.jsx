@@ -3147,7 +3147,7 @@ export function ClassDetail() {
       link_url: "",
       is_pinned: false,
       status: "Published",
-      scheduled_date: "",
+      scheduled_date: new Date().toISOString().split("T")[0],
       scheduled_time: "08:00",
       publishImmediately: true
     });
@@ -5307,48 +5307,87 @@ export function ClassDetail() {
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-800">Publish Immediately</span>
-                    <span className="text-[10px] text-gray-550">Post right now or set a date/time to schedule</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={annForm.publishImmediately}
-                      onChange={(e) => setAnnForm({ ...annForm, publishImmediately: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                {/* Publish Timing & Scheduling Option */}
+                <div className="space-y-3 pt-2 border-t border-gray-150">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">
+                    Publish Schedule & Timing
                   </label>
-                </div>
-
-                {!annForm.publishImmediately && (
-                  <div className="grid grid-cols-2 gap-3 bg-purple-50/20 border border-purple-100 rounded-xl p-3.5 animate-in slide-in-from-top-2 duration-150">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
-                        Publish Date
-                      </label>
-                      <input
-                        type="date"
-                        value={annForm.scheduled_date}
-                        onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
-                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
-                        Publish Time
-                      </label>
-                      <input
-                        type="time"
-                        value={annForm.scheduled_time}
-                        onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
-                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setAnnForm({ ...annForm, publishImmediately: true })}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                        annForm.publishImmediately
+                          ? "bg-white text-purple-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Publish Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = new Date().toISOString().split("T")[0];
+                        setAnnForm({
+                          ...annForm,
+                          publishImmediately: false,
+                          scheduled_date: annForm.scheduled_date || today,
+                          scheduled_time: annForm.scheduled_time || "08:00"
+                        });
+                      }}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                        !annForm.publishImmediately
+                          ? "bg-white text-purple-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      Schedule Date & Time
+                    </button>
                   </div>
-                )}
+
+                  {!annForm.publishImmediately && (
+                    <div className="bg-purple-50/40 border border-purple-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="flex items-center gap-2 text-xs font-bold text-purple-900">
+                        <Clock className="w-4 h-4 text-purple-600" />
+                        Set Target Date and Time for Broadcast
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-purple-500" /> Publish Date <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            min={new Date().toISOString().split("T")[0]}
+                            value={annForm.scheduled_date || new Date().toISOString().split("T")[0]}
+                            onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-purple-500" /> Publish Time <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="time"
+                            value={annForm.scheduled_time || "08:00"}
+                            onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+                      </div>
+
+                      {annForm.scheduled_date && (
+                        <p className="text-[11px] text-purple-700 font-medium">
+                          📢 Scheduled for <strong>{annForm.scheduled_date}</strong> at <strong>{annForm.scheduled_time || "08:00"}</strong>.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

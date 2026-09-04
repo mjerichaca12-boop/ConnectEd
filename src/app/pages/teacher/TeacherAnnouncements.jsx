@@ -258,7 +258,10 @@ function TeacherAnnouncements() {
     title: "",
     content: "",
     targetAudience: "Subject-specific",
-    subject: ""
+    subject: "",
+    publishImmediately: true,
+    scheduled_date: new Date().toISOString().split("T")[0],
+    scheduled_time: "08:00"
   });
   const [assignmentFormData, setAssignmentFormData] = useState({
     title: "",
@@ -438,14 +441,26 @@ function TeacherAnnouncements() {
   };
   const handleSubmit = () => {
     if (!formData.title.trim() || !formData.content.trim()) return;
+    const isScheduled = !formData.publishImmediately;
+    const scheduledAt = isScheduled ? `${formData.scheduled_date}T${formData.scheduled_time || "08:00"}` : null;
     const newAnnouncement = {
       id: Date.now().toString(),
       ...formData,
-      datePosted: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
+      status: isScheduled ? "Scheduled" : "Published",
+      scheduledAt: scheduledAt,
+      datePosted: isScheduled ? formData.scheduled_date : (new Date()).toISOString().split("T")[0]
     };
     setAnnouncements(sortAnnouncements([newAnnouncement, ...announcements].filter((announcement) => matchesTeacherAudience(announcement))));
     setShowCreateModal(false);
-    setFormData({ title: "", content: "", targetAudience: "Subject-specific", subject: "" });
+    setFormData({
+      title: "",
+      content: "",
+      targetAudience: "Subject-specific",
+      subject: "",
+      publishImmediately: true,
+      scheduled_date: new Date().toISOString().split("T")[0],
+      scheduled_time: "08:00"
+    });
   };
   const handleAssignmentSubmit = () => {
     if (!assignmentFormData.title.trim()) return;
@@ -729,12 +744,89 @@ function TeacherAnnouncements() {
                       />
                     </div>
                   </div>
-                  {formData.targetAudience === "Subject-specific" && <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-                      <input type="text" value={formData.subject} onChange={(e) => setFormData({ ...formData, subject: e.target.value })} className="w-full px-4 py-3 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g., MATH101" />
-                    </div>}
+                  {/* Publish Schedule Option */}
+                  <div className="space-y-3 pt-3 border-t border-gray-200">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">
+                      Publish Schedule & Timing
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, publishImmediately: true })}
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                          formData.publishImmediately
+                            ? "bg-white text-green-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        Publish Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date().toISOString().split("T")[0];
+                          setFormData({
+                            ...formData,
+                            publishImmediately: false,
+                            scheduled_date: formData.scheduled_date || today,
+                            scheduled_time: formData.scheduled_time || "08:00"
+                          });
+                        }}
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                          !formData.publishImmediately
+                            ? "bg-white text-green-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        Schedule Date & Time
+                      </button>
+                    </div>
+
+                    {!formData.publishImmediately && (
+                      <div className="bg-green-50/50 border border-green-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <div className="flex items-center gap-2 text-xs font-bold text-green-900">
+                          <Clock className="w-4 h-4 text-green-600" />
+                          Set Target Date and Time for Broadcast
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-green-600" /> Publish Date <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="date"
+                              min={new Date().toISOString().split("T")[0]}
+                              value={formData.scheduled_date || new Date().toISOString().split("T")[0]}
+                              onChange={(e) => setFormData({ ...formData, scheduled_date: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-green-600" /> Publish Time <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="time"
+                              value={formData.scheduled_time || "08:00"}
+                              onChange={(e) => setFormData({ ...formData, scheduled_time: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
+                            />
+                          </div>
+                        </div>
+
+                        {formData.scheduled_date && (
+                          <p className="text-[11px] text-green-800 font-medium">
+                            📢 Scheduled for <strong>{formData.scheduled_date}</strong> at <strong>{formData.scheduled_time || "08:00"}</strong>.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <button onClick={handleSubmit} className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-gray-900 rounded-lg hover:bg-green-700 transition-all font-medium">
-                    <Send className="w-4 h-4" />Post Announcement
+                    <Send className="w-4 h-4" />{formData.publishImmediately ? "Post Announcement" : "Schedule Announcement"}
                   </button>
                 </>}
 
