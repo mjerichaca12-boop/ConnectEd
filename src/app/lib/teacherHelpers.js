@@ -166,29 +166,18 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 
     if (subjectIds.length > 0) {
       try {
-        const [assignmentRes, profilesRes] = await Promise.all([
-          supabase.from("teacher_student_assignments").select("subject_id, student_id").in("subject_id", subjectIds),
-          supabase.from("profiles").select("id, year_level, section").eq("role", "student")
-        ]);
+        const { data: assignmentRows } = await supabase
+          .from("teacher_student_assignments")
+          .select("subject_id, student_id")
+          .in("subject_id", subjectIds);
 
-        const assignmentRows = assignmentRes.data || [];
-        const studentProfiles = profilesRes.data || [];
+        const rows = assignmentRows || [];
 
         (subjectsData || []).forEach((s) => {
           const key = String(s.id);
-          const normGradeNum = (s.grade_level || s.year_level || "").replace(/\D/g, "");
-          const cleanSec = (s.section || "").trim().toLowerCase();
-
-          const sectionStudentIds = studentProfiles.filter(p => {
-            const pGradeNum = (p.year_level || "").replace(/\D/g, "");
-            const pSec = (p.section || "").trim().toLowerCase();
-            return cleanSec && pSec === cleanSec && (!normGradeNum || pGradeNum === normGradeNum);
-          }).map(p => p.id);
-
-          const directStudentIds = assignmentRows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
-
-          const totalUnique = new Set([...sectionStudentIds, ...directStudentIds]).size;
-          enrollmentCounts.set(key, totalUnique);
+          const directStudentIds = rows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
+          const totalEnrolled = new Set(directStudentIds).size;
+          enrollmentCounts.set(key, totalEnrolled);
         });
       } catch (err) {
         console.warn("[getTeacherAssignedClasses] error fetching enrollment counts:", err);

@@ -414,12 +414,6 @@ export const adminApi = {
         await supabase.from(mirrorTable).update({ section: cleanSection }).in("lrn", targetLrns);
       }
 
-      // 6. Sync subjects table enrolled count
-      if (matchingSubs.length > 0) {
-        const matchingSubIds = matchingSubs.map(s => s.id);
-        await supabase.from("subjects").update({ enrolled: projectedEnrolled }).in("id", matchingSubIds);
-      }
-
       return {
         data: {
           success: true,

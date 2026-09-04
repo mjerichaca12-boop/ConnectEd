@@ -136,29 +136,18 @@ function Classes() {
 
     if (subjectIds.length > 0) {
       try {
-        const [assignmentRes, profilesRes] = await Promise.all([
-          supabase.from("teacher_student_assignments").select("subject_id, student_id").in("subject_id", subjectIds),
-          supabase.from("profiles").select("id, year_level, section").eq("role", "student")
-        ]);
+        const { data: assignmentRows } = await supabase
+          .from("teacher_student_assignments")
+          .select("subject_id, student_id")
+          .in("subject_id", subjectIds);
 
-        const assignmentRows = assignmentRes.data || [];
-        const studentProfiles = profilesRes.data || [];
+        const rows = assignmentRows || [];
 
         (data || []).forEach((subject) => {
           const key = String(subject.id);
-          const normGradeNum = (subject.grade_level || "").replace(/\D/g, "");
-          const cleanSec = (subject.section || "").trim().toLowerCase();
-
-          const sectionStudentIds = studentProfiles.filter(p => {
-            const pGradeNum = (p.year_level || "").replace(/\D/g, "");
-            const pSec = (p.section || "").trim().toLowerCase();
-            return cleanSec && pSec === cleanSec && (!normGradeNum || pGradeNum === normGradeNum);
-          }).map(p => p.id);
-
-          const directStudentIds = assignmentRows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
-
-          const totalUnique = new Set([...sectionStudentIds, ...directStudentIds]).size;
-          enrollmentBySubject.set(key, totalUnique);
+          const directStudentIds = rows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
+          const totalEnrolled = new Set(directStudentIds).size;
+          enrollmentBySubject.set(key, totalEnrolled);
         });
       } catch (err) {
         console.warn("[Classes] error calculating subject enrollment:", err);
@@ -268,8 +257,27 @@ function Classes() {
 
     setupSubscription();
 
+    const handleEnrollmentChanged = (e) => {
+      if (!isMounted) return;
+      if (e?.detail?.subjectId) {
+        const { subjectId, count } = e.detail;
+        setClasses((prev) =>
+          prev.map((c) =>
+            String(c.id) === String(subjectId)
+              ? { ...c, studentCount: Number(count || 0) }
+              : c
+          )
+        );
+      } else if (teacherId) {
+        loadTeacherSubjects(teacherId);
+      }
+    };
+
+    window.addEventListener("enrollment-changed", handleEnrollmentChanged);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("enrollment-changed", handleEnrollmentChanged);
       if (subjectsChannel) {
         supabase.removeChannel(subjectsChannel);
       }

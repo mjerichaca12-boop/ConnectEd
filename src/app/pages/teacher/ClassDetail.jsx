@@ -525,15 +525,29 @@ export function ClassDetail() {
   };
 
   const syncStudentsIntoClassData = (students) => {
-    setAssignedStudents(students);
+    const count = Array.isArray(students) ? students.length : 0;
+    setAssignedStudents(students || []);
     setClassData((current) => {
       if (!current) return current;
       return {
         ...current,
-        students,
-        studentCount: students.length
+        students: students || [],
+        studentCount: count,
+        enrolled: count
       };
     });
+
+    if (supabase && id && !String(id).startsWith("demo-")) {
+      const queryId = !isNaN(Number(id)) ? Number(id) : id;
+      supabase
+        .from("subjects")
+        .update({ enrolled: count })
+        .eq("id", queryId)
+        .then(() => {
+          window.dispatchEvent(new CustomEvent("enrollment-changed", { detail: { subjectId: id, count } }));
+        })
+        .catch(e => console.warn("[syncStudentsIntoClassData] sync error:", e));
+    }
   };
 
   const loadAssignedStudents = async (teacherId, subjectId) => {
