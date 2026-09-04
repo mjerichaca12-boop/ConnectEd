@@ -58,9 +58,11 @@ function Classes() {
         section: String(subject.section || "").trim() || "No section assigned",
         schedule: String(subject.schedule || "").trim(),
         room: "",
-        semester: "Current School Year",
-        studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
-        capacity: Number(subject.capacity || 0),
+        studentCount: Number(
+          enrollmentBySubject && enrollmentBySubject.has(String(subject.id))
+            ? enrollmentBySubject.get(String(subject.id))
+            : (subject.enrolled !== undefined ? subject.enrolled : 0)
+        ),
         students: [],
         gradeLevel: rawGrade
       };

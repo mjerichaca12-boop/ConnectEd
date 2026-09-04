@@ -161,6 +161,28 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 
     subjectsData = data || [];
 
+    const subjectIds = (subjectsData || []).map((s) => String(s.id)).filter(Boolean);
+    const enrollmentCounts = new Map();
+
+    if (subjectIds.length > 0) {
+      try {
+        const { data: assignmentRows } = await supabase
+          .from("teacher_student_assignments")
+          .select("subject_id")
+          .eq("teacher_id", teacherId)
+          .in("subject_id", subjectIds);
+
+        (assignmentRows ?? []).forEach((row) => {
+          const key = String(row.subject_id || "");
+          if (key) {
+            enrollmentCounts.set(key, (enrollmentCounts.get(key) || 0) + 1);
+          }
+        });
+      } catch (err) {
+        console.warn("[getTeacherAssignedClasses] error fetching enrollment counts:", err);
+      }
+    }
+
     const seen = new Set();
     const classesList = [];
 
@@ -190,7 +212,7 @@ export const getTeacherAssignedClasses = async (storedUser) => {
         gradeLevel,
         section,
         capacity: Number(s.capacity || 0),
-        enrolled: Number(s.enrolled || 0),
+        enrolled: Number(enrollmentCounts.get(String(s.id)) ?? 0),
         lessons: [],
       });
     });

@@ -1143,12 +1143,7 @@ export function ClassDetail() {
       error = fallback.error;
     }
 
-    if (!error && Array.isArray(data) && data.length === 0) {
-      const fallbackAll = await supabase.from(tableName).select("*");
-      if (!fallbackAll.error && Array.isArray(fallbackAll.data)) {
-        data = fallbackAll.data;
-      }
-    }
+
 
     if (error) {
       console.error("[ClassDetail] Failed to fetch announcements:", error);
@@ -1198,8 +1193,8 @@ export function ClassDetail() {
         const rows = (data ?? []).filter((row) => {
           const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
           const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
-          const classMatches = !cleanClassId || !rowCourseId || rowCourseId === cleanClassId;
-          const teacherMatches = !rowTeacherId || rowTeacherId === cleanTeacherId;
+          const classMatches = Boolean(rowCourseId) && rowCourseId === cleanClassId;
+          const teacherMatches = !cleanTeacherId || !rowTeacherId || rowTeacherId === cleanTeacherId;
           return classMatches && teacherMatches;
         });
         rows.forEach(row => allAssignments.push(normalizeAssignmentRecord(row)));
@@ -1307,10 +1302,13 @@ export function ClassDetail() {
       // 1. Fetch materials from class_materials table for this subject if available
       let classMats = [];
       if (classMaterialsTableStatus !== "missing") {
+        const queryFilter = !isNaN(Number(cleanClassId)) && Number(cleanClassId) > 0
+          ? `subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId)}`
+          : `subject_id.eq.${cleanClassId}`;
         const { data: cmData, error: cmErr } = await supabase
           .from("class_materials")
           .select("*")
-          .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
+          .or(queryFilter);
 
         if (cmErr) {
           if (cmErr.status === 404 || cmErr.code === "PGRST205" || cmErr.code === "42P01" || cmErr.status === 400) {
