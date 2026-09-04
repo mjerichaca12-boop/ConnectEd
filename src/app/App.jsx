@@ -8,23 +8,54 @@ import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 
+if (typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event?.reason;
+    const msg = String(reason?.message || reason || "");
+    if (
+      /failed to fetch dynamically imported module/i.test(msg) ||
+      /expected a javascript-or-wasm module script/i.test(msg)
+    ) {
+      const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
+      if (Date.now() - lastReload > 5000) {
+        sessionStorage.setItem("chunk_reload_time", String(Date.now()));
+        window.location.reload();
+      }
+    }
+  });
+
+  window.addEventListener("error", (event) => {
+    const msg = String(event?.message || "");
+    if (
+      /failed to load module script/i.test(msg) ||
+      /expected a javascript-or-wasm module script/i.test(msg)
+    ) {
+      const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
+      if (Date.now() - lastReload > 5000) {
+        sessionStorage.setItem("chunk_reload_time", String(Date.now()));
+        window.location.reload();
+      }
+    }
+  }, true);
+}
+
 const safeLazy = (importFn) => {
   return lazy(async () => {
     try {
       const module = await importFn();
-      sessionStorage.removeItem("chunk_reload_retry");
       return module;
     } catch (error) {
-      const msg = String(error?.message || "");
+      const msg = String(error?.message || error || "");
       const isChunkError =
         error?.name === "ChunkLoadError" ||
         /failed to fetch dynamically imported module/i.test(msg) ||
-        /expected a javascript-or-wasm module script/i.test(msg);
+        /expected a javascript-or-wasm module script/i.test(msg) ||
+        /importing a module script failed/i.test(msg);
 
       if (isChunkError) {
-        const hasReloaded = sessionStorage.getItem("chunk_reload_retry");
-        if (!hasReloaded) {
-          sessionStorage.setItem("chunk_reload_retry", "true");
+        const lastReload = Number(sessionStorage.getItem("chunk_reload_time") || 0);
+        if (Date.now() - lastReload > 5000) {
+          sessionStorage.setItem("chunk_reload_time", String(Date.now()));
           window.location.reload();
           return new Promise(() => {});
         }
