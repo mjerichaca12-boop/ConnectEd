@@ -89,7 +89,7 @@ export function StudentGradebookModal({
   if (!student) return null;
 
   const overallGrade = studentOverallGrades?.overallGrade || computation.finalGrade || 0;
-  const quarterRows = [1, 2, 3, 4].map((quarterNumber) => {
+  const quarterRows = [1, 2, 3].map((quarterNumber) => {
     const summary = computation.quarters[`quarter${quarterNumber}`];
     return {
       quarterNumber,
@@ -132,7 +132,7 @@ export function StudentGradebookModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-8">
           
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
               <p className="text-emerald-600 text-xs font-medium uppercase tracking-wider mb-1">Overall Grade</p>
               <div className="text-2xl font-bold text-emerald-900">{overallGrade}%</div>
@@ -148,10 +148,6 @@ export function StudentGradebookModal({
             <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
               <p className="text-orange-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 3</p>
               <div className="text-2xl font-bold text-orange-900">{computation.quarters.quarter3.quarterlyGrade}%</div>
-            </div>
-            <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-100">
-              <p className="text-cyan-600 text-xs font-medium uppercase tracking-wider mb-1">Quarter 4</p>
-              <div className="text-2xl font-bold text-cyan-900">{computation.quarters.quarter4.quarterlyGrade}%</div>
             </div>
           </div>
 

@@ -56,14 +56,13 @@ const exportToExcel = (studentGrades, className) => {
     [`Class: ${className}`],
     [`Generated: ${new Date().toLocaleString()}`],
     [],
-    ["Student Name", "LRN", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
+    ["Student Name", "LRN", "1st Quarter", "2nd Quarter", "3rd Quarter", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
     ...studentGrades.map((s) => [
       s.studentName,
       s.studentId,
       s.term1Grade,
       s.term2Grade,
       s.term3Grade,
-      s.term4Grade,
       s.quizAverage,
       s.activityGrade,
       s.assignmentGrade,
@@ -473,8 +472,7 @@ function GradesManagement() {
       const quarterMap = {
         "1st Quarter": "term1",
         "2nd Quarter": "term2",
-        "3rd Quarter": "term3",
-        "4th Quarter": "term4"
+        "3rd Quarter": "term3"
       };
       setActiveTerm(quarterMap[activeQuarter] || "all");
       hasInitializedTerm.current = true;
@@ -1154,8 +1152,7 @@ function GradesManagement() {
       const termMap = {
         "term1": "1st Quarter",
         "term2": "2nd Quarter",
-        "term3": "3rd Quarter",
-        "term4": "4th Quarter"
+        "term3": "3rd Quarter"
       };
       const targetQuarter = activeTerm === "all" ? null : termMap[activeTerm];
 
@@ -1223,8 +1220,7 @@ function GradesManagement() {
     const termMap = {
       "term1": "1st Quarter",
       "term2": "2nd Quarter",
-      "term3": "3rd Quarter",
-      "term4": "4th Quarter"
+      "term3": "3rd Quarter"
     };
     const targetQuarter = activeTerm === "all" ? null : termMap[activeTerm];
     const assessments = await fetchAssessmentsForClass(teacherId, selectedClass, activeSchoolYear, targetQuarter);
@@ -2140,7 +2136,6 @@ function GradesManagement() {
                       { key: "term1", label: "Q1" },
                       { key: "term2", label: "Q2" },
                       { key: "term3", label: "Q3" },
-                      { key: "term4", label: "Q4" },
                     ].map(({ key, label }) => (
                       <button
                         key={key}
@@ -2220,12 +2215,6 @@ function GradesManagement() {
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
                             <div>Q3</div>
                             <div className="text-[10px] font-normal text-gray-400 normal-case">3rd Quarter</div>
-                          </th>
-                        )}
-                        {(activeTerm === "all" || activeTerm === "term4") && (
-                          <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q4</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">4th Quarter</div>
                           </th>
                         )}
                         {(activeDesignation === "all" || activeDesignation === "Quiz") && (
@@ -2318,13 +2307,6 @@ function GradesManagement() {
                               <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
                                 <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
                                   {student.quarter3Grade ?? 0}
-                                </span>
-                              </td>
-                            )}
-                            {(activeTerm === "all" || activeTerm === "term4") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
-                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
-                                  {student.quarter4Grade ?? 0}
                                 </span>
                               </td>
                             )}
