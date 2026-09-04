@@ -301,6 +301,47 @@ function ScrollToTop() {
 
 import { DataCacheProvider } from "./context/DataCacheContext";
 
+function AuthRecoveryListener() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const hash = window.location.hash || "";
+    const search = window.location.search || "";
+    const fullUrl = window.location.href;
+
+    const hasRecoveryToken =
+      hash.includes("type=recovery") ||
+      search.includes("type=recovery") ||
+      hash.includes("error_code=otp_expired") ||
+      (hash.includes("access_token") && (hash.includes("recovery") || fullUrl.includes("reset-password")));
+
+    if (hasRecoveryToken && location.pathname !== "/reset-password") {
+      console.log("[AuthRecoveryListener] Recovery parameters detected in URL, redirecting to /reset-password");
+      navigate(`/reset-password${search}${hash}`, { replace: true });
+    }
+
+    if (supabase?.auth?.onAuthStateChange) {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          console.log("[AuthRecoveryListener] PASSWORD_RECOVERY event received! Redirecting to /reset-password");
+          if (window.location.pathname !== "/reset-password") {
+            navigate("/reset-password", { replace: true });
+          }
+        }
+      });
+
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
+    }
+  }, [navigate, location]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <DataCacheProvider>
@@ -312,6 +353,7 @@ export default function App() {
       <ModuleTourProvider>
       <Router>
         <ScrollToTop />
+        <AuthRecoveryListener />
         <Toaster position="top-right" richColors />
         <WelcomeTourModal />
         <TeacherWelcomeModal />
