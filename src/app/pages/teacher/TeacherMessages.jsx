@@ -321,6 +321,14 @@ function TeacherMessages() {
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
     setConversations(sorted);
+    const activeTeacherId = typeof teacherId !== 'undefined' && teacherId ? teacherId : null;
+    if (activeTeacherId) {
+      try {
+        localStorage.setItem(`teacher_conversations_${activeTeacherId}`, JSON.stringify(sorted));
+      } catch (e) {
+        console.warn("[TeacherMessages] Failed to save conversations to localStorage:", e);
+      }
+    }
   };
 
   useEffect(() => {
@@ -657,6 +665,7 @@ function TeacherMessages() {
       });
 
       // Load group conversations
+      let groupConvList = [];
       const { data: participantRows, error: participantError } = await db
         .from("conversation_participants")
         .select("conversation_id, profile_id")
@@ -665,68 +674,88 @@ function TeacherMessages() {
       if (!participantError && participantRows && participantRows.length > 0) {
         const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id));
 
-        const { data: conversationData, error: convError } = await db
+        const { data: conversationData } = await db
           .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
           .eq("is_group", true);
-
-        if (!convError && conversationData) {
-          for (const conv of conversationData) {
-            const { data: groupParticipants, error: groupPartError } = await db
-              .from("conversation_participants")
-              .select("profile_id")
-              .eq("conversation_id", conv.id);
-
-            if (!groupPartError && groupParticipants) {
-              const participantIds = buildStableIdList(groupParticipants.map((p) => p.profile_id));
-
-              let groupMsgRows = [];
-              const { data: groupMessages, error: groupMsgError } = await db
-                .from(MESSAGE_TABLE)
-                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
-                .eq("conversation_id", conv.id)
-                .order("created_at", { ascending: true });
-
-              if (groupMsgError) {
-                const { data: groupFallback } = await db
-                  .from(MESSAGE_TABLE)
-                  .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
-                  .eq("conversation_id", conv.id)
-                  .order("created_at", { ascending: true });
-                groupMsgRows = groupFallback || [];
-              } else {
-                groupMsgRows = groupMessages || [];
-              }
-
-              const groupMsgObjs = groupMsgRows.map((row) => 
-                toConversationMessage(row, currentTeacherId, teacherDisplayName)
-              );
-
-              groupMsgRows.forEach((row) => markMessageSeen(row.id));
-
-              conversationsByParticipant.set(conv.id, {
-                id: conv.id,
-                participantId: "",
-                participantIds: participantIds,
-                participantName: conv.name || `${participantIds.length} members`,
-                participantRole: "group",
-                classCode: `${participantIds.length} members`,
-                messages: groupMsgObjs,
-                lastMessageTime: groupMsgObjs.length > 0 
-                  ? groupMsgObjs[groupMsgObjs.length - 1].time 
-                  : new Date().toISOString(),
-                unreadCount: 0,
-                isVideoMeet: false,
-                isGroup: true,
-              });
-            }
-          }
-        }
+        if (conversationData) groupConvList.push(...conversationData);
       }
 
-      // Merge cached local draft conversations if any
+      // ALSO fetch group conversations created by current user to avoid missing groups
+      const { data: myCreatedGroups } = await db
+        .from("conversations")
+        .select("id, name, is_group, created_by")
+        .eq("created_by", currentTeacherId)
+        .eq("is_group", true);
+
+      if (myCreatedGroups && myCreatedGroups.length > 0) {
+        myCreatedGroups.forEach((cg) => {
+          if (!groupConvList.some((existing) => existing.id === cg.id)) {
+            groupConvList.push(cg);
+          }
+        });
+      }
+
+      for (const conv of groupConvList) {
+        const { data: groupParticipants, error: groupPartError } = await db
+          .from("conversation_participants")
+          .select("profile_id")
+          .eq("conversation_id", conv.id);
+
+        const participantIds = (!groupPartError && groupParticipants) 
+          ? buildStableIdList(groupParticipants.map((p) => p.profile_id))
+          : [currentTeacherId];
+
+        let groupMsgRows = [];
+        const { data: groupMessages, error: groupMsgError } = await db
+          .from(MESSAGE_TABLE)
+          .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
+          .eq("conversation_id", conv.id)
+          .order("created_at", { ascending: true });
+
+        if (groupMsgError) {
+          const { data: groupFallback } = await db
+            .from(MESSAGE_TABLE)
+            .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: true });
+          groupMsgRows = groupFallback || [];
+        } else {
+          groupMsgRows = groupMessages || [];
+        }
+
+        const groupMsgObjs = groupMsgRows.map((row) => 
+          toConversationMessage(row, currentTeacherId, teacherDisplayName)
+        );
+
+        groupMsgRows.forEach((row) => markMessageSeen(row.id));
+
+        conversationsByParticipant.set(conv.id, {
+          id: conv.id,
+          participantId: "",
+          participantIds: participantIds,
+          participantName: conv.name || `${participantIds.length} members`,
+          participantRole: "group",
+          classCode: `${participantIds.length} members`,
+          messages: groupMsgObjs,
+          lastMessageTime: groupMsgObjs.length > 0 
+            ? groupMsgObjs[groupMsgObjs.length - 1].time 
+            : new Date().toISOString(),
+          unreadCount: 0,
+          isVideoMeet: false,
+          isGroup: true,
+        });
+      }
+
+      // Merge in-memory active conversations AND cached local storage conversations
       const allLoaded = Array.from(conversationsByParticipant.values());
+      const inMemoryConvs = conversationsRef.current || [];
+      inMemoryConvs.forEach((c) => {
+        if (!allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          allLoaded.push(c);
+        }
+      });
       try {
         const cached = JSON.parse(localStorage.getItem(`teacher_conversations_${currentTeacherId}`) || "[]");
         cached.forEach((c) => {

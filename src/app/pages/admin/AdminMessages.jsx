@@ -690,13 +690,19 @@ export function AdminMessages() {
       // Combine direct messages and group conversations
       const allConversations = [...conversationsByParticipant.values(), ...groupConversations];
       
+      const inMemory = conversationsRef.current || [];
+      inMemory.forEach((c) => {
+        if (!allConversations.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          allConversations.push(c);
+        }
+      });
+
       try {
-        const local = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
-        local.forEach(lc => {
-          if (!allConversations.find(c => c.id === lc.id || c.participantId === lc.participantId)) {
-            if (lc.messages && lc.messages.length === 0) {
-              allConversations.push(lc);
-            }
+        const localKey = currentAdminId ? `admin_conversations_${currentAdminId}` : "admin_conversations";
+        const local = JSON.parse(localStorage.getItem(localKey) || localStorage.getItem("admin_conversations") || "[]");
+        local.forEach((lc) => {
+          if (!allConversations.some((existing) => existing.id === lc.id || (!lc.isGroup && existing.participantId === lc.participantId))) {
+            allConversations.push(lc);
           }
         });
       } catch(e) {}
