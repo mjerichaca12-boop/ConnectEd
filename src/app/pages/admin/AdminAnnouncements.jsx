@@ -387,22 +387,34 @@ function AdminAnnouncements() {
         }
 
         const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = e => reject(e);
-        });
-        const base64File = await toBase64(file);
-        
-        const { error: uploadError } = await adminApi.db("storage", "storage_upload", {
-          payload: {
-            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
-            path: storagePath,
-            base64File,
-            contentType: file.type || "application/octet-stream"
-          }
-        });
+        const contentType = file.type || "application/octet-stream";
+        let uploadError = null;
+
+        // Try direct Supabase client binary upload first (avoids base64 inflation & 413 Payload Too Large)
+        const { error: directErr } = await client.storage
+          .from(ANNOUNCEMENT_ATTACHMENT_BUCKET)
+          .upload(storagePath, file, { contentType, upsert: true });
+
+        if (directErr) {
+          console.warn("[AdminAnnouncements] Direct storage upload notice, attempting adminApi fallback:", directErr.message || directErr);
+          const toBase64 = (f) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(f);
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = e => reject(e);
+          });
+          const base64File = await toBase64(file);
+          
+          const { error: apiErr } = await adminApi.db("storage", "storage_upload", {
+            payload: {
+              bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
+              path: storagePath,
+              base64File,
+              contentType
+            }
+          });
+          uploadError = apiErr;
+        }
 
         if (uploadError) {
           console.error("Announcement attachment upload failed:", uploadError);
@@ -713,7 +725,7 @@ function AdminAnnouncements() {
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
     const { data, error } = await client
       .from("announcement_attachments")
-      .select("announcement_id, file_name, file_url, file_path, file_type, created_at")
+      .select("id, school_announcement_id, file_name, file_url, file_path, file_type, created_at")
       .eq(attachmentForeignKey, normalizedAnnouncementId)
       .order("created_at", { ascending: true });
 

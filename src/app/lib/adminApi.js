@@ -121,8 +121,19 @@ export const adminApi = {
     console.warn(`[adminApi] /api/admin/db failed for action "${action}" on table "${table}", executing direct Supabase fallback:`, res.error?.message || res.error);
 
     try {
-      let query = supabase.from(table);
       const { payload, eq, neq, in: inArgs, or, is: isArgs, match, select, order, single } = options;
+
+      if (action === "storage_upload") {
+        const { bucket, path, file, contentType } = payload || {};
+        const { data, error } = await supabase.storage.from(bucket).upload(path, file, { contentType, upsert: true });
+        return { data, error };
+      } else if (action === "storage_remove") {
+        const { bucket, paths } = payload || {};
+        const { data, error } = await supabase.storage.from(bucket).remove(paths);
+        return { data, error };
+      }
+
+      let query = supabase.from(table);
 
       if (action === "select") {
         query = query.select(select || "*");
