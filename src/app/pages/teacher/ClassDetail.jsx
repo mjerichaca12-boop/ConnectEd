@@ -1163,16 +1163,23 @@ export function ClassDetail() {
 
     const filtered = (data ?? []).filter((row) => {
       const rowClassId = String(row?.class_id || row?.course_id || row?.subject_id || "").trim();
+      const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
       const rowSubject = String(row?.subject || row?.class_code || "").trim();
       const rowSection = String(row?.section || "").trim();
 
+      const teacherMatches = !cleanTeacherId || !rowTeacherId || rowTeacherId === cleanTeacherId;
+
       if (rowClassId) {
-        return !classId || rowClassId === classId;
+        return rowClassId === classId && teacherMatches;
       }
 
-      const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-      const sectionMatches = !classSection || !rowSection || rowSection === classSection;
-      return subjectMatches && sectionMatches;
+      if (rowSubject && rowSection && classCode && classSection) {
+        const subjectMatches = rowSubject.toLowerCase() === classCode.toLowerCase();
+        const sectionMatches = rowSection.toLowerCase() === classSection.toLowerCase();
+        return subjectMatches && sectionMatches && teacherMatches;
+      }
+
+      return false;
     });
 
     const hydratedRows = await hydrateAnnouncementAttachmentUrls(filtered);
