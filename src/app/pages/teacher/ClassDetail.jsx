@@ -3904,7 +3904,6 @@ export function ClassDetail() {
   const tabs = [
     { id: "students", label: "Students", icon: <Users className="w-4 h-4" /> },
     { id: "lessons", label: "Lessons", icon: <BookOpen className="w-4 h-4" /> },
-    { id: "materials", label: "Materials", icon: <FileText className="w-4 h-4" /> },
     { id: "announcements", label: "Announcements", icon: <Megaphone className="w-4 h-4" /> },
   ];
 
@@ -4278,121 +4277,6 @@ export function ClassDetail() {
                 </div>
               )}
 
-              {/* MATERIALS TAB */}
-              {activeTab === "materials" && (
-                <div data-tour="class-detail-materials-content" className="space-y-6">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900">Class Materials</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        Access and manage uploaded learning resources, reference files, and documents for this class.
-                      </p>
-                    </div>
-                    <button
-                      onClick={openCreateMaterialModal}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Upload Material
-                    </button>
-                  </div>
-
-                  {materials.length === 0 ? (
-                    <div className="text-center py-16 bg-gray-50/50 rounded-2xl border-2 border-dashed border-gray-200">
-                      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <h4 className="text-base font-semibold text-gray-800 mb-1">No materials uploaded yet</h4>
-                      <p className="text-sm text-gray-500 max-w-md mx-auto mb-5">
-                        Upload slides, reading materials, guidelines, or reference files so students can view and download them anytime.
-                      </p>
-                      <button
-                        onClick={openCreateMaterialModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium text-sm transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Upload First Material
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {materials.map((mat) => {
-                        const fileUrl = mat.fileUrl || mat.url || (Array.isArray(mat.fileUrls) && mat.fileUrls[0]) || "#";
-                        const fileTitle = mat.title || mat.fileName || "Class Material";
-                        const fileCategory = mat.fileType || mat.category || "Document";
-                        const lessonName = mat.lesson_title || "General";
-                        const dateFormatted = mat.created_at
-                          ? new Date(mat.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                          : "Recent";
-
-                        return (
-                          <div
-                            key={mat.id || Math.random()}
-                            className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-md transition-all flex flex-col justify-between group"
-                          >
-                            <div>
-                              <div className="flex items-start justify-between gap-3 mb-3">
-                                <div className="p-3 bg-green-50 text-green-600 rounded-xl group-hover:scale-105 transition-transform">
-                                  <FileText className="w-6 h-6" />
-                                </div>
-                                <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-[11px] font-bold rounded-lg uppercase tracking-wider">
-                                  {fileCategory}
-                                </span>
-                              </div>
-
-                              <h4 className="text-base font-bold text-gray-900 mb-1 line-clamp-1" title={fileTitle}>
-                                {fileTitle}
-                              </h4>
-
-                              {mat.description && (
-                                <p className="text-xs text-gray-500 mb-3 line-clamp-2 leading-relaxed">
-                                  {mat.description}
-                                </p>
-                              )}
-
-                              <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
-                                <span>Lesson: <strong className="text-gray-600">{lessonName}</strong></span>
-                                <span>&bull;</span>
-                                <span>{dateFormatted}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 mt-5 pt-4 border-t border-gray-100">
-                              {fileUrl && fileUrl !== "#" ? (
-                                <a
-                                  href={fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-semibold rounded-xl text-xs transition-colors"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  View / Download
-                                </a>
-                              ) : (
-                                <span className="flex-1 text-center py-2 text-xs text-gray-400 italic">No Link</span>
-                              )}
-
-                              <button
-                                onClick={() => openEditMaterialModal(mat)}
-                                title="Edit Material"
-                                className="p-2 text-gray-500 hover:text-green-600 hover:bg-gray-100 rounded-xl transition-colors"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-
-                              <button
-                                onClick={() => requestDeleteMaterial(mat.id)}
-                                title="Delete Material"
-                                className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
               {/* ANNOUNCEMENTS TAB */}
               {activeTab === "announcements" && (
                 <div data-tour="class-detail-announcements-content">
