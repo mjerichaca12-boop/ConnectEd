@@ -9,6 +9,7 @@ import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { generateCalendarPdf } from "@/app/lib/calendarPdfExporter";
+import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { toast } from "sonner";
 
 const db = supabase;
@@ -661,31 +662,31 @@ export function AdminCalendar() {
                         <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
                           School Year
                         </label>
-                        <select
+                        <CustomSelect
                           value={selectedSchoolYear}
-                          onChange={(e) => setSelectedSchoolYear(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          <option value="2025-2026">School Year 2025–2026</option>
-                          <option value="2026-2027">School Year 2026–2027</option>
-                          <option value="2027-2028">School Year 2027–2028</option>
-                        </select>
+                          onChange={(val) => setSelectedSchoolYear(val)}
+                          options={[
+                            { value: "2025-2026", label: "School Year 2025–2026" },
+                            { value: "2026-2027", label: "School Year 2026–2027" },
+                            { value: "2027-2028", label: "School Year 2027–2028" },
+                          ]}
+                        />
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
                           Quarter / Academic Period
                         </label>
-                        <select
+                        <CustomSelect
                           value={selectedQuarter}
-                          onChange={(e) => setSelectedQuarter(e.target.value)}
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                          <option value="Quarter 1">Quarter 1 (Q1)</option>
-                          <option value="Quarter 2">Quarter 2 (Q2)</option>
-                          <option value="Quarter 3">Quarter 3 (Q3)</option>
-                          <option value="Entire School Year">Entire School Year (All Quarters)</option>
-                        </select>
+                          onChange={(val) => setSelectedQuarter(val)}
+                          options={[
+                            { value: "Quarter 1", label: "Quarter 1 (Q1)" },
+                            { value: "Quarter 2", label: "Quarter 2 (Q2)" },
+                            { value: "Quarter 3", label: "Quarter 3 (Q3)" },
+                            { value: "Entire School Year", label: "Entire School Year (All Quarters)" },
+                          ]}
+                        />
                       </div>
                     </div>
                   </div>
@@ -843,28 +844,28 @@ export function AdminCalendar() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">School Year</label>
-                    <select
+                    <CustomSelect
                       value={formData.schoolYear || "2026-2027"}
-                      onChange={(e) => setFormData({ ...formData, schoolYear: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                    >
-                      <option value="2025-2026">School Year 2025–2026</option>
-                      <option value="2026-2027">School Year 2026–2027</option>
-                      <option value="2027-2028">School Year 2027–2028</option>
-                    </select>
+                      onChange={(val) => setFormData({ ...formData, schoolYear: val })}
+                      options={[
+                        { value: "2025-2026", label: "School Year 2025–2026" },
+                        { value: "2026-2027", label: "School Year 2026–2027" },
+                        { value: "2027-2028", label: "School Year 2027–2028" },
+                      ]}
+                    />
                   </div>
 
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">Quarter</label>
-                    <select
+                    <CustomSelect
                       value={formData.quarter || "Quarter 1"}
-                      onChange={(e) => setFormData({ ...formData, quarter: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
-                    >
-                      <option value="Quarter 1">Quarter 1 (Q1)</option>
-                      <option value="Quarter 2">Quarter 2 (Q2)</option>
-                      <option value="Quarter 3">Quarter 3 (Q3)</option>
-                    </select>
+                      onChange={(val) => setFormData({ ...formData, quarter: val })}
+                      options={[
+                        { value: "Quarter 1", label: "Quarter 1 (Q1)" },
+                        { value: "Quarter 2", label: "Quarter 2 (Q2)" },
+                        { value: "Quarter 3", label: "Quarter 3 (Q3)" },
+                      ]}
+                    />
                   </div>
                 </div>
 
