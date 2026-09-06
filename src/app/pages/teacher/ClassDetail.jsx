@@ -210,6 +210,17 @@ const normalizeAnnouncementRecordLocal = (row) => {
   const attachments = structuredAttachments.length > 0 ? structuredAttachments : legacyAttachment;
   const meta = parsePriorityMetadata(row?.priority);
 
+  let rawStatus = row?.status || meta.status || "Published";
+  let scheduledAt = row?.scheduled_publish_at || row?.scheduled_at || meta.scheduled_at;
+
+  if (rawStatus === "Scheduled" && scheduledAt) {
+    const scheduledTime = new Date(scheduledAt).getTime();
+    if (!isNaN(scheduledTime) && scheduledTime <= Date.now()) {
+      rawStatus = "Published";
+      scheduledAt = null;
+    }
+  }
+
   return {
     id: String(row?.id || ""),
     title: String(row?.title || "").trim(),
@@ -226,9 +237,9 @@ const normalizeAnnouncementRecordLocal = (row) => {
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
     section: String(row?.section || "").trim(),
-    isPinned: meta.is_pinned,
-    status: meta.status,
-    scheduledAt: meta.scheduled_at,
+    isPinned: row?.status ? (row.priority === "pinned" || meta.is_pinned) : meta.is_pinned,
+    status: rawStatus,
+    scheduledAt: rawStatus === "Scheduled" ? scheduledAt : null,
     linkUrl: meta.link_url
   };
 };

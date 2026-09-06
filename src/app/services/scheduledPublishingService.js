@@ -45,49 +45,30 @@ export async function triggerScheduledPublishingProcess() {
     ]);
 
     // Handle announcements where scheduled status/time is stored inside priority JSON
-    const { data: scheduledAnns } = await supabase
-      .from("class_announcements")
-      .select("id, priority, status, scheduled_publish_at")
-      .or('status.eq.Scheduled,priority.ilike.%"status":"Scheduled"%');
+    try {
+      const { data: scheduledAnns } = await supabase
+        .from("class_announcements")
+        .select("id, priority");
 
-    if (Array.isArray(scheduledAnns) && scheduledAnns.length > 0) {
-      for (const ann of scheduledAnns) {
-        let isDue = false;
-        let parsedPriority = null;
+      if (Array.isArray(scheduledAnns) && scheduledAnns.length > 0) {
+        for (const ann of scheduledAnns) {
+          if (!ann?.priority || !String(ann.priority).includes('"status":"Scheduled"')) continue;
 
-        if (ann.scheduled_publish_at && new Date(ann.scheduled_publish_at) <= nowDate) {
-          isDue = true;
-        }
-
-        if (ann.priority && String(ann.priority).includes('"status":"Scheduled"')) {
           try {
-            parsedPriority = JSON.parse(ann.priority);
+            const parsedPriority = JSON.parse(ann.priority);
             if (parsedPriority?.scheduled_at && new Date(parsedPriority.scheduled_at) <= nowDate) {
-              isDue = true;
+              parsedPriority.status = "Published";
+              parsedPriority.scheduled_at = null;
+
+              await supabase
+                .from("class_announcements")
+                .update({ priority: JSON.stringify(parsedPriority) })
+                .eq("id", ann.id)
+                .catch(() => {});
             }
           } catch (_) {}
         }
-
-        if (isDue) {
-          const updatePayload = {
-            status: "Published",
-            published_at: nowIso,
-            scheduled_publish_at: null
-          };
-
-          if (parsedPriority) {
-            parsedPriority.status = "Published";
-            parsedPriority.scheduled_at = null;
-            updatePayload.priority = JSON.stringify(parsedPriority);
-          }
-
-          await supabase
-            .from("class_announcements")
-            .update(updatePayload)
-            .eq("id", ann.id)
-            .catch(() => {});
-        }
       }
-    }
+    } catch (_) {}
   } catch (_) {}
 }
