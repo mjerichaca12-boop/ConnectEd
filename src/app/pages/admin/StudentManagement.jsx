@@ -1792,18 +1792,18 @@ function StudentManagement() {
           <div data-tour="students-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
-              <div className="flex-1 bg-blue-600" />
-              <div className="flex-1 bg-red-600" />
+              <div className="flex-1 bg-emerald-600" />
+              <div className="flex-1 bg-teal-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-emerald-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Management</h1>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Student Management</h1>
                 <p className="text-gray-600">Student records are up to date.</p>
               </div>
               <div className="flex items-center gap-3">
                 <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 border border-green-200 rounded-xl hover:bg-green-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
                   {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                   {isImporting ? "Importing..." : "Import Masterlist"}
                 </button>
@@ -1811,7 +1811,7 @@ function StudentManagement() {
                   <Download className="w-4 h-4 text-gray-500" />
                   CSV Template
                 </button>
-                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
+                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Student
                 </button>
@@ -1826,7 +1826,7 @@ function StudentManagement() {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Newest Registration</p>
-              <p className="text-lg font-semibold text-blue-400">{students[0] ? getFullName(students[0]) : "No students yet"}</p>
+              <p className="text-lg font-semibold text-green-600">{students[0] ? getFullName(students[0]) : "No students yet"}</p>
               <p className="text-sm text-gray-500 mt-1">{students[0] ? formatDate(students[0].created_at) : "Add the first student to get started"}</p>
             </div>
           </div>
@@ -1843,7 +1843,7 @@ function StudentManagement() {
               onClick={() => setActiveTab("Profiles")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Profiles"
-                  ? "border-blue-600 text-blue-600"
+                  ? "border-green-600 text-green-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -1854,7 +1854,7 @@ function StudentManagement() {
               onClick={() => setActiveTab("Masterlist")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Masterlist"
-                  ? "border-blue-600 text-blue-600"
+                  ? "border-green-600 text-green-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >

@@ -1518,17 +1518,17 @@ function TeacherManagement() {
           <div data-tour="teachers-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
-              <div className="flex-1 bg-blue-600" />
-              <div className="flex-1 bg-red-600" />
+              <div className="flex-1 bg-emerald-600" />
+              <div className="flex-1 bg-teal-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-emerald-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-600">Teacher Management</h1>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Management</h1>
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 shadow-sm cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Teacher
                 </button>
@@ -1547,7 +1547,7 @@ function TeacherManagement() {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Assigned Classes</p>
-              <p className="text-3xl font-bold text-blue-400">{assignedCount}</p>
+              <p className="text-3xl font-bold text-green-600">{assignedCount}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Inactive Teachers</p>
