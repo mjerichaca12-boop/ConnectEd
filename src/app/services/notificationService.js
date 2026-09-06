@@ -233,7 +233,12 @@ export const fetchUserNotifications = async (currentUser) => {
   const storageKey = getNotificationStorageKey(role, userId);
 
   try {
-    // Sync missing announcements to notifications table for this user first
+    // Trigger server-side publishing process first to process due items & generate notifications on DB time NOW()
+    try {
+      await supabase.rpc("check_and_process_scheduled_publishing");
+    } catch (_) {}
+
+    // Sync missing announcements to notifications table for this user
     await syncAnnouncementsToUserNotifications(userId, role);
 
     // Fetch per-user notifications strictly by user_id

@@ -1421,20 +1421,32 @@ export function ClassDetail() {
   useEffect(() => {
     if (!supabase || !id || String(id).startsWith("demo-")) return;
 
+    // Trigger server-side scheduled publishing check on DB time NOW()
+    try {
+      supabase.rpc("check_and_process_scheduled_publishing").catch(() => {});
+    } catch (_) {}
+
+    const refreshAllClassData = () => {
+      fetchClassMaterials(teacherProfileId, classData);
+      fetchClassAssignments(teacherProfileId, classData);
+      fetchClassAnnouncements(teacherProfileId, classData);
+      fetchDashboardMetrics(teacherProfileId, id);
+    };
+
     const channel = supabase
-      .channel(`class-detail-materials-rt-${id}-${Math.random().toString(36).substring(7)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "lesson_materials" },
-        () => {
-          fetchClassMaterials(teacherProfileId, classData);
-          fetchDashboardMetrics(teacherProfileId, id);
-        }
-      )
+      .channel(`class-detail-rt-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lessons" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lesson_materials" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "assignments_activity" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_announcements" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refreshAllClassData)
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [teacherProfileId, id, classData]);
 

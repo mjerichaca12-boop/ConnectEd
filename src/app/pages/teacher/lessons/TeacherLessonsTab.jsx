@@ -110,7 +110,43 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
 
   useEffect(() => {
     loadLessons();
-  }, [loadLessons]);
+
+    if (!supabase || !subjectId || String(subjectId).startsWith("demo-")) return;
+
+    // Trigger server-side publishing evaluation on DB server time NOW()
+    try {
+      supabase.rpc("check_and_process_scheduled_publishing").catch(() => {});
+    } catch (_) {}
+
+    let channel = null;
+    try {
+      channel = supabase
+        .channel(`lessons-realtime-${subjectId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "lessons",
+            filter: `subject_id=eq.${subjectId}`
+          },
+          () => {
+            if (mountedRef.current) {
+              loadLessons();
+            }
+          }
+        )
+        .subscribe();
+    } catch (e) {
+      console.warn("[TeacherLessonsTab] Realtime error:", e);
+    }
+
+    return () => {
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [loadLessons, subjectId]);
 
   const handleLessonSaved = () => {
     loadLessons();
