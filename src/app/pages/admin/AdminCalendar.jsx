@@ -268,7 +268,6 @@ export function AdminCalendar() {
         }
 
         setAdminName(user.name);
-        setNotificationList(adminNotifications);
 
         const tableName = await resolveCalendarTable();
         await resolveCalendarColumns(tableName);

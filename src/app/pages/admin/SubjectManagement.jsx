@@ -34,7 +34,6 @@ function SubjectManagement() {
   const { logActivity } = useActivity();
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("active");
@@ -383,7 +382,6 @@ function SubjectManagement() {
     }
 
     setAdminName(user.name);
-    setNotificationList(adminNotifications);
 
     if (cachedSubjectsData) {
       setSubjects(cachedSubjectsData.subjects || []);

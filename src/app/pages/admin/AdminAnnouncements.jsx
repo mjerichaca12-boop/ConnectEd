@@ -989,7 +989,6 @@ function AdminAnnouncements() {
         }
 
         setAdminName(user.name);
-        setNotificationList(adminNotifications);
 
         const tableName = await getAnnouncementTableName();
         const rows = await loadAnnouncements(tableName);

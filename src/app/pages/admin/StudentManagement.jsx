@@ -56,7 +56,6 @@ function StudentManagement() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
