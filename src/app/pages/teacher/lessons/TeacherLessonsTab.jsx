@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
+import { isColumnMissingError } from "@/app/lib/teacherHelpers";
 import { Plus, BookOpen, Clock, ChevronRight, ArrowLeft, FileText, CheckCircle, Video, Image as ImageIcon, Archive, Trash2, Edit, RefreshCw, FolderArchive } from "lucide-react";
 import { toast } from "sonner";
 import { LessonBuilderModal } from "./LessonBuilderModal";
@@ -179,14 +180,25 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
   const handlePublishNow = async (e, lesson) => {
     e.stopPropagation();
     try {
-      const { error } = await supabase
+      const payload = {
+        status: "Published",
+        published_at: new Date().toISOString(),
+        scheduled_publish_at: null
+      };
+
+      let { error } = await supabase
         .from("lessons")
-        .update({
-          status: "Published",
-          published_at: new Date().toISOString(),
-          scheduled_publish_at: null
-        })
+        .update(payload)
         .eq("id", lesson.id);
+
+      if (error && isColumnMissingError(error)) {
+        console.warn("[TeacherLessonsTab] Extended columns missing in schema, publishing status only:", error);
+        const retryRes = await supabase
+          .from("lessons")
+          .update({ status: "Published" })
+          .eq("id", lesson.id);
+        error = retryRes.error;
+      }
 
       if (error) throw error;
       toast.success("Lesson published successfully!");

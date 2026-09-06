@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
+import { isColumnMissingError } from "@/app/lib/teacherHelpers";
 import { X, Calendar, Clock, Send, ShieldCheck, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useAcademic } from "@/app/context/AcademicContext";
@@ -101,29 +102,34 @@ export function LessonBuilderModal({ subjectId, teacherId, initialLesson, onClos
         published_at: publishedAtValue
       };
 
-      if (initialLesson?.id) {
-        const { error } = await supabase.from("lessons").update(payload).eq("id", initialLesson.id);
-        if (error) throw error;
-        toast.success(
-          finalStatus === "Published"
-            ? "Lesson published successfully!"
-            : finalStatus === "Scheduled"
-            ? "Lesson scheduled successfully!"
-            : "Lesson updated as draft"
-        );
-      } else {
+      if (!initialLesson?.id) {
         payload.school_year = activeSchoolYear;
         payload.term = activeQuarter;
-        const { error } = await supabase.from("lessons").insert(payload);
-        if (error) throw error;
-        toast.success(
-          finalStatus === "Published"
-            ? "Lesson created and published!"
-            : finalStatus === "Scheduled"
-            ? "Lesson scheduled for publication!"
-            : "Lesson created as draft"
-        );
       }
+
+      let { error } = initialLesson?.id
+        ? await supabase.from("lessons").update(payload).eq("id", initialLesson.id)
+        : await supabase.from("lessons").insert(payload);
+
+      if (error && isColumnMissingError(error)) {
+        console.warn("[LessonBuilderModal] New columns missing in DB schema, retrying without extended columns:", error);
+        delete payload.scheduled_publish_at;
+        delete payload.published_at;
+        const retryRes = initialLesson?.id
+          ? await supabase.from("lessons").update(payload).eq("id", initialLesson.id)
+          : await supabase.from("lessons").insert(payload);
+        error = retryRes.error;
+      }
+
+      if (error) throw error;
+
+      toast.success(
+        finalStatus === "Published"
+          ? "Lesson published successfully!"
+          : finalStatus === "Scheduled"
+          ? "Lesson scheduled successfully!"
+          : "Lesson saved successfully"
+      );
 
       onSuccess();
     } catch (err) {
