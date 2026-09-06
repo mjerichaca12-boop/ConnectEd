@@ -67,7 +67,7 @@ function CoreModules() {
               Everything education requires,{" "}<span className="text-gray-600">unified</span>
             </h2>
             <p className="text-gray-600 max-w-2xl mx-auto text-base">
-              Built from the ground up for public school workflows — not adapted from corporate tools.
+              Built from the ground up for school workflows — not adapted from corporate tools.
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
