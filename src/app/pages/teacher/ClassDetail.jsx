@@ -1433,8 +1433,9 @@ export function ClassDetail() {
       fetchDashboardMetrics(teacherProfileId, id);
     };
 
+    const channelId = `class-detail-rt-${id}-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
-      .channel(`class-detail-rt-${id}`)
+      .channel(channelId)
       .on("postgres_changes", { event: "*", schema: "public", table: "lessons" }, refreshAllClassData)
       .on("postgres_changes", { event: "*", schema: "public", table: "lesson_materials" }, refreshAllClassData)
       .on("postgres_changes", { event: "*", schema: "public", table: "assignments_activity" }, refreshAllClassData)

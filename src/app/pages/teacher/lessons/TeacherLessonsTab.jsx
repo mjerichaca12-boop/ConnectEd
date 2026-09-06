@@ -120,8 +120,9 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
 
     let channel = null;
     try {
+      const channelId = `lessons-realtime-${subjectId}-${Math.random().toString(36).substring(7)}`;
       channel = supabase
-        .channel(`lessons-realtime-${subjectId}`)
+        .channel(channelId)
         .on(
           "postgres_changes",
           {
