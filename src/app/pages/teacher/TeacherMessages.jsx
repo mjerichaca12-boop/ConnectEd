@@ -1474,6 +1474,7 @@ function TeacherMessages() {
       await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
       await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
+      conversationsRef.current = updated;
       saveConversations(updated);
       setShowRenameModal(false);
       setPageError("");

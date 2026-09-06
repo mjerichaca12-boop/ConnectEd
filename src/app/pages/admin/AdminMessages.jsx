@@ -770,10 +770,32 @@ const removeDismissedConvId = (userId, convId) => {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await adminApi.db("conversations", "update", { payload: { name: newName }, eq: { column: "id", value: selectedConv.id } });
-      if (error) throw error;
-      const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
-      setConversations(updated);
+      // 1. Update conversations table via adminApi
+      try {
+        await adminApi.db("conversations", "update", {
+          payload: { name: newName },
+          eq: { column: "id", value: selectedConv.id }
+        });
+      } catch (err) {
+        console.warn("[AdminMessages] conversations rename error:", err);
+      }
+
+      // 2. Update groupchats table via adminApi
+      try {
+        await adminApi.db("groupchats", "update", {
+          payload: { name: newName },
+          eq: { column: "id", value: selectedConv.id }
+        });
+      } catch (err) {
+        console.warn("[AdminMessages] groupchats rename error:", err);
+      }
+
+      // 3. Update local state, in-memory ref, and localStorage
+      const updated = conversations.map((c) =>
+        c.id === selectedConv.id ? { ...c, participantName: newName } : c
+      );
+      conversationsRef.current = updated;
+      saveConversations(updated);
       setShowRenameModal(false);
       setPageError("");
     } catch (err) { 
