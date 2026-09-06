@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { isColumnMissingError } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, isCheckConstraintError } from "@/app/lib/teacherHelpers";
 import { X, Calendar, Clock, Send, ShieldCheck, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useAcademic } from "@/app/context/AcademicContext";
@@ -115,6 +115,15 @@ export function LessonBuilderModal({ subjectId, teacherId, initialLesson, onClos
         console.warn("[LessonBuilderModal] New columns missing in DB schema, retrying without extended columns:", error);
         delete payload.scheduled_publish_at;
         delete payload.published_at;
+        const retryRes = initialLesson?.id
+          ? await supabase.from("lessons").update(payload).eq("id", initialLesson.id)
+          : await supabase.from("lessons").insert(payload);
+        error = retryRes.error;
+      }
+
+      if (error && isCheckConstraintError(error)) {
+        console.warn("[LessonBuilderModal] 'Scheduled' status blocked by DB check constraint, retrying with status='Draft':", error);
+        payload.status = "Draft";
         const retryRes = initialLesson?.id
           ? await supabase.from("lessons").update(payload).eq("id", initialLesson.id)
           : await supabase.from("lessons").insert(payload);

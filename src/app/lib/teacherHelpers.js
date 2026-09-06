@@ -49,6 +49,19 @@ export const isColumnMissingError = (error) => {
 };
 
 /**
+ * Check if error is a Supabase check constraint error (23514 or check_constraint)
+ */
+export const isCheckConstraintError = (error) => {
+  const code = String(error?.code || "").trim();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "23514" ||
+    message.includes("check constraint") ||
+    message.includes("violates check constraint")
+  );
+};
+
+/**
  * Check if error is a storage not found error (404 or similar)
  */
 export const isStorageNotFoundError = (error) => {

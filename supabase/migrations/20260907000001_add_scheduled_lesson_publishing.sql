@@ -3,6 +3,10 @@
 ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS scheduled_publish_at timestamptz;
 ALTER TABLE public.lessons ADD COLUMN IF NOT EXISTS published_at timestamptz;
 
+-- Update status check constraint to include 'Scheduled'
+ALTER TABLE public.lessons DROP CONSTRAINT IF EXISTS lessons_status_check;
+ALTER TABLE public.lessons ADD CONSTRAINT lessons_status_check CHECK (status IN ('Draft', 'Scheduled', 'Published', 'Archived'));
+
 -- Helper function to check if a lesson is currently visible to students
 CREATE OR REPLACE FUNCTION public.is_lesson_visible_to_students(lesson_row public.lessons)
 RETURNS boolean
