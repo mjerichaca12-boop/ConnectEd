@@ -4403,7 +4403,7 @@ export function ClassDetail() {
                       </div>
                     <button
                       onClick={openCreateAnnouncementModal}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
                     >
                       <Megaphone className="w-4 h-4" />
                       New Announcement
@@ -4417,7 +4417,7 @@ export function ClassDetail() {
                         onClick={() => setActiveAnnouncementTab("Active")}
                         className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                           activeAnnouncementTab === "Active"
-                            ? "bg-white text-purple-700 shadow-sm"
+                            ? "bg-white text-green-700 shadow-sm"
                             : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
@@ -4427,7 +4427,7 @@ export function ClassDetail() {
                         onClick={() => setActiveAnnouncementTab("Archived")}
                         className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                           activeAnnouncementTab === "Archived"
-                            ? "bg-white text-purple-700 shadow-sm"
+                            ? "bg-white text-green-700 shadow-sm"
                             : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
@@ -4436,7 +4436,7 @@ export function ClassDetail() {
                     </div>
 
                     <div className="flex items-center gap-4 text-xs font-medium text-gray-500 self-end sm:self-auto">
-                      <div className="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-3 py-1 rounded-full">
+                      <div className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-full">
                         <span className="font-bold">{activeAnnouncementsList.filter(a => (a.isPinned || a.pinned) && a.status !== "Archived").length}</span> Pinned
                       </div>
                       <div className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
@@ -4463,8 +4463,8 @@ export function ClassDetail() {
                     if (sortedList.length === 0) {
                       return (
                         <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                          <div className="w-14 h-14 bg-purple-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                            <Megaphone className="w-6 h-6 text-purple-600" />
+                          <div className="w-14 h-14 bg-green-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Megaphone className="w-6 h-6 text-green-600" />
                           </div>
                           <h4 className="font-bold text-gray-900 mb-1">
                             {activeAnnouncementTab === "Archived" ? "No archived announcements" : "No announcements posted yet"}
@@ -4477,7 +4477,7 @@ export function ClassDetail() {
                           {activeAnnouncementTab !== "Archived" && (
                             <button
                               onClick={openCreateAnnouncementModal}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
                             >
                               <Megaphone className="w-4 h-4" />
                               Create Announcement
@@ -4493,16 +4493,16 @@ export function ClassDetail() {
                           <div
                             key={ann.id}
                             onClick={() => setSelectedAnnouncementDetail(ann)}
-                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-purple-200 transition-all duration-200 cursor-pointer relative group ${
-                              ann.isPinned ? "border-purple-200 bg-purple-50/10 ring-1 ring-purple-100" : "border-gray-200"
+                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-green-200 transition-all duration-200 cursor-pointer relative group ${
+                              ann.isPinned ? "border-green-200 bg-green-50/10 ring-1 ring-green-100" : "border-gray-200"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap mb-2.5">
                                   {ann.isPinned && (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-                                      <Sparkles className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                      <Sparkles className="w-3.5 h-3.5 fill-green-600 text-green-600" />
                                       Pinned
                                     </span>
                                   )}
@@ -4517,7 +4517,7 @@ export function ClassDetail() {
                                   </span>
                                 </div>
 
-                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-purple-700 transition-colors">
+                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-green-700 transition-colors">
                                   {ann.title}
                                 </h4>
 
@@ -4527,7 +4527,7 @@ export function ClassDetail() {
 
                                 {/* Optional Link Indicator */}
                                 {ann.linkUrl && (
-                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-purple-600 font-semibold hover:underline">
+                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-green-600 font-semibold hover:underline">
                                     <Sparkles className="w-3.5 h-3.5" />
                                     <span>Attachment Link Associated</span>
                                   </div>
@@ -4559,12 +4559,12 @@ export function ClassDetail() {
                                           href={attachmentUrl}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 text-purple-700 text-xs font-medium border border-purple-100/50 hover:border-purple-200 transition-all"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-50/50 hover:bg-green-100/60 text-green-700 text-xs font-medium border border-green-100/50 hover:border-green-200 transition-all"
                                         >
                                           {attachmentKind === "image" ? (
                                             <Sparkles className="w-3.5 h-3.5" />
                                           ) : (
-                                            <File className="w-3.5 h-3.5 text-purple-500" />
+                                            <File className="w-3.5 h-3.5 text-green-500" />
                                           )}
                                           <span className="truncate max-w-[180px]">{attachmentName}</span>
                                         </a>
@@ -4594,7 +4594,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         openEditAnnouncementModal(ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <FileText className="w-3.5 h-3.5" />
                                       Edit
@@ -4604,7 +4604,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         togglePinAnnouncement(e, ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <Sparkles className="w-3.5 h-3.5 fill-current" />
                                       {ann.isPinned ? "Unpin" : "Pin"}
@@ -4614,7 +4614,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         toggleArchiveAnnouncement(e, ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <Calendar className="w-3.5 h-3.5" />
                                       {ann.status === "Archived" ? "Restore" : "Archive"}
@@ -5204,8 +5204,8 @@ export function ClassDetail() {
           <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">
@@ -5232,7 +5232,7 @@ export function ClassDetail() {
                   placeholder="e.g. Midterm Examination Guidelines"
                   value={annForm.title}
                   onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
                 />
               </div>
 
@@ -5245,7 +5245,7 @@ export function ClassDetail() {
                   placeholder="Write your announcement details here..."
                   value={annForm.content}
                   onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all resize-none"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all resize-none"
                 />
               </div>
 
@@ -5258,7 +5258,7 @@ export function ClassDetail() {
                   placeholder="e.g. https://classroom.google.com/..."
                   value={annForm.link_url}
                   onChange={(e) => setAnnForm({ ...annForm, link_url: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
                 />
               </div>
 
@@ -5266,8 +5266,8 @@ export function ClassDetail() {
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                   Attachments (Optional)
                 </label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-purple-50/10 transition-colors cursor-pointer relative">
-                  <Upload className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-green-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
                   <p className="text-xs text-gray-650 mb-1">Click to select files from your computer</p>
                   <p className="text-[10px] text-gray-400">PDF, DOCX, Images, and ZIP (Max 15MB)</p>
                   <input
@@ -5285,7 +5285,7 @@ export function ClassDetail() {
                 {annFileNames.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {annFileNames.map((name, i) => (
-                      <div key={i} className="flex items-center justify-between bg-purple-50/40 border border-purple-100 rounded-lg px-3 py-1.5 text-xs text-purple-750 font-medium">
+                      <div key={i} className="flex items-center justify-between bg-green-50/40 border border-green-100 rounded-lg px-3 py-1.5 text-xs text-green-800 font-medium">
                         <span className="truncate max-w-[300px]">{name}</span>
                         <button
                           type="button"
@@ -5317,7 +5317,7 @@ export function ClassDetail() {
                       onChange={(e) => setAnnForm({ ...annForm, is_pinned: e.target.checked })}
                       className="sr-only peer"
                     />
-                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
                   </label>
                 </div>
 
@@ -5332,7 +5332,7 @@ export function ClassDetail() {
                       onClick={() => setAnnForm({ ...annForm, publishImmediately: true })}
                       className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
                         annForm.publishImmediately
-                          ? "bg-white text-purple-700 shadow-sm"
+                          ? "bg-white text-green-700 shadow-sm"
                           : "text-gray-600 hover:text-gray-900"
                       }`}
                     >
@@ -5352,7 +5352,7 @@ export function ClassDetail() {
                       }}
                       className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
                         !annForm.publishImmediately
-                          ? "bg-white text-purple-700 shadow-sm"
+                          ? "bg-white text-green-700 shadow-sm"
                           : "text-gray-600 hover:text-gray-900"
                       }`}
                     >
@@ -5362,40 +5362,40 @@ export function ClassDetail() {
                   </div>
 
                   {!annForm.publishImmediately && (
-                    <div className="bg-purple-50/40 border border-purple-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
-                      <div className="flex items-center gap-2 text-xs font-bold text-purple-900">
-                        <Clock className="w-4 h-4 text-purple-600" />
+                    <div className="bg-green-50/40 border border-green-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="flex items-center gap-2 text-xs font-bold text-green-900">
+                        <Clock className="w-4 h-4 text-green-600" />
                         Set Target Date and Time for Broadcast
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-purple-500" /> Publish Date <span className="text-red-500">*</span>
+                            <Calendar className="w-3 h-3 text-green-500" /> Publish Date <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="date"
                             min={new Date().toISOString().split("T")[0]}
                             value={annForm.scheduled_date || new Date().toISOString().split("T")[0]}
                             onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-purple-500" /> Publish Time <span className="text-red-500">*</span>
+                            <Clock className="w-3 h-3 text-green-500" /> Publish Time <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="time"
                             value={annForm.scheduled_time || "08:00"}
                             onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-purple-500"
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
                           />
                         </div>
                       </div>
 
                       {annForm.scheduled_date && (
-                        <p className="text-[11px] text-purple-700 font-medium">
+                        <p className="text-[11px] text-green-700 font-medium">
                           📢 Scheduled for <strong>{annForm.scheduled_date}</strong> at <strong>{annForm.scheduled_time || "08:00"}</strong>.
                         </p>
                       )}
@@ -5415,7 +5415,7 @@ export function ClassDetail() {
               <button
                 onClick={handleSaveAnnouncement}
                 disabled={isPostingAnnouncement}
-                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-750 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
               >
                 {isPostingAnnouncement ? "Saving..." : isEditingAnnouncement ? "Update Announcement" : "Post Announcement"}
               </button>
@@ -5430,8 +5430,8 @@ export function ClassDetail() {
           <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 truncate max-w-[320px]">
@@ -5452,8 +5452,8 @@ export function ClassDetail() {
 
             <div className="p-6 overflow-y-auto flex-1 space-y-5">
               {selectedAnnouncementDetail.isPinned && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-150/40 text-purple-800 rounded-full text-xs font-bold border border-purple-200">
-                  <Sparkles className="w-3.5 h-3.5 fill-purple-650 text-purple-650" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold border border-green-200">
+                  <Sparkles className="w-3.5 h-3.5 fill-green-600 text-green-600" />
                   Pinned Announcement
                 </div>
               )}
@@ -5465,16 +5465,16 @@ export function ClassDetail() {
               </div>
 
               {selectedAnnouncementDetail.linkUrl && (
-                <div className="bg-purple-50/30 border border-purple-100 rounded-xl p-4 flex items-center justify-between gap-3">
+                <div className="bg-green-50/30 border border-green-100 rounded-xl p-4 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-purple-850 uppercase tracking-wider">Reference Link</p>
+                    <p className="text-xs font-bold text-green-800 uppercase tracking-wider">Reference Link</p>
                     <p className="text-xs text-gray-600 truncate mt-0.5">{selectedAnnouncementDetail.linkUrl}</p>
                   </div>
                   <a
                     href={selectedAnnouncementDetail.linkUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex-shrink-0 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-750 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                    className="flex-shrink-0 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
                   >
                     Open Link
                   </a>
