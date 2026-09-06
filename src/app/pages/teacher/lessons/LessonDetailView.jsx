@@ -15,18 +15,41 @@ export function LessonDetailView({ lesson, onBack, onLessonUpdated, onActivities
     try {
       const { error } = await supabase
         .from("lessons")
-        .update({ status: "Published" })
+        .update({
+          status: "Published",
+          published_at: new Date().toISOString(),
+          scheduled_publish_at: null
+        })
         .eq("id", lesson.id);
         
       if (error) throw error;
       toast.success("Lesson published successfully!");
-      onLessonUpdated({ ...lesson, status: "Published" });
+      onLessonUpdated({
+        ...lesson,
+        status: "Published",
+        published_at: new Date().toISOString(),
+        scheduled_publish_at: null
+      });
     } catch (err) {
       console.error(err);
       toast.error("Failed to publish lesson.");
     } finally {
       setIsPublishing(false);
     }
+  };
+
+  const formatDateTime = (isoString) => {
+    if (!isoString) return null;
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
   };
 
   return (
@@ -44,6 +67,7 @@ export function LessonDetailView({ lesson, onBack, onLessonUpdated, onActivities
               <h2 className="text-2xl font-bold text-gray-900">{lesson.title}</h2>
               <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${
                 lesson.status === 'Published' ? 'bg-green-100 text-green-800' :
+                lesson.status === 'Scheduled' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
                 lesson.status === 'Draft' ? 'bg-amber-100 text-amber-800' :
                 'bg-gray-100 text-gray-800'
               }`}>
@@ -53,18 +77,23 @@ export function LessonDetailView({ lesson, onBack, onLessonUpdated, onActivities
             <p className="text-sm text-gray-500 mt-1">
               {lesson.week_number ? `Week ${lesson.week_number}` : "No Week Assigned"} 
               {lesson.topic ? ` • ${lesson.topic}` : ""}
+              {lesson.status === "Scheduled" && lesson.scheduled_publish_at && (
+                <span className="text-blue-600 font-medium ml-2">
+                  • Scheduled for {formatDateTime(lesson.scheduled_publish_at)}
+                </span>
+              )}
             </p>
           </div>
         </div>
 
-        {lesson.status === "Draft" && (
+        {(lesson.status === "Draft" || lesson.status === "Scheduled") && (
           <button 
             onClick={handlePublish}
             disabled={isPublishing}
             className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm disabled:opacity-60"
           >
             <ShieldCheck className="w-5 h-5" />
-            {isPublishing ? "Publishing..." : "Publish Lesson"}
+            {isPublishing ? "Publishing..." : "Publish Lesson Now"}
           </button>
         )}
       </div>
@@ -105,7 +134,16 @@ export function LessonDetailView({ lesson, onBack, onLessonUpdated, onActivities
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Learning Objectives</h3>
                 <p className="text-gray-800 whitespace-pre-wrap">{lesson.objectives || "No objectives defined."}</p>
               </div>
-              <div className="flex gap-8">
+              <div className="flex flex-wrap gap-8">
+                {lesson.status === "Scheduled" && lesson.scheduled_publish_at && (
+                  <div>
+                    <h3 className="text-sm font-bold text-blue-500 uppercase tracking-wider mb-2">Scheduled Publication</h3>
+                    <div className="flex items-center gap-2 text-blue-900 font-semibold bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                      <Clock className="w-4 h-4 text-blue-600" />
+                      {formatDateTime(lesson.scheduled_publish_at)}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Start Date</h3>
                   <div className="flex items-center gap-2 text-gray-800">

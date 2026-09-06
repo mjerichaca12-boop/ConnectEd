@@ -4031,11 +4031,10 @@ export function ClassDetail() {
                 <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Class Overview</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div 
-                    onClick={() => setActiveTab("students")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <Users className="w-4 h-4 text-white" />
                       </div>
                       Students
@@ -4044,11 +4043,10 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("lessons")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <BookOpen className="w-4 h-4 text-white" />
                       </div>
                       Lessons
@@ -4057,11 +4055,10 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("materials")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <FileText className="w-4 h-4 text-white" />
                       </div>
                       Materials
@@ -4070,11 +4067,10 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("announcements")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <Megaphone className="w-4 h-4 text-white" />
                       </div>
                       Announcements
@@ -4088,9 +4084,9 @@ export function ClassDetail() {
               <div className="mt-6">
                 <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Classroom Activity</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <FileText className="w-4 h-4 text-white" />
                       </div>
                       Seatworks
@@ -4098,9 +4094,9 @@ export function ClassDetail() {
                     <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.seatworksCount}</p>
                   </div>
 
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <ClipboardList className="w-4 h-4 text-white" />
                       </div>
                       Assignments
@@ -4108,9 +4104,9 @@ export function ClassDetail() {
                     <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.assignmentsCount}</p>
                   </div>
 
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <CheckCircle className="w-4 h-4 text-white" />
                       </div>
                       Quizzes

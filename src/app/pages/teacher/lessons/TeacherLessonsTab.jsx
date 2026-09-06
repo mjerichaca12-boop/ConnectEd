@@ -86,7 +86,7 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
         .eq("subject_id", subjectId)
         .eq("teacher_id", teacherId)
         .eq("school_year", activeSchoolYear)
-        .in("status", activeTab === "Active" ? ["Draft", "Published"] : ["Archived"])
+        .in("status", activeTab === "Active" ? ["Draft", "Published", "Scheduled"] : ["Archived"])
         .order("term", { ascending: false })
         .order("week_number", { ascending: true })
         .order("created_at", { ascending: false });
@@ -163,6 +163,41 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
     );
   }
 
+  const formatScheduleTime = (isoString) => {
+    if (!isoString) return "";
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+  };
+
+  const handlePublishNow = async (e, lesson) => {
+    e.stopPropagation();
+    try {
+      const { error } = await supabase
+        .from("lessons")
+        .update({
+          status: "Published",
+          published_at: new Date().toISOString(),
+          scheduled_publish_at: null
+        })
+        .eq("id", lesson.id);
+
+      if (error) throw error;
+      toast.success("Lesson published successfully!");
+      loadLessons();
+      if (onLessonsChange) onLessonsChange();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to publish lesson.");
+    }
+  };
+
   const renderLessonCard = (lesson, isReadOnly = false) => (
     <div 
       key={lesson.id} 
@@ -175,14 +210,18 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
           <span className="text-lg font-bold text-green-700">{lesson.week_number || "-"}</span>
         </div>
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <h3 className="font-bold text-gray-900 text-lg group-hover:text-green-700 transition-colors">{lesson.title}</h3>
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1 ${
               lesson.status === 'Published' ? 'bg-green-100 text-green-800' :
+              lesson.status === 'Scheduled' ? 'bg-blue-100 text-blue-800 border border-blue-200' :
               lesson.status === 'Draft' ? 'bg-amber-100 text-amber-800' :
               'bg-gray-100 text-gray-800'
             }`}>
-              {lesson.status}
+              {lesson.status === 'Scheduled' && <Clock className="w-3 h-3 text-blue-600" />}
+              {lesson.status === 'Scheduled' && lesson.scheduled_publish_at
+                ? `Scheduled for ${formatScheduleTime(lesson.scheduled_publish_at)}`
+                : lesson.status}
             </span>
             {isReadOnly && (
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200">
@@ -200,6 +239,15 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
       <div className="flex items-center gap-2">
         {!isReadOnly && (
           <>
+            {(lesson.status === 'Draft' || lesson.status === 'Scheduled') && (
+              <button
+                onClick={(e) => handlePublishNow(e, lesson)}
+                className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                title="Publish Immediately"
+              >
+                <CheckCircle className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -207,7 +255,7 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
                 setShowBuilderModal(true);
               }}
               className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-              title="Edit Lesson"
+              title="Edit Lesson / Schedule"
             >
               <Edit className="w-5 h-5" />
             </button>
