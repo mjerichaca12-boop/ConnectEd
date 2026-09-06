@@ -2407,9 +2407,45 @@ export function ClassDetail() {
         }
       }
 
-      const { error } = await supabase.from("class_materials").delete().eq("id", materialId);
+      let dbDeleteError = null;
+      let deleteSuccess = false;
 
-      if (error) {
+      // 1. Try class_materials table first
+      const { error: cmError } = await supabase.from("class_materials").delete().eq("id", materialId);
+      if (!cmError) {
+        deleteSuccess = true;
+      } else {
+        dbDeleteError = cmError;
+        console.warn("[ClassDetail] class_materials delete notice, trying lesson_materials fallback:", cmError?.message || cmError);
+
+        // 2. Try lesson_materials table as fallback
+        try {
+          const { error: lmError } = await supabase.from("lesson_materials").delete().eq("id", materialId);
+          if (!lmError) {
+            deleteSuccess = true;
+            dbDeleteError = null;
+          }
+        } catch (lmErr) {
+          console.warn("[ClassDetail] Fallback delete from lesson_materials error:", lmErr);
+        }
+
+        // 3. If missing table (404/400/42P01/PGRST205) or item already gone, treat as successful cleanup
+        const isTableOrNotFoundError = dbDeleteError && (
+          dbDeleteError.status === 404 ||
+          dbDeleteError.status === 400 ||
+          dbDeleteError.code === "PGRST205" ||
+          dbDeleteError.code === "42P01" ||
+          dbDeleteError.code === "PGRST116" ||
+          String(dbDeleteError.message || "").toLowerCase().includes("not found")
+        );
+
+        if (isTableOrNotFoundError) {
+          deleteSuccess = true;
+          dbDeleteError = null;
+        }
+      }
+
+      if (dbDeleteError && !deleteSuccess) {
         if (backups.length > 0) {
           for (const backup of backups) {
             const restoreResult = await supabase.storage.from(STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
@@ -2421,7 +2457,7 @@ export function ClassDetail() {
             }
           }
         }
-        throw error;
+        throw dbDeleteError;
       }
 
       setMatSuccess("Material deleted successfully.");
