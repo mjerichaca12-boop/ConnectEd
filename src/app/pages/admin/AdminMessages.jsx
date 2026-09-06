@@ -100,6 +100,62 @@ export function AdminMessages() {
   const [groupName, setGroupName] = useState("");
   const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
 
+  // Load all teachers, students, and admins from Supabase without RLS truncation limits
+  const loadAllUsers = useCallback(async () => {
+    try {
+      let rawRows = null;
+      const { data: adminApiProfiles, error: adminApiErr } = await adminApi.db("profiles", "select", {
+        select: "id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status, created_at",
+        order: { column: "created_at", options: { ascending: false } }
+      });
+
+      if (!adminApiErr && Array.isArray(adminApiProfiles) && adminApiProfiles.length > 0) {
+        rawRows = adminApiProfiles;
+      } else {
+        const { data: directProfiles } = await db
+          .from("profiles")
+          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status, created_at")
+          .order("created_at", { ascending: false });
+        rawRows = directProfiles || [];
+      }
+
+      const users = (rawRows || [])
+        .filter((row) => {
+          if (!row || !row.id) return false;
+          const statusStr = String(row.status || "").trim().toLowerCase();
+          if (statusStr === "disabled" || statusStr === "inactive") return false;
+          const roleStr = String(row.role || "").trim().toLowerCase();
+          return ["student", "teacher", "admin"].includes(roleStr);
+        })
+        .map((row) => {
+          const fullName = [row.first_name, row.middle_name, row.last_name]
+            .map((p) => String(p || "").trim())
+            .filter(Boolean)
+            .join(" ");
+          const fallback = String(row.name || row.full_name || row.display_name || "").trim();
+          const roleStr = String(row.role || "student").trim().toLowerCase();
+          const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
+          return {
+            id: String(row.id),
+            name: fullName || fallback || defaultName,
+            email: String(row.email || ""),
+            role: roleStr,
+            createdAt: row.created_at || "",
+          };
+        });
+
+      setAllTeachers(users);
+      try {
+        localStorage.setItem("admin_teacher_list", JSON.stringify(users));
+      } catch (e) {}
+      console.log("[AdminMessages] Loaded all users successfully. Count:", users.length);
+    } catch (err) {
+      console.error("[AdminMessages] Failed to load users:", err);
+      const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
+      setAllTeachers(cached);
+    }
+  }, []);
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
@@ -107,54 +163,32 @@ export function AdminMessages() {
     if (user.role !== "admin") { navigate("/login"); return; }
     setAdminName(user.name);
 
-    // Load all teachers and students from Supabase
-    const loadAllUsers = async () => {
-      try {
-        const { data: staffData } = await db
-          .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role, status")
-          .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"])
-          .limit(100);
-
-        const { data: studentData } = await db
-          .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role, status")
-          .in("role", ["student", "Student", "STUDENT"])
-          .limit(200);
-
-        const combined = [...(staffData || []), ...(studentData || [])];
-
-        const users = combined
-          .filter((row) => {
-            if (!row || !row.id) return false;
-            const statusStr = String(row.status || "").trim().toLowerCase();
-            if (statusStr === "disabled" || statusStr === "inactive") return false;
-            const roleStr = String(row.role || "").trim().toLowerCase();
-            return ["student", "teacher", "admin"].includes(roleStr);
-          })
-          .map((row) => {
-            const fullName = [row.first_name, row.middle_name, row.last_name].map(p => String(p || "").trim()).filter(Boolean).join(" ");
-            const fallback = String(row.name || row.full_name || row.display_name || "").trim();
-            const roleStr = String(row.role || "student").trim().toLowerCase();
-            const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
-            return {
-              id: String(row.id),
-              name: fullName || fallback || defaultName,
-              email: String(row.email || ""),
-              role: roleStr,
-            };
-          });
-
-        setAllTeachers(users);
-        console.log("[AdminMessages] Loaded users:", users.length, users);
-      } catch (err) {
-        console.error("[AdminMessages] Failed to load users:", err);
-        const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
-        setAllTeachers(cached);
-      }
-    };
     loadAllUsers();
-  }, [navigate]);
+
+    // Subscribe to realtime profile changes so newly created students and teachers appear immediately
+    const channel = supabase
+      .channel("admin-messages-profiles-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          console.log("[AdminMessages] Profile change detected via realtime. Re-fetching users.");
+          loadAllUsers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [navigate, loadAllUsers]);
+
+  // Re-fetch users whenever New Message or New Group modal is opened
+  useEffect(() => {
+    if (showNewModal || showGroupModal) {
+      loadAllUsers();
+    }
+  }, [showNewModal, showGroupModal, loadAllUsers]);
 
   const ensureHardcodedAdminProfileExists = async () => {
     try {
