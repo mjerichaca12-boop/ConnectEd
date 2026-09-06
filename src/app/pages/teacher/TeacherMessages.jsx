@@ -305,6 +305,7 @@ function TeacherMessages() {
   const conversationsRef = useRef([]);
   const selectedConvIdRef = useRef(null);
 
+  const [teacherName, setTeacherName] = useState("");
   const [teacherId, setTeacherId] = useState("");
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
