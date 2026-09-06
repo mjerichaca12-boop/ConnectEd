@@ -1311,25 +1311,17 @@ const removeDismissedConvId = (userId, convId) => {
         console.warn("[AdminMessages] conversations insert notice:", e);
       }
 
-      const participantInserts = memberIds.map((pId) => ({
-        conversation_id: conversationId,
-        profile_id: pId,
-      }));
-
-      try {
-        const { error: partErr } = await db.from("conversation_participants").insert(participantInserts);
-        if (partErr) {
-          console.warn("[AdminMessages] Participant batch insert notice, trying individual:", partErr);
-          for (const pId of memberIds) {
-            try {
-              await db.from("conversation_participants").insert({ conversation_id: conversationId, profile_id: pId });
-            } catch (err) {
-              console.warn(`[AdminMessages] Individual participant insert error for ${pId}:`, err);
+      for (const pId of memberIds) {
+        try {
+          await adminApi.db("conversation_participants", "insert", {
+            payload: {
+              conversation_id: conversationId,
+              profile_id: pId,
             }
-          }
+          });
+        } catch (err) {
+          console.warn(`[AdminMessages] Participant insert error for ${pId}:`, err);
         }
-      } catch (pErr) {
-        console.warn("[AdminMessages] Participant insert exception:", pErr);
       }
     } catch (err) {
       console.warn("[AdminMessages] Non-fatal database notice during group chat creation:", err);
