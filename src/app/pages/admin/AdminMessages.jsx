@@ -1466,14 +1466,23 @@ const removeDismissedConvId = (userId, convId) => {
                   </p>
                 </div>
               </div>
-              <button
-                data-tour="messages-compose-btn"
-                onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                New Group Chat
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  data-tour="messages-compose-btn"
+                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-emerald-700 hover:bg-emerald-50 rounded-xl font-semibold text-sm transition-all cursor-pointer shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Message
+                </button>
+                <button
+                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4" />
+                  New Group Chat
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1495,9 +1504,9 @@ const removeDismissedConvId = (userId, convId) => {
                   />
                 </div>
                 <button
-                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
                   className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 cursor-pointer"
-                  title="New Group Chat"
+                  title="New Message"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -1817,13 +1826,22 @@ const removeDismissedConvId = (userId, convId) => {
                   </div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Admin Messaging</h3>
                   <p className="text-gray-500 text-sm mb-5">Select a conversation or start one with any teacher or student.</p>
-                  <button
-                    onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm cursor-pointer shadow-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    New Group Chat
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm cursor-pointer shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New Message
+                    </button>
+                    <button
+                      onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl transition-colors font-semibold text-sm cursor-pointer"
+                    >
+                      <Users className="w-4 h-4" />
+                      New Group Chat
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
