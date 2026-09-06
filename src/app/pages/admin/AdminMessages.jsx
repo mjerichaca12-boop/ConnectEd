@@ -94,6 +94,12 @@ export function AdminMessages() {
   const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Group chat modal
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
+
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) { navigate("/login"); return; }
@@ -1241,6 +1247,119 @@ const removeDismissedConvId = (userId, convId) => {
     }
   );
 
+  const filteredGroupRecipients = allTeachers.filter((t) => {
+    if (adminId && t.id === adminId) return false;
+    const searchLower = groupSearch.toLowerCase();
+    return (
+      t.name.toLowerCase().includes(searchLower) ||
+      t.email?.toLowerCase().includes(searchLower) ||
+      t.role?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const toggleGroupMember = (recipientId) => {
+    setSelectedGroupMemberIds((prev) =>
+      prev.includes(recipientId)
+        ? prev.filter((id) => id !== recipientId)
+        : [...prev, recipientId]
+    );
+  };
+
+  const handleCreateGroupChat = async () => {
+    const currentAdminId = adminId || HARDCODED_ADMIN_ID;
+    const selectedMembers = allTeachers.filter((t) => selectedGroupMemberIds.includes(t.id));
+    const memberIds = [...new Set([currentAdminId, ...selectedMembers.map((m) => m.id)])];
+    
+    if (selectedGroupMemberIds.length < 2) {
+      setPageError("Select at least 2 members for the group chat.");
+      return;
+    }
+
+    const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = `group_${uid}`;
+    removeDismissedConvId(currentAdminId, conversationId);
+
+    const customTitle = String(groupName || "").trim();
+    const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
+    const fallbackTitle = selectedMembers.length > 2 ? `${previewName} +${selectedMembers.length - 2}` : previewName;
+    const groupTitle = customTitle || fallbackTitle || "Group Chat";
+
+    try {
+      try {
+        await adminApi.db("groupchats", "insert", {
+          payload: {
+            id: conversationId,
+            name: groupTitle,
+            is_group: true,
+            created_by: currentAdminId,
+          }
+        });
+      } catch (e) {
+        console.warn("[AdminMessages] groupchats insert notice:", e);
+      }
+
+      try {
+        await adminApi.db("conversations", "insert", {
+          payload: {
+            id: conversationId,
+            name: groupTitle,
+            is_group: true,
+            created_by: currentAdminId,
+          }
+        });
+      } catch (e) {
+        console.warn("[AdminMessages] conversations insert notice:", e);
+      }
+
+      const participantInserts = memberIds.map((pId) => ({
+        conversation_id: conversationId,
+        profile_id: pId,
+      }));
+
+      try {
+        const { error: partErr } = await db.from("conversation_participants").insert(participantInserts);
+        if (partErr) {
+          console.warn("[AdminMessages] Participant batch insert notice, trying individual:", partErr);
+          for (const pId of memberIds) {
+            try {
+              await db.from("conversation_participants").insert({ conversation_id: conversationId, profile_id: pId });
+            } catch (err) {
+              console.warn(`[AdminMessages] Individual participant insert error for ${pId}:`, err);
+            }
+          }
+        }
+      } catch (pErr) {
+        console.warn("[AdminMessages] Participant insert exception:", pErr);
+      }
+    } catch (err) {
+      console.warn("[AdminMessages] Non-fatal database notice during group chat creation:", err);
+    }
+
+    const groupConversation = {
+      id: conversationId,
+      participantId: "",
+      participantIds: memberIds,
+      participantName: groupTitle,
+      participantRole: "group",
+      messages: [],
+      unreadCount: 0,
+      lastMessageTime: new Date().toISOString(),
+      isVideoMeet: false,
+      isGroup: true,
+    };
+
+    const updated = [groupConversation, ...conversations.filter((c) => c.id !== conversationId)];
+    conversationsRef.current = updated;
+    saveConversations(updated);
+    setSelectedConvId(conversationId);
+    setShowThread(true);
+    setShowGroupModal(false);
+    setGroupName("");
+    setGroupSearch("");
+    setSelectedGroupMemberIds([]);
+    setPageError("");
+  };
+
   const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
   const filterCounts = {
@@ -1299,14 +1418,23 @@ const removeDismissedConvId = (userId, convId) => {
                   </p>
                 </div>
               </div>
-              <button
-                data-tour="messages-compose-btn"
-                onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                New Message
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  data-tour="messages-compose-btn"
+                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Message
+                </button>
+                <button
+                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm rounded-xl transition-all shadow-md cursor-pointer border border-emerald-400"
+                >
+                  <Users className="w-4 h-4" />
+                  New Group Chat
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1329,10 +1457,17 @@ const removeDismissedConvId = (userId, convId) => {
                 </div>
                 <button
                   onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
-                  title="New Message"
+                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 cursor-pointer"
+                  title="New Direct Message"
                 >
                   <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                  className="p-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors flex-shrink-0 cursor-pointer"
+                  title="New Group Chat"
+                >
+                  <Users className="w-4 h-4" />
                 </button>
               </div>
 
@@ -1650,13 +1785,22 @@ const removeDismissedConvId = (userId, convId) => {
                   </div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Admin Messaging</h3>
                   <p className="text-gray-500 text-sm mb-5">Select a conversation or start one with any teacher or student.</p>
-                  <button
-                    onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    New Message
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New Message
+                    </button>
+                    <button
+                      onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-xl hover:bg-teal-700 transition-colors font-semibold text-sm cursor-pointer"
+                    >
+                      <Users className="w-4 h-4" />
+                      New Group Chat
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1743,6 +1887,116 @@ const removeDismissedConvId = (userId, convId) => {
                   })}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ NEW GROUP CHAT MODAL ══ */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                  <Users className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">New Group Chat</h3>
+                  <p className="text-sm text-gray-500">Select at least 2 members</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGroupModal(false)}
+                className="p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-100 space-y-3 flex-shrink-0">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Group Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder="e.g. Grade 8 Teachers"
+                  className="w-full px-3.5 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  placeholder="Search teachers, students, or admins..."
+                  className="w-full pl-9 pr-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {filteredGroupRecipients.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Users className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No users found.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {filteredGroupRecipients.map((recipient, index) => {
+                    const isSelected = selectedGroupMemberIds.includes(recipient.id);
+                    const avatarColor =
+                      recipient.role === "teacher"
+                        ? "bg-gradient-to-br from-emerald-500 to-teal-600"
+                        : recipient.role === "admin"
+                        ? "bg-gradient-to-br from-purple-500 to-indigo-600"
+                        : "bg-gradient-to-br from-green-500 to-emerald-600";
+                    return (
+                      <button
+                        key={`group-${recipient.id}-${index}`}
+                        type="button"
+                        onClick={() => toggleGroupMember(recipient.id)}
+                        className={`w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left cursor-pointer ${
+                          isSelected ? "bg-emerald-50/60" : ""
+                        }`}
+                      >
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+                            isSelected ? "bg-emerald-600" : avatarColor
+                          }`}
+                        >
+                          {isSelected ? <CheckCheck className="w-5 h-5" /> : recipient.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 capitalize flex-shrink-0">
+                              {recipient.role}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{recipient.email}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleCreateGroupChat}
+                disabled={selectedGroupMemberIds.length < 2}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-2.5 font-semibold text-sm transition-all shadow-sm cursor-pointer"
+              >
+                Create Group ({selectedGroupMemberIds.length} selected)
+              </button>
             </div>
           </div>
         </div>
