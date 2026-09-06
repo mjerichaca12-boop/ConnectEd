@@ -1,4 +1,5 @@
 import { supabase } from "@/app/lib/supabaseClient";
+import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
 
 const isValidUuid = (value) =>
   typeof value === "string" &&
@@ -234,9 +235,7 @@ export const fetchUserNotifications = async (currentUser) => {
 
   try {
     // Trigger server-side publishing process first to process due items & generate notifications on DB time NOW()
-    try {
-      await supabase.rpc("check_and_process_scheduled_publishing");
-    } catch (_) {}
+    await triggerScheduledPublishingProcess();
 
     // Sync missing announcements to notifications table for this user
     await syncAnnouncementsToUserNotifications(userId, role);

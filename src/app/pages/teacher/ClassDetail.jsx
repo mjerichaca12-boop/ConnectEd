@@ -8,6 +8,7 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
+import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
 import { adminApi } from "@/app/lib/adminApi";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
@@ -1422,9 +1423,7 @@ export function ClassDetail() {
     if (!supabase || !id || String(id).startsWith("demo-")) return;
 
     // Trigger server-side scheduled publishing check on DB time NOW()
-    try {
-      supabase.rpc("check_and_process_scheduled_publishing").catch(() => {});
-    } catch (_) {}
+    triggerScheduledPublishingProcess();
 
     const refreshAllClassData = () => {
       fetchClassMaterials(teacherProfileId, classData);
