@@ -182,41 +182,44 @@ BEGIN
 
   -- D. Process Scheduled Class Announcements
   FOR rec IN
-    SELECT ca.id, ca.title, ca.content, ca.class_id
+    SELECT ca.id, ca.title, ca.content, ca.class_id, ca.priority, ca.scheduled_publish_at
     FROM public.class_announcements ca
-    WHERE (ca.status = 'Scheduled' AND ca.scheduled_publish_at IS NOT NULL AND ca.scheduled_publish_at <= NOW())
-       OR (ca.priority LIKE '%"status":"Scheduled"%' AND ca.priority LIKE '%"scheduled_at"%' AND (ca.priority::json->>'scheduled_at')::timestamptz <= NOW())
+    WHERE ca.status = 'Scheduled'
+       OR ca.priority LIKE '%"status":"Scheduled"%'
   LOOP
-    UPDATE public.class_announcements
-    SET status = 'Published',
-        published_at = NOW(),
-        scheduled_publish_at = NULL,
-        priority = CASE 
-          WHEN priority LIKE '%"status":"Scheduled"%' 
-          THEN regexp_replace(priority, '"status":"Scheduled"', '"status":"Published"')
-          ELSE priority
-        END
-    WHERE id = rec.id;
+    IF (rec.scheduled_publish_at IS NOT NULL AND rec.scheduled_publish_at <= NOW())
+       OR (rec.priority LIKE '%"scheduled_at"%' AND (rec.priority::json->>'scheduled_at')::timestamptz <= NOW()) THEN
+      UPDATE public.class_announcements
+      SET status = 'Published',
+          published_at = NOW(),
+          scheduled_publish_at = NULL,
+          priority = CASE 
+            WHEN priority LIKE '%"status":"Scheduled"%' 
+            THEN regexp_replace(priority, '"status":"Scheduled"', '"status":"Published"')
+            ELSE priority
+          END
+      WHERE id = rec.id;
 
-    INSERT INTO public.notifications (user_id, type, title, body, message, related_id, related_type, class_id, is_read, created_at)
-    SELECT DISTINCT
-      tsa.student_id,
-      'announcement',
-      'New Class Announcement: ' || rec.title,
-      coalesce(rec.content, 'A new announcement has been posted for your class.'),
-      coalesce(rec.content, 'A new announcement has been posted for your class.'),
-      rec.id::text,
-      'class_announcements',
-      rec.class_id,
-      false,
-      NOW()
-    FROM public.teacher_student_assignments tsa
-    WHERE tsa.subject_id = rec.class_id
-      AND tsa.student_id IS NOT NULL
-      AND NOT EXISTS (
-        SELECT 1 FROM public.notifications n
-        WHERE n.user_id = tsa.student_id AND n.related_id = rec.id::text AND n.type = 'announcement'
-      );
+      INSERT INTO public.notifications (user_id, type, title, body, message, related_id, related_type, class_id, is_read, created_at)
+      SELECT DISTINCT
+        tsa.student_id,
+        'announcement',
+        'New Class Announcement: ' || rec.title,
+        coalesce(rec.content, 'A new announcement has been posted for your class.'),
+        coalesce(rec.content, 'A new announcement has been posted for your class.'),
+        rec.id::text,
+        'class_announcements',
+        rec.class_id,
+        false,
+        NOW()
+      FROM public.teacher_student_assignments tsa
+      WHERE tsa.subject_id = rec.class_id
+        AND tsa.student_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM public.notifications n
+          WHERE n.user_id = tsa.student_id AND n.related_id = rec.id::text AND n.type = 'announcement'
+        );
+    END IF;
   END LOOP;
 END;
 $$;

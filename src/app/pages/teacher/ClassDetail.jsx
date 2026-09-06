@@ -3556,6 +3556,10 @@ export function ClassDetail() {
       if (columns.includes("course_id")) payload.course_id = classId;
       if (columns.includes("subject_id")) payload.subject_id = classId;
 
+      if (columns.includes("status")) payload.status = status;
+      if (columns.includes("scheduled_publish_at")) payload.scheduled_publish_at = scheduled_at;
+      if (columns.includes("published_at")) payload.published_at = status === "Published" ? new Date().toISOString() : null;
+
       if (columns.includes("priority")) {
         payload.priority = JSON.stringify({
           is_pinned: !!annForm.is_pinned,
