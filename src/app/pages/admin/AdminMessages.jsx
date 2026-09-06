@@ -7,6 +7,7 @@ import { adminNotifications } from "@/app/components/NotificationDefault";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
 const db = supabase;
 import {
@@ -26,6 +27,7 @@ import {
   Shield,
   UserCog,
   Paperclip,
+  Trash2,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -99,6 +101,9 @@ export function AdminMessages() {
   const [groupSearch, setGroupSearch] = useState("");
   const [groupName, setGroupName] = useState("");
   const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
+
+  // Remove message confirmation
+  const [deleteMessageConfirm, setDeleteMessageConfirm] = useState({ isOpen: false, messageId: null });
 
   // Load all teachers, students, and admins from Supabase without RLS truncation limits
   const loadAllUsers = useCallback(async () => {
@@ -456,30 +461,80 @@ const removeDismissedConvId = (userId, convId) => {
     return true;
   }, [adminName, allTeachers]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages & deletions
   useEffect(() => {
     if (!supabase || !adminId) return;
     const channel = supabase
       .channel(`global-chat-${Math.random().toString(36).substring(7)}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-        const newMsg = payload.new;
-        if (!newMsg) return;
-        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
-
-        // Fetch attachments for real-time messages (not present in the INSERT payload)
-        const { data: attData } = await supabase
-          .from("message_attachments")
-          .select("id, file_url, file_name, file_type, file_size")
-          .eq("message_id", newMsg.id);
-        if (attData && attData.length > 0) {
-          newMsg.message_attachments = attData;
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, async (payload) => {
+        if (payload.eventType === "DELETE") {
+          const deletedId = String(payload.old?.id || "");
+          if (!deletedId) return;
+          setConversations((current) =>
+            current.map((conv) => ({
+              ...conv,
+              messages: (conv.messages || []).filter((m) => String(m.id) !== deletedId),
+            }))
+          );
+          return;
         }
 
-        appendIncomingMessage(newMsg, currentAdminId);
+        if (payload.eventType === "INSERT") {
+          const newMsg = payload.new;
+          if (!newMsg) return;
+          const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+
+          // Fetch attachments for real-time messages (not present in the INSERT payload)
+          const { data: attData } = await supabase
+            .from("message_attachments")
+            .select("id, file_url, file_name, file_type, file_size")
+            .eq("message_id", newMsg.id);
+          if (attData && attData.length > 0) {
+            newMsg.message_attachments = attData;
+          }
+
+          appendIncomingMessage(newMsg, currentAdminId);
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [adminId, appendIncomingMessage]);
+
+  const handleRemoveMessage = async () => {
+    const messageId = deleteMessageConfirm.messageId;
+    if (!messageId) return;
+
+    // Optimistically update local state
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).filter((m) => String(m.id) !== String(messageId)),
+      }))
+    );
+
+    try {
+      // 1. Delete associated attachments
+      try {
+        await adminApi.db("message_attachments", "delete", {
+          eq: { column: "message_id", value: messageId },
+        });
+      } catch (attErr) {
+        console.warn("[AdminMessages] Attachment deletion notice:", attErr);
+      }
+
+      // 2. Delete message row from database
+      const { error } = await adminApi.db("messages", "delete", {
+        eq: { column: "id", value: messageId },
+      });
+
+      if (error) {
+        console.error("[AdminMessages] Failed to delete message from DB:", error);
+        await loadConversationsFromDB(adminIdsSetRef.current);
+      }
+    } catch (err) {
+      console.error("[AdminMessages] Error deleting message:", err);
+    }
+  };
 
   const loadConversationsFromDB = async (adminIdsSet) => {
     try {
@@ -1725,7 +1780,7 @@ const removeDismissedConvId = (userId, convId) => {
                           const hasMention = !isAdmin && msg.text?.includes(`@${adminName}`);
                           return (
                             <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
-                              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm group/bubble relative ${
                                 isAdmin
                                   ? "bg-emerald-600 text-white rounded-br-sm"
                                   : hasMention
@@ -1744,6 +1799,16 @@ const removeDismissedConvId = (userId, convId) => {
                                   <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
                                 )}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteMessageConfirm({ isOpen: true, messageId: msg.id })}
+                                      className="opacity-60 md:opacity-0 group-hover/bubble:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-emerald-700/50 rounded text-emerald-100 hover:text-white mr-1 cursor-pointer"
+                                      title="Remove message"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
                                   <p className={`text-xs ${isAdmin ? "text-emerald-100" : "text-gray-500"}`}>
                                     {getTimeLabel(msg.time)}
                                   </p>
@@ -2093,6 +2158,18 @@ const removeDismissedConvId = (userId, convId) => {
           </div>
         </div>
       )}
+
+      {/* ══ REMOVE SINGLE MESSAGE CONFIRM ══ */}
+      <ConfirmDialog
+        isOpen={deleteMessageConfirm.isOpen}
+        onClose={() => setDeleteMessageConfirm({ isOpen: false, messageId: null })}
+        onConfirm={handleRemoveMessage}
+        title="Remove Message"
+        message="Are you sure you want to remove this message? It will be deleted from the conversation for all participants."
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

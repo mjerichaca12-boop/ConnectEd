@@ -7,6 +7,7 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 // Use Supabase client for teacher operations
 const db = supabase;
 import {
@@ -327,6 +328,9 @@ function TeacherMessages() {
   const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
+
+  // Remove message confirmation
+  const [deleteMessageConfirm, setDeleteMessageConfirm] = useState({ isOpen: false, messageId: null });
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -872,13 +876,24 @@ function TeacherMessages() {
     initialize().catch(err => console.warn("[TeacherMessages] Uncaught initialize:", err));
   }, [navigate, resolveTeacherId, loadConversations]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages & deletions
   useEffect(() => {
     if (!supabase || !teacherId) return;
     const channel = supabase
       .channel(`global-chat-${teacherId}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: MESSAGE_TABLE }, async (payload) => {
         try {
+          if (payload.eventType === "DELETE") {
+            const deletedId = String(payload.old?.id || "");
+            if (!deletedId) return;
+            setConversations((current) =>
+              current.map((conv) => ({
+                ...conv,
+                messages: (conv.messages || []).filter((m) => String(m.id) !== deletedId),
+              }))
+            );
+            return;
+          }
           if (payload.eventType === "UPDATE") {
             const updatedMsg = payload.new;
             setConversations(current => current.map(conv => {
@@ -913,6 +928,45 @@ function TeacherMessages() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [teacherId, teacherName, appendIncomingMessage]);
+
+  const handleRemoveMessage = async () => {
+    const messageId = deleteMessageConfirm.messageId;
+    if (!messageId || !teacherId) return;
+
+    // Optimistically update local state
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).filter((m) => String(m.id) !== String(messageId)),
+      }))
+    );
+
+    try {
+      // 1. Delete associated attachments
+      try {
+        await supabase
+          .from("message_attachments")
+          .delete()
+          .eq("message_id", messageId);
+      } catch (attErr) {
+        console.warn("[TeacherMessages] Attachment deletion notice:", attErr);
+      }
+
+      // 2. Delete message row from database
+      const { error } = await supabase
+        .from(MESSAGE_TABLE)
+        .delete()
+        .eq("id", messageId)
+        .eq("sender_id", teacherId);
+
+      if (error) {
+        console.error("[TeacherMessages] Failed to delete message from DB:", error);
+        await loadConversations(teacherId, teacherName);
+      }
+    } catch (err) {
+      console.error("[TeacherMessages] Error deleting message:", err);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -1777,7 +1831,7 @@ function TeacherMessages() {
                         const hasMention = !isTeacher && msg.text?.includes(`@${teacherName}`);
                         return (
                           <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isTeacher ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                            <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm group/bubble relative ${
                               isTeacher
                                 ? "bg-green-600 text-white rounded-br-sm"
                                 : hasMention
@@ -1796,6 +1850,16 @@ function TeacherMessages() {
                                 <MessageAttachmentPreview msg={msg} isSelf={isTeacher} />
                               )}
                               <div className={`flex items-center justify-end gap-1 mt-1`}>
+                                {isTeacher && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteMessageConfirm({ isOpen: true, messageId: msg.id })}
+                                    className="opacity-60 md:opacity-0 group-hover/bubble:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-green-700/50 rounded text-green-100 hover:text-white mr-1 cursor-pointer"
+                                    title="Remove message"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                                 <p className={`text-xs ${isTeacher ? "text-green-100" : "text-gray-500"}`}>
                                   {getTimeLabel(msg.time)}
                                 </p>
@@ -2090,6 +2154,18 @@ function TeacherMessages() {
           </div>
         </div>
       )}
+
+      {/* ══ REMOVE SINGLE MESSAGE CONFIRM ══ */}
+      <ConfirmDialog
+        isOpen={deleteMessageConfirm.isOpen}
+        onClose={() => setDeleteMessageConfirm({ isOpen: false, messageId: null })}
+        onConfirm={handleRemoveMessage}
+        title="Remove Message"
+        message="Are you sure you want to remove this message? It will be deleted from the conversation for all participants."
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }
