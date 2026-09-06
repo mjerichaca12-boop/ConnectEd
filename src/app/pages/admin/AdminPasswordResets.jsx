@@ -3,7 +3,6 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { useActivity } from "../../lib/ActivityContext";
 import { Key, ShieldAlert, CheckCircle2, Loader2, X, AlertTriangle, User, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,7 +30,6 @@ export const AdminPasswordResets = () => {
 
   // For Admin Sidebar
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -178,11 +176,7 @@ export const AdminPasswordResets = () => {
       <main className="flex-1 h-screen overflow-y-auto lg:pl-64">
         <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex justify-end">
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={() => {}}
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 

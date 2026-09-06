@@ -3,7 +3,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { adminNotifications } from "@/app/components/NotificationDefault";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
@@ -77,7 +76,6 @@ export function AdminMessages() {
   const selectedConvIdRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
@@ -1493,15 +1491,7 @@ const removeDismissedConvId = (userId, convId) => {
               <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
               <h2 className="text-lg font-bold text-gray-900">Messages</h2>
             </div>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 

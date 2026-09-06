@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { adminNotifications } from "@/app/components/NotificationDefault";
 import { useTour } from "@/app/context/TourContext";
 import { useModuleTour } from "@/app/context/ModuleTourContext";
 import {
@@ -45,7 +44,6 @@ export function HelpCenter() {
     return "Administrator";
   });
 
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
 
   const handleLogout = () => {
@@ -166,15 +164,7 @@ export function HelpCenter() {
             </div>
 
             <div className="flex items-center gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) =>
-                  setNotificationList((prev) =>
-                    prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                  )
-                }
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

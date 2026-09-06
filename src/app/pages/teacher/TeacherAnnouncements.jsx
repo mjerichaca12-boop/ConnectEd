@@ -4,7 +4,6 @@ import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { AnnouncementAttachmentPreview } from "@/app/components/AnnouncementAttachmentPreview";
-import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { parseStoredFileList } from "@/app/lib/teacherHelpers";
@@ -246,7 +245,6 @@ function TeacherAnnouncements() {
   const { isDemoMode } = useTourPreview();
   const navigate = useNavigate();
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTab, setActiveTab] = useState("announcements");
@@ -378,7 +376,6 @@ function TeacherAnnouncements() {
 
       setAnnouncementTable("school_announcements");
       setTeacherName(user.name);
-      setNotificationList(teacherNotifications.map((item) => ({ ...item })));
 
       try {
         const rows = await loadAnnouncements();
@@ -507,11 +504,7 @@ function TeacherAnnouncements() {
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-    notifications={notificationList}
-    onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n))}
-    onNotificationsChange={setNotificationList}
-  />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

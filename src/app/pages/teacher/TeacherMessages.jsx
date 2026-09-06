@@ -305,9 +305,7 @@ function TeacherMessages() {
   const conversationsRef = useRef([]);
   const selectedConvIdRef = useRef(null);
 
-  const [teacherName, setTeacherName] = useState("");
   const [teacherId, setTeacherId] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
 
@@ -1620,11 +1618,7 @@ function TeacherMessages() {
               <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
               <h2 className="text-lg font-bold text-gray-900">Messages</h2>
             </div>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 

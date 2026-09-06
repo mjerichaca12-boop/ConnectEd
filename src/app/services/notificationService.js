@@ -144,12 +144,13 @@ export const syncAnnouncementsToUserNotifications = async (userId, userRole) => 
 
     if (annErr || !announcements || announcements.length === 0) return;
 
-    // 2. Filter announcements matching user role
+    // 2. Filter announcements matching user role strictly
     const normalizedRole = String(userRole || "").toLowerCase().trim();
     const authorizedAnnouncements = announcements.filter((ann) => {
       const audience = String(ann.target_audience || "").toLowerCase().trim();
       if (!audience || audience.includes("school") || audience.includes("all")) return true;
       if (normalizedRole === "teacher" && (audience.includes("teacher") || audience.includes("faculty"))) return true;
+      if (normalizedRole === "student" && audience.includes("student")) return true;
       if (normalizedRole === "admin" && (audience.includes("admin") || audience.includes("staff"))) return true;
       return false;
     });
@@ -190,6 +191,23 @@ export const syncAnnouncementsToUserNotifications = async (userId, userRole) => 
   } catch (err) {
     console.error("[notificationService] Error syncing announcements:", err);
   }
+};
+
+/**
+ * Clear cached user notifications from localStorage on logout/session switch
+ */
+export const clearUserNotificationCache = (role, userId) => {
+  try {
+    if (role && userId) {
+      const key = getNotificationStorageKey(role, userId);
+      localStorage.removeItem(key);
+    }
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith("notifications_")) {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch (e) {}
 };
 
 /**

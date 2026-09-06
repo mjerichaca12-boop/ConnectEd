@@ -44,7 +44,6 @@ export function TeacherHelpCenter() {
     return "Teacher";
   });
 
-  const [notificationList, setNotificationList] = useState([]);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -168,15 +167,7 @@ export function TeacherHelpCenter() {
             </div>
 
             <div className="flex items-center gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) =>
-                  setNotificationList((prev) =>
-                    prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                  )
-                }
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

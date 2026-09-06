@@ -5,7 +5,6 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { CustomSelect } from "../../components/admin/CustomSelect";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
@@ -308,7 +307,6 @@ function AdminAnnouncements() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, announcementId: "", announcementTitle: "" });
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTable, setAnnouncementTable] = useState("");
@@ -1461,11 +1459,7 @@ function AdminAnnouncements() {
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

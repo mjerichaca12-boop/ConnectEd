@@ -19,7 +19,6 @@ import {
   Key
 } from "lucide-react";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { adminNotifications } from "../../components/NotificationDefault";
 
 const subjectTableCandidates = ["subjects"];
 
@@ -27,7 +26,6 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const { activities: contextActivities, logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [teacherOptions, setTeacherOptions] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -535,15 +533,7 @@ export function AdminDashboard() {
         <div className="bg-white/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative shadow-sm">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) =>
-                  setNotificationList((prev) =>
-                    prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                  )
-                }
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

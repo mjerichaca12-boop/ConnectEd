@@ -262,7 +262,6 @@ export function ClassDetail() {
   const selectAllCheckboxRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("lessons");
 
@@ -3962,15 +3961,7 @@ export function ClassDetail() {
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">Class Details</h2>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 

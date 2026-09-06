@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { StudentGradebookModal } from "./components/StudentGradebookModal";
@@ -442,7 +441,6 @@ function GradesManagement() {
   const isClassSelectStepActive = activeStepId === "grades-class-select" || activeStepId === "teacher-grades-class-select";
 
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
   const [isSwitchingTerm, setIsSwitchingTerm] = useState(false);
   const [teacherId, setTeacherId] = useState("");
@@ -2050,11 +2048,7 @@ function GradesManagement() {
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
           

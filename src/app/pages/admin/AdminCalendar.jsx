@@ -5,7 +5,6 @@ import { Calendar as CalendarIcon, Plus, Trash2, X, School, Users, Clock, Loader
 import { DashboardCalendar } from "../../components/DashboardCalendar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { generateCalendarPdf } from "@/app/lib/calendarPdfExporter";
@@ -29,7 +28,6 @@ export function AdminCalendar() {
   const navigate = useNavigate();
   const calendarRef = useRef(null);
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState("");
@@ -557,13 +555,7 @@ export function AdminCalendar() {
                 <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
                 <h2 className="text-lg font-bold text-gray-900">Manage School Calendar</h2>
               </div>
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) =>
-                  setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))
-                }
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

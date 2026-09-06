@@ -1607,11 +1607,7 @@ export function AIAssistant() {
             </div>
 
             <div className="flex items-center gap-3">
-              <NotificationDropdown
-                notifications={[]}
-                onMarkAsRead={() => {}}
-                onNotificationsChange={() => {}}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>

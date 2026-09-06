@@ -22,7 +22,6 @@ function Classes() {
   const navigate = useNavigate();
   const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [classes, setClasses] = useState([]);
@@ -343,15 +342,7 @@ function Classes() {
         {/* Top Bar */}
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-end gap-4">
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 
