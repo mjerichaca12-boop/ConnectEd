@@ -7,6 +7,7 @@ import { supabase } from "./lib/supabaseClient";
 import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
+import { ScheduledReloadManager } from "./components/ScheduledReloadManager";
 
 const handleChunkError = () => {
   if (typeof window === "undefined") return;
@@ -355,6 +356,7 @@ export default function App() {
       <ModuleTourProvider>
       <Router>
         <ScrollToTop />
+        <ScheduledReloadManager />
         <AuthRecoveryListener />
         <Toaster position="top-right" richColors />
         <WelcomeTourModal />

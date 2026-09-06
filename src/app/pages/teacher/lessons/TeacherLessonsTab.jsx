@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
+import { scheduleTargetedReloadTimers } from "@/app/services/scheduledReloadService";
 import { isColumnMissingError } from "@/app/lib/teacherHelpers";
 import { Plus, BookOpen, Clock, ChevronRight, ArrowLeft, FileText, CheckCircle, Video, Image as ImageIcon, Archive, Trash2, Edit, RefreshCw, FolderArchive } from "lucide-react";
 import { toast } from "sonner";
@@ -147,6 +148,13 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
       }
     };
   }, [loadLessons, subjectId]);
+
+  useEffect(() => {
+    const timers = scheduleTargetedReloadTimers(lessons);
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, [lessons]);
 
   const handleLessonSaved = () => {
     loadLessons();

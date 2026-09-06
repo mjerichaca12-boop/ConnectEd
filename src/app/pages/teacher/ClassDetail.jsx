@@ -9,6 +9,7 @@ import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
 import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
+import { scheduleTargetedReloadTimers } from "@/app/services/scheduledReloadService";
 import { adminApi } from "@/app/lib/adminApi";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
@@ -1460,6 +1461,14 @@ export function ClassDetail() {
       }
     };
   }, [teacherProfileId, id, classData]);
+
+  useEffect(() => {
+    const allItems = [...(announcements || []), ...(assignments || [])];
+    const timers = scheduleTargetedReloadTimers(allItems);
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, [announcements, assignments]);
 
   useEffect(() => {
     let isMounted = true;
