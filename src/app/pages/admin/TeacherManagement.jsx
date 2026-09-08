@@ -560,7 +560,19 @@ function TeacherManagement() {
     const previousIds = [...new Set(normalizeSubjects(previousSubjectIds))];
     const nextIds = [...new Set(normalizeSubjects(nextSubjectIds))];
     const addSubjectIds = nextIds.filter((id) => !previousIds.includes(id));
-    const affectedSubjectIds = [...new Set([...previousIds, ...nextIds])];
+
+    const { data: dbTeacherSubjs } = await db
+      .from("subjects")
+      .select("id, teacher_id")
+      .eq("teacher_id", teacherId);
+
+    const dbAssignedIds = (dbTeacherSubjs ?? []).map((s) => s.id);
+    const removeSubjectIds = [...new Set([
+      ...previousIds.filter((id) => !nextIds.includes(id)),
+      ...dbAssignedIds.filter((id) => !nextIds.includes(id))
+    ])];
+
+    const affectedSubjectIds = [...new Set([...previousIds, ...nextIds, ...dbAssignedIds])];
 
     if (affectedSubjectIds.length === 0) {
       await refreshTeacherSubjectsFromDatabase([teacherId]);
@@ -582,7 +594,6 @@ function TeacherManagement() {
       return [subject.id, cleanTeacherId];
     }));
     const displacedTeacherIds = new Set();
-    const removeSubjectIds = previousIds.filter((subjectId) => !nextIds.includes(subjectId));
 
     if (addSubjectIds.length > 0) {
       try {
@@ -619,19 +630,13 @@ function TeacherManagement() {
 
       if (removeSubjectIds.length > 0) {
         console.log("[TeacherManagement] removing subjects", { teacherId, removeSubjectIds });
-        const removableIds = (currentSubjects ?? [])
-          .filter((subject) => removeSubjectIds.includes(subject.id) && String(subject.teacher_id) === String(teacherId))
-          .map((subject) => subject.id);
+        const { error: removeError } = await adminApi.db("subjects", "update", {
+          payload: { teacher_id: null },
+          in: { column: "id", value: removeSubjectIds }
+        });
 
-        if (removableIds.length > 0) {
-          const { error: removeError } = await adminApi.db("subjects", "update", {
-            payload: { teacher_id: null },
-            in: { column: "id", value: removableIds }
-          });
-
-          if (removeError) {
-            throw new Error(removeError.message);
-          }
+        if (removeError) {
+          throw new Error(removeError.message);
         }
       }
 
@@ -783,9 +788,22 @@ function TeacherManagement() {
         const subjObj = availableSubjects.find((s) => String(s.id) === String(resolvedSubjId));
         if (subjObj && subjObj.teacher_id && String(subjObj.teacher_id) !== String(excludeId || "")) {
           const conflictingTeacher = teachers.find((t) => String(t.id) === String(subjObj.teacher_id));
-          const teacherName = conflictingTeacher ? getTeacherName(conflictingTeacher) : "another teacher";
-          errors.subjects = `Subject "${subjObj.code || subjObj.name}" (${subjObj.section || 'All'}) is already assigned to ${teacherName}.`;
-          break;
+          
+          if (conflictingTeacher) {
+            const confGradeNorm = normalizeGradeLevel(conflictingTeacher.grade_level || conflictingTeacher.year_level || "");
+            const confSubjs = normalizeSubjects(conflictingTeacher.subjects);
+            const subjGradeNorm = normalizeGradeLevel(subjObj.grade_level || "");
+
+            if ((confGradeNorm && subjGradeNorm && confGradeNorm !== subjGradeNorm) ||
+                (confSubjs.length > 0 && !confSubjs.includes(subjObj.id) && !confSubjs.includes(subjObj.code))) {
+              adminApi.db("subjects", "update", { payload: { teacher_id: null }, eq: { column: "id", value: subjObj.id } }).catch(() => {});
+              subjObj.teacher_id = null;
+            } else {
+              const teacherName = getTeacherName(conflictingTeacher);
+              errors.subjects = `Subject "${subjObj.code || subjObj.name}" (${subjObj.section || 'All'}) is already assigned to ${teacherName}.`;
+              break;
+            }
+          }
         }
       }
     }
