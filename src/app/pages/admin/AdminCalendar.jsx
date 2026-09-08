@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { useNavigate } from "react-router-dom";
-import { Calendar as CalendarIcon, Plus, Trash2, X, School, Users, Clock, Loader2, AlertTriangle, FileDown, Layers, Filter, CheckCircle2 } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, Trash2, X, School, Users, Clock, Loader2, AlertTriangle, FileDown, Layers, Filter, CheckCircle2, Edit2 } from "lucide-react";
 import { DashboardCalendar } from "../../components/DashboardCalendar";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -34,6 +34,7 @@ export function AdminCalendar() {
   const [eventsError, setEventsError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEventId, setEditingEventId] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, eventId: "", eventTitle: "" });
 
   // View mode and quarterly navigation states
@@ -198,16 +199,14 @@ export function AdminCalendar() {
     payload[dateColumn] = formData.eventDate;
     payload[audienceColumn] = normalizedAudience;
 
-    if (formData.description.trim()) {
-      if (descriptionColumn) {
-        payload[descriptionColumn] = formData.description.trim();
-      } else if (columns.includes("description")) {
-        payload.description = formData.description.trim();
-      }
+    if (descriptionColumn) {
+      payload[descriptionColumn] = formData.description.trim();
+    } else if (columns.includes("description")) {
+      payload.description = formData.description.trim();
     }
 
-    if (formData.eventTime && timeColumn) {
-      payload[timeColumn] = formData.eventTime;
+    if (timeColumn) {
+      payload[timeColumn] = formData.eventTime ? formData.eventTime : null;
     }
 
     // Only include columns that actually exist in the table
@@ -215,7 +214,7 @@ export function AdminCalendar() {
       Object.entries(payload).filter(([k]) => columns.includes(k))
     );
 
-    console.debug("Calendar insert payload:", JSON.stringify(filteredPayload));
+    console.debug("Calendar insert/update payload:", JSON.stringify(filteredPayload));
     console.debug("Available columns:", columns);
 
     return filteredPayload;
@@ -349,14 +348,30 @@ export function AdminCalendar() {
     navigate("/login");
   };
 
-  const handleOpenEventModal = () => {
+  const handleOpenEventModal = (evt = null) => {
     setEventsError("");
     setFormErrors({});
+    if (evt && (evt.id || (typeof evt === "object" && evt.title))) {
+      setEditingEventId(evt.id || null);
+      setFormData({
+        title: evt.title || "",
+        description: evt.description || "",
+        eventDate: evt.eventDate || "",
+        eventTime: evt.eventTime || "",
+        targetAudience: evt.targetAudience || "School-wide",
+        quarter: evt.quarter || detectQuarterFromDate(evt.eventDate),
+        schoolYear: evt.schoolYear || "2026-2027"
+      });
+    } else {
+      setEditingEventId(null);
+      setFormData(emptyForm);
+    }
     setShowEventModal(true);
   };
 
   const handleCloseEventModal = () => {
     setShowEventModal(false);
+    setEditingEventId(null);
     setFormData(emptyForm);
     setFormErrors({});
     setEventsError("");
@@ -395,41 +410,78 @@ export function AdminCalendar() {
       const columns = await getCalendarColumns(tableName);
       const payload = buildCreatePayload(columns, new Date().toISOString(), user?.id || null);
 
-      console.debug("Inserting calendar payload:", JSON.stringify(payload));
-      const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "*" });
-      
-      if (error) {
-        console.error("Supabase Database Insert Error Details:", JSON.stringify(error, null, 2));
-        throw new Error(`Database Error: ${error.message} \nHint: ${error.hint || 'None'} \nDetails: ${error.details || 'None'}`);
-      }
-
-      // Add the newly created event to the list immediately
-      if (data && Array.isArray(data) && data.length > 0) {
-        const newEvent = normalizeEvent(data[0]);
-        setEvents((current) => sortEvents([newEvent, ...current]));
-        notifyAdmin({
-          type: "event",
-          title: "Calendar Event Added",
-          message: `New calendar event added: ${newEvent.title || formData.title}`,
-          relatedId: newEvent.id,
-          relatedType: "school_calendar",
-          path: "/admin/calendar"
+      if (editingEventId) {
+        const { data, error } = await adminApi.db(tableName, "update", {
+          payload,
+          eq: { column: "id", value: editingEventId },
+          select: "*"
         });
 
-        // Update the calendar preview
+        if (error) {
+          console.error("Supabase Database Update Error Details:", JSON.stringify(error, null, 2));
+          throw new Error(`Database Error: ${error.message} \nHint: ${error.hint || 'None'} \nDetails: ${error.details || 'None'}`);
+        }
+
+        const updatedEvent = data && Array.isArray(data) && data.length > 0
+          ? normalizeEvent(data[0])
+          : {
+              id: editingEventId,
+              title: formData.title.trim(),
+              description: formData.description.trim(),
+              eventDate: formData.eventDate,
+              eventTime: formData.eventTime,
+              targetAudience: normalizedAudience,
+              quarter: formData.quarter,
+              schoolYear: formData.schoolYear,
+              createdAt: new Date().toISOString()
+            };
+
+        setEvents((current) => sortEvents(current.map((e) => e.id === editingEventId ? updatedEvent : e)));
+
         if (calendarRef.current?.upsertEvent) {
           try {
-            calendarRef.current.upsertEvent(newEvent);
+            calendarRef.current.upsertEvent(updatedEvent);
           } catch (err) {
             console.warn("Calendar upsert failed:", err);
           }
         }
+
+        toast.success("Event updated successfully.");
+      } else {
+        const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "*" });
+
+        if (error) {
+          console.error("Supabase Database Insert Error Details:", JSON.stringify(error, null, 2));
+          throw new Error(`Database Error: ${error.message} \nHint: ${error.hint || 'None'} \nDetails: ${error.details || 'None'}`);
+        }
+
+        if (data && Array.isArray(data) && data.length > 0) {
+          const newEvent = normalizeEvent(data[0]);
+          setEvents((current) => sortEvents([newEvent, ...current]));
+          notifyAdmin({
+            type: "event",
+            title: "Calendar Event Added",
+            message: `New calendar event added: ${newEvent.title || formData.title}`,
+            relatedId: newEvent.id,
+            relatedType: "school_calendar",
+            path: "/admin/calendar"
+          });
+
+          if (calendarRef.current?.upsertEvent) {
+            try {
+              calendarRef.current.upsertEvent(newEvent);
+            } catch (err) {
+              console.warn("Calendar upsert failed:", err);
+            }
+          }
+        }
+
+        toast.success("Event added successfully.");
       }
 
-      toast.success("Event added successfully.");
       handleCloseEventModal();
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "Unable to add event.";
+      const errMsg = error instanceof Error ? error.message : "Unable to save event.";
       toast.error(errMsg);
     } finally {
       setIsSubmitting(false);
@@ -573,7 +625,7 @@ export function AdminCalendar() {
           <div className="max-w-7xl mx-auto flex flex-col lg:flex-row gap-6 h-full min-h-0">
             {/* Calendar Preview */}
             <div className="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 flex flex-col min-h-0">
-              <DashboardCalendar ref={calendarRef} viewerRole="admin" />
+              <DashboardCalendar ref={calendarRef} viewerRole="admin" onEditEvent={handleOpenEventModal} />
             </div>
 
             {/* Event Management */}
@@ -587,7 +639,7 @@ export function AdminCalendar() {
                 </div>
                 <button
                   data-tour="calendar-add-btn"
-                  onClick={handleOpenEventModal}
+                  onClick={() => handleOpenEventModal()}
                   className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2 text-sm shadow-lg shadow-blue-500/20 active:scale-95 cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
@@ -740,6 +792,13 @@ export function AdminCalendar() {
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
                           <button
+                            className="p-2.5 text-blue-600 hover:text-white hover:bg-blue-600 rounded-xl transition-all border border-gray-100 hover:border-blue-600 shadow-sm cursor-pointer"
+                            title="Edit Event"
+                            onClick={() => handleOpenEventModal(evt)}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
                             className="p-2.5 text-red-500 hover:text-white hover:bg-red-500 rounded-xl transition-all border border-gray-100 hover:border-red-500 shadow-sm cursor-pointer"
                             title="Delete"
                             onClick={() => handleOpenDeleteConfirm(evt)}
@@ -780,7 +839,9 @@ export function AdminCalendar() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-hidden relative border border-gray-100 flex flex-col">
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-2xl flex-shrink-0">
-              <h3 className="text-xl font-bold text-gray-900">Add School Calendar Event</h3>
+              <h3 className="text-xl font-bold text-gray-900">
+                {editingEventId ? "Edit School Calendar Event" : "Add School Calendar Event"}
+              </h3>
               <button onClick={handleCloseEventModal} type="button" className="p-2 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer">
                 <X className="w-5 h-5 text-gray-600" />
               </button>
@@ -897,6 +958,8 @@ export function AdminCalendar() {
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Saving...
                     </span>
+                  ) : editingEventId ? (
+                    "Update Event"
                   ) : (
                     "Save Event"
                   )}
