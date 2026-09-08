@@ -689,11 +689,11 @@ function TeacherManagement() {
   const validateTeacherForm = async (formData, excludeId = null, options = {}) => {
     const { requireSubjects = false } = options;
     const errors = {};
-    const trimmedFirstName = formData.first_name.trim();
-    const trimmedMiddleName = formData.middle_name.trim();
-    const trimmedLastName = formData.last_name.trim();
-    const trimmedEmail = formData.email.trim().toLowerCase();
-    const normalizedPhone = normalizePhone(formData.phone);
+    const trimmedFirstName = String(formData.first_name || "").trim();
+    const trimmedMiddleName = String(formData.middle_name || "").trim();
+    const trimmedLastName = String(formData.last_name || "").trim();
+    const trimmedEmail = String(formData.email || "").trim().toLowerCase();
+    const normalizedPhone = normalizePhone(formData.phone || "");
 
     const rawRows = Array.isArray(formData.subjects) ? formData.subjects : [];
     const assignmentRows = rawRows.map((item) => {
@@ -706,6 +706,17 @@ function TeacherManagement() {
       }
       return { subjectId: String(item || ""), subjectCode: String(item || ""), section: "" };
     });
+
+    const normalizedSubjects = assignmentRows
+      .map((r) => r.subjectCode || r.subjectId)
+      .filter(Boolean);
+
+    const assignedClassList = rawRows
+      .map((r) => (typeof r === "object" ? r.section : ""))
+      .filter(Boolean);
+    const assignedClass = formData.assigned_class
+      ? String(formData.assigned_class).trim()
+      : [...new Set(assignedClassList)].join(", ");
 
     if (requireSubjects && assignmentRows.length === 0) {
       errors.subjects = "At least one subject & section assignment is required.";
@@ -733,6 +744,15 @@ function TeacherManagement() {
           break;
         }
         seenCombos.add(comboKey);
+
+        const resolvedSubjId = resolveSubjectId(row.subjectCode || row.subjectId, row.section, formData.grade_level);
+        const subjObj = availableSubjects.find((s) => String(s.id) === String(resolvedSubjId));
+        if (subjObj && subjObj.teacher_id && String(subjObj.teacher_id) !== String(excludeId || "")) {
+          const conflictingTeacher = teachers.find((t) => String(t.id) === String(subjObj.teacher_id));
+          const teacherName = conflictingTeacher ? getTeacherName(conflictingTeacher) : "another teacher";
+          errors.subjects = `Subject "${subjObj.code || subjObj.name}" (${subjObj.section || 'All'}) is already assigned to ${teacherName}.`;
+          break;
+        }
       }
     }
 
@@ -792,7 +812,7 @@ function TeacherManagement() {
       }
     }
 
-    if (excludeId !== null) {
+    if (excludeId !== null && trimmedEmail) {
       const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
       const [emailResult] = await Promise.all([emailQuery.neq("id", excludeId)]);
 
@@ -803,25 +823,6 @@ function TeacherManagement() {
 
       if ((emailResult.data ?? []).length > 0) {
         errors.email = "Email already exists";
-      }
-    }
-
-    if (assignedClass) {
-      const teacherQuery = supabase
-        .from("profiles")
-        .select(teacherSelectColumns)
-        .eq("role", "teacher");
-
-      const teacherResult = await (excludeId ? teacherQuery.neq("id", excludeId) : teacherQuery);
-
-      if (teacherResult.error) {
-        errors.form = teacherResult.error.message;
-        return errors;
-      }
-
-      const conflictingTeacher = (teacherResult.data ?? []).find((teacher) => hasAssignedClass(teacher.assigned_class, assignedClass));
-      if (conflictingTeacher) {
-        errors.assigned_class = `This class is already assigned to ${getTeacherName(conflictingTeacher)}.`;
       }
     }
 
