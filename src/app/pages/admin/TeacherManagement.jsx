@@ -1689,6 +1689,13 @@ function TeacherManagement() {
                 toast.error("Please select a Grade Level first.");
                 return;
               }
+              const selectedSubjectKeys = new Set(
+                rows.map((r) => r.subjectCode || r.subjectId).filter(Boolean)
+              );
+              if (subjectOptions.length > 0 && selectedSubjectKeys.size >= subjectOptions.length) {
+                toast.info("All available subjects for this grade level have already been added.");
+                return;
+              }
               const newRow = { id: generateUUID(), subjectId: "", subjectCode: "", section: "" };
               updateTeacherField(setFormData, setErrors, formData, "subjects", [...rows, newRow]);
             }}
@@ -1708,76 +1715,90 @@ function TeacherManagement() {
           </div>
         ) : (
           <div className="space-y-3">
-            {rows.map((row, idx) => (
-              <div key={row.id || idx} className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl relative group shadow-sm">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Subject</label>
-                    <CustomSelect
-                      value={row.subjectCode || row.subjectId || ""}
-                      onChange={(val) => {
-                        const updatedRows = [...rows];
-                        const resolvedId = resolveSubjectId(val, updatedRows[idx].section, formData.grade_level);
-                        updatedRows[idx] = {
-                          ...updatedRows[idx],
-                          subjectCode: val,
-                          subjectId: resolvedId
-                        };
-                        updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
-                      }}
-                      options={subjectOptions}
-                      placeholder={
-                        subjectOptions.length === 0
-                          ? "No subjects available for this grade."
-                          : "Select Subject"
-                      }
-                      disabled={subjectOptions.length === 0}
-                      icon={<BookOpen className="w-4 h-4" />}
-                      className="w-full"
-                    />
+            {rows.map((row, idx) => {
+              const selectedInOtherRows = new Set(
+                rows
+                  .filter((_, i) => i !== idx)
+                  .map((r) => r.subjectCode || r.subjectId)
+                  .filter(Boolean)
+              );
+              const rowSubjectOptions = subjectOptions.filter(
+                (opt) => !selectedInOtherRows.has(opt.value)
+              );
+
+              return (
+                <div key={row.id || idx} className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl relative group shadow-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Subject</label>
+                      <CustomSelect
+                        value={row.subjectCode || row.subjectId || ""}
+                        onChange={(val) => {
+                          const updatedRows = [...rows];
+                          const resolvedId = resolveSubjectId(val, updatedRows[idx].section, formData.grade_level);
+                          updatedRows[idx] = {
+                            ...updatedRows[idx],
+                            subjectCode: val,
+                            subjectId: resolvedId
+                          };
+                          updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                        }}
+                        options={rowSubjectOptions}
+                        placeholder={
+                          subjectOptions.length === 0
+                            ? "No subjects available for this grade."
+                            : rowSubjectOptions.length === 0
+                            ? "No remaining subjects available."
+                            : "Select Subject"
+                        }
+                        disabled={subjectOptions.length === 0 || rowSubjectOptions.length === 0}
+                        icon={<BookOpen className="w-4 h-4" />}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Section</label>
+                      <CustomSelect
+                        value={row.section || ""}
+                        onChange={(val) => {
+                          const updatedRows = [...rows];
+                          const resolvedId = resolveSubjectId(updatedRows[idx].subjectCode, val, formData.grade_level);
+                          updatedRows[idx] = {
+                            ...updatedRows[idx],
+                            section: val,
+                            subjectId: resolvedId
+                          };
+                          updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                        }}
+                        options={sectionOptions}
+                        placeholder={
+                          isSectionsLoading
+                            ? "Loading sections..."
+                            : sectionOptions.length === 0
+                            ? "No sections available for this grade."
+                            : "Select Section"
+                        }
+                        disabled={isSectionsLoading || sectionOptions.length === 0}
+                        className="w-full"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Section</label>
-                    <CustomSelect
-                      value={row.section || ""}
-                      onChange={(val) => {
-                        const updatedRows = [...rows];
-                        const resolvedId = resolveSubjectId(updatedRows[idx].subjectCode, val, formData.grade_level);
-                        updatedRows[idx] = {
-                          ...updatedRows[idx],
-                          section: val,
-                          subjectId: resolvedId
-                        };
-                        updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
-                      }}
-                      options={sectionOptions}
-                      placeholder={
-                        isSectionsLoading
-                          ? "Loading sections..."
-                          : sectionOptions.length === 0
-                          ? "No sections available for this grade."
-                          : "Select Section"
-                      }
-                      disabled={isSectionsLoading || sectionOptions.length === 0}
-                      className="w-full"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedRows = rows.filter((_, i) => i !== idx);
+                      updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                    }}
+                    className="absolute top-3.5 right-3 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                    title="Remove assignment"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const updatedRows = rows.filter((_, i) => i !== idx);
-                    updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
-                  }}
-                  className="absolute top-3.5 right-3 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                  title="Remove assignment"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {errors.subjects && <p className="text-red-500 text-sm mt-1">{errors.subjects}</p>}
