@@ -1067,10 +1067,30 @@ app.post("/auth/update-password", async (req, res) => {
         // 3. Update the password server-to-server securely using Supabase Admin Auth API!
         const { error: updateError } = await supabase.auth.admin.updateUserById(
             targetUserId,
-            { password: password }
+            {
+                password: password,
+                user_metadata: {
+                    must_change_password: false,
+                    force_password_change: false
+                }
+            }
         );
 
         if (updateError) throw updateError;
+
+        // Reset password change flags on the profile
+        try {
+            await supabase
+                .from("profiles")
+                .update({
+                    must_change_password: false,
+                    needs_password_change: false,
+                    force_password_change: false,
+                    last_password_reset: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", targetUserId);
+        } catch (_) {}
 
         // 4. Delete the OTP code from DB if exists
         try {
