@@ -625,6 +625,11 @@ function TeacherManagement() {
         if (assignError) {
           throw new Error(assignError.message);
         }
+
+        await adminApi.db("teacher_student_assignments", "update", {
+          payload: { teacher_id: teacherId },
+          in: { column: "subject_id", value: addSubjectIds }
+        }).catch(() => {});
       }
 
       if (removeSubjectIds.length > 0) {
@@ -637,6 +642,11 @@ function TeacherManagement() {
         if (removeError) {
           throw new Error(removeError.message);
         }
+
+        await adminApi.db("teacher_student_assignments", "update", {
+          payload: { teacher_id: null },
+          in: { column: "subject_id", value: removeSubjectIds }
+        }).catch(() => {});
       }
 
       (currentSubjects ?? []).forEach((subject) => {
@@ -1088,6 +1098,7 @@ function TeacherManagement() {
             const subjectIdsToRelease = normalizeSubjects(teacher.subjects);
             if (subjectIdsToRelease.length > 0) {
               await adminApi.db("subjects", "update", { payload: { teacher_id: null }, in: { column: "id", value: subjectIdsToRelease } });
+              await adminApi.db("teacher_student_assignments", "update", { payload: { teacher_id: null }, in: { column: "subject_id", value: subjectIdsToRelease } }).catch(() => {});
             }
           }
 
@@ -1499,6 +1510,11 @@ function TeacherManagement() {
         if (subjectError) {
           throw subjectError;
         }
+
+        await adminApi.db("teacher_student_assignments", "update", {
+          payload: { teacher_id: null },
+          in: { column: "subject_id", value: subjectIdsToRelease }
+        }).catch(() => {});
       }
 
       const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: teacherId } });

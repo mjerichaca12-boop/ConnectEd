@@ -595,6 +595,11 @@ function SubjectManagement() {
       });
       if (error) throw error;
 
+      await adminApi.db("teacher_student_assignments", "update", {
+        payload: { teacher_id: null },
+        eq: { column: "subject_id", value: subjectToArchive.id }
+      }).catch(() => {});
+
       setSubjects((prev) =>
         prev.map((s) => (s.id === subjectToArchive.id ? { ...s, status: "Archived", teacher_id: null } : s))
       );
@@ -688,6 +693,11 @@ function SubjectManagement() {
             eq: { column: "id", value: id }
           });
           if (error) throw error;
+
+          await adminApi.db("teacher_student_assignments", "update", {
+            payload: { teacher_id: null },
+            eq: { column: "subject_id", value: id }
+          }).catch(() => {});
         })
       );
 
@@ -925,6 +935,13 @@ function SubjectManagement() {
       const { error } = await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: selectedSubject.id }, select: "id" });
 
       if (error) throw error;
+
+      if (payload.teacher_id !== previousTeacherId) {
+        await adminApi.db("teacher_student_assignments", "update", {
+          payload: { teacher_id: payload.teacher_id || null },
+          eq: { column: "subject_id", value: selectedSubject.id }
+        }).catch(() => {});
+      }
 
       const { data: refreshedSubject, error: refreshError } = await supabase
         .from(tableName)

@@ -21,6 +21,20 @@ export function useMyEnrollmentsQuery() {
                         queryClient.invalidateQueries({ queryKey: ['my-enrollments'] });
                     }
                 )
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'subjects' },
+                    () => {
+                        queryClient.invalidateQueries({ queryKey: ['my-enrollments'] });
+                    }
+                )
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'profiles' },
+                    () => {
+                        queryClient.invalidateQueries({ queryKey: ['my-enrollments'] });
+                    }
+                )
                 .subscribe();
         } catch (err) {
             // Table doesn't exist yet — subscription will fail silently

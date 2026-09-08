@@ -56,43 +56,11 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
                 enrolled,
                 profiles:teacher_id (
                     first_name,
-                    last_name,
-                    suffix
+                    last_name
                 )
             )
         `)
         .eq('student_id', userData.user.id);
-
-    if (res.error && (res.error.code === '42703' || res.error.message?.includes('suffix'))) {
-        res = await supabase
-            .from('teacher_student_assignments')
-            .select(`
-                id,
-                student_id,
-                subject_id,
-                status,
-                grades,
-                attendance,
-                section,
-                subjects:subject_id (
-                    id,
-                    code,
-                    name,
-                    description,
-                    teacher_id,
-                    grade_level,
-                    schedule,
-                    credits,
-                    capacity,
-                    enrolled,
-                    profiles:teacher_id (
-                        first_name,
-                        last_name
-                    )
-                )
-            `)
-            .eq('student_id', userData.user.id);
-    }
 
     const { data, error } = res;
 

@@ -33,8 +33,10 @@ export default function SubjectOverview() {
                 <View style={styles.row}>
                     <View style={styles.avatar} />
                     <View style={styles.infoCol}>
-                        <Text style={styles.name}>{subject?.teacher_name || "Unknown Teacher"}</Text>
-                        <Text style={styles.email}>{subject?.teacher_email || ""}</Text>
+                        <Text style={styles.name}>{subject?.teacher_name || "No teacher assigned"}</Text>
+                        {Boolean(subject?.teacher_email) && (
+                            <Text style={styles.email}>{subject.teacher_email}</Text>
+                        )}
                     </View>
                 </View>
             </View>
