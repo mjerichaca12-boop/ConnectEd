@@ -378,13 +378,18 @@ function TeacherManagement() {
 
     if (field === "grade_level") {
       const newGradeNorm = normalizeGradeLevel(value);
-      const matchingSubjects = normalizeSubjects(nextFormData.subjects).filter((subjId) => {
-        const subj = availableSubjects.find((s) => String(s.id) === String(subjId) || String(s.code || "").toLowerCase() === String(subjId).toLowerCase());
-        if (!subj) return false;
-        const subjGradeNorm = normalizeGradeLevel(subj.grade_level || "");
-        return !subjGradeNorm || subjGradeNorm === newGradeNorm;
-      });
-      nextFormData.subjects = matchingSubjects;
+      if (newGradeNorm) {
+        const matchingGradeSubjects = availableSubjects
+          .filter((s) => {
+            const subjGradeNorm = normalizeGradeLevel(s.grade_level || s.year_level || s.grade || s.year || "");
+            return subjGradeNorm === newGradeNorm;
+          })
+          .map((s) => s.id);
+
+        nextFormData.subjects = matchingGradeSubjects;
+      } else {
+        nextFormData.subjects = [];
+      }
     }
 
     const nextError = validateTeacherField(field, nextFormData[field], nextFormData);
