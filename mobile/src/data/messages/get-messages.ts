@@ -64,47 +64,55 @@ const normalizeMessage = (row: any) => {
     };
 };
 
-export async function getMessages(id: string) {
+export async function getMessages(id: string, isRoom?: boolean) {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
     const SELECT_FIELDS = '*, message_attachments(id, file_url, file_name, file_type, file_size)';
 
-    // Try group / conversation first
-    let { data: convData, error: convError } = await supabase
-        .from('messages')
-        .select(SELECT_FIELDS)
-        .or(`conversation_id.eq.${id},room_id.eq.${id}`)
-        .order('created_at', { ascending: true });
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUuid = UUID_REGEX.test(id);
+    const isGroup = id.startsWith('group_');
 
-    if (convError && convError.message?.includes('message_attachments')) {
-        // Fallback without relation join if foreign key relationship differs
-        const fallback = await supabase
-            .from('messages')
-            .select('*')
-            .or(`conversation_id.eq.${id},room_id.eq.${id}`)
-            .order('created_at', { ascending: true });
-        convData = fallback.data;
-        convError = fallback.error;
+    // If id is explicitly a group or room
+    if (!isUuid || isGroup || isRoom) {
+        let query = isUuid
+            ? supabase.from('messages').select(SELECT_FIELDS).or(`conversation_id.eq.${id},room_id.eq.${id}`)
+            : supabase.from('messages').select(SELECT_FIELDS).eq('conversation_id', id);
+
+        let { data, error } = await query.order('created_at', { ascending: true }).limit(150);
+
+        if (error && error.message?.includes('message_attachments')) {
+            const fallbackQuery = isUuid
+                ? supabase.from('messages').select('*').or(`conversation_id.eq.${id},room_id.eq.${id}`)
+                : supabase.from('messages').select('*').eq('conversation_id', id);
+            const fallback = await fallbackQuery.order('created_at', { ascending: true }).limit(150);
+            data = fallback.data;
+            error = fallback.error;
+        }
+
+        if (error) {
+            console.error('[messages] Group fetch error:', error);
+            return [];
+        }
+        return (data || []).map(normalizeMessage);
     }
 
-    if (!convError && convData && convData.length > 0) {
-        return convData.map(normalizeMessage);
-    }
-
-    // Fallback to direct messages (one-to-one)
+    // Direct one-to-one chat: execute directly without trial-and-error delays
     let { data: directData, error: directError } = await supabase
         .from('messages')
         .select(SELECT_FIELDS)
         .or(`and(sender_id.eq.${userData.user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${userData.user.id})`)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(150);
 
     if (directError && directError.message?.includes('message_attachments')) {
         const fallback = await supabase
             .from('messages')
             .select('*')
             .or(`and(sender_id.eq.${userData.user.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${userData.user.id})`)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: true })
+            .limit(150);
         directData = fallback.data;
         directError = fallback.error;
     }
@@ -116,15 +124,22 @@ export async function getMessages(id: string) {
     return (directData || []).map(normalizeMessage);
 }
 
-export async function sendMessage(targetId: string, content: string, fileUrl?: string, fileType?: string, isRoom: boolean = false) {
-    console.log('Sending message:', { targetId, content, fileUrl, fileType, isRoom });
+export async function sendMessage(
+    targetId: string, 
+    content: string, 
+    fileUrl?: string, 
+    fileType?: string, 
+    isRoom: boolean = false,
+    customFileName?: string
+) {
+    console.log('Sending message:', { targetId, content, fileUrl, fileType, isRoom, customFileName });
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
     const finalContent = content?.trim() || (fileType === 'image' ? 'Sent a photo' : (fileType === 'document' ? 'Sent a document' : 'Message'));
     
-    let fileName: string | null = null;
-    if (fileUrl) {
+    let fileName: string | null = customFileName || null;
+    if (!fileName && fileUrl) {
         try {
             const decoded = decodeURIComponent(fileUrl);
             const parts = decoded.split('/');
@@ -133,6 +148,10 @@ export async function sendMessage(targetId: string, content: string, fileUrl?: s
             fileName = 'attachment';
         }
     }
+
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isUuid = UUID_REGEX.test(targetId);
+    const isGroup = targetId.startsWith('group_');
 
     const insertData: any = {
         sender_id: userData.user.id,
@@ -144,8 +163,8 @@ export async function sendMessage(targetId: string, content: string, fileUrl?: s
         status: "sent"
     };
 
-    if (isRoom) {
-        if (targetId.startsWith('group_')) {
+    if (isGroup || isRoom) {
+        if (isGroup || !isUuid) {
             insertData.conversation_id = targetId;
             insertData.receiver_id = null;
         } else {

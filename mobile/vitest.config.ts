@@ -3,6 +3,9 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
+  define: {
+    __DEV__: true,
+  },
   resolve: {
     alias: {
       'react-native': 'react-native-web',

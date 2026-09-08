@@ -1,8 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Alert } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
-import { decode } from 'base64-arraybuffer';
+import { readFileAsArrayBuffer } from '../../../utils/file-reader';
 
 export interface CreateMaterialArgs {
     title: string;
@@ -26,9 +25,8 @@ export function useCreateMaterialMutation() {
             const fileExt = file_name.split('.').pop();
             const storagePath = `${userData.user.id}/${Date.now()}_${file_name}`;
             
-            // Read file as base64 for reliable binary upload
-            const base64 = await FileSystem.readAsStringAsync(file_uri, { encoding: 'base64' });
-            const bytes = decode(base64);
+            // Read file as ArrayBuffer for reliable binary upload
+            const bytes = await readFileAsArrayBuffer(file_uri);
 
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('class-materials')

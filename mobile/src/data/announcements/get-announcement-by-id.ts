@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { Announcement } from "../../types";
+import { formatTeacherName } from "../../utils/name-formatter";
 
 /**
  * Resolves a Supabase storage path or external URL to a usable public URL
@@ -79,9 +80,38 @@ export async function getAnnouncementById(id: string): Promise<Announcement | nu
     if (isUuid) {
         let { data, error } = await supabase
             .from('class_announcements')
-            .select('*')
+            .select(`
+                *,
+                subjects:class_id (
+                    teacher_id,
+                    profiles:teacher_id (
+                        first_name,
+                        last_name,
+                        suffix
+                    )
+                )
+            `)
             .eq('id', id)
             .maybeSingle();
+
+        if (error && (error.code === '42703' || error.message?.includes('suffix'))) {
+            const fallbackRes = await supabase
+                .from('class_announcements')
+                .select(`
+                    *,
+                    subjects:class_id (
+                        teacher_id,
+                        profiles:teacher_id (
+                            first_name,
+                            last_name
+                        )
+                    )
+                `)
+                .eq('id', id)
+                .maybeSingle();
+            data = fallbackRes.data;
+            error = fallbackRes.error;
+        }
 
         if (!data) {
             // Try standard/global announcements table fallback
@@ -122,6 +152,8 @@ export async function getAnnouncementById(id: string): Promise<Announcement | nu
         }
 
         const firstFile = attachmentsList[0];
+        const subjectTeacher = (data as any)?.subjects?.profiles;
+        const subjectTeacherName = formatTeacherName(subjectTeacher) || null;
 
         return {
             id: data.id,
@@ -132,7 +164,7 @@ export async function getAnnouncementById(id: string): Promise<Announcement | nu
                 day: 'numeric',
                 year: 'numeric',
             }),
-            author: data.created_by_name || data.author || "Teacher",
+            author: subjectTeacherName || data.created_by_name || data.author || "Teacher",
             author_role: "teacher",
             type: data.priority === 'High' ? 'urgent' : 'general',
             image_url: primaryImage,

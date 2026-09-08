@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ActivityIndicator, ScrollView, RefreshControl, StatusBar } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import Colors from "../../../../src/constants/Colors";
 import Layout from "../../../../src/constants/Layout";
 import AppHeader from "../../../../src/components/common/AppHeader";
@@ -8,9 +8,11 @@ import Button from "../../../../src/components/common/Button";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from '../../../../src/lib/supabase';
+import FileViewerModal from "../../../../src/components/common/FileViewerModal";
 import { useCreateMaterialMutation } from '../../../../src/hooks/query/materials/use-create-material-mutation';
 import { useMaterialsQuery } from "../../../../src/hooks/query/materials/use-materials-query";
 import { useSubjectDetailQuery } from "../../../../src/hooks/query/subjects/use-subject-detail-query";
@@ -133,51 +135,109 @@ const LessonOverviewCard = ({ lesson }: { lesson: any }) => {
 
 const DetailedMaterialView = ({ material, onBack }: any) => {
     const [isDownloading, setIsDownloading] = useState(false);
+    const [viewerVisible, setViewerVisible] = useState(false);
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerFileName, setViewerFileName] = useState<string | null>(null);
+
+    const getTargetUrl = (rawUrl: any): string | null => {
+        if (!rawUrl) return null;
+        let url = Array.isArray(rawUrl) ? rawUrl[0] : rawUrl;
+        if (typeof url !== 'string' || !url.trim()) return null;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            const { data } = supabase.storage.from('class-materials').getPublicUrl(url);
+            if (data?.publicUrl) {
+                return data.publicUrl;
+            }
+        }
+        return url;
+    };
+
+    const resolvedUrl = getTargetUrl(material.file_url);
+
+    const getFileName = (): string => {
+        if (material.file_name && typeof material.file_name === 'string' && material.file_name.trim()) {
+            return material.file_name;
+        }
+        if (material.title && typeof material.title === 'string' && material.title.trim()) {
+            const ext = material.type?.toLowerCase();
+            if (ext && !material.title.toLowerCase().endsWith(`.${ext}`)) {
+                return `${material.title}.${ext}`;
+            }
+            return material.title;
+        }
+        if (resolvedUrl) {
+            const parts = resolvedUrl.split('?')[0].split('/');
+            const last = parts[parts.length - 1];
+            if (last) return decodeURIComponent(last);
+        }
+        return "Material File";
+    };
+
+    const fileName = getFileName();
+
+    const isImageFile = (name: string, url: string | null, type?: string) => {
+        const t = (type || "").toLowerCase();
+        if (t === 'image' || t === 'png' || t === 'jpg' || t === 'jpeg') return true;
+        const lowerName = (name || "").toLowerCase();
+        const lowerUrl = (url || "").toLowerCase();
+        const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".heic"];
+        return imageExtensions.some(ext => lowerName.endsWith(ext) || lowerUrl.endsWith(ext));
+    };
+
+    const isImage = isImageFile(fileName, resolvedUrl, material.type);
+
+    const handleOpenFile = () => {
+        if (!resolvedUrl) {
+            Alert.alert("Error", "This material does not have a valid file attached.");
+            return;
+        }
+        setViewerUrl(resolvedUrl);
+        setViewerFileName(fileName);
+        setViewerVisible(true);
+    };
 
     const handleDownload = async () => {
-        let fileUrl = material.file_url;
-        if (Array.isArray(fileUrl)) {
-            fileUrl = fileUrl[0];
-        }
-        if (!fileUrl || typeof fileUrl !== 'string') {
+        if (!resolvedUrl) {
             Alert.alert("Error", "This material does not have a file attached.");
             return;
         }
 
         try {
-            let targetUrl = fileUrl;
-            if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
-                const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
-                if (data?.publicUrl) {
-                    targetUrl = data.publicUrl;
-                }
-            }
-
-            try {
-                await Linking.openURL(targetUrl);
-                return;
-            } catch (openErr) {
-                console.log("Direct URL open failed, attempting fallback:", openErr);
-            }
-
             setIsDownloading(true);
             const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            
-            if (storageDir) {
-                const fileName = `${material.title.replace(/\s+/g, '_')}_${Date.now()}.${material.type || 'pdf'}`;
-                const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-                
-                const { uri } = await FileSystem.downloadAsync(targetUrl, fileUri);
-                
-                if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(uri);
-                } else {
-                    Alert.alert("Success", "File downloaded successfully.");
+            if (!storageDir) {
+                Alert.alert("Error", "Storage directory not available.");
+                return;
+            }
+
+            if (isImage) {
+                try {
+                    const { status } = await MediaLibrary.requestPermissionsAsync();
+                    if (status === 'granted') {
+                        const cleanExt = resolvedUrl.split('?')[0].split('.').pop() || 'jpg';
+                        const fileUri = `${storageDir}/photo_${Date.now()}.${cleanExt}`;
+                        const { uri } = await FileSystem.downloadAsync(resolvedUrl, fileUri);
+                        await MediaLibrary.saveToLibraryAsync(uri);
+                        Alert.alert("Saved", "Photo saved to gallery!");
+                        return;
+                    }
+                } catch (mediaErr) {
+                    console.warn("MediaLibrary save failed, falling back to file sharing:", mediaErr);
                 }
+            }
+
+            const cleanFileName = fileName.replace(/[^\w\d\-_.]/g, '_');
+            const fileUri = storageDir.endsWith('/') ? `${storageDir}${cleanFileName}` : `${storageDir}/${cleanFileName}`;
+            const { uri } = await FileSystem.downloadAsync(resolvedUrl, fileUri);
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(uri);
+            } else {
+                Alert.alert("Success", "File downloaded successfully.");
             }
         } catch (error) {
             console.error('Download error:', error);
-            Alert.alert("Error", "Could not open or download the file.");
+            Alert.alert("Download Error", "Could not download the file.");
         } finally {
             setIsDownloading(false);
         }
@@ -205,12 +265,33 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
                 </View>
 
                 {material.file_url && (
-                    <View style={styles.actionContainer}>
-                        <Button 
-                            title={isDownloading ? "Downloading..." : `Open / Download File`} 
-                            onPress={handleDownload} 
+                    <View style={styles.attachmentContainer}>
+                        <TouchableOpacity 
+                            style={styles.attachmentInfo}
+                            onPress={handleOpenFile}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons
+                                name={isImage ? "image-outline" : "document-attach-outline"}
+                                size={24}
+                                color={Colors.light.primary}
+                            />
+                            <Text style={styles.attachmentName} numberOfLines={1}>
+                                {fileName}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={styles.downloadButtonSmall}
+                            onPress={handleDownload}
                             disabled={isDownloading}
-                        />
+                            activeOpacity={0.7}
+                        >
+                            {isDownloading ? (
+                                <ActivityIndicator size="small" color="#64748B" />
+                            ) : (
+                                <Ionicons name="download-outline" size={20} color="#64748B" />
+                            )}
+                        </TouchableOpacity>
                     </View>
                 )}
 
@@ -221,6 +302,13 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
                     </Text>
                 </View>
             </ScrollView>
+
+            <FileViewerModal 
+                visible={viewerVisible} 
+                onClose={() => setViewerVisible(false)} 
+                url={viewerUrl} 
+                fileName={viewerFileName} 
+            />
         </View>
     );
 };
@@ -230,16 +318,15 @@ export default function SubjectMaterials() {
     const { id: globalId } = useGlobalSearchParams();
     const { id: localId } = useLocalSearchParams();
     
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // Robust subject ID extraction: strictly ensure the ID is a valid UUID
     const id = (() => {
-        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
-        if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
-        
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const found = segments.find(s => uuidRegex.test(s));
+        if (localId && typeof localId === 'string' && uuidRegex.test(localId)) return localId;
+        const segList = segments as string[];
+        const found = segList.find(s => uuidRegex.test(s));
         if (found) return found;
-
-        if (segments[2] && segments[2] !== '[id]') return segments[2];
-        return localId as string;
+        if (globalId && typeof globalId === 'string' && uuidRegex.test(globalId)) return globalId;
+        return undefined;
     })();
 
     const { data: subject, isLoading: isSubjectLoading } = useSubjectDetailQuery(id as string);
@@ -812,8 +899,36 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: Colors.light.textSecondary,
     },
-    actionContainer: {
-        marginBottom: 24,
+    attachmentContainer: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 20,
+        padding: 14,
+        backgroundColor: "#F8FAFC",
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+    attachmentInfo: {
+        flexDirection: "row",
+        alignItems: "center",
+        flex: 1,
+        marginRight: 12,
+    },
+    attachmentName: {
+        fontSize: 15,
+        fontWeight: "600",
+        color: "#1E293B",
+        marginLeft: 10,
+        flex: 1,
+    },
+    downloadButtonSmall: {
+        padding: 8,
+        backgroundColor: "#F1F5F9",
+        borderRadius: 8,
+        justifyContent: "center",
+        alignItems: "center",
     },
     infoContainer: {
         backgroundColor: "#FFFFFF",

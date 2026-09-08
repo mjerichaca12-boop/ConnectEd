@@ -986,7 +986,7 @@ function GradesManagement() {
 
     const { data: gradeRows } = await supabase
       .from("teacher_student_grades")
-      .select("quarter1_grade, quarter2_grade, quarter3_grade, quarter4_grade, overall_grade, grade_computation, subject_category, student_id")
+      .select("quarter1_grade, quarter2_grade, quarter3_grade, quarter4_grade, overall_grade, quiz_average, activity_grade, assignment_grade, exam_grade, grade_computation, subject_category, student_id")
       .eq("teacher_id", currentTeacherId)
       .eq("subject_id", classId)
       .in("student_id", studentIds);
@@ -1009,6 +1009,10 @@ function GradesManagement() {
         quarter3Grade: clampGradeValue(row.quarter3_grade),
         quarter4Grade: clampGradeValue(row.quarter4_grade),
         overallGrade: clampGradeValue(row.overall_grade ?? 0),
+        quizAverage: clampGradeValue(row.quiz_average ?? 0),
+        activityGrade: clampGradeValue(row.activity_grade ?? 0),
+        assignmentGrade: clampGradeValue(row.assignment_grade ?? 0),
+        examGrade: clampGradeValue(row.exam_grade ?? 0),
         gradeComputation,
         subjectCategory: normalizeSubjectCategory(row.subject_category || subjectCategory, currentClass?.name || currentClass?.code || ""),
       };
@@ -1040,6 +1044,10 @@ function GradesManagement() {
         quarter2Grade: clampGradeValue(computation.quarters.quarter2.quarterlyGrade || cached.quarter2Grade || 0),
         quarter3Grade: clampGradeValue(computation.quarters.quarter3.quarterlyGrade || cached.quarter3Grade || 0),
         quarter4Grade: clampGradeValue(computation.quarters.quarter4.quarterlyGrade || cached.quarter4Grade || 0),
+        quizAverage: cached.quizAverage ?? 0,
+        activityGrade: cached.activityGrade ?? 0,
+        assignmentGrade: cached.assignmentGrade ?? 0,
+        examGrade: cached.examGrade ?? 0,
         gradeComputation: computation,
         overallGrade: computation.finalGrade > 0 ? computation.finalGrade : clampGradeValue(cached.overallGrade ?? 0),
       };
@@ -1852,10 +1860,10 @@ function GradesManagement() {
     }
   }, [assessmentFeedbackMap, assessmentGradesMap, assessmentItems, assessmentSubmissionsMap, selectedAssessmentId, selectedClass, selectedStudentId, supabase, teacherId, assessmentStatusMap]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async (isAuto = false) => {
     if (!selectedClass || studentGrades.length === 0 || !teacherId || !supabase) return;
     try {
-      setSaving(true);
+      if (!isAuto) setSaving(true);
       const currentClass = activeClassesList.find((item) => item.id === selectedClass) || null;
       const subjectCategory = normalizeSubjectCategory(currentClass?.subjectCategory || "", currentClass?.name || currentClass?.code || "");
 
@@ -1868,12 +1876,14 @@ function GradesManagement() {
         quarter3_grade: clampGradeValue(student.quarter3Grade),
         quarter4_grade: clampGradeValue(student.quarter4Grade),
         overall_grade: clampGradeValue(student.overallGrade),
+        quiz_average: clampGradeValue(student.quizAverage ?? 0),
+        activity_grade: clampGradeValue(student.activityGrade ?? 0),
+        assignment_grade: clampGradeValue(student.assignmentGrade ?? 0),
+        exam_grade: clampGradeValue(student.examGrade ?? 0),
         grade_computation: student.gradeComputation ? JSON.parse(serializeDepEdComputation(student.gradeComputation)) : {},
         subject_category: subjectCategory,
         updated_at: new Date().toISOString(),
       }));
-
-      console.log("[GradesManagement] Saving grades payload:", gradesPayload);
 
       const { data, error } = await supabase
         .from("teacher_student_grades")
@@ -1882,24 +1892,43 @@ function GradesManagement() {
 
       if (error) {
         console.error("Failed to save grades:", error);
-        throw new Error(error.message || "Failed to save grades.");
+        if (!isAuto) throw new Error(error.message || "Failed to save grades.");
+        return;
       }
 
-      if (!data || data.length === 0) {
-        throw new Error("No grades were saved.");
+      if (!isAuto) {
+        toast.success("Grades successfully saved");
+        setSaveSuccess(true);
       }
-
-      toast.success("Grades successfully saved");
-      setSaveSuccess(true);
       setHasUnsavedChanges(false);
       try { window.dispatchEvent(new CustomEvent("connected-grade-updated", { detail: { teacherId } })); } catch (e) {}
     } catch (error) {
       console.error("Unexpected save error:", error);
-      toast.error(error?.message || "Failed to save grades.");
+      if (!isAuto) toast.error(error?.message || "Failed to save grades.");
     } finally {
-      setSaving(false);
+      if (!isAuto) setSaving(false);
     }
-  };
+  }, [selectedClass, studentGrades, teacherId, supabase, activeClassesList]);
+
+  // Debounced auto-sync to database whenever studentGrades change
+  const autoSaveGradesTimerRef = useRef(null);
+  useEffect(() => {
+    if (!hasUnsavedChanges || saving || !selectedClass || !teacherId || studentGrades.length === 0) return;
+
+    if (autoSaveGradesTimerRef.current) {
+      clearTimeout(autoSaveGradesTimerRef.current);
+    }
+
+    autoSaveGradesTimerRef.current = setTimeout(() => {
+      handleSave(true);
+    }, 1500);
+
+    return () => {
+      if (autoSaveGradesTimerRef.current) {
+        clearTimeout(autoSaveGradesTimerRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, saving, selectedClass, teacherId, studentGrades.length, handleSave]);
 
   /* ΓöÇΓöÇΓöÇ derived ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const selectedClassName = useMemo(() => {

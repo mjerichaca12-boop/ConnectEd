@@ -98,4 +98,101 @@ describe('getSubjectDetail data service', () => {
         const detail = await getSubjectDetail('non-existent');
         expect(detail).toBeNull();
     });
+
+    it('should fallback to subject section if assignment has no section', async () => {
+        const mockSubject = {
+            id: 'sub-456',
+            code: 'MATH10',
+            name: 'Mathematics',
+            description: 'Grade 10 Math',
+            teacher_id: 'teacher-456',
+            grade_level: 'Grade 10',
+            section: 'Diamond',
+            profiles: {
+                first_name: 'Juan',
+                last_name: 'Dela Cruz',
+                email: 'juan@school.edu'
+            }
+        };
+
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'teacher_student_assignments') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            eq: vi.fn(() => ({
+                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
+                            }))
+                        }))
+                    }))
+                };
+            }
+            return {};
+        });
+
+        const detail = await getSubjectDetail('sub-456');
+        expect(detail).not.toBeNull();
+        expect(detail?.section).toBe('Diamond');
+        expect(detail?.grade_level).toBe('Grade 10');
+    });
+
+    it('should fallback to profile section if assignment and subject have no section', async () => {
+        const mockSubject = {
+            id: 'sub-789',
+            code: 'SCI8',
+            name: 'Science',
+            description: 'Grade 8 Science',
+            teacher_id: 'teacher-789',
+            grade_level: 'Grade 8',
+            section: null,
+            profiles: null
+        };
+
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'teacher_student_assignments') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            eq: vi.fn(() => ({
+                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
+                            }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'profiles') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            maybeSingle: vi.fn(() => Promise.resolve({ data: { section: 'Emerald' }, error: null }))
+                        }))
+                    }))
+                };
+            }
+            return {};
+        });
+
+        const detail = await getSubjectDetail('sub-789');
+        expect(detail).not.toBeNull();
+        expect(detail?.section).toBe('Emerald');
+    });
 });
+

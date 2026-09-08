@@ -1,12 +1,13 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TextInput, StatusBar, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "../../../src/constants/Colors";
 import SubjectCard from "../../../src/components/cards/SubjectCard";
 import AppHeader from "../../../src/components/common/AppHeader";
 import { useMyEnrollmentsQuery } from "../../../src/hooks/query/enrollments/use-my-enrollments-query";
+import { formatTeacherName } from "../../../src/utils/name-formatter";
 
 export default function SubjectsScreen() {
     const router = useRouter();
@@ -33,9 +34,7 @@ export default function SubjectsScreen() {
                             id: sub.id ?? "",
                             code: sub.code ?? "",
                             name: sub.name ?? "",
-                            teacher: sub.profiles
-                                ? `${sub.profiles.first_name || ""} ${sub.profiles.last_name || ""}`.trim()
-                                : "Faculty",
+                            teacher: formatTeacherName(sub.profiles) || "Faculty",
                             description: sub.description ?? "",
                             gradeLevel: sub.grade_level ?? "",
                             schedule: sub.schedule ?? "TBA",

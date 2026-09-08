@@ -22,9 +22,27 @@ export default function TabLayout() {
             try {
                 const { data: { session }, error } = await supabase.auth.getSession();
                 
-                if (error || !session) {
-                    // If no session or error, redirect to OTP login
+                if (error || !session?.user) {
+                    // If no session or error, redirect to login
                     router.replace("/login" as Href);
+                    return;
+                }
+
+                // Verify profile and mandatory account security check
+                const { data: profile } = await supabase
+                    .from("profiles")
+                    .select("id, role, must_change_password")
+                    .eq("id", session.user.id)
+                    .maybeSingle();
+
+                if (profile?.role && profile.role !== "student") {
+                    await supabase.auth.signOut();
+                    router.replace("/login" as Href);
+                    return;
+                }
+
+                if (profile?.must_change_password) {
+                    router.replace("/(auth)/secure-account" as Href);
                     return;
                 }
 

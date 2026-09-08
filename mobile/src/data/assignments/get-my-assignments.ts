@@ -22,13 +22,14 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     
     // Combine both so students see their classes and teachers see the classes they teach
     const allCourseIds = [...new Set([...approvedSubjectIds, ...taughtSubjectIds])];
+    const isTeacher = userData.user.user_metadata?.role === 'teacher' || taughtSubjectIds.length > 0;
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const isValidId = !!(subjectId && uuidRegex.test(subjectId));
     const isSubjectExplicit = subjectId && subjectId !== 'undefined' && subjectId !== '[id]';
 
     if (isSubjectExplicit && !isValidId) {
-        console.warn(`[assignments] Invalid subjectId provided: ${subjectId}`);
+        console.log(`[assignments] Invalid subjectId provided: ${subjectId}`);
         return [];
     }
 
@@ -74,7 +75,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     const { data: materialsData } = await materialsQuery;
 
     // 1e. Fetch ALL relevant lessons to accurately map lesson_id -> course_id (subject_id)
-    let lessonsQuery = supabase.from('lessons').select('id, subject_id, course_id, title, description, week_number');
+    let lessonsQuery = supabase.from('lessons').select('id, subject_id, course_id, title, description, week_number, status');
     const { data: lessonsData } = await lessonsQuery;
 
     const lessonToCourseMap = new Map<string, string>();
@@ -127,6 +128,14 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             if (!isValidId && rowCourseId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) {
                 return;
             }
+
+            if (row.lesson_id) {
+                const linkedLesson = lessonDetailsMap.get(row.lesson_id);
+                if (!isTeacher && linkedLesson && linkedLesson.status && linkedLesson.status.toLowerCase() !== 'published') {
+                    return;
+                }
+            }
+
             assignmentMap.set(row.id, { ...row });
         }
     });
@@ -139,6 +148,13 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             }
             if (!isValidId && rowCourseId && !allCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) {
                 return;
+            }
+
+            if (row.lesson_id) {
+                const linkedLesson = lessonDetailsMap.get(row.lesson_id);
+                if (!isTeacher && linkedLesson && linkedLesson.status && linkedLesson.status.toLowerCase() !== 'published') {
+                    return;
+                }
             }
 
             const existing = assignmentMap.get(row.id) || {};
@@ -174,6 +190,9 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             }
 
             const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
+            if (!isTeacher && linkedLesson && linkedLesson.status && linkedLesson.status.toLowerCase() !== 'published') {
+                return;
+            }
 
             const existing = assignmentMap.get(row.id) || {};
             assignmentMap.set(row.id, {
@@ -209,6 +228,14 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             }
 
             const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
+            if (!isTeacher) {
+                if (linkedLesson && linkedLesson.status && linkedLesson.status.toLowerCase() !== 'published') {
+                    return;
+                }
+                if (row.status && row.status.toLowerCase() !== 'published') {
+                    return;
+                }
+            }
 
             let quizDescription = row.questions || row.quiz_data || row.content || row.description || row.instructions;
             
@@ -439,18 +466,23 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ? myResult.grade_value
             : (myQuizAttempt?.score !== undefined && myQuizAttempt?.score !== null ? myQuizAttempt.score : null);
 
-        return {
-            id: row.id,
-            subjectId: row.course_id,
-            subject: subjectsMap.get(row.course_id) || "Subject", 
-            title: row.title || "Assignment",
-            dueDate: dueDate ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "TBA",
-            status: status as Assignment['status'],
-            instructions: (typeof row.description === 'string' ? row.description : null) || "Please see subject details for more information.",
-            file_url: fileUrl,
-            file_name: fileName,
-            assessment_type: (String(row.assessment_type || row.type || "assignment").trim().toLowerCase()) as Assignment['assessment_type'],
-            submission: (myResult || myAssessmentSub || myQuizAttempt) ? {
+            const rawType = String(row.assessment_type || row.type || row.assignment_type || "assignment").trim().toLowerCase();
+            const normalizedAssessmentType: Assignment['assessment_type'] = rawType.includes('quiz')
+                ? 'quiz'
+                : (rawType.includes('activity') ? 'activity' : 'assignment');
+
+            return {
+                id: row.id,
+                subjectId: row.course_id,
+                subject: subjectsMap.get(row.course_id) || "Subject", 
+                title: row.title || "Assignment",
+                dueDate: dueDate ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "TBA",
+                status: status as Assignment['status'],
+                instructions: (typeof row.description === 'string' ? row.description : null) || "Please see subject details for more information.",
+                file_url: fileUrl,
+                file_name: fileName,
+                assessment_type: normalizedAssessmentType,
+                submission: (myResult || myAssessmentSub || myQuizAttempt) ? {
                 id: myResult?.id || myAssessmentSub?.id || myQuizAttempt?.id || row.id,
                 file_url: myAssessmentSub?.file_url || null,
                 grade: resolvedGrade,

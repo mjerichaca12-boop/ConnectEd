@@ -24,8 +24,24 @@ export default function SplashScreen() {
         
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (session) {
-          router.replace("/(tabs)/home" as Href);
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("must_change_password, role")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (profile?.role && profile.role !== "student") {
+            await supabase.auth.signOut();
+            router.replace("/login" as Href);
+            return;
+          }
+
+          if (profile?.must_change_password) {
+            router.replace("/(auth)/secure-account" as Href);
+          } else {
+            router.replace("/(tabs)/home" as Href);
+          }
         } else {
           router.replace("/login" as Href);
         }

@@ -84,12 +84,43 @@ export default async function handler(req, res) {
       const { id, payload } = body;
       if (!id || !payload) return res.status(400).json({ error: "Missing id or payload" });
       
-      const { data, error } = await supabaseAdmin
+      let updatePayload = { ...payload };
+      let { data, error } = await supabaseAdmin
         .from("profiles")
-        .update(payload)
+        .update(updatePayload)
         .eq("id", id)
         .select()
         .maybeSingle();
+
+      // Graceful fallback if suffix / employee_id columns don't exist yet in Supabase
+      if (error && (error.code === '42703' || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
+        const missingFields = ['suffix', 'name_extension', 'employee_id'];
+        let hasMissing = false;
+        for (const field of missingFields) {
+          if (field in updatePayload) {
+            hasMissing = true;
+            // If suffix/name_extension was set and last_name exists, ensure suffix is preserved in last_name
+            if ((field === 'suffix' || field === 'name_extension') && updatePayload[field] && updatePayload.last_name) {
+              const suff = String(updatePayload[field]).trim();
+              if (suff && !updatePayload.last_name.toLowerCase().endsWith(suff.toLowerCase())) {
+                updatePayload.last_name = `${updatePayload.last_name} ${suff}`.trim();
+              }
+            }
+            delete updatePayload[field];
+          }
+        }
+
+        if (hasMissing) {
+          const retryRes = await supabaseAdmin
+            .from("profiles")
+            .update(updatePayload)
+            .eq("id", id)
+            .select()
+            .maybeSingle();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+      }
 
       if (error) throw error;
       return res.status(200).json(data);

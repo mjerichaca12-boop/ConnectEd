@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, TextInput, Image } from "react-native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router/react-navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
@@ -9,74 +11,127 @@ import AppHeader from "../../src/components/common/AppHeader";
 import { useChatListQuery } from "../../src/hooks/query/messages/use-chat-list-query";
 import { useSearchableProfilesQuery } from "../../src/hooks/query/profiles/use-searchable-profiles-query";
 import { supabase } from "../../src/lib/supabase";
+import { matchesSearchQuery } from "../../src/data/profiles/search-profiles-matcher";
+import { formatGradeLevel, formatRoleLabel } from "../../src/data/profiles/get-all-searchable-profiles";
+import { recordConversationRead } from "../../src/data/messages/message-storage";
 
-const ChatItem = ({ id, name, message, time, unread, role, isNew, chat_type, email, username }: any) => {
+const ChatItem = ({ id, name, message, time, unread, role, role_label, grade_level, year_level, isNew, chat_type, unread_count, avatar_url }: any) => {
     const router = useRouter();
+    const queryClient = useQueryClient();
 
     const handlePress = () => {
+        if (unread || (unread_count && unread_count > 0)) {
+            // Immediately record in persistent local storage so seen messages never revert on reload
+            recordConversationRead(id);
+
+            // Optimistically mark this conversation as read in the chat-list
+            queryClient.setQueryData<any[]>(['chat-list'], (old = []) =>
+                old.map(c => (c.partner_id === id || c.id === id) ? { ...c, unread: false, unread_count: 0 } : c)
+            );
+            // Optimistically decrement the tab bar unread messages badge
+            const countToDeduct = Number(unread_count) > 0 ? Number(unread_count) : 1;
+            queryClient.setQueryData<number>(['unread-messages-count'], (old = 0) =>
+                Math.max(0, old - countToDeduct)
+            );
+        }
+
         router.push({
             pathname: "/conversation/[id]",
             params: { id, name, isRoom: chat_type === 'group' ? 'true' : 'false' }
         });
     };
 
-    const isTeacher = role === 'teacher';
-    const isAdmin = role === 'admin' || role === 'super_admin' || role === 'administrator';
+    const roleLabel = role_label || formatRoleLabel(role);
+    const grade = grade_level || formatGradeLevel(year_level);
+    const isTeacher = roleLabel === 'Teacher';
+    const isAdmin = roleLabel === 'Admin';
+    const isStudent = roleLabel === 'Student';
 
-    return (
-        <TouchableOpacity style={styles.itemContainer} onPress={handlePress}>
-            <View style={[
-                styles.avatar, 
-                isNew 
-                    ? { backgroundColor: isAdmin ? '#F3E8FF' : isTeacher ? '#E0F2FE' : '#F1F5F9' } 
-                    : { backgroundColor: isAdmin ? '#7C3AED' : isTeacher ? '#0284C7' : Colors.light.primary }
-            ]}>
-                <Ionicons 
-                    name={isAdmin ? "shield-checkmark" : isTeacher ? "school" : "person"} 
-                    size={22} 
-                    color={isNew ? (isAdmin ? "#7C3AED" : isTeacher ? "#0284C7" : "#64748B") : "#FFF"} 
-                />
-            </View>
-            <View style={styles.content}>
-                <View style={styles.headerRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                        <Text style={styles.name}>{name}</Text>
+    if (isNew) {
+        return (
+            <TouchableOpacity style={styles.itemContainer} onPress={handlePress} activeOpacity={0.7}>
+                {avatar_url ? (
+                    <Image source={{ uri: avatar_url }} style={styles.avatar} />
+                ) : (
+                    <View style={[
+                        styles.avatar, 
+                        { backgroundColor: isAdmin ? '#F3E8FF' : isTeacher ? '#E0F2FE' : '#F1F5F9' }
+                    ]}>
+                        <Ionicons 
+                            name={isAdmin ? "shield-checkmark" : isTeacher ? "school" : "person"} 
+                            size={22} 
+                            color={isAdmin ? "#7C3AED" : isTeacher ? "#0284C7" : "#64748B"} 
+                        />
+                    </View>
+                )}
+                <View style={styles.content}>
+                    <Text style={styles.name} numberOfLines={1}>{name}</Text>
+                    <View style={styles.metaRow}>
+                        {isStudent && grade ? (
+                            <View style={styles.gradeBadge}>
+                                <Ionicons name="school-outline" size={12} color="#4338CA" style={{ marginRight: 3 }} />
+                                <Text style={styles.gradeBadgeText}>{grade}</Text>
+                            </View>
+                        ) : null}
                         <View style={[
                             styles.roleBadge, 
-                            { 
-                                backgroundColor: isAdmin 
-                                    ? '#F3E8FF' 
-                                    : isTeacher 
-                                        ? '#E0F2FE' 
-                                        : '#F1F5F9' 
-                            }
+                            isAdmin ? styles.roleBadgeAdmin : isTeacher ? styles.roleBadgeTeacher : styles.roleBadgeStudent
                         ]}>
                             <Text style={[
-                                styles.roleText, 
-                                { 
-                                    color: isAdmin 
-                                        ? '#7C3AED' 
-                                        : isTeacher 
-                                            ? '#0369A1' 
-                                            : '#64748B' 
-                                }
+                                styles.roleBadgeText, 
+                                isAdmin ? styles.roleTextAdmin : isTeacher ? styles.roleTextTeacher : styles.roleTextStudent
                             ]}>
-                                {role || 'student'}
+                                {roleLabel}
                             </Text>
                         </View>
+                    </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+            </TouchableOpacity>
+        );
+    }
+
+    return (
+        <TouchableOpacity style={styles.itemContainer} onPress={handlePress} activeOpacity={0.7}>
+            {avatar_url ? (
+                <Image source={{ uri: avatar_url }} style={styles.avatar} />
+            ) : (
+                <View style={[
+                    styles.avatar, 
+                    { backgroundColor: isAdmin ? '#7C3AED' : isTeacher ? '#0284C7' : Colors.light.primary }
+                ]}>
+                    <Ionicons 
+                        name={isAdmin ? "shield-checkmark" : isTeacher ? "school" : "person"} 
+                        size={22} 
+                        color="#FFF" 
+                    />
+                </View>
+            )}
+            <View style={styles.content}>
+                <View style={styles.headerRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, flex: 1, marginRight: 8 }}>
+                        <Text style={styles.name} numberOfLines={1}>{name}</Text>
+                        {chat_type !== 'group' && (
+                            <View style={[
+                                styles.roleBadge, 
+                                isAdmin ? styles.roleBadgeAdmin : isTeacher ? styles.roleBadgeTeacher : styles.roleBadgeStudent
+                            ]}>
+                                <Text style={[
+                                    styles.roleBadgeText, 
+                                    isAdmin ? styles.roleTextAdmin : isTeacher ? styles.roleTextTeacher : styles.roleTextStudent
+                                ]}>
+                                    {roleLabel}
+                                </Text>
+                            </View>
+                        )}
                     </View>
                     {time && <Text style={styles.time}>{time}</Text>}
                 </View>
                 <Text style={[styles.message, unread && styles.unreadMessage]} numberOfLines={1}>
-                    {isNew ? (
-                        email ? `${email}` : (username ? `@${username}` : "Start a new conversation")
-                    ) : (
-                        message || (role === 'image' ? 'Sent a photo' : 'Sent a file')
-                    )}
+                    {message || (role === 'image' ? 'Sent a photo' : 'Sent a file')}
                 </Text>
             </View>
             {unread && <View style={styles.unreadDot} />}
-            {isNew && <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />}
         </TouchableOpacity>
     );
 };
@@ -85,8 +140,28 @@ export default function MessagesScreen() {
     const [searchQuery, setSearchQuery] = useState("");
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const { data: chats = [], isLoading: isChatsLoading, refetch: refetchChats } = useChatListQuery();
-    const { data: profiles = [], isLoading: isProfilesLoading } = useSearchableProfilesQuery();
+    const { data: profiles = [], isLoading: isProfilesLoading, refetch: refetchProfiles } = useSearchableProfilesQuery();
     const router = useRouter();
+    const queryClient = useQueryClient();
+
+    const [refreshing, setRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await Promise.all([refetchChats(), refetchProfiles(), queryClient.invalidateQueries({ queryKey: ['unread-messages-count'] })]);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            refetchChats();
+            refetchProfiles();
+            queryClient.invalidateQueries({ queryKey: ['unread-messages-count'] });
+        }, [refetchChats, refetchProfiles, queryClient])
+    );
 
     const formatTime = (dateString?: string) => {
         if (!dateString) return "";
@@ -128,66 +203,37 @@ export default function MessagesScreen() {
         };
     }, [refetchChats]);
 
-    const query = searchQuery.trim().toLowerCase();
-
     // Deduplicate & Filter Chats
-    const seenChatIds = new Set<string>();
-    const seenChatNames = new Set<string>();
+    const seenChatPartnerIds = new Set<string>();
     const filteredChats: any[] = [];
 
     if (Array.isArray(chats)) {
         for (const chat of chats) {
             if (!chat) continue;
             const partnerId = String(chat.partner_id || chat.id || '');
-            const partnerName = String(chat.partner_name || '').toLowerCase().trim();
-            
-            if (partnerId && seenChatIds.has(partnerId)) continue;
-            if (partnerName && seenChatNames.has(partnerName)) continue;
-            
-            if (partnerId) seenChatIds.add(partnerId);
-            if (partnerName) seenChatNames.add(partnerName);
+            if (partnerId && seenChatPartnerIds.has(partnerId)) continue;
+            if (partnerId) seenChatPartnerIds.add(partnerId);
 
-            const matchesQuery = !query || 
-                partnerName.includes(query) ||
-                String(chat.content || chat.message_text || '').toLowerCase().includes(query) ||
-                String(chat.partner_role || '').toLowerCase().includes(query);
-
-            if (matchesQuery) {
+            if (matchesSearchQuery(chat, searchQuery)) {
                 filteredChats.push(chat);
             }
         }
     }
 
-    // Deduplicate & Filter Suggested Profiles (search by Name, Email, Username, Role)
-    const seenSuggestedIds = new Set<string>(seenChatIds);
-    const seenSuggestedBaseKeys = new Set<string>();
+    // Filter Suggested Profiles (search by Name, Email, Username, Role)
+    // Preserves all unique accounts without dropping users with identical names
+    const seenProfileIds = new Set<string>(seenChatPartnerIds);
     const otherProfiles: any[] = [];
 
     if (Array.isArray(profiles)) {
         for (const profile of profiles) {
             if (!profile || !profile.id) continue;
             const profId = String(profile.id);
-            const profName = String(profile.full_name || '').toLowerCase().trim();
-            const profBaseName = String(profile.base_name || `${profile.first_name || ''} ${profile.last_name || ''}`).toLowerCase().trim();
-            const profEmail = String(profile.email || '').toLowerCase().trim();
-            const profUsername = String(profile.username || '').toLowerCase().trim();
-            const profRole = String(profile.role || '').toLowerCase().trim();
-            const baseRoleKey = `${profBaseName || profName}_${profRole}`;
 
-            if (seenSuggestedIds.has(profId)) continue;
-            if (profBaseName && seenSuggestedBaseKeys.has(baseRoleKey)) continue;
+            if (seenProfileIds.has(profId)) continue;
+            seenProfileIds.add(profId);
 
-            seenSuggestedIds.add(profId);
-            if (profBaseName) seenSuggestedBaseKeys.add(baseRoleKey);
-
-            const matchesQuery = !query || 
-                profName.includes(query) || 
-                profBaseName.includes(query) || 
-                profEmail.includes(query) || 
-                profUsername.includes(query) || 
-                profRole.includes(query);
-
-            if (matchesQuery) {
+            if (matchesSearchQuery(profile, searchQuery)) {
                 otherProfiles.push(profile);
             }
         }
@@ -200,9 +246,14 @@ export default function MessagesScreen() {
         filteredChats.forEach(chat => listData.push({ type: 'chat', ...chat }));
     }
 
-    const showSuggested = isSearchFocused || searchQuery.trim().length > 0;
+    const showSuggested = isSearchFocused || searchQuery.trim().length > 0 || filteredChats.length === 0;
     if (showSuggested && otherProfiles.length > 0) {
-        listData.push({ type: 'header', title: searchQuery ? 'People & Accounts' : 'Suggested' });
+        listData.push({ 
+            type: 'header', 
+            title: searchQuery 
+                ? 'People & Accounts' 
+                : (filteredChats.length === 0 ? 'Suggested Contacts (Admins & Teachers)' : 'Suggested Contacts') 
+        });
         otherProfiles.forEach(profile => listData.push({ type: 'profile', ...profile }));
     }
 
@@ -223,7 +274,7 @@ export default function MessagesScreen() {
                     <Ionicons name="search" size={20} color="#94A3B8" />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search name, email, role (teacher/admin)..."
+                        placeholder="Search by name, grade level, role..."
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholderTextColor="#94A3B8"
@@ -243,7 +294,7 @@ export default function MessagesScreen() {
                 keyExtractor={(item, index) => item.type + (item.id || item.partner_id || index)}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
-                    <RefreshControl refreshing={isChatsLoading} onRefresh={refetchChats} colors={[Colors.light.primary]} />
+                    <RefreshControl refreshing={refreshing || isChatsLoading} onRefresh={handleRefresh} colors={[Colors.light.primary]} />
                 }
                 renderItem={({ item }) => {
                     if (item.type === 'header') {
@@ -252,13 +303,15 @@ export default function MessagesScreen() {
                     if (item.type === 'chat') {
                         return (
                             <ChatItem
-                                id={item.partner_id}
-                                name={item.partner_name}
+                                id={item.partner_id || item.id}
+                                name={item.partner_name || item.name}
                                 message={item.content || item.message_text}
                                 time={formatTime(item.created_at)}
-                                unread={item.unread_count > 0}
-                                role={item.partner_role || item.file_type}
+                                unread={Boolean(item.unread || (item.unread_count && item.unread_count > 0))}
+                                unread_count={item.unread_count}
+                                role={item.partner_role || item.role || item.file_type}
                                 chat_type={item.chat_type}
+                                avatar_url={item.avatar_url}
                             />
                         );
                     }
@@ -269,6 +322,10 @@ export default function MessagesScreen() {
                             email={item.email}
                             username={item.username}
                             role={item.role}
+                            role_label={item.role_label}
+                            grade_level={item.grade_level}
+                            year_level={item.year_level}
+                            avatar_url={item.avatar_url}
                             isNew={true}
                         />
                     );
@@ -277,7 +334,7 @@ export default function MessagesScreen() {
                     <View style={styles.emptyContainer}>
                         <Ionicons name="chatbubbles-outline" size={64} color="#CBD5E1" />
                         <Text style={styles.emptyText}>
-                            {searchQuery ? "No matching users or emails found." : "No conversations yet."}
+                            {searchQuery ? "No matching users, teachers, or admins found." : "No conversations yet."}
                         </Text>
                     </View>
                 )}
@@ -366,15 +423,58 @@ const styles = StyleSheet.create({
         fontWeight: "600",
         color: Colors.light.text,
     },
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 4,
+    },
+    gradeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#EEF2FF',
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#E0E7FF',
+    },
+    gradeBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#4338CA',
+    },
     roleBadge: {
         paddingHorizontal: 7,
         paddingVertical: 2,
         borderRadius: 6,
+        borderWidth: 1,
     },
-    roleText: {
-        fontSize: 10,
-        fontWeight: "bold",
-        textTransform: "capitalize",
+    roleBadgeAdmin: {
+        backgroundColor: '#F3E8FF',
+        borderColor: '#E9D5FF',
+    },
+    roleBadgeTeacher: {
+        backgroundColor: '#E0F2FE',
+        borderColor: '#BAE6FD',
+    },
+    roleBadgeStudent: {
+        backgroundColor: '#F1F5F9',
+        borderColor: '#E2E8F0',
+    },
+    roleBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    roleTextAdmin: {
+        color: '#7C3AED',
+    },
+    roleTextTeacher: {
+        color: '#0369A1',
+    },
+    roleTextStudent: {
+        color: '#475569',
     },
     time: {
         fontSize: 12,

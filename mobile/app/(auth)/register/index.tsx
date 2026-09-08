@@ -62,11 +62,23 @@ export default function RegisterScreen() {
         if (!lastName.trim()) errors.push("Last name is required.");
         if (!gradeLevel) errors.push("Please select a grade level.");
         
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email.trim()) {
+        const trimmedEmail = email.trim();
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+        if (!trimmedEmail) {
             errors.push("Email is required.");
-        } else if (!emailRegex.test(email.trim())) {
+        } else if (!emailRegex.test(trimmedEmail)) {
             errors.push("Please enter a valid email address.");
+        } else {
+            const domain = trimmedEmail.split("@")[1]?.toLowerCase();
+            const localPart = trimmedEmail.split("@")[0];
+            if (!domain || !domain.includes(".") || domain.endsWith(".") || domain.startsWith(".")) {
+                errors.push("Please enter a valid email domain (e.g. gmail.com).");
+            } else if (domain === "gmail.com") {
+                const cleanUser = localPart.replace(/\./g, "");
+                if (cleanUser.length < 6 || cleanUser.length > 30) {
+                    errors.push("Gmail usernames must be between 6 and 30 characters.");
+                }
+            }
         }
         
         if (!pwValidation.valid) errors.push(...pwValidation.errors);

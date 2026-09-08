@@ -10,6 +10,7 @@ import {
     StyleSheet,
     ScrollView,
     Alert,
+    BackHandler,
 } from "react-native";
 import { useRouter, Href } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,9 +44,26 @@ export default function SecureAccountScreen() {
                 router.replace("/login" as Href);
                 return;
             }
+
+            // If user has already finished account security setup, forward to dashboard
+            const { data: profile } = await supabase
+                .from("profiles")
+                .select("must_change_password")
+                .eq("id", user.id)
+                .maybeSingle();
+
+            if (profile && !profile.must_change_password) {
+                router.replace("/(tabs)/home" as Href);
+                return;
+            }
+
             setUser(user);
         };
         checkUser();
+
+        // Lock navigation on Android hardware back button
+        const backHandler = BackHandler.addEventListener("hardwareBackPress", () => true);
+        return () => backHandler.remove();
     }, []);
 
     // OTP timer countdown effect
@@ -59,13 +77,51 @@ export default function SecureAccountScreen() {
         return () => clearInterval(interval);
     }, [needsOtp, timer]);
 
+    const [emailTouched, setEmailTouched] = useState(false);
+    const [emailServerError, setEmailServerError] = useState("");
+
     // Password requirements checks
     const isMinLength = newPassword.length >= 8;
     const hasLetterAndNumber = /[a-zA-Z]/.test(newPassword) && /[0-9]/.test(newPassword);
     const isPasswordValid = isMinLength && hasLetterAndNumber;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const isEmailValid = emailRegex.test(personalEmail.trim());
+    const validateEmailRealness = (emailStr: string): boolean => {
+        const trimmed = emailStr.trim().toLowerCase();
+        if (!trimmed) return false;
+        
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+        if (!emailRegex.test(trimmed)) return false;
+
+        const parts = trimmed.split("@");
+        if (parts.length !== 2) return false;
+        const [username, domain] = parts;
+
+        if (!domain.includes(".") || domain.startsWith(".") || domain.endsWith(".")) return false;
+        const tld = domain.split(".").pop();
+        if (!tld || tld.length < 2) return false;
+
+        const fakeDomains = [
+            "mailinator.com", "tempmail.com", "guerrillamail.com", "trashmail.com",
+            "fake.com", "test.com", "example.com", "temp-mail.org", "yopmail.com",
+            "10minutemail.com", "sharklasers.com", "throwawaymail.com", "dispostable.com"
+        ];
+        if (fakeDomains.includes(domain)) return false;
+
+        if (domain === "gmail.com") {
+            const cleanUser = username.replace(/\./g, "");
+            if (cleanUser.length < 6 || cleanUser.length > 30) return false;
+        }
+
+        return true;
+    };
+
+    const isEmailValid = validateEmailRealness(personalEmail);
+    const isEmailFormatPotentiallyFinished = personalEmail.includes("@") && personalEmail.indexOf("@") < personalEmail.lastIndexOf(".");
+    const showEmailNotReal = Boolean(
+        emailServerError ||
+        (personalEmail.length > 0 && (emailTouched || isEmailFormatPotentiallyFinished) && !isEmailValid)
+    );
+
     const showConfirmPasswordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
     const isFormValid = currentPassword.length > 0 &&
                         isEmailValid &&
@@ -74,15 +130,17 @@ export default function SecureAccountScreen() {
                         newPassword === confirmPassword;
 
     const handlePasswordChange = async () => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const trimmedEmail = personalEmail.trim().toLowerCase();
 
-        if (!currentPassword || !personalEmail || !newPassword || !confirmPassword) {
+        if (!currentPassword || !trimmedEmail || !newPassword || !confirmPassword) {
             Alert.alert("Error", "Please fill in all fields.");
             return;
         }
 
-        if (!emailRegex.test(personalEmail.trim())) {
-            Alert.alert("Error", "Please enter a valid personal email address.");
+        if (!validateEmailRealness(trimmedEmail)) {
+            setEmailTouched(true);
+            setEmailServerError("Not a real email");
+            Alert.alert("Invalid Email", "Please enter a real, valid personal email address.");
             return;
         }
 
@@ -115,29 +173,80 @@ export default function SecureAccountScreen() {
                 return;
             }
 
-            // 2. Update password and email in Supabase Auth securely using admin client to instantly align emails
+            // 2. Generate 4-digit OTP code
+            const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+            const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+
+            // 3. Verify real email and deliver the OTP via backend service first!
+            const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+            if (!backendUrl) {
+                Alert.alert("Error", "Backend server connection URL is not configured. Please contact administrator.");
+                setIsLoading(false);
+                return;
+            }
+
+            const otpResponse = await fetch(`${backendUrl}/auth/send-secure-otp`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email: trimmedEmail,
+                    otp: otpCode
+                })
+            });
+
+            const otpData = await otpResponse.json().catch(() => ({}));
+            if (!otpResponse.ok || !otpData.success) {
+                setEmailServerError("Not a real email");
+                Alert.alert(
+                    "Invalid Email",
+                    otpData.error || "The email address could not receive the verification code. Please make sure you entered a real, active email address."
+                );
+                setIsLoading(false);
+                return;
+            }
+
+            // 4. Update password and email in Supabase Auth securely using admin client
             const supabaseAdmin = createClient(
                 "https://pyeckxqaowusxcmeuolk.supabase.co",
                 "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5ZWNreHFhb3d1c3hjbWV1b2xrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzY1MzQ0MiwiZXhwIjoyMDg5MjI5NDQyfQ.cDPqfbnsriANJ1pGSnkdmsw5BWUuHxQP5_Fxv2Sdrbg",
                 { auth: { persistSession: false, autoRefreshToken: false } }
             );
 
+            // Check if an orphaned auth account exists with this email (e.g. deleted from profiles table)
+            const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+            if (listData?.users) {
+                const existingAuthUser = listData.users.find(
+                    u => u.email?.toLowerCase() === trimmedEmail && u.id !== user.id
+                );
+                if (existingAuthUser) {
+                    const { data: existingProfile } = await supabaseAdmin
+                        .from("profiles")
+                        .select("id")
+                        .eq("id", existingAuthUser.id)
+                        .maybeSingle();
+
+                    if (!existingProfile) {
+                        // Orphaned auth record without a profile in the database — delete it so the user can claim their email
+                        await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
+                    } else {
+                        throw new Error("This email is already in use by another active account.");
+                    }
+                }
+            }
+
             const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
                 user.id,
-                { email: personalEmail.trim().toLowerCase(), password: newPassword, email_confirm: true }
+                { email: trimmedEmail, password: newPassword, email_confirm: true }
             );
 
             if (updateAuthError) throw updateAuthError;
 
-            // 3. Generate 4-digit OTP code and store it in text columns (phone for code, avatar_url for expiry)
-            const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
-            const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
-
+            // 5. Store OTP code and expiry in profiles table
             const { error: profileError } = await supabase
                 .from("profiles")
                 .update({ 
                     must_change_password: false,
-                    email: personalEmail.trim().toLowerCase(),
+                    email: trimmedEmail,
                     phone: otpCode,
                     avatar_url: expiry
                 })
@@ -145,32 +254,20 @@ export default function SecureAccountScreen() {
 
             if (profileError) throw profileError;
 
-            // Trigger the backend to send the OTP email!
-            const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
-            if (backendUrl) {
-                await fetch(`${backendUrl}/auth/send-secure-otp`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        email: personalEmail.trim().toLowerCase(),
-                        otp: otpCode
-                    })
-                }).catch((e) => {
-                    console.error("Failed to send OTP email via backend:", e);
-                    Alert.alert("Network Error", `Failed to connect to the backend server at:\n${backendUrl}\n\nPlease check if your Expo packager has been restarted to apply the new URL.`);
-                });
-            }
-
+            // 6. Transition to OTP screen
             setGeneratedOtp(otpCode);
             setOtp("");
             setTimer(59);
             setNeedsOtp(true);
-            Alert.alert("OTP Verification", "Please enter the OTP code to verify your account.\n\nFor testing/development, your OTP is: " + otpCode);
+            Alert.alert(
+                "Verification Code Sent",
+                `A 4-digit verification code has been sent to ${trimmedEmail}.\n\nPlease check your inbox (or spam folder) to complete your account setup.`
+            );
         } catch (err: any) {
             console.error("Forced password change error:", err);
             let errorMessage = err.message || "An error occurred while setting your password.";
             if (errorMessage === "Error updating user" || errorMessage.toLowerCase().includes("email already exists")) {
-                errorMessage = "Please Use Different Email";
+                errorMessage = "This email is already in use. Please use a different email address.";
             }
             Alert.alert("Error", errorMessage);
         } finally {
@@ -181,8 +278,27 @@ export default function SecureAccountScreen() {
     const handleResendOtp = async () => {
         setIsLoading(true);
         try {
+            const trimmedEmail = personalEmail.trim().toLowerCase();
             const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
             const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+            const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
+            if (backendUrl) {
+                const res = await fetch(`${backendUrl}/auth/send-secure-otp`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        email: trimmedEmail,
+                        otp: otpCode
+                    })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    Alert.alert("Send Error", data.error || "Failed to resend verification code. Please ensure the email is real and reachable.");
+                    setIsLoading(false);
+                    return;
+                }
+            }
 
             // Update profile with the new OTP code
             const { error: profileError } = await supabase
@@ -195,26 +311,10 @@ export default function SecureAccountScreen() {
 
             if (profileError) throw profileError;
 
-            // Trigger the backend to send the OTP email!
-            const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
-            if (backendUrl) {
-                await fetch(`${backendUrl}/auth/send-secure-otp`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        email: personalEmail.trim().toLowerCase(),
-                        otp: otpCode
-                    })
-                }).catch((e) => {
-                    console.error("Failed to send OTP email via backend:", e);
-                    Alert.alert("Network Error", `Failed to connect to the backend server at:\n${backendUrl}\n\nPlease check if your Expo packager has been restarted to apply the new URL.`);
-                });
-            }
-
             setGeneratedOtp(otpCode);
             setOtp("");
             setTimer(59);
-            Alert.alert("OTP Verification", "A new OTP code has been sent.\n\nFor testing/development, your OTP is: " + otpCode);
+            Alert.alert("Verification Code Sent", `A new 4-digit verification code has been sent to ${trimmedEmail}.`);
         } catch (err: any) {
             console.error("Resend OTP error:", err);
             Alert.alert("Error", "Failed to resend verification OTP. Please try again.");
@@ -430,22 +530,32 @@ export default function SecureAccountScreen() {
 
                         {/* Personal Email Address */}
                         <Text style={styles.inputLabel}>Personal Email Address</Text>
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.icon} />
+                        <View style={[styles.inputContainer, showEmailNotReal && { borderColor: "#EF4444", borderWidth: 1.5 }]}>
+                            <Ionicons name="mail-outline" size={20} color={showEmailNotReal ? "#EF4444" : "#94A3B8"} style={styles.icon} />
                             <TextInput
                                 style={styles.input}
                                 placeholder="name@gmail.com"
                                 placeholderTextColor="#94A3B8"
                                 value={personalEmail}
-                                onChangeText={(text) => setPersonalEmail(text.slice(0, 30))}
-                                maxLength={30}
+                                onChangeText={(text) => {
+                                    setPersonalEmail(text.slice(0, 40));
+                                    if (emailServerError) setEmailServerError("");
+                                }}
+                                onBlur={() => setEmailTouched(true)}
+                                maxLength={40}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                             />
                         </View>
-                        <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: -12, marginBottom: 16, marginLeft: 4 }}>
-                            This email will be used for password resets.
-                        </Text>
+                        {showEmailNotReal ? (
+                            <Text style={{ fontSize: 11, color: "#EF4444", marginTop: -12, marginBottom: 16, marginLeft: 4, fontWeight: "600" }}>
+                                Not a real email
+                            </Text>
+                        ) : (
+                            <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: -12, marginBottom: 16, marginLeft: 4 }}>
+                                This email will be used for password resets.
+                            </Text>
+                        )}
 
                         {/* New Password */}
                         <Text style={styles.inputLabel}>New Password</Text>
@@ -721,7 +831,7 @@ const styles = StyleSheet.create({
     },
     otpDigit: {
         fontSize: 22,
-        fontWeight: "750",
+        fontWeight: "700",
         color: "#0F172A",
     },
     hiddenInput: {

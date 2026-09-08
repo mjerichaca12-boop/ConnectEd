@@ -44,7 +44,7 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
                 <View style={styles.attachmentsRow}>
                     {attachments.map((att, idx) => (
                         <View key={idx} style={styles.attachmentPill}>
-                            <Ionicons name={"paper-clip" as any} size={14} color={Colors.light.primary} />
+                            <Ionicons name="attach-outline" size={14} color={Colors.light.primary} />
                             <Text style={styles.attachmentText} numberOfLines={1}>
                                 {att.file_name || "Attached File"}
                             </Text>

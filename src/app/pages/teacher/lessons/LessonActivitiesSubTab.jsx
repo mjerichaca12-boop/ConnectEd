@@ -92,14 +92,24 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
   const confirmDelete = async () => {
     if (!itemToDelete) return;
     try {
-      // 1. Delete from lesson_activities first
-      const { error: linkError } = await supabase.from("lesson_activities").delete().eq("id", itemToDelete.id);
-      if (linkError) throw linkError;
+      const actId = itemToDelete.activity_id || itemToDelete.id;
 
-      // 2. Delete the actual quiz or assignment
+      // 1. Delete from child tables first to avoid foreign key errors
+      await supabase.from("lesson_activities").delete().eq("id", itemToDelete.id);
+      await supabase.from("lesson_activities").delete().eq("activity_id", actId);
+      await supabase.from("quiz_questions").delete().eq("quiz_id", actId);
+      await supabase.from("quiz_attempts").delete().eq("quiz_id", actId);
+      await supabase.from("teacher_assessment_grades").delete().eq("assessment_id", actId);
+      await supabase.from("teacher_assessment_submissions").delete().eq("assessment_id", actId);
+
+      // 2. Delete the actual quiz or assignment across candidate tables
       let table = itemToDelete.activity_type === 'Quiz' ? 'quizzes' : 'assignments';
-      const { error } = await supabase.from(table).delete().eq("id", itemToDelete.activity_id);
-      if (error) throw error;
+      await Promise.allSettled([
+        supabase.from(table).delete().eq("id", actId),
+        supabase.from("assignments").delete().eq("id", actId),
+        supabase.from("quizzes").delete().eq("id", actId),
+        supabase.from("assignments_activity").delete().eq("id", actId),
+      ]);
       
       toast.success(`${itemToDelete.activity_type === "Assessment" ? "Seatwork" : itemToDelete.activity_type} deleted successfully`);
       loadActivities();

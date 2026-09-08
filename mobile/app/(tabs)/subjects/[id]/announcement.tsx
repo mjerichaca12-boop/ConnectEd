@@ -17,16 +17,15 @@ export default function SubjectAnnouncements() {
     const { id: localId } = useLocalSearchParams();
     const router = useRouter();
     
-    // Robust ID extraction from params or route segments
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // Robust ID extraction from params or route segments: strictly ensure valid UUID
     const subjectId = (() => {
-        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
-        if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (localId && typeof localId === 'string' && uuidRegex.test(localId)) return localId;
         const segList = segments as string[];
         const found = segList.find(s => uuidRegex.test(s));
         if (found) return found;
-        if (segList[2] && segList[2] !== '[id]') return segList[2];
-        return localId as string;
+        if (globalId && typeof globalId === 'string' && uuidRegex.test(globalId)) return globalId;
+        return undefined;
     })();
 
     const { data: announcements = [], isLoading } = useAnnouncementsQuery({ subjectId });

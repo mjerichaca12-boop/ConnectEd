@@ -54,6 +54,8 @@ const emptyTeacherForm = {
   first_name: "",
   middle_name: "",
   last_name: "",
+  suffix: "",
+  employee_id: "",
   email: "",
   phone: "",
   grade_level: "",
@@ -134,14 +136,26 @@ function TeacherManagement() {
 
   const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
-  const composeTeacherName = (formData) => [formData.first_name, formData.middle_name, formData.last_name].map((value) => value.trim()).filter(Boolean).join(" ");
+  const composeTeacherName = (formData) => {
+    const base = [formData.first_name, formData.middle_name, formData.last_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+    const suffix = String(formData.suffix ?? formData.name_extension ?? "").trim();
+    if (suffix && !base.toLowerCase().endsWith(suffix.toLowerCase())) {
+      return `${base} ${suffix}`.trim();
+    }
+    return base;
+  };
   const formatTeacherFullName = (teacher) => {
     if (!teacher) return "Unknown teacher";
 
     const firstName = String(teacher.first_name ?? "").trim();
     const middleName = String(teacher.middle_name ?? "").trim();
     const lastName = String(teacher.last_name ?? "").trim();
-    const combined = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+    const suffix = String(teacher.suffix ?? teacher.name_extension ?? "").trim();
+    let combined = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+
+    if (suffix && !combined.toLowerCase().endsWith(suffix.toLowerCase())) {
+      combined = `${combined} ${suffix}`.trim();
+    }
 
     if (combined) return combined;
 
@@ -568,11 +582,21 @@ function TeacherManagement() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await db
+    let teacherRes = await db
       .from("profiles")
-      .select(teacherSelectColumns)
+      .select(`${teacherSelectColumns}, suffix, employee_id`)
       .eq("role", "teacher")
       .order("created_at", { ascending: false });
+
+    if (teacherRes.error && (teacherRes.error.code === "42703" || teacherRes.error.message?.includes("suffix") || teacherRes.error.message?.includes("does not exist"))) {
+      teacherRes = await db
+        .from("profiles")
+        .select(teacherSelectColumns)
+        .eq("role", "teacher")
+        .order("created_at", { ascending: false });
+    }
+
+    const { data, error } = teacherRes;
 
     if (error) {
       throw new Error(error.message);
@@ -719,10 +743,21 @@ function TeacherManagement() {
 
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
-    const [teachersRes, subjectsRes] = await Promise.all([
-      db.from("profiles").select(teacherSelectColumns).eq("role", "teacher").order("created_at", { ascending: false }),
-      db.from("subjects").select("*").order("code", { ascending: true })
-    ]);
+    let teachersRes = await db
+      .from("profiles")
+      .select(`${teacherSelectColumns}, suffix, employee_id`)
+      .eq("role", "teacher")
+      .order("created_at", { ascending: false });
+
+    if (teachersRes.error && (teachersRes.error.code === "42703" || teachersRes.error.message?.includes("suffix") || teachersRes.error.message?.includes("does not exist"))) {
+      teachersRes = await db
+        .from("profiles")
+        .select(teacherSelectColumns)
+        .eq("role", "teacher")
+        .order("created_at", { ascending: false });
+    }
+
+    const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
 
     if (teachersRes.error) throw new Error(teachersRes.error.message);
 
@@ -854,7 +889,26 @@ function TeacherManagement() {
 
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
-    const { first_name, middle_name, last_name } = splitTeacherName(formatTeacherFullName(teacher));
+    let first_name = teacher.first_name || "";
+    let middle_name = teacher.middle_name || "";
+    let last_name = teacher.last_name || "";
+    let suffix = teacher.suffix || teacher.name_extension || "";
+
+    if (!first_name && !last_name) {
+      const split = splitTeacherName(formatTeacherFullName(teacher));
+      first_name = split.first_name;
+      middle_name = split.middle_name;
+      last_name = split.last_name;
+    }
+
+    if (!suffix && last_name) {
+      const suffixMatch = last_name.match(/,\s*(Jr\.?|Sr\.?|II|III|IV|V)$/i) || last_name.match(/\s+(Jr\.?|Sr\.?|II|III|IV|V)$/i);
+      if (suffixMatch) {
+        suffix = suffixMatch[1];
+        last_name = last_name.replace(suffixMatch[0], "").trim();
+      }
+    }
+
     const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
     const initialSubjects = normalizeSubjects(teacher.subjects).filter((subjId) =>
       validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase())
@@ -864,9 +918,11 @@ function TeacherManagement() {
       first_name,
       middle_name,
       last_name,
+      suffix,
+      employee_id: teacher.employee_id || teacher.lrn || "",
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
-      grade_level: teacher.grade_level ?? "",
+      grade_level: teacher.grade_level || teacher.year_level || "",
       subjects: initialSubjects,
       status: teacher.status ?? "Active"
     });
@@ -1049,6 +1105,8 @@ function TeacherManagement() {
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
         last_name: teacherFormData.last_name.trim() || null,
+        suffix: teacherFormData.suffix?.trim() || null,
+        employee_id: teacherFormData.employee_id?.trim() || null,
         email: tempEmail,
         username: username,
         phone: normalizePhone(teacherFormData.phone),
@@ -1145,6 +1203,8 @@ function TeacherManagement() {
         first_name: editFormData.first_name.trim(),
         middle_name: editFormData.middle_name.trim() || null,
         last_name: editFormData.last_name.trim() || null,
+        suffix: editFormData.suffix?.trim() || null,
+        employee_id: editFormData.employee_id?.trim() || null,
         email: editFormData.email.trim().toLowerCase(),
         phone: normalizePhone(editFormData.phone),
         status: normalizeTeacherStatus(editFormData.status),
@@ -1773,6 +1833,7 @@ function TeacherManagement() {
             <div className="p-6">
               <form onSubmit={handleAddTeacher}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Row 1: First Name & Middle Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                     <input
@@ -1785,6 +1846,19 @@ function TeacherManagement() {
                     {formErrors.first_name && <p className="text-red-500 text-sm mt-1">{formErrors.first_name}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                    <input
+                      type="text"
+                      value={teacherFormData.middle_name}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "middle_name", e.target.value)}
+                      placeholder="Enter middle name, if any"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
+                  </div>
+
+                  {/* Row 2: Last Name & Name Extension / Suffix */}
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
                       type="text"
@@ -1795,16 +1869,27 @@ function TeacherManagement() {
                     />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={teacherFormData.middle_name}
-                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "middle_name", e.target.value)}
-                      placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                      value={teacherFormData.suffix || ""}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "suffix", e.target.value)}
+                      placeholder="e.g. Jr., Sr., II, III"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
-                    {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
+                  </div>
+
+                  {/* Row 3: Identification / Employee ID & Phone */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
+                    <input
+                      type="text"
+                      value={teacherFormData.employee_id || ""}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "employee_id", e.target.value)}
+                      placeholder="Enter employee ID or identification"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -1819,6 +1904,8 @@ function TeacherManagement() {
                     />
                     {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
                   </div>
+
+                  {/* Row 4: Grade Level & Status */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
                     <CustomSelect
@@ -1882,6 +1969,7 @@ function TeacherManagement() {
             <div className="p-6">
               <form onSubmit={handleUpdateTeacher}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Row 1: First Name & Middle Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                     <input
@@ -1894,6 +1982,19 @@ function TeacherManagement() {
                     {editFormErrors.first_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.first_name}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.middle_name}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "middle_name", e.target.value)}
+                      placeholder="Enter middle name, if any"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
+                  </div>
+
+                  {/* Row 2: Last Name & Name Extension / Suffix */}
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
                       type="text"
@@ -1904,16 +2005,27 @@ function TeacherManagement() {
                     />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={editFormData.middle_name}
-                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "middle_name", e.target.value)}
-                      placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                      value={editFormData.suffix || ""}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "suffix", e.target.value)}
+                      placeholder="e.g. Jr., Sr., II, III"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
-                    {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
+                  </div>
+
+                  {/* Row 3: Identification / Employee ID & Email */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
+                    <input
+                      type="text"
+                      value={editFormData.employee_id || ""}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "employee_id", e.target.value)}
+                      placeholder="Enter employee ID or identification"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -1926,6 +2038,8 @@ function TeacherManagement() {
                     />
                     {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
                   </div>
+
+                  {/* Row 4: Phone & Grade Level */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                     <input
@@ -1955,6 +2069,8 @@ function TeacherManagement() {
                     />
                     {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
+
+                  {/* Row 5: Status */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
@@ -1969,6 +2085,8 @@ function TeacherManagement() {
                     />
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
+
+                  {/* Row 6: Subjects */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subjects</label>
                     <CustomSelect

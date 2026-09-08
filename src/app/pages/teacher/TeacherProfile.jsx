@@ -317,6 +317,12 @@ function TeacherProfile() {
       setProfilePicturePreview(nextProfile.avatarUrl || "");
       setIsEditing(false);
       syncStoredCurrentUser(nextProfile);
+      // Notify same-tab listeners (e.g. TeacherSidebar) of the new avatar
+      window.dispatchEvent(
+        new CustomEvent("avatarUpdated", { detail: { avatarUrl: nextProfile.avatarUrl || "" } })
+      );
+      // Also notify other open tabs via storage event
+      window.dispatchEvent(new Event("storage"));
       if (profileFileInputRef.current) profileFileInputRef.current.value = "";
       if (hasPictureChange && previousAvatarPath) {
         await supabase.storage.from(STORAGE_BUCKET).remove([previousAvatarPath]).catch(console.error);

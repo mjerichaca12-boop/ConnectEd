@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useUnreadMessages } from "../contexts/UnreadMessagesContext";
 import {
@@ -26,14 +26,86 @@ const getStoredCurrentUser = () => {
   }
 };
 
+const readAvatarFromStorage = () => {
+  const u = getStoredCurrentUser();
+  return String(u?.avatarUrl || u?.avatar_url || "").trim();
+};
+
 export function TeacherSidebar({ teacherName, onLogout }) {
   const { unreadCount } = useUnreadMessages();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
-  const storedCurrentUser = getStoredCurrentUser();
-  const avatarUrl = String(storedCurrentUser?.avatarUrl || storedCurrentUser?.avatar_url || "").trim();
 
+  // Reactive avatar state — updated by realtime subscription and same-tab events
+  const [avatarUrl, setAvatarUrl] = useState(() => readAvatarFromStorage());
+  const realtimeChannelRef = useRef(null);
+
+  useEffect(() => {
+    // 1. Listen for same-tab saves from TeacherProfile
+    const handleAvatarUpdated = (e) => {
+      const newUrl = e?.detail?.avatarUrl ?? readAvatarFromStorage();
+      setAvatarUrl(String(newUrl || "").trim());
+    };
+    window.addEventListener("avatarUpdated", handleAvatarUpdated);
+
+    // 2. Listen for cross-tab localStorage changes
+    const handleStorage = (e) => {
+      if (e.key === "currentUser") {
+        setAvatarUrl(readAvatarFromStorage());
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // 3. Supabase realtime subscription on the current user's profile row
+    let channel = null;
+    supabase?.auth?.getUser?.().then(({ data }) => {
+      const userId = data?.user?.id;
+      if (!userId || !supabase) return;
+
+      channel = supabase
+        .channel(`sidebar-profile-${userId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles",
+            filter: `id=eq.${userId}`,
+          },
+          (payload) => {
+            const newAvatarUrl = payload?.new?.avatar_url;
+            if (newAvatarUrl !== undefined) {
+              setAvatarUrl(String(newAvatarUrl || "").trim());
+              // Keep localStorage in sync so other reads stay consistent
+              try {
+                const stored = getStoredCurrentUser();
+                if (stored) {
+                  localStorage.setItem(
+                    "currentUser",
+                    JSON.stringify({ ...stored, avatarUrl: newAvatarUrl || "" })
+                  );
+                }
+              } catch { /* silent */ }
+            }
+          }
+        )
+        .subscribe();
+
+      realtimeChannelRef.current = channel;
+    }).catch(() => {});
+
+    return () => {
+      window.removeEventListener("avatarUpdated", handleAvatarUpdated);
+      window.removeEventListener("storage", handleStorage);
+      if (realtimeChannelRef.current) {
+        supabase?.removeChannel?.(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, []);
+
+  const storedCurrentUser = getStoredCurrentUser();
   const displayName = storedCurrentUser?.first_name && storedCurrentUser?.last_name
     ? `${storedCurrentUser.first_name} ${storedCurrentUser.last_name}`
     : teacherName || "Teacher";

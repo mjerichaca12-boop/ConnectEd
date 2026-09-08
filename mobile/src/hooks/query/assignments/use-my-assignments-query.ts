@@ -8,10 +8,11 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
     const subjectId = filters?.subjectId;
 
     useEffect(() => {
-        const channelName = subjectId ? `assignments-rt-${subjectId}` : 'assignments-rt-global';
+        const channelName = subjectId ? `assignments-rt-${subjectId}-${Date.now()}` : `assignments-rt-global-${Date.now()}`;
 
         const invalidate = () => {
-            queryClient.invalidateQueries({ queryKey: ['my-assignments', subjectId] });
+            queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
+            queryClient.invalidateQueries({ queryKey: ['task-summary'] });
         };
 
         const channel = supabase
@@ -90,7 +91,8 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
     }, [queryClient, subjectId]);
 
     const isSubjectIntent = 'subjectId' in (filters || {});
-    const isSubjectReady = !!(subjectId && subjectId !== 'undefined' && subjectId !== '[id]');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isSubjectReady = !!(subjectId && uuidRegex.test(subjectId));
     const isGlobalIntent = !isSubjectIntent;
     const isEnabled = isGlobalIntent || isSubjectReady;
 
@@ -99,6 +101,9 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
         queryFn: () => getMyAssignments(subjectId),
         enabled: isEnabled,
         refetchOnMount: true,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+        refetchInterval: 3000,
         staleTime: 0,
     });
 }

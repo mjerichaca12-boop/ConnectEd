@@ -5,13 +5,14 @@ import {
     StyleSheet,
     Animated,
     TouchableOpacity,
-    PanResponder,
     Dimensions
 } from "react-native";
 import { useRouter, useSegments, useGlobalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import Colors from "../../constants/Colors";
+import { triggerDeviceNotification } from "../../utils/device-notifications";
+import { formatTeacherName } from "../../utils/name-formatter";
 
 interface ToastData {
     id: string;
@@ -94,13 +95,24 @@ export default function GlobalMessageNotification() {
                     }
 
                     // Fetch sender details
-                    const { data: profile } = await supabase
+                    let profileRes = await supabase
                         .from('profiles')
-                        .select('first_name, last_name, middle_name')
+                        .select('first_name, last_name, middle_name, suffix')
                         .eq('id', msg.sender_id)
                         .maybeSingle();
 
-                    const senderName = profile ? `${profile.first_name || ''} ${profile.middle_name || ''} ${profile.last_name || ''}`.trim().replace(/\s+/g, ' ') : "Someone";
+                    if (profileRes.error && (profileRes.error.code === '42703' || profileRes.error.message?.includes('suffix'))) {
+                        profileRes = await supabase
+                            .from('profiles')
+                            .select('first_name, last_name, middle_name')
+                            .eq('id', msg.sender_id)
+                            .maybeSingle();
+                    }
+
+                    const profile = profileRes.data;
+                    const senderName = profile 
+                        ? (formatTeacherName(profile) || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || "Someone")
+                        : "Someone";
                     let toastTitle = senderName;
                     let chatName = senderName;
 
@@ -127,14 +139,72 @@ export default function GlobalMessageNotification() {
                         }
                     }
 
-                    // Display notification banner
+                    const messageText = msg.content || msg.message_text || "Sent an attachment";
+
+                    // 1. Display in-app floating banner
                     setToast({
                         id: msg.id,
                         title: toastTitle,
-                        message: msg.content || msg.message_text || "Sent an attachment",
+                        message: messageText,
                         partnerId: originId,
                         name: chatName,
                         isRoom: isRoom
+                    });
+
+                    // 2. Trigger native cellphone notification outside the app
+                    triggerDeviceNotification({
+                        title: toastTitle,
+                        body: messageText,
+                        data: {
+                            type: 'chat',
+                            partnerId: originId,
+                            name: chatName,
+                            isRoom: String(isRoom)
+                        }
+                    });
+                }
+            )
+            .subscribe();
+
+        // Also subscribe to new class activities for cellphone OS notifications
+        const activityChannel = supabase
+            .channel('global-activity-device-notifications')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'assignments_activity' },
+                (payload) => {
+                    const act = payload.new;
+                    if (!act) return;
+                    triggerDeviceNotification({
+                        title: `New Activity: ${act.title || 'Class Activity'}`,
+                        body: act.description ? act.description.slice(0, 100) : 'A new class activity has been posted.',
+                        data: { type: 'activity', id: act.id, course_id: act.course_id }
+                    });
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'assignments' },
+                (payload) => {
+                    const act = payload.new;
+                    if (!act) return;
+                    triggerDeviceNotification({
+                        title: `New Assignment: ${act.title || 'Assignment'}`,
+                        body: act.description ? act.description.slice(0, 100) : 'A new assignment has been posted.',
+                        data: { type: 'assignment', id: act.id, course_id: act.course_id }
+                    });
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'quizzes' },
+                (payload) => {
+                    const act = payload.new;
+                    if (!act) return;
+                    triggerDeviceNotification({
+                        title: `New Quiz: ${act.title || 'Quiz'}`,
+                        body: 'A new quiz has been posted.',
+                        data: { type: 'quiz', id: act.id, course_id: act.course_id }
                     });
                 }
             )
@@ -142,6 +212,7 @@ export default function GlobalMessageNotification() {
 
         return () => {
             supabase.removeChannel(channel);
+            supabase.removeChannel(activityChannel);
         };
     }, [currentUserId]);
 

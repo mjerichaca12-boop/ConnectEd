@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { Announcement } from "../../types";
+import { formatTeacherName } from "../../utils/name-formatter";
 
 export interface GetAnnouncementsArgs {
     limit?: number;
@@ -103,17 +104,44 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
             const isValidId = !!(subjectId && uuidRegex.test(subjectId));
 
             if (!isValidId) {
-                console.warn(`[announcements] Invalid or unresolved subjectId provided: ${subjectId}`);
+                console.log(`[announcements] Invalid or unresolved subjectId provided: ${subjectId}`);
                 return [];
             }
 
-            // 1. Retrieve the subject's textual code (e.g. "AP2026") from subjects table using subjectId
-            const { data: subjectRecord } = await supabase
+            // 1. Retrieve the subject's textual code and assigned teacher from subjects table using subjectId
+            let subjectRes = await supabase
                 .from('subjects')
-                .select('code')
+                .select(`
+                    code,
+                    teacher_id,
+                    profiles:teacher_id (
+                        first_name,
+                        last_name,
+                        suffix
+                    )
+                `)
                 .eq('id', subjectId)
                 .single();
+
+            if (subjectRes.error && (subjectRes.error.code === '42703' || subjectRes.error.message?.includes('suffix'))) {
+                subjectRes = await supabase
+                    .from('subjects')
+                    .select(`
+                        code,
+                        teacher_id,
+                        profiles:teacher_id (
+                            first_name,
+                            last_name
+                        )
+                    `)
+                    .eq('id', subjectId)
+                    .single();
+            }
+
+            const subjectRecord = subjectRes.data;
             const subjectCode = subjectRecord?.code;
+            const subjectTeacher = (subjectRecord as any)?.profiles;
+            const subjectTeacherName = formatTeacherName(subjectTeacher) || null;
 
             const announcementsList: any[] = [];
 
@@ -152,7 +180,7 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
                         date: new Date(ann.created_at).toLocaleDateString('en-US', {
                             month: 'short', day: 'numeric', year: 'numeric'
                         }),
-                        author: ann.created_by_name || ann.author || "Teacher",
+                        author: subjectTeacherName || ann.created_by_name || ann.author || "Teacher",
                         author_role: "teacher",
                         type: ann.priority === 'High' ? 'urgent' : 'general',
                         image_url: primaryImage,
@@ -211,7 +239,7 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
                             date: new Date(ann.created_at).toLocaleDateString('en-US', {
                                 month: 'short', day: 'numeric', year: 'numeric'
                             }),
-                            author: ann.author || "Teacher",
+                            author: subjectTeacherName || ann.author || "Teacher",
                             author_role: "teacher",
                             type: ann.type || 'general',
                             image_url: primaryImage,
@@ -273,10 +301,20 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
             console.error('[announcements] Query error for school_announcements:', schoolErr);
         }
 
-        // 2. Fetch class_announcements
+        // 2. Fetch class_announcements with subject teacher profile
         let classQuery = supabase
             .from('class_announcements')
-            .select('*');
+            .select(`
+                *,
+                subjects:class_id (
+                    teacher_id,
+                    profiles:teacher_id (
+                        first_name,
+                        last_name,
+                        suffix
+                    )
+                )
+            `);
 
         if (approvedSubjectIds.length > 0) {
             classQuery = classQuery.in('class_id', approvedSubjectIds);
@@ -284,7 +322,30 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
             classQuery = classQuery.limit(0);
         }
 
-        const { data: classAnn, error: classErr } = await classQuery;
+        let { data: classAnn, error: classErr } = await classQuery;
+
+        if (classErr && (classErr.code === '42703' || classErr.message?.includes('suffix'))) {
+            let fallbackQuery = supabase
+                .from('class_announcements')
+                .select(`
+                    *,
+                    subjects:class_id (
+                        teacher_id,
+                        profiles:teacher_id (
+                            first_name,
+                            last_name
+                        )
+                    )
+                `);
+            if (approvedSubjectIds.length > 0) {
+                fallbackQuery = fallbackQuery.in('class_id', approvedSubjectIds);
+            } else if (isStudent) {
+                fallbackQuery = fallbackQuery.limit(0);
+            }
+            const fallbackRes = await fallbackQuery;
+            classAnn = fallbackRes.data;
+            classErr = fallbackRes.error;
+        }
 
         if (classErr) {
             console.error('[announcements] Query error for class_announcements:', classErr);
@@ -339,6 +400,8 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
                 }
 
                 const firstFile = attachmentsList[0];
+                const subjectTeacher = (ann as any)?.subjects?.profiles;
+                const subjectTeacherName = formatTeacherName(subjectTeacher) || null;
 
                 allAnnouncementsList.push({
                     id: String(ann.id),
@@ -347,7 +410,7 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
                     date: new Date(ann.created_at).toLocaleDateString('en-US', {
                         month: 'short', day: 'numeric', year: 'numeric'
                     }),
-                    author: ann.created_by_name || ann.author || "Teacher",
+                    author: subjectTeacherName || ann.created_by_name || ann.author || "Teacher",
                     author_role: "teacher",
                     type: ann.priority === 'High' ? 'urgent' : 'general',
                     image_url: primaryImage,

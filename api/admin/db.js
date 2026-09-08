@@ -141,7 +141,52 @@ export default async function handler(req, res) {
       query = query.maybeSingle();
     }
 
-    const { data, error, count } = await query;
+    let { data, error, count } = await query;
+
+    if (error && table === "profiles" && (error.code === "42703" || error.message?.includes("does not exist") || error.message?.includes("schema cache"))) {
+      const missingFields = ['suffix', 'name_extension', 'employee_id'];
+      let cleanPayload = Array.isArray(payload) ? [...payload] : { ...payload };
+      let payloadModified = false;
+      const cleanObj = (obj) => {
+        let changed = false;
+        for (const f of missingFields) {
+          if (f in obj) {
+            if ((f === 'suffix' || f === 'name_extension') && obj[f] && obj.last_name) {
+              const suff = String(obj[f]).trim();
+              if (suff && !obj.last_name.toLowerCase().endsWith(suff.toLowerCase())) {
+                obj.last_name = `${obj.last_name} ${suff}`.trim();
+              }
+            }
+            delete obj[f];
+            changed = true;
+          }
+        }
+        return changed;
+      };
+      if (Array.isArray(cleanPayload)) {
+        cleanPayload.forEach(cleanObj);
+        payloadModified = true;
+      } else if (cleanPayload && typeof cleanPayload === 'object') {
+        payloadModified = cleanObj(cleanPayload);
+      }
+
+      if (payloadModified) {
+        let retryQuery;
+        if (action === "insert") retryQuery = supabaseAdmin.from(table).insert(cleanPayload);
+        else if (action === "update") retryQuery = supabaseAdmin.from(table).update(cleanPayload);
+        else if (action === "upsert") retryQuery = supabaseAdmin.from(table).upsert(cleanPayload, onConflict ? { onConflict } : undefined);
+
+        if (retryQuery) {
+          if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
+          if (select) retryQuery = retryQuery.select(select);
+          else retryQuery = retryQuery.select("*");
+          if (single) retryQuery = retryQuery.maybeSingle();
+          const retryRes = await retryQuery;
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+      }
+    }
 
     if (error) throw error;
     if (countOption) {

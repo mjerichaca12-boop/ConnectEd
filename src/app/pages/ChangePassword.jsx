@@ -20,6 +20,43 @@ export function ChangePassword() {
   
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+
+  const validateEmailRealness = (emailStr) => {
+    const trimmed = (emailStr || "").trim().toLowerCase();
+    if (!trimmed) return false;
+    
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+    if (!emailRegex.test(trimmed)) return false;
+
+    const parts = trimmed.split("@");
+    if (parts.length !== 2) return false;
+    const [username, domain] = parts;
+
+    if (!domain.includes(".") || domain.startsWith(".") || domain.endsWith(".")) return false;
+    const tld = domain.split(".").pop();
+    if (!tld || tld.length < 2) return false;
+
+    const fakeDomains = [
+      "mailinator.com", "tempmail.com", "guerrillamail.com", "trashmail.com",
+      "fake.com", "test.com", "example.com", "temp-mail.org", "yopmail.com",
+      "10minutemail.com", "sharklasers.com", "throwawaymail.com", "dispostable.com"
+    ];
+    if (fakeDomains.includes(domain)) return false;
+
+    if (domain === "gmail.com") {
+      const cleanUser = username.replace(/\./g, "");
+      if (cleanUser.length < 6 || cleanUser.length > 30) return false;
+    }
+
+    return true;
+  };
+
+  const isEmailValid = validateEmailRealness(email);
+  const isEmailFormatPotentiallyFinished = email.includes("@") && email.indexOf("@") < email.lastIndexOf(".");
+  const showEmailNotReal = Boolean(
+    (email.length > 0 && (emailTouched || isEmailFormatPotentiallyFinished) && !isEmailValid)
+  );
 
   useEffect(() => {
     const rawUser = localStorage.getItem("currentUser");
@@ -43,10 +80,12 @@ export function ChangePassword() {
     else navigate("/login");
   };
 
-  const validatePassword = (password) => {
-    if (password.length < 8) return "Password must be at least 8 characters long.";
-    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-      return "Password must contain at least one letter and one number.";
+  const validatePassword = (pwd) => {
+    if (pwd.length < 8) {
+      return "Password must be at least 8 characters long.";
+    }
+    if (!/[a-zA-Z]/.test(pwd) || !/[0-9]/.test(pwd)) {
+      return "Password must contain both letters and numbers.";
     }
     return null;
   };
@@ -62,8 +101,9 @@ export function ChangePassword() {
       return;
     }
 
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Please enter a valid personal email address.");
+    if (!validateEmailRealness(email)) {
+      setEmailTouched(true);
+      setError("Not a real email");
       return;
     }
 
@@ -213,18 +253,31 @@ export function ChangePassword() {
               </label>
               <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                  <Mail className={`h-5 w-5 ${showEmailNotReal ? "text-red-500" : "text-gray-400 group-focus-within:text-blue-500"} transition-colors`} />
                 </div>
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-gray-50 focus:bg-white transition-all text-sm placeholder:text-gray-400"
+                  onChange={(e) => {
+                    setEmail(e.target.value.slice(0, 40));
+                    if (error === "Not a real email") setError("");
+                  }}
+                  onBlur={() => setEmailTouched(true)}
+                  maxLength={40}
+                  className={`block w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 text-gray-900 bg-gray-50 focus:bg-white transition-all text-sm placeholder:text-gray-400 ${
+                    showEmailNotReal
+                      ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                      : "border-gray-200 focus:ring-blue-500 focus:border-blue-500"
+                  }`}
                   placeholder="name@gmail.com"
                   required
                 />
               </div>
-              <p className="mt-1 text-xs text-gray-500">This email will be used for password resets.</p>
+              {showEmailNotReal ? (
+                <p className="mt-1 text-xs text-red-500 font-medium">Not a real email</p>
+              ) : (
+                <p className="mt-1 text-xs text-gray-500">This email will be used for password resets.</p>
+              )}
             </div>
 
             <div>

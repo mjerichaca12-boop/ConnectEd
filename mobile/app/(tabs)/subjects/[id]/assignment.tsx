@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView, ActivityIndicator, Image, TextInput, Modal, StatusBar, RefreshControl } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useLocalSearchParams, useSegments, useRouter, useGlobalSearchParams } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { readFileAsArrayBuffer } from "../../../../src/utils/file-reader";
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
@@ -20,6 +20,7 @@ import FileViewerModal from "../../../../src/components/common/FileViewerModal";
 
 import { supabase } from "../../../../src/lib/supabase";
 import { useMyAssignmentsQuery } from "../../../../src/hooks/query/assignments/use-my-assignments-query";
+import { useDeleteAssignmentMutation } from "../../../../src/hooks/query/assignments/use-delete-assignment-mutation";
 
 import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../../../src/utils/quiz-parser";
 import { AssessmentTypeBadge } from "../../../../src/components/common/AssessmentTypeBadge";
@@ -31,27 +32,34 @@ const AssignmentItem = ({ title, dueDate, status, grade, assessmentType, onPress
         <TouchableOpacity 
             style={[styles.itemContainer, isLate && styles.lateItemContainer]} 
             onPress={onPress}
+            activeOpacity={0.7}
         >
-            <View style={{ flex: 1, marginRight: 8 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-                    <AssessmentTypeBadge type={assessmentType} />
+            <View style={styles.cardHeaderRow}>
+                <AssessmentTypeBadge type={assessmentType} />
+                <View style={styles.statusBadgeGroup}>
+                    <StatusBadge status={status} />
+                    {hasGrade && (
+                        <View style={styles.gradeBadge}>
+                            <Text style={styles.gradeBadgeText}>Grade: {grade}</Text>
+                        </View>
+                    )}
                 </View>
-                <Text style={[styles.title, isLate && styles.lateText]}>{title}</Text>
-                <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
-            <View style={{ alignItems: "flex-end", justifyContent: "flex-start", gap: 6 }}>
-                <StatusBadge status={status} />
-                {hasGrade && (
-                    <View style={{ backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#BBF7D0" }}>
-                        <Text style={{ color: "#166534", fontWeight: "bold", fontSize: 12 }}>Grade: {grade}</Text>
-                    </View>
-                )}
+            <Text style={[styles.title, isLate && styles.lateText]} numberOfLines={2}>{title}</Text>
+            <View style={styles.cardFooterRow}>
+                <Ionicons 
+                    name="calendar-outline" 
+                    size={14} 
+                    color={isLate ? Colors.light.error : Colors.light.textSecondary} 
+                    style={{ marginRight: 6 }} 
+                />
+                <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
         </TouchableOpacity>
     );
 };
 
-const DetailedAssignmentView = ({ assignment, onBack }: any) => {
+const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => {
     const [pickedFile, setPickedFile] = useState<any>(null);
     const [responseText, setResponseText] = useState("");
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
@@ -62,10 +70,58 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     const [viewerTitle, setViewerTitle] = useState<string | null>(null);
     const [hasAttemptedQuiz, setHasAttemptedQuiz] = useState(false);
     const [quizAttemptData, setQuizAttemptData] = useState<any>(null);
+    const [isTeacher, setIsTeacher] = useState(false);
+    const deleteMutation = useDeleteAssignmentMutation();
     const queryClient = useQueryClient();
 
     const [dbQuestions, setDbQuestions] = useState<any[]>([]);
     const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
+    React.useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session) return;
+            const role = session.user?.user_metadata?.role || "student";
+            setIsTeacher(role === "teacher");
+        });
+    }, []);
+
+    // Detect if this assignment was deleted by the teacher while student had it open
+    React.useEffect(() => {
+        if (!isTeacher && allAssignments && allAssignments.length > 0 && assignment?.id) {
+            const stillExists = allAssignments.some((a: any) => String(a.id) === String(assignment.id));
+            if (!stillExists) {
+                Alert.alert(
+                    "Assignment Removed",
+                    "This assignment was deleted by the teacher.",
+                    [{ text: "OK", onPress: () => onBack() }]
+                );
+            }
+        }
+    }, [allAssignments, assignment?.id, isTeacher]);
+
+    const handleDeleteAssignment = () => {
+        Alert.alert(
+            "Delete Assignment",
+            "Are you sure you want to delete this assignment? It will be permanently removed for all students.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await deleteMutation.mutateAsync({ id: assignment.id });
+                            Alert.alert("Success", "Assignment deleted successfully.");
+                            onBack();
+                        } catch (err: any) {
+                            console.error("Failed to delete assignment:", err);
+                            Alert.alert("Error", err?.message || "Failed to delete assignment.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     React.useEffect(() => {
         const checkQuizAttempt = async () => {
@@ -273,9 +329,8 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             if (pickedFile) {
                 storagePath = `submissions/${userId}/${Date.now()}_${pickedFile.name}`;
 
-                // Read file as base64 for reliable binary upload
-                const base64 = await FileSystem.readAsStringAsync(pickedFile.uri, { encoding: 'base64' });
-                const bytes = decode(base64);
+                // Read file as ArrayBuffer for reliable binary upload
+                const bytes = await readFileAsArrayBuffer(pickedFile.uri);
 
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('class-materials')
@@ -588,7 +643,7 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     return (
         <View style={styles.detailedContainer}>
             <AppHeader title={assignment.title} showBack={true} onBack={onBack} />
-            
+
             <ScrollView contentContainerStyle={styles.detailedContent}>
                 <View style={styles.detailHeader}>
                     <View style={{ flex: 1 }}>
@@ -600,6 +655,24 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     </View>
                     <StatusBadge status={assignment.status} style={{ marginTop: 4 }} />
                 </View>
+
+                {isTeacher && (
+                    <TouchableOpacity
+                        style={styles.teacherDeleteButton}
+                        onPress={handleDeleteAssignment}
+                        disabled={deleteMutation.isPending}
+                        activeOpacity={0.7}
+                    >
+                        {deleteMutation.isPending ? (
+                            <ActivityIndicator size="small" color="#DC2626" />
+                        ) : (
+                            <>
+                                <Ionicons name="trash-outline" size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                                <Text style={styles.teacherDeleteButtonText}>Delete Assignment</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.instructionsContainer}>
                     <Text style={styles.sectionTitle}>
@@ -1591,15 +1664,15 @@ export default function SubjectAssignments() {
     const { id: globalId } = useGlobalSearchParams();
     const { id: localId } = useLocalSearchParams();
 
-    // Improved ID extraction
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // Robust subject ID extraction: strictly ensure the ID is a valid UUID
     const subjectId = (() => {
-        if (globalId && globalId !== '[id]' && typeof globalId === 'string') return globalId;
-        if (localId && localId !== '[id]' && typeof localId === 'string') return localId;
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const found = segments.find(s => uuidRegex.test(s));
+        if (localId && typeof localId === 'string' && uuidRegex.test(localId)) return localId;
+        const segList = segments as string[];
+        const found = segList.find(s => uuidRegex.test(s));
         if (found) return found;
-        if (segments[2] && segments[2] !== '[id]') return segments[2];
-        return localId as string;
+        if (globalId && typeof globalId === 'string' && uuidRegex.test(globalId)) return globalId;
+        return undefined;
     })();
     const [activeTab, setActiveTab] = useState("upcoming");
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
@@ -1633,6 +1706,7 @@ export default function SubjectAssignments() {
         return (
             <DetailedAssignmentView 
                 assignment={selectedAssignment} 
+                allAssignments={assignments}
                 onBack={(nextTab?: string) => {
                     setSelectedAssignment(null);
                     if (nextTab) {
@@ -1711,6 +1785,7 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.light.background,
         borderBottomWidth: 1,
         borderBottomColor: Colors.light.border,
+        gap: 8,
     },
     tabButton: {
         flex: 1,
@@ -1732,35 +1807,62 @@ const styles = StyleSheet.create({
     itemContainer: {
         backgroundColor: "#FFFFFF",
         padding: 16,
-        borderRadius: 12,
+        borderRadius: 14,
         marginBottom: 12,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 1,
-        borderWidth: 1,
-        borderColor: "transparent",
+        shadowRadius: 3,
+        elevation: 2,
     },
     lateItemContainer: {
-        backgroundColor: "#FFF0F0",
-        borderColor: "#FFCDCD",
+        backgroundColor: "#FFF5F5",
+        borderColor: "#FECACA",
+    },
+    cardHeaderRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    statusBadgeGroup: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
     },
     title: {
         fontSize: 16,
-        fontWeight: "600",
-        color: Colors.light.text,
-        marginBottom: 4,
+        fontWeight: "700",
+        color: "#0F172A",
+        marginBottom: 6,
+        lineHeight: 22,
+    },
+    cardFooterRow: {
+        flexDirection: "row",
+        alignItems: "center",
     },
     date: {
         fontSize: 13,
         color: Colors.light.textSecondary,
+        fontWeight: "500",
     },
     lateText: {
         color: Colors.light.error,
+    },
+    gradeBadge: {
+        backgroundColor: "#F0FDF4",
+        paddingHorizontal: 8,
+        paddingVertical: 3.5,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: "#BBF7D0",
+    },
+    gradeBadgeText: {
+        color: "#166534",
+        fontWeight: "700",
+        fontSize: 11,
     },
     emptyContainer: {
         padding: 40,
@@ -2123,5 +2225,22 @@ const styles = StyleSheet.create({
     optCorrectTarget: {
         backgroundColor: "#F0FDF4",
         borderColor: "#86EFAC",
+    },
+    teacherDeleteButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#FEF2F2",
+        borderWidth: 1,
+        borderColor: "#FECACA",
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        marginBottom: 16,
+    },
+    teacherDeleteButtonText: {
+        color: "#DC2626",
+        fontWeight: "600",
+        fontSize: 14,
     },
 });

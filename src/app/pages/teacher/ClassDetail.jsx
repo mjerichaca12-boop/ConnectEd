@@ -2593,18 +2593,27 @@ export function ClassDetail() {
     if (!supabase || !targetAssignment?.id) return;
 
     const assignmentId = String(targetAssignment.id);
-    const tableName = await getAssignmentTableName();
-    if (!tableName) return;
 
     const previous = assignments;
     setIsDeletingAssignment(true);
     setAssignments((current) => current.filter((item) => String(item.id) !== assignmentId));
 
     try {
-      const { error } = await supabase.from(tableName).delete().eq("id", assignmentId);
-      if (error) {
-        throw error;
-      }
+      // 1. Delete dependent child records first to avoid foreign key violations
+      await supabase.from("lesson_activities").delete().eq("activity_id", assignmentId);
+      await supabase.from("lesson_activities").delete().eq("id", assignmentId);
+      await supabase.from("quiz_questions").delete().eq("quiz_id", assignmentId);
+      await supabase.from("quiz_attempts").delete().eq("quiz_id", assignmentId);
+      await supabase.from("teacher_assessment_grades").delete().eq("assessment_id", assignmentId);
+      await supabase.from("teacher_assessment_submissions").delete().eq("assessment_id", assignmentId);
+
+      // 2. Delete across all parent assignment/quiz tables
+      await Promise.allSettled([
+        supabase.from("assignments").delete().eq("id", assignmentId),
+        supabase.from("assignments_activity").delete().eq("id", assignmentId),
+        supabase.from("quizzes").delete().eq("id", assignmentId),
+        supabase.from("class_assignments").delete().eq("id", assignmentId),
+      ]);
 
       if ((targetAssignment.filePaths && targetAssignment.filePaths.length > 0) || targetAssignment.filePath) {
         await removeAssignmentFilesFromStorage(targetAssignment.filePaths || targetAssignment.filePath);

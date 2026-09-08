@@ -22,6 +22,9 @@ export interface EnrollmentWithSubject {
         profiles?: {
             first_name: string;
             last_name: string;
+            middle_name?: string;
+            suffix?: string;
+            name_extension?: string;
         };
     };
 }
@@ -30,7 +33,7 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
-    const { data, error } = await supabase
+    let res = await supabase
         .from('teacher_student_assignments')
         .select(`
             id,
@@ -53,11 +56,45 @@ export async function getMyEnrollments(): Promise<EnrollmentWithSubject[]> {
                 enrolled,
                 profiles:teacher_id (
                     first_name,
-                    last_name
+                    last_name,
+                    suffix
                 )
             )
         `)
         .eq('student_id', userData.user.id);
+
+    if (res.error && (res.error.code === '42703' || res.error.message?.includes('suffix'))) {
+        res = await supabase
+            .from('teacher_student_assignments')
+            .select(`
+                id,
+                student_id,
+                subject_id,
+                status,
+                grades,
+                attendance,
+                section,
+                subjects:subject_id (
+                    id,
+                    code,
+                    name,
+                    description,
+                    teacher_id,
+                    grade_level,
+                    schedule,
+                    credits,
+                    capacity,
+                    enrolled,
+                    profiles:teacher_id (
+                        first_name,
+                        last_name
+                    )
+                )
+            `)
+            .eq('student_id', userData.user.id);
+    }
+
+    const { data, error } = res;
 
     if (error) {
         // PGRST205 = table not found in schema cache (table may not exist yet)

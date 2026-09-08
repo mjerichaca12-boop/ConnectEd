@@ -1,12 +1,14 @@
 import React from "react";
 import { View, TouchableOpacity, StyleSheet, Text, Platform } from "react-native";
-import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import { BottomTabBarProps } from "expo-router/js-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "../../constants/Colors";
+import { useUnreadMessagesCountQuery } from "../../hooks/query/messages/use-unread-messages-count-query";
 
 export default function TabBar({ state, descriptors, navigation, onMenuPress, role }: BottomTabBarProps & { onMenuPress: () => void, role: "student" | "teacher" | null }) {
     const insets = useSafeAreaInsets();
+    const { data: unreadMessagesCount = 0 } = useUnreadMessagesCountQuery();
 
     const primaryColor = Colors.light.primary;
     const inactiveColor = Colors.light.tabIconDefault;
@@ -75,10 +77,10 @@ export default function TabBar({ state, descriptors, navigation, onMenuPress, ro
                     const onLongPress = () => {
                         navigation.emit({ type: "tabLongPress", target: route.key });
                     };
-                    const Icon = options.tabBarIcon;
 
                     // Special styling for Home screens
                     const isHomeScreen = item.name === "home" || item.name === "teacher-home";
+                    const isMessagesTab = item.name === "messages" || item.name === "teacher/messages";
 
                     if (isHomeScreen) {
                         return (
@@ -114,11 +116,20 @@ export default function TabBar({ state, descriptors, navigation, onMenuPress, ro
                             onLongPress={onLongPress}
                             style={styles.tabItem}
                         >
-                            <Ionicons
-                                name={isFocused ? (item.icon as any) : `${item.icon}-outline`}
-                                size={24}
-                                color={isFocused ? primaryColor : inactiveColor}
-                            />
+                            <View style={styles.iconWrapper}>
+                                <Ionicons
+                                    name={isFocused ? (item.icon as any) : `${item.icon}-outline`}
+                                    size={24}
+                                    color={isFocused ? primaryColor : inactiveColor}
+                                />
+                                {isMessagesTab && unreadMessagesCount > 0 && (
+                                    <View style={styles.badge}>
+                                        <Text style={styles.badgeText} numberOfLines={1}>
+                                            {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
                             <Text style={[styles.tabLabel, { color: isFocused ? primaryColor : inactiveColor }]}>
                                 {label as string}
                             </Text>
@@ -151,13 +162,43 @@ const styles = StyleSheet.create({
         paddingTop: 10,
         justifyContent: 'space-between',
         paddingHorizontal: 4,
-        // Removed fixed height to allow safe area padding to work correctly
     },
     tabItem: {
         alignItems: "center",
         justifyContent: "center",
         flex: 1,
         height: 44, // Consistent height for the interactive area
+    },
+    iconWrapper: {
+        position: 'relative',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 28,
+        height: 28,
+    },
+    badge: {
+        position: 'absolute',
+        top: -4,
+        right: -10,
+        backgroundColor: '#EF4444',
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 3.5,
+        borderWidth: 1.5,
+        borderColor: '#FFFFFF',
+        zIndex: 10,
+    },
+    badgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+        textAlign: 'center',
+        textAlignVertical: 'center',
+        includeFontPadding: false,
+        lineHeight: Platform.OS === 'ios' ? 12 : 13,
     },
     tabLabel: {
         fontSize: 9,

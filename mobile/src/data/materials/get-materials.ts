@@ -14,7 +14,7 @@ export async function getMaterials({ subjectId, teacherId, allowFallback = true 
     const isSubjectExplicit = subjectId && subjectId !== 'undefined' && subjectId !== '[id]';
 
     if (isSubjectExplicit && !isValidId) {
-        console.warn(`[materials] Invalid subjectId provided: ${subjectId}`);
+        console.log(`[materials] Invalid subjectId provided: ${subjectId}`);
         return [];
     }
 

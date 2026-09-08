@@ -8,7 +8,8 @@ export function useAnnouncementsQuery(args: GetAnnouncementsArgs = {}) {
 
     // Check if the caller intended to fetch subject-specific data (even if undefined momentarily)
     const isSubjectIntent = 'subjectId' in args;
-    const isSubjectReady = !!(args.subjectId && args.subjectId !== 'undefined' && args.subjectId !== '[id]');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isSubjectReady = !!(args.subjectId && uuidRegex.test(args.subjectId));
     const isGlobalIntent = !isSubjectIntent;
     
     // Only fetch if global is intended, or if subject intent is fully resolved

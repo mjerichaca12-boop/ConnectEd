@@ -3,11 +3,95 @@ const cors = require("cors");
 const nodemailer = require("nodemailer");
 const Groq = require("groq-sdk");
 const { createClient } = require("@supabase/supabase-js");
+const dns = require("dns");
 require("dotenv").config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Disposable, temporary or fake email domains to reject
+const DISPOSABLE_DOMAINS = new Set([
+    "mailinator.com", "tempmail.com", "10minutemail.com", "guerrillamail.com",
+    "trashmail.com", "throwawaymail.com", "yopmail.com", "sharklasers.com",
+    "fake.com", "test.com", "example.com", "temp-mail.org", "dispostable.com",
+    "crazymailing.com", "getairmail.com", "nada.ltd", "mohmal.com", "fakemail.net",
+    "getnada.com", "emailfake.com", "mytemp.email", "generator.email", "tempail.com"
+]);
+
+/**
+ * Validates whether an email address has a valid syntax, is from an active domain,
+ * has valid MX records that can receive email, and is not a disposable address.
+ */
+async function validateRealEmail(email) {
+    if (!email || typeof email !== "string") {
+        return { valid: false, error: "Email address is required." };
+    }
+
+    const trimmed = email.trim().toLowerCase();
+
+    // 1. Strict RFC 5322 syntax check
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+    if (!emailRegex.test(trimmed)) {
+        return { valid: false, error: "Please enter a valid email address format." };
+    }
+
+    // 2. Validate local part and domain structure
+    const [localPart, domain] = trimmed.split("@");
+    if (!localPart || !domain) {
+        return { valid: false, error: "Invalid email address structure." };
+    }
+
+    if (localPart.includes("..") || localPart.startsWith(".") || localPart.endsWith(".")) {
+        return { valid: false, error: "Email address has invalid dot placement." };
+    }
+
+    const domainParts = domain.split(".");
+    const tld = domainParts[domainParts.length - 1];
+    if (domainParts.length < 2 || !tld || tld.length < 2) {
+        return { valid: false, error: "Email domain extension is invalid." };
+    }
+
+    // 3. Block disposable or temporary email domains
+    if (DISPOSABLE_DOMAINS.has(domain)) {
+        return { valid: false, error: "Disposable or temporary email addresses are not permitted. Please use a real email address." };
+    }
+
+    // 4. Provider rules for Gmail
+    if (domain === "gmail.com") {
+        const rawUser = localPart.replace(/\./g, "");
+        if (rawUser.length < 6 || rawUser.length > 30) {
+            return { valid: false, error: "Gmail usernames must be between 6 and 30 characters." };
+        }
+        if (!/^[a-z0-9.]+$/.test(localPart)) {
+            return { valid: false, error: "Gmail usernames can only contain letters, numbers, and periods." };
+        }
+    }
+
+    // 5. Check DNS MX records to verify domain actually exists and accepts mail
+    try {
+        const mxRecords = await dns.promises.resolveMx(domain);
+        if (!mxRecords || mxRecords.length === 0 || mxRecords.every(r => !r.exchange || r.exchange === ".")) {
+            return { valid: false, error: `The domain "${domain}" does not accept incoming emails.` };
+        }
+    } catch (dnsErr) {
+        console.warn(`[validateRealEmail] DNS MX lookup failed for ${domain}:`, dnsErr.code || dnsErr.message);
+        if (dnsErr.code === "ENOTFOUND" || dnsErr.code === "ENODATA" || dnsErr.code === "SERVFAIL") {
+            return { valid: false, error: `The email domain "@${domain}" does not exist or is inactive.` };
+        }
+        // Fallback: try A record
+        try {
+            const aRecords = await dns.promises.resolve4(domain);
+            if (!aRecords || aRecords.length === 0) {
+                return { valid: false, error: `The email domain "@${domain}" does not exist.` };
+            }
+        } catch (aErr) {
+            return { valid: false, error: `The email domain "@${domain}" does not exist or cannot receive mail.` };
+        }
+    }
+
+    return { valid: true, normalizedEmail: trimmed };
+}
 
 // Initialize Supabase admin client
 // We use the SERVICE_ROLE key here so this backend can insert OTPs
@@ -26,29 +110,74 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+// Unified in-memory OTP store (guarantees fast, error-free OTP handling without missing tables)
+const otpStore = new Map();
+
+function saveOtp(email, code, type = "general", ttlMs = 15 * 60 * 1000) {
+    if (!email || !code) return;
+    const key = email.trim().toLowerCase();
+    otpStore.set(key, {
+        code: String(code).trim(),
+        expiresAt: Date.now() + ttlMs,
+        type
+    });
+}
+
+function verifyAndConsumeOtp(email, code, type = null) {
+    if (!email || !code) return false;
+    const key = email.trim().toLowerCase();
+    const record = otpStore.get(key);
+    if (!record) return false;
+    if (Date.now() > record.expiresAt) {
+        otpStore.delete(key);
+        return false;
+    }
+    if (type && record.type && record.type !== type) return false;
+    if (record.code !== String(code).trim()) return false;
+    otpStore.delete(key);
+    return true;
+}
+
+function verifyOtpWithoutConsume(email, code, type = null) {
+    if (!email || !code) return false;
+    const key = email.trim().toLowerCase();
+    const record = otpStore.get(key);
+    if (!record) return false;
+    if (Date.now() > record.expiresAt) {
+        otpStore.delete(key);
+        return false;
+    }
+    if (type && record.type && record.type !== type) return false;
+    return record.code === String(code).trim();
+}
+
 app.post("/auth/send-otp", async (req, res) => {
     const { email } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ error: "Email is required" });
+    const emailCheck = await validateRealEmail(email);
+    if (!emailCheck.valid) {
+        return res.status(400).json({ error: emailCheck.error });
     }
+    const verifiedEmail = emailCheck.normalizedEmail;
 
     try {
         // Generate a 6-digit code
         const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // Expire time (e.g. 5 mins) can be evaluated dynamically, 
-        // but for now we'll just upsert it into an 'otps' table matching the email.
-        const { error: dbError } = await supabase
-            .from("otps")
-            .upsert({ email, code, created_at: new Date() }, { onConflict: "email" });
+        saveOtp(verifiedEmail, code, "login");
 
-        if (dbError) throw dbError;
+        try {
+            await supabase
+                .from("otps")
+                .upsert({ email: verifiedEmail, code, created_at: new Date() }, { onConflict: "email" });
+        } catch (dbErr) {
+            // Non-fatal if table not present
+        }
 
         // Send Email
         const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: email,
+            from: process.env.EMAIL_USER || "erijiao18@gmail.com",
+            to: verifiedEmail,
             subject: "Your ConnectEd Login Code",
             text: `Your login code is: ${code}. It will expire shortly.`,
             html: `<h3>Welcome to ConnectEd!</h3>
@@ -61,21 +190,27 @@ app.post("/auth/send-otp", async (req, res) => {
         return res.status(200).json({ success: true, message: "OTP sent" });
     } catch (error) {
         console.error("Error sending OTP:", error);
-        return res.status(500).json({ error: "Failed to send OTP", details: error.message });
+        return res.status(400).json({ error: "Failed to deliver OTP to this email address. Please make sure the email is valid and active." });
     }
 });
 
 app.post("/auth/send-secure-otp", async (req, res) => {
     const { email, otp } = req.body;
 
-    if (!email || !otp) {
-        return res.status(400).json({ error: "Email and OTP are required" });
+    if (!otp) {
+        return res.status(400).json({ error: "OTP code is required" });
     }
+
+    const emailCheck = await validateRealEmail(email);
+    if (!emailCheck.valid) {
+        return res.status(400).json({ error: emailCheck.error });
+    }
+    const verifiedEmail = emailCheck.normalizedEmail;
 
     try {
         const mailOptions = {
             from: process.env.EMAIL_USER,
-            to: email,
+            to: verifiedEmail,
             subject: "Your ConnectEd Verification Code",
             text: `Your account verification OTP code is: ${otp}. It will expire in 24 hours.`,
             html: `<h3>Account Verification</h3>
@@ -85,10 +220,11 @@ app.post("/auth/send-secure-otp", async (req, res) => {
         };
 
         await transporter.sendMail(mailOptions);
+        console.log(`[send-secure-otp] Verification code ${otp} successfully sent to ${verifiedEmail}`);
         return res.status(200).json({ success: true, message: "OTP email sent successfully" });
     } catch (error) {
         console.error("Error sending secure OTP email:", error);
-        return res.status(500).json({ error: "Failed to send OTP email", details: error.message });
+        return res.status(400).json({ error: "Failed to deliver verification code. The email address could not be reached or is invalid." });
     }
 });
 
@@ -258,8 +394,15 @@ app.post("/auth/register", async (req, res) => {
         return res.status(400).json({ error: "Weak password", details: passwordErrors });
     }
 
+    // -- Server-side real email validation
+    const emailCheck = await validateRealEmail(email);
+    if (!emailCheck.valid) {
+        return res.status(400).json({ error: emailCheck.error });
+    }
+    const verifiedEmail = emailCheck.normalizedEmail;
+
     // -- Gmail-only enforcement
-    if (!email.toLowerCase().endsWith("@gmail.com")) {
+    if (!verifiedEmail.endsWith("@gmail.com")) {
         return res.status(400).json({ error: "Only Gmail accounts (@gmail.com) are accepted." });
     }
 
@@ -268,10 +411,10 @@ app.post("/auth/register", async (req, res) => {
         // If they exist but are unverified, delete them so they can register fresh without "email_exists" 422 errors!
         const { data: listData, error: listError } = await supabase.auth.admin.listUsers();
         if (!listError && listData?.users) {
-            const existingUser = listData.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+            const existingUser = listData.users.find(u => u.email?.toLowerCase() === verifiedEmail.toLowerCase());
             if (existingUser) {
                 if (!existingUser.email_confirmed_at) {
-                    console.log(`[register] Found existing unverified user ${existingUser.id} for ${email}. Deleting to allow fresh signup.`);
+                    console.log(`[register] Found existing unverified user ${existingUser.id} for ${verifiedEmail}. Deleting to allow fresh signup.`);
                     await supabase.auth.admin.deleteUser(existingUser.id);
                     
                     // Also delete their profile from the database to keep clean
@@ -284,9 +427,9 @@ app.post("/auth/register", async (req, res) => {
 
         // Step 1 — Create the user account (unverified)
         const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-            email,
+            email: verifiedEmail,
             password,
-            email_confirm: false,   // keep unverified until student clicks the Gmail link
+            email_confirm: false,   // keep unverified until student enters the OTP
             user_metadata: {
                 role: role || 'student',
                 firstName,
@@ -319,20 +462,22 @@ app.post("/auth/register", async (req, res) => {
             console.error("Warning: profiles insert failed", profileError.message);
         }
 
-        // Step 3 — Generate a 6-digit OTP code and store it in the 'otps' table
+        // Step 3 — Generate a 6-digit OTP code and store it in in-memory store and 'otps' table
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const { error: dbError } = await supabase
-            .from("otps")
-            .upsert({ email, code, created_at: new Date() }, { onConflict: "email" });
+        saveOtp(verifiedEmail, code, "register");
 
-        if (dbError) {
-            console.error("Warning: failed to store signup OTP:", dbError.message);
+        try {
+            await supabase
+                .from("otps")
+                .upsert({ email: verifiedEmail, code, created_at: new Date() }, { onConflict: "email" });
+        } catch (dbError) {
+            console.warn("Warning: failed to store signup OTP in DB:", dbError.message);
         }
 
         // Step 4 — Send the 6-digit OTP code to their Gmail via Nodemailer
         const mailOptions = {
             from: `"ConnectEd" <${process.env.EMAIL_USER}>`,
-            to: email,
+            to: verifiedEmail,
             subject: `${code} is your ConnectEd verification code`,
             html: `
                 <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px; background-color: #F8FAFC; border-radius: 16px; border: 1px solid #E2E8F0;">
@@ -367,15 +512,26 @@ app.post("/auth/register", async (req, res) => {
 
         try {
             await transporter.sendMail(mailOptions);
-            console.log(`[register] OTP verification email sent to ${email} with code ${code}`);
+            console.log(`[register] OTP verification email successfully sent to ${verifiedEmail} with code ${code}`);
         } catch (mailError) {
-            console.error("Warning: failed to send OTP verification email:", mailError.message);
+            console.error("[register] Failed to send OTP verification email:", mailError.message);
+            // Clean up unverified account on delivery failure
+            try {
+                await supabase.auth.admin.deleteUser(userId);
+                await supabase.from("profiles").delete().eq("id", userId);
+                await supabase.from("otps").delete().eq("email", verifiedEmail);
+            } catch (cleanupErr) {
+                console.error("[register] Cleanup error after failed mail:", cleanupErr.message);
+            }
+            return res.status(400).json({
+                error: "Failed to deliver verification code. The email address could not be reached or is invalid."
+            });
         }
 
         return res.status(200).json({
             success: true,
             otpSent: true,
-            email: email,
+            email: verifiedEmail,
             message: "Registration successful. A 6-digit verification code has been sent to your Gmail."
         });
 
@@ -396,19 +552,27 @@ app.post("/auth/verify-register-otp", async (req, res) => {
     try {
         console.log(`[verify-register-otp] Verifying OTP for ${email}...`);
 
-        // 1. Verify code matches DB entry in 'otps' table
-        const { data: storedOtp, error: selectError } = await supabase
-            .from("otps")
-            .select("code")
-            .eq("email", email.trim().toLowerCase())
-            .single();
+        // 1. Verify code matches in-memory store or DB entry in 'otps' table
+        let isValid = verifyAndConsumeOtp(email, code, "register") || verifyAndConsumeOtp(email, code);
 
-        if (selectError || !storedOtp || storedOtp.code !== code.trim()) {
-            return res.status(401).json({ error: "Invalid or expired verification code" });
+        if (!isValid) {
+            try {
+                const { data: storedOtp } = await supabase
+                    .from("otps")
+                    .select("code")
+                    .eq("email", email.trim().toLowerCase())
+                    .maybeSingle();
+
+                if (storedOtp && storedOtp.code === code.trim()) {
+                    isValid = true;
+                    await supabase.from("otps").delete().eq("email", email.trim().toLowerCase());
+                }
+            } catch (_) {}
         }
 
-        // 2. Clear OTP so it cannot be reused
-        await supabase.from("otps").delete().eq("email", email.trim().toLowerCase());
+        if (!isValid) {
+            return res.status(401).json({ error: "Invalid or expired verification code" });
+        }
 
         // 3. Find the user inside auth.users
         const { data: usersData, error: listError } = await supabase.auth.admin.listUsers();
@@ -597,57 +761,90 @@ app.post("/auth/forgot-password", async (req, res) => {
         return res.status(400).json({ error: "Email is required" });
     }
 
+    const emailCheck = await validateRealEmail(email);
+    if (!emailCheck.valid) {
+        return res.status(400).json({ error: emailCheck.error });
+    }
+    const verifiedEmail = emailCheck.normalizedEmail;
+
     try {
-        console.log(`[forgot-password] Request received for ${email}`);
+        console.log(`[forgot-password] Request received for ${verifiedEmail}`);
 
         // 1. Verify user exists in database (check profiles table and auth users)
-        let targetEmail = email.trim().toLowerCase();
+        let targetEmail = verifiedEmail;
         let targetUserId = null;
 
-        const { data: profile } = await supabase
+        // Check profiles by email first
+        const { data: profileByEmail } = await supabase
             .from("profiles")
             .select("id, email, username")
-            .or(`email.ilike.${targetEmail},username.ilike.${targetEmail}`)
+            .ilike("email", targetEmail)
             .maybeSingle();
 
-        if (profile) {
-            targetUserId = profile.id;
-            targetEmail = (profile.email || targetEmail).toLowerCase();
+        if (profileByEmail) {
+            targetUserId = profileByEmail.id;
+            targetEmail = (profileByEmail.email || targetEmail).toLowerCase();
         } else {
-            const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-            const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === targetEmail);
-            if (authUser) {
-                targetUserId = authUser.id;
-                targetEmail = authUser.email.toLowerCase();
+            // Also check profiles by username
+            const { data: profileByUsername } = await supabase
+                .from("profiles")
+                .select("id, email, username")
+                .ilike("username", targetEmail)
+                .maybeSingle();
+
+            if (profileByUsername) {
+                targetUserId = profileByUsername.id;
+                targetEmail = (profileByUsername.email || targetEmail).toLowerCase();
+            } else {
+                // Check Supabase Auth users
+                const { data: usersData, error: authListError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+                if (!authListError && usersData?.users) {
+                    const authUser = usersData.users.find(u => u.email?.toLowerCase() === targetEmail);
+                    if (authUser) {
+                        targetUserId = authUser.id;
+                        targetEmail = authUser.email.toLowerCase();
+                    }
+                }
             }
         }
 
+        // Only emails used/registered by users in the app can receive a reset code
         if (!targetUserId) {
-            return res.status(404).json({ error: "No account found with this email address." });
+            return res.status(404).json({
+                error: "This email address is not registered in ConnectEd. Only registered account emails can receive a verification code."
+            });
         }
 
         // 2. Generate a secure, random 6-digit OTP code
         const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-        // 3. Clear any existing OTP for this email and save the new OTP code in 'otps' table
-        await supabase.from("otps").delete().eq("email", email.trim().toLowerCase());
-        
-        const { error: insertError } = await supabase
-            .from("otps")
-            .insert({
-                email: email.trim().toLowerCase(),
+        // 3. Save OTP in memory store (10 minutes expiry)
+        saveOtp(targetEmail, code, "reset", 10 * 60 * 1000);
+
+        // Also save to DB table if it exists
+        try {
+            await supabase.from("otps").delete().eq("email", targetEmail);
+            await supabase.from("otps").insert({
+                email: targetEmail,
                 code: code,
                 created_at: new Date().toISOString()
             });
+        } catch (_) {}
 
-        if (insertError) throw insertError;
+        // Fallback: backup in profile record
+        try {
+            await supabase
+                .from("profiles")
+                .update({ phone: `RESET_${code}_${Date.now() + 10 * 60 * 1000}` })
+                .eq("id", targetUserId);
+        } catch (_) {}
 
-        console.log(`[forgot-password] Secure OTP generated for ${email}: ${code}`);
+        console.log(`[forgot-password] Secure OTP generated for ${targetEmail}: ${code}`);
 
         // 4. Send the 6-digit OTP code to the Gmail inbox via Nodemailer
         const mailOptions = {
             from: `"ConnectEd Security" <${process.env.EMAIL_USER}>`,
-            to: email.trim(),
+            to: targetEmail,
             subject: "ConnectEd — Password Reset Verification Code",
             html: `
                 <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 500px; margin: 0 auto; padding: 32px; background-color: #F8FAFC; border-radius: 16px; border: 1px solid #E2E8F0; text-align: center;">
@@ -676,8 +873,14 @@ app.post("/auth/forgot-password", async (req, res) => {
             `
         };
 
-        await transporter.sendMail(mailOptions);
-        console.log(`[forgot-password] OTP verification code successfully sent to Gmail ${email}`);
+        try {
+            await transporter.sendMail(mailOptions);
+            console.log(`[forgot-password] OTP verification code successfully sent to Gmail ${targetEmail}`);
+        } catch (mailError) {
+            console.error("[forgot-password] Failed to deliver reset OTP email:", mailError.message);
+            try { await supabase.from("otps").delete().eq("email", targetEmail); } catch (_) {}
+            return res.status(400).json({ error: "Failed to deliver reset code to this email address. Please make sure the email is active and reachable." });
+        }
 
         return res.status(200).json({ success: true, message: "A 6-digit verification code has been sent to your Gmail." });
 
@@ -696,20 +899,74 @@ app.post("/auth/verify-reset-otp", async (req, res) => {
     }
 
     try {
-        console.log(`[verify-reset-otp] Verifying OTP for ${email}...`);
+        const normalizedEmail = email.trim().toLowerCase();
+        console.log(`[verify-reset-otp] Verifying OTP for ${normalizedEmail}...`);
 
-        // Check if matching code exists in the database
-        const { data: storedOtp, error: selectError } = await supabase
-            .from("otps")
-            .select("code")
-            .eq("email", email.trim().toLowerCase())
-            .single();
+        // 1. Check if user exists in the app
+        let targetUserId = null;
+        let profileRecord = null;
+        const { data: profileByEmail } = await supabase
+            .from("profiles")
+            .select("id, email, username, phone")
+            .ilike("email", normalizedEmail)
+            .maybeSingle();
 
-        if (selectError || !storedOtp || storedOtp.code !== code.trim()) {
-            return res.status(401).json({ error: "Invalid or expired verification code" });
+        if (profileByEmail) {
+            targetUserId = profileByEmail.id;
+            profileRecord = profileByEmail;
+        } else {
+            const { data: profileByUsername } = await supabase
+                .from("profiles")
+                .select("id, email, username, phone")
+                .ilike("username", normalizedEmail)
+                .maybeSingle();
+
+            if (profileByUsername) {
+                targetUserId = profileByUsername.id;
+                profileRecord = profileByUsername;
+            } else {
+                const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+                const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
+                if (authUser) targetUserId = authUser.id;
+            }
         }
 
-        console.log(`[verify-reset-otp] OTP successfully verified for ${email}`);
+        if (!targetUserId) {
+            return res.status(404).json({ error: "No account found with this email in ConnectEd." });
+        }
+
+        // 2. Check in-memory store
+        let isValid = verifyOtpWithoutConsume(normalizedEmail, code, "reset") || verifyOtpWithoutConsume(normalizedEmail, code);
+
+        // Fallback to otps table
+        if (!isValid) {
+            try {
+                const { data: storedOtp } = await supabase
+                    .from("otps")
+                    .select("code")
+                    .eq("email", normalizedEmail)
+                    .maybeSingle();
+
+                if (storedOtp && storedOtp.code === code.trim()) {
+                    isValid = true;
+                }
+            } catch (_) {}
+        }
+
+        // Fallback to profile phone backup
+        if (!isValid && profileRecord?.phone?.startsWith(`RESET_${code.trim()}_`)) {
+            const parts = profileRecord.phone.split("_");
+            const expiry = parseInt(parts[2], 10);
+            if (!isNaN(expiry) && Date.now() <= expiry) {
+                isValid = true;
+            }
+        }
+
+        if (!isValid) {
+            return res.status(401).json({ error: "Invalid or expired verification code." });
+        }
+
+        console.log(`[verify-reset-otp] OTP successfully verified for ${normalizedEmail}`);
         return res.status(200).json({ success: true, message: "OTP verified successfully. You can now reset your password." });
 
     } catch (err) {
@@ -739,41 +996,72 @@ app.post("/auth/update-password", async (req, res) => {
     }
 
     try {
-        console.log(`[update-password] Attempting password save for ${email}...`);
-
-        // 1. Verify code again to guarantee authenticity
-        const { data: storedOtp, error: selectError } = await supabase
-            .from("otps")
-            .select("code")
-            .eq("email", email.trim().toLowerCase())
-            .single();
-
-        if (selectError || !storedOtp || storedOtp.code !== code.trim()) {
-            return res.status(401).json({ error: "Unauthorized operation or expired OTP session." });
-        }
-
-        // 2. Find the user ID by email or profile
-        let targetUserId = null;
         const normalizedEmail = email.trim().toLowerCase();
+        console.log(`[update-password] Attempting password save for ${normalizedEmail}...`);
 
-        const { data: profile } = await supabase
+        // 1. Find user in profiles or auth
+        let targetUserId = null;
+        let profileRecord = null;
+        const { data: profileByEmail } = await supabase
             .from("profiles")
-            .select("id, email, username")
-            .or(`email.ilike.${normalizedEmail},username.ilike.${normalizedEmail}`)
+            .select("id, email, username, phone")
+            .ilike("email", normalizedEmail)
             .maybeSingle();
 
-        if (profile) {
-            targetUserId = profile.id;
+        if (profileByEmail) {
+            targetUserId = profileByEmail.id;
+            profileRecord = profileByEmail;
         } else {
-            const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-            const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
-            if (authUser) {
-                targetUserId = authUser.id;
+            const { data: profileByUsername } = await supabase
+                .from("profiles")
+                .select("id, email, username, phone")
+                .ilike("username", normalizedEmail)
+                .maybeSingle();
+
+            if (profileByUsername) {
+                targetUserId = profileByUsername.id;
+                profileRecord = profileByUsername;
+            } else {
+                const { data: usersData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+                const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === normalizedEmail);
+                if (authUser) targetUserId = authUser.id;
             }
         }
 
         if (!targetUserId) {
             return res.status(404).json({ error: "User account not found." });
+        }
+
+        // 2. Verify code again to guarantee authenticity
+        let isValid = verifyAndConsumeOtp(normalizedEmail, code, "reset") || verifyAndConsumeOtp(normalizedEmail, code);
+
+        if (!isValid) {
+            try {
+                const { data: storedOtp } = await supabase
+                    .from("otps")
+                    .select("code")
+                    .eq("email", normalizedEmail)
+                    .maybeSingle();
+
+                if (storedOtp && storedOtp.code === code.trim()) {
+                    isValid = true;
+                    await supabase.from("otps").delete().eq("email", normalizedEmail);
+                }
+            } catch (_) {}
+        }
+
+        if (!isValid && profileRecord?.phone?.startsWith(`RESET_${code.trim()}_`)) {
+            const parts = profileRecord.phone.split("_");
+            const expiry = parseInt(parts[2], 10);
+            if (!isNaN(expiry) && Date.now() <= expiry) {
+                isValid = true;
+                // Clear phone field
+                await supabase.from("profiles").update({ phone: null }).eq("id", targetUserId);
+            }
+        }
+
+        if (!isValid) {
+            return res.status(401).json({ error: "Unauthorized operation or expired OTP session." });
         }
 
         // 3. Update the password server-to-server securely using Supabase Admin Auth API!
@@ -784,10 +1072,12 @@ app.post("/auth/update-password", async (req, res) => {
 
         if (updateError) throw updateError;
 
-        // 4. Delete the OTP code upon successful update so it cannot be reused
-        await supabase.from("otps").delete().eq("email", email.trim().toLowerCase());
+        // 4. Delete the OTP code from DB if exists
+        try {
+            await supabase.from("otps").delete().eq("email", normalizedEmail);
+        } catch (_) {}
 
-        console.log(`[update-password] Password successfully updated for ${email}`);
+        console.log(`[update-password] Password successfully updated for ${normalizedEmail}`);
         return res.status(200).json({ success: true, message: "Your password has been successfully updated! You can now log in." });
 
     } catch (err) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, SafeAreaView, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../../src/components/common/AppHeader";
 import Colors from "../../../src/constants/Colors";
@@ -7,8 +8,8 @@ import { Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platf
 import { useRouter } from "expo-router";
 import { supabase } from "../../../src/lib/supabase";
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import { readFileAsArrayBuffer } from "../../../src/utils/file-reader";
 import { useAnnouncementsQuery } from "../../../src/hooks/query/announcements/use-announcements-query";
 import { useDeleteAnnouncementMutation } from "../../../src/hooks/query/announcements/use-delete-announcement-mutation";
 import { Announcement } from "../../../src/types";
@@ -136,9 +137,8 @@ export default function ManageContentScreen() {
             let fileName = null;
 
             if (selectedFile) {
-                // Read file as base64 for upload
-                const base64 = await FileSystem.readAsStringAsync(selectedFile.uri, { encoding: 'base64' });
-                const bytes = decode(base64);
+                // Read file as ArrayBuffer for upload
+                const bytes = await readFileAsArrayBuffer(selectedFile.uri);
                 
                 const fileExt = selectedFile.name.split('.').pop();
                 const path = `${session.user.id}/${Date.now()}.${fileExt}`;

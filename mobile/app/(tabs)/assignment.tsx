@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal, RefreshControl } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import Colors from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
 import StatusBadge from "../../src/components/common/StatusBadge";
@@ -13,11 +13,13 @@ import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../../src/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
+import { useDeleteAssignmentMutation } from "../../src/hooks/query/assignments/use-delete-assignment-mutation";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
 import { decode } from 'base64-arraybuffer';
+import { readFileAsArrayBuffer } from "../../src/utils/file-reader";
 
 import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../src/utils/quiz-parser";
 import { AssessmentTypeBadge } from "../../src/components/common/AssessmentTypeBadge";
@@ -26,30 +28,42 @@ const AssignmentItem = ({ title, subject, dueDate, status, grade, assessmentType
     const isLate = status === "late";
     const hasGrade = typeof grade !== "undefined" && grade !== null;
     return (
-        <TouchableOpacity style={[styles.itemContainer, isLate && styles.lateItemContainer]} onPress={onPress}>
-            <View style={styles.itemHeader}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-                        {subject ? <Text style={styles.subject}>{subject}</Text> : null}
-                        <AssessmentTypeBadge type={assessmentType} />
-                    </View>
-                    <Text style={[styles.title, isLate && styles.lateText]}>{title}</Text>
-                    <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
+        <TouchableOpacity 
+            style={[styles.itemContainer, isLate && styles.lateItemContainer]} 
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
+            <View style={styles.cardHeaderRow}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, marginRight: 8, flexWrap: "wrap" }}>
+                    <AssessmentTypeBadge type={assessmentType} />
+                    {subject ? <Text style={styles.subject}>{subject}</Text> : null}
                 </View>
-                <View style={{ alignItems: "flex-end", justifyContent: "flex-start", gap: 6 }}>
+                <View style={styles.statusBadgeGroup}>
                     <StatusBadge status={status} />
                     {hasGrade && (
-                        <View style={{ backgroundColor: "#F0FDF4", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: "#BBF7D0" }}>
-                            <Text style={{ color: "#166534", fontWeight: "bold", fontSize: 12 }}>Grade: {grade}</Text>
+                        <View style={styles.gradeBadge}>
+                            <Text style={styles.gradeBadgeText}>Grade: {grade}</Text>
                         </View>
                     )}
                 </View>
+            </View>
+
+            <Text style={[styles.title, isLate && styles.lateText]} numberOfLines={2}>{title}</Text>
+
+            <View style={styles.cardFooterRow}>
+                <Ionicons 
+                    name="calendar-outline" 
+                    size={14} 
+                    color={isLate ? "#EF4444" : "#64748B"} 
+                    style={{ marginRight: 6 }} 
+                />
+                <Text style={[styles.date, isLate && styles.lateText]}>Due: {dueDate}</Text>
             </View>
         </TouchableOpacity>
     );
 };
 
-const DetailedAssignmentView = ({ assignment, onBack }: any) => {
+const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => {
     const [pickedFile, setPickedFile] = useState<any>(null);
     const [responseText, setResponseText] = useState("");
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
@@ -60,10 +74,58 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
     const [viewerTitle, setViewerTitle] = useState<string | null>(null);
     const [hasAttemptedQuiz, setHasAttemptedQuiz] = useState(false);
     const [quizAttemptData, setQuizAttemptData] = useState<any>(null);
+    const [isTeacher, setIsTeacher] = useState(false);
+    const deleteMutation = useDeleteAssignmentMutation();
     const queryClient = useQueryClient();
 
     const [dbQuestions, setDbQuestions] = useState<any[]>([]);
     const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
+    React.useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!session) return;
+            const role = session.user?.user_metadata?.role || "student";
+            setIsTeacher(role === "teacher");
+        });
+    }, []);
+
+    // Detect if this assignment was deleted by the teacher while student had it open
+    React.useEffect(() => {
+        if (!isTeacher && allAssignments && allAssignments.length > 0 && assignment?.id) {
+            const stillExists = allAssignments.some((a: any) => String(a.id) === String(assignment.id));
+            if (!stillExists) {
+                Alert.alert(
+                    "Assignment Removed",
+                    "This assignment has been deleted by the teacher.",
+                    [{ text: "OK", onPress: () => onBack() }]
+                );
+            }
+        }
+    }, [allAssignments, assignment?.id, isTeacher]);
+
+    const handleDeleteAssignment = () => {
+        Alert.alert(
+            "Delete Assignment",
+            "Are you sure you want to delete this assignment? It will be permanently removed for all students.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            await deleteMutation.mutateAsync({ id: assignment.id });
+                            Alert.alert("Success", "Assignment deleted successfully.");
+                            onBack();
+                        } catch (err: any) {
+                            console.error("Failed to delete assignment:", err);
+                            Alert.alert("Error", err?.message || "Failed to delete assignment.");
+                        }
+                    }
+                }
+            ]
+        );
+    };
 
     React.useEffect(() => {
         const checkQuizAttempt = async () => {
@@ -269,9 +331,8 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
             if (pickedFile) {
                 storagePath = `submissions/${userData.user.id}/${Date.now()}_${pickedFile.name}`;
                 
-                // Read file as base64 for reliable binary upload
-                const base64 = await FileSystem.readAsStringAsync(pickedFile.uri, { encoding: 'base64' });
-                const bytes = decode(base64);
+                // Read file as ArrayBuffer for reliable binary upload
+                const bytes = await readFileAsArrayBuffer(pickedFile.uri);
 
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('class-materials')
@@ -583,13 +644,13 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
 
     return (
         <View style={styles.detailedContainer}>
-             <AppHeader 
-                title={assignment.title} 
-                showBack={true} 
-                onBack={onBack} 
-                hasNotifications={true}
-            />
-            
+            <AppHeader 
+               title={assignment.title} 
+               showBack={true} 
+               onBack={onBack} 
+               hasNotifications={true}
+           />
+
             <ScrollView contentContainerStyle={styles.detailedContent}>
                 <View style={styles.detailHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
@@ -600,6 +661,24 @@ const DetailedAssignmentView = ({ assignment, onBack }: any) => {
                     <Text style={styles.date}>Due: {assignment.dueDate}</Text>
                     <StatusBadge status={assignment.status} style={{ marginTop: 10 }}/>
                 </View>
+
+                {isTeacher && (
+                    <TouchableOpacity
+                        style={styles.teacherDeleteButton}
+                        onPress={handleDeleteAssignment}
+                        disabled={deleteMutation.isPending}
+                        activeOpacity={0.7}
+                    >
+                        {deleteMutation.isPending ? (
+                            <ActivityIndicator size="small" color="#DC2626" />
+                        ) : (
+                            <>
+                                <Ionicons name="trash-outline" size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                                <Text style={styles.teacherDeleteButtonText}>Delete Assignment</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.instructionsContainer}>
                     <Text style={styles.instructionsTitle}>
@@ -1557,6 +1636,7 @@ export default function AssignmentsScreen() {
         return (
             <DetailedAssignmentView 
                 assignment={selectedAssignment} 
+                allAssignments={assignments}
                 onBack={(nextTab?: string) => {
                     setSelectedAssignment(null);
                     if (nextTab) {
@@ -1714,44 +1794,68 @@ const styles = StyleSheet.create({
     itemContainer: {
         backgroundColor: "#FFFFFF",
         padding: 16,
-        borderRadius: 12,
+        borderRadius: 14,
         marginBottom: 12,
         flexDirection: "column",
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
-        shadowRadius: 2,
-        elevation: 1,
+        shadowRadius: 3,
+        elevation: 2,
         borderWidth: 1,
-        borderColor: "#F1F5F9",
+        borderColor: "#E2E8F0",
     },
     lateItemContainer: {
-        borderColor: "#EF4444",
-        backgroundColor: "#FEF2F2",
+        borderColor: "#FECACA",
+        backgroundColor: "#FFF5F5",
     },
-    itemHeader: {
+    cardHeaderRow: {
         flexDirection: "row",
         justifyContent: "space-between",
-        alignItems: "flex-start",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    statusBadgeGroup: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
     },
     subject: {
         fontSize: 12,
         color: Colors.light.primary,
         fontWeight: "bold",
-        marginBottom: 4,
     },
     title: {
         fontSize: 16,
-        fontWeight: "bold",
-        color: "#1E293B",
-        marginBottom: 4,
+        fontWeight: "700",
+        color: "#0F172A",
+        marginBottom: 6,
+        lineHeight: 22,
     },
     lateText: {
         color: "#EF4444",
     },
+    cardFooterRow: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
     date: {
         fontSize: 13,
         color: "#64748B",
+        fontWeight: "500",
+    },
+    gradeBadge: {
+        backgroundColor: "#F0FDF4",
+        paddingHorizontal: 8,
+        paddingVertical: 3.5,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: "#BBF7D0",
+    },
+    gradeBadgeText: {
+        color: "#166534",
+        fontWeight: "700",
+        fontSize: 11,
     },
     instructionsContainer: {
         marginBottom: 24,
@@ -2095,5 +2199,22 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#64748B',
         marginTop: 2,
+    },
+    teacherDeleteButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#FEF2F2",
+        borderWidth: 1,
+        borderColor: "#FECACA",
+        borderRadius: 10,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        marginBottom: 16,
+    },
+    teacherDeleteButtonText: {
+        color: "#DC2626",
+        fontWeight: "600",
+        fontSize: 14,
     },
 });

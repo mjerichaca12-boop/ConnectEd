@@ -8,14 +8,20 @@ import {
     ActivityIndicator, 
     Platform, 
     Image, 
-    SafeAreaView,
-    Alert
+    Alert,
 } from "react-native";
-import { WebView } from "react-native-webview";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+
+let WebView: any = null;
+if (Platform.OS !== 'web') {
+    try {
+        WebView = require('react-native-webview').WebView;
+    } catch {}
+}
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import Colors from "../../constants/Colors";
 
 interface FileViewerModalProps {
@@ -58,17 +64,21 @@ export const FileViewerModal: React.FC<FileViewerModalProps> = ({
         try {
             setDownloading(true);
             if (isImage) {
-                const { status } = await MediaLibrary.requestPermissionsAsync();
-                if (status === 'granted') {
-                    const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-                    if (storageDir) {
-                        const cleanExt = lowerUrl.split('?')[0].split('.').pop() || 'jpg';
-                        const fileUri = `${storageDir}/photo_${Date.now()}.${cleanExt}`;
-                        const { uri } = await FileSystem.downloadAsync(url, fileUri);
-                        await MediaLibrary.saveToLibraryAsync(uri);
-                        Alert.alert("Saved", "Photo saved to gallery!");
-                        return;
+                try {
+                    const { status } = await MediaLibrary.requestPermissionsAsync();
+                    if (status === 'granted') {
+                        const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+                        if (storageDir) {
+                            const cleanExt = lowerUrl.split('?')[0].split('.').pop() || 'jpg';
+                            const fileUri = `${storageDir}/photo_${Date.now()}.${cleanExt}`;
+                            const { uri } = await FileSystem.downloadAsync(url, fileUri);
+                            await MediaLibrary.saveToLibraryAsync(uri);
+                            Alert.alert("Saved", "Photo saved to gallery!");
+                            return;
+                        }
                     }
+                } catch (mediaErr) {
+                    console.warn("MediaLibrary unavailable, falling back to file download/sharing:", mediaErr);
                 }
             }
 
@@ -137,20 +147,28 @@ export const FileViewerModal: React.FC<FileViewerModalProps> = ({
                         </View>
                     ) : (
                         <View style={styles.webviewContainer}>
-                            <WebView
-                                source={{ uri: targetUrl }}
-                                style={styles.webview}
-                                onLoadStart={() => setLoading(true)}
-                                onLoadEnd={() => setLoading(false)}
-                                startInLoadingState={true}
-                                renderLoading={() => (
-                                    <ActivityIndicator 
-                                        size="large" 
-                                        color={Colors.light.primary} 
-                                        style={styles.loadingIndicator} 
-                                    />
-                                )}
-                            />
+                            {Platform.OS === 'web' ? (
+                                <iframe
+                                    src={targetUrl}
+                                    style={{ width: "100%", height: "100%", border: "none" }}
+                                    title={fileName || "File"}
+                                />
+                            ) : WebView ? (
+                                <WebView
+                                    source={{ uri: targetUrl }}
+                                    style={styles.webview}
+                                    onLoadStart={() => setLoading(true)}
+                                    onLoadEnd={() => setLoading(false)}
+                                    startInLoadingState={true}
+                                    renderLoading={() => (
+                                        <ActivityIndicator 
+                                            size="large" 
+                                            color={Colors.light.primary} 
+                                            style={styles.loadingIndicator} 
+                                        />
+                                    )}
+                                />
+                            ) : null}
                         </View>
                     )}
                 </View>

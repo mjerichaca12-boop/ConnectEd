@@ -7,6 +7,8 @@ import AppHeader from "../src/components/common/AppHeader";
 import { useSearchableProfilesQuery } from "../src/hooks/query/profiles/use-searchable-profiles-query";
 import { supabase } from "../src/lib/supabase";
 import { useQueryClient } from "@tanstack/react-query";
+import { matchesSearchQuery } from "../src/data/profiles/search-profiles-matcher";
+import { formatGradeLevel, formatRoleLabel } from "../src/data/profiles/get-all-searchable-profiles";
 
 export default function NewGroupScreen() {
     const router = useRouter();
@@ -25,33 +27,12 @@ export default function NewGroupScreen() {
         }
     };
 
-    // Deduplicate and filter by search query
+    // Filter profiles by unique ID and smart search query
     const seenIds = new Set<string>();
-    const seenBaseKeys = new Set<string>();
-    const query = searchQuery.trim().toLowerCase();
-
     const filteredProfiles = (Array.isArray(profiles) ? profiles : []).filter(p => {
         if (!p || !p.id || seenIds.has(p.id)) return false;
         seenIds.add(p.id);
-
-        const fullName = String(p.full_name || '').toLowerCase().trim();
-        const baseName = String(p.base_name || `${p.first_name || ''} ${p.last_name || ''}`).toLowerCase().trim();
-        const email = String(p.email || '').toLowerCase().trim();
-        const username = String(p.username || '').toLowerCase().trim();
-        const role = String(p.role || '').toLowerCase().trim();
-        const baseRoleKey = `${baseName || fullName}_${role}`;
-
-        if (baseName && seenBaseKeys.has(baseRoleKey)) return false;
-        if (baseName) seenBaseKeys.add(baseRoleKey);
-
-        if (query.length > 0) {
-            return fullName.includes(query) || 
-                   baseName.includes(query) || 
-                   email.includes(query) || 
-                   username.includes(query) || 
-                   role.includes(query);
-        }
-        return true;
+        return matchesSearchQuery(p, searchQuery);
     });
 
     const handleCreateGroup = async () => {
@@ -139,7 +120,7 @@ export default function NewGroupScreen() {
                     <Ionicons name="search" size={18} color="#94A3B8" />
                     <TextInput
                         style={styles.searchInput}
-                        placeholder="Search members..."
+                        placeholder="Search by name, grade level, role..."
                         placeholderTextColor="#94A3B8"
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -176,27 +157,72 @@ export default function NewGroupScreen() {
                         )}
                         renderItem={({ item }) => {
                             const isSelected = selectedUsers.includes(item.id);
+                            const roleLabel = item.role_label || formatRoleLabel(item.role);
+                            const grade = item.grade_level || formatGradeLevel(item.year_level);
+                            const isAdmin = roleLabel === 'Admin';
+                            const isTeacher = roleLabel === 'Teacher';
+                            const isStudent = roleLabel === 'Student';
+
+                            const avatarBg = isSelected 
+                                ? Colors.light.primary 
+                                : isAdmin 
+                                    ? '#F3E8FF' 
+                                    : isTeacher 
+                                        ? '#E0F2FE' 
+                                        : '#F1F5F9';
+                            const avatarIconColor = isSelected 
+                                ? '#FFF' 
+                                : isAdmin 
+                                    ? '#7C3AED' 
+                                    : isTeacher 
+                                        ? '#0284C7' 
+                                        : '#64748B';
+                            const avatarIconName = isSelected
+                                ? 'checkmark'
+                                : isAdmin
+                                    ? 'shield-checkmark'
+                                    : isTeacher
+                                        ? 'school'
+                                        : 'person';
+
                             return (
                                 <TouchableOpacity 
                                     style={[styles.userItem, isSelected && styles.selectedUserItem]} 
                                     onPress={() => toggleUser(item.id)}
+                                    activeOpacity={0.7}
                                 >
-                                    <View style={[styles.avatar, { backgroundColor: isSelected ? Colors.light.primary : "#E2E8F0" }]}>
+                                    <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
                                         <Ionicons 
-                                            name={isSelected ? "checkmark" : "person"} 
+                                            name={avatarIconName as any} 
                                             size={20} 
-                                            color={isSelected ? "#FFF" : "#64748B"} 
+                                            color={avatarIconColor} 
                                         />
                                     </View>
                                     <View style={styles.userInfo}>
-                                        <Text style={styles.userName}>{item.full_name}</Text>
-                                        <Text style={styles.userRole}>
-                                            {item.role} {item.email ? `• ${item.email}` : (item.username ? `• @${item.username}` : '')}
-                                        </Text>
+                                        <Text style={styles.userName} numberOfLines={1}>{item.full_name}</Text>
+                                        <View style={styles.metaRow}>
+                                            {isStudent && grade ? (
+                                                <View style={styles.gradeBadge}>
+                                                    <Ionicons name="school-outline" size={12} color="#4338CA" style={{ marginRight: 3 }} />
+                                                    <Text style={styles.gradeBadgeText}>{grade}</Text>
+                                                </View>
+                                            ) : null}
+                                            <View style={[
+                                                styles.roleBadge,
+                                                isAdmin ? styles.roleBadgeAdmin : isTeacher ? styles.roleBadgeTeacher : styles.roleBadgeStudent
+                                            ]}>
+                                                <Text style={[
+                                                    styles.roleBadgeText,
+                                                    isAdmin ? styles.roleTextAdmin : isTeacher ? styles.roleTextTeacher : styles.roleTextStudent
+                                                ]}>
+                                                    {roleLabel}
+                                                </Text>
+                                            </View>
+                                        </View>
                                     </View>
                                     <Ionicons 
                                         name={isSelected ? "checkbox" : "square-outline"} 
-                                        size={24} 
+                                        size={22} 
                                         color={isSelected ? Colors.light.primary : "#94A3B8"} 
                                     />
                                 </TouchableOpacity>
@@ -285,36 +311,88 @@ const styles = StyleSheet.create({
     userItem: {
         flexDirection: "row",
         alignItems: "center",
-        paddingVertical: 10,
-        paddingHorizontal: 8,
-        borderRadius: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: "#F1F5F9",
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        backgroundColor: "#FFFFFF",
+        borderWidth: 1,
+        borderColor: "#F1F5F9",
+        marginBottom: 8,
     },
     selectedUserItem: {
         backgroundColor: "#F0FDF4",
+        borderColor: "#BBF7D0",
     },
     avatar: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: "center",
         alignItems: "center",
         marginRight: 12,
     },
     userInfo: {
         flex: 1,
+        justifyContent: "center",
+        marginRight: 8,
     },
     userName: {
         fontSize: 15,
         fontWeight: "600",
-        color: "#1E293B",
+        color: "#0F172A",
+        marginBottom: 4,
     },
-    userRole: {
-        fontSize: 12,
-        color: "#64748B",
-        textTransform: "capitalize",
-        marginTop: 2,
+    metaRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: 6,
+    },
+    gradeBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#EEF2FF",
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: "#E0E7FF",
+    },
+    gradeBadgeText: {
+        fontSize: 11,
+        fontWeight: "600",
+        color: "#4338CA",
+    },
+    roleBadge: {
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+    },
+    roleBadgeAdmin: {
+        backgroundColor: "#F3E8FF",
+        borderColor: "#E9D5FF",
+    },
+    roleBadgeTeacher: {
+        backgroundColor: "#E0F2FE",
+        borderColor: "#BAE6FD",
+    },
+    roleBadgeStudent: {
+        backgroundColor: "#F1F5F9",
+        borderColor: "#E2E8F0",
+    },
+    roleBadgeText: {
+        fontSize: 11,
+        fontWeight: "600",
+    },
+    roleTextAdmin: {
+        color: "#7C3AED",
+    },
+    roleTextTeacher: {
+        color: "#0369A1",
+    },
+    roleTextStudent: {
+        color: "#475569",
     },
     emptyContainer: {
         padding: 40,

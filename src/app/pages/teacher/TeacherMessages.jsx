@@ -428,13 +428,14 @@ function TeacherMessages() {
     try {
       const { data, error } = await db
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role")
+        .select("id, first_name, middle_name, last_name, email, role, avatar_url")
         .in("id", ids);
       const res = (data || []).map((row) => ({
         id: String(row.id),
         name: buildProfileName(row),
         email: String(row.email || ""),
         role: String(row.role || "student").trim().toLowerCase(),
+        avatarUrl: String(row.avatar_url || ""),
       }));
 
       // If hardcoded admin ID was requested but not returned from DB, append default Admin profile
@@ -459,7 +460,7 @@ function TeacherMessages() {
 
       let staffQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status")
+        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
         .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -470,7 +471,7 @@ function TeacherMessages() {
 
       let studentQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status")
+        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
         .in("role", ["student", "Student", "STUDENT"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -495,6 +496,7 @@ function TeacherMessages() {
           name: buildProfileName(row),
           email: String(row.email || ""),
           role: String(row.role || "student").trim().toLowerCase(),
+          avatarUrl: String(row.avatar_url || ""),
           classCode: "",
           section: "",
         }));
@@ -506,6 +508,7 @@ function TeacherMessages() {
           name: "System Administrator",
           email: HARDCODED_ADMIN_EMAIL,
           role: "admin",
+          avatarUrl: "",
           classCode: "",
           section: ""
         });
@@ -527,7 +530,7 @@ function TeacherMessages() {
 
       let req = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status")
+        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
         .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,username.ilike.%${q}%`);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -551,6 +554,7 @@ function TeacherMessages() {
           name: buildProfileName(row),
           email: String(row.email || ""),
           role: String(row.role || "student").trim().toLowerCase(),
+          avatarUrl: String(row.avatar_url || ""),
           classCode: "",
           section: "",
         }));
@@ -625,6 +629,7 @@ function TeacherMessages() {
             participantId: counterpartId,
             participantName: String(profile?.name || (isAdminCounterpart ? "System Administrator" : "User")),
             participantRole: String(profile?.role || (isAdminCounterpart ? "admin" : "student")).toLowerCase(),
+            avatarUrl: String(profile?.avatarUrl || ""),
             email: String(profile?.email || (isAdminCounterpart ? HARDCODED_ADMIN_EMAIL : "")),
             classCode: "",
             section: "",
@@ -881,6 +886,7 @@ function TeacherMessages() {
       participantId: student.id,
       participantName: student.name,
       participantRole: String(student.role || "student"),
+      avatarUrl: String(student.avatarUrl || ""),
       email: student.email || "",
       classCode: student.classCode || "",
       section: student.section || "",
@@ -1445,11 +1451,19 @@ function TeacherMessages() {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                            conv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
-                          }`}>
-                            {conv.isVideoMeet ? <Video className="w-4 h-4" /> : conv.participantName.charAt(0).toUpperCase()}
-                          </div>
+                          {conv.avatarUrl ? (
+                            <img
+                              src={conv.avatarUrl}
+                              alt={conv.participantName}
+                              className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+                              conv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
+                            }`}>
+                              {conv.isVideoMeet ? <Video className="w-4 h-4" /> : conv.participantName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
                               <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
@@ -1486,11 +1500,19 @@ function TeacherMessages() {
                     >
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                      selectedConv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
-                    }`}>
-                      {selectedConv.isVideoMeet ? <Video className="w-4 h-4" /> : selectedConv.participantName.charAt(0).toUpperCase()}
-                    </div>
+                    {selectedConv.avatarUrl ? (
+                      <img
+                        src={selectedConv.avatarUrl}
+                        alt={selectedConv.participantName}
+                        className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+                        selectedConv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
+                      }`}>
+                        {selectedConv.isVideoMeet ? <Video className="w-4 h-4" /> : selectedConv.participantName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div className="flex-1">
                       <p className="font-bold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500">{getConversationDetailLine(selectedConv)}</p>
@@ -1693,9 +1715,17 @@ function TeacherMessages() {
                         onClick={() => handleStartConversation(recipient)}
                         className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
                       >
-                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-                          {recipient.name.charAt(0).toUpperCase()}
-                        </div>
+                        {recipient.avatarUrl ? (
+                          <img
+                            src={recipient.avatarUrl}
+                            alt={recipient.name}
+                            className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                          />
+                        ) : (
+                          <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+                            {recipient.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>

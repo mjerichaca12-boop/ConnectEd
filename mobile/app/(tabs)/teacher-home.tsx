@@ -1,6 +1,7 @@
 import { useRouter, Href } from "expo-router";
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Platform, StatusBar, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Platform, StatusBar, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../src/lib/supabase";
 import AppHeader from "../../src/components/common/AppHeader";
@@ -11,6 +12,7 @@ import StatCard from "../../src/components/teacher/StatCard";
 import EventCard from "../../src/components/teacher/EventCard";
 import { useEventsQuery } from "../../src/hooks/query/events/use-events-query";
 import { ActivityIndicator } from "react-native";
+import { formatTeacherName } from "../../src/utils/name-formatter";
 
 export default function TeacherHomeScreen() {
     const router = useRouter();
@@ -23,7 +25,25 @@ export default function TeacherHomeScreen() {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) return;
 
-            if (session.user.email) {
+            let profileRes = await supabase
+                .from("profiles")
+                .select("first_name, last_name, suffix")
+                .eq("id", session.user.id)
+                .maybeSingle();
+
+            if (profileRes.error && (profileRes.error.code === '42703' || profileRes.error.message?.includes('suffix'))) {
+                profileRes = await supabase
+                    .from("profiles")
+                    .select("first_name, last_name")
+                    .eq("id", session.user.id)
+                    .maybeSingle();
+            }
+
+            const profile = profileRes.data;
+            const formatted = formatTeacherName(profile);
+            if (formatted) {
+                setUserName(formatted);
+            } else if (session.user.email) {
                 const name = session.user.email.split("@")[0];
                 setUserName(name.charAt(0).toUpperCase() + name.slice(1));
             }

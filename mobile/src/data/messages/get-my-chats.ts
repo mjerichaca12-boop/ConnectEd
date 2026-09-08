@@ -1,4 +1,6 @@
 import { supabase } from "../../lib/supabase";
+import { formatTeacherName } from "../../utils/name-formatter";
+import { getLocalConversationReads } from "./message-storage";
 
 export async function getMyChats() {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -26,7 +28,9 @@ export async function getMyChats() {
     const { data: messages, error } = await supabase
         .from('messages')
         .select('*')
-        .or(queryFilter);
+        .or(queryFilter)
+        .order('created_at', { ascending: false })
+        .limit(250);
 
     if (error) {
         console.error('[getMyChats] error fetching messages:', error);
@@ -37,6 +41,37 @@ export async function getMyChats() {
     const partnerMap = new Map<string, { latestMessage: any; unreadCount: number }>();
     const groupMap = new Map<string, { latestMessage: any; unreadCount: number }>();
 
+    // Load local and remote read timestamps to ensure seen messages never revert on reload
+    const readMap = new Map<string, number>();
+    try {
+        const localReads = await getLocalConversationReads(currentUserId);
+        Object.entries(localReads).forEach(([k, iso]) => {
+            const t = new Date(iso).getTime();
+            if (!isNaN(t)) readMap.set(k, t);
+        });
+    } catch {}
+
+    try {
+        const { data: remoteReads } = await supabase
+            .from('conversation_reads')
+            .select('counterpart_id, conversation_id, last_read_at')
+            .eq('user_id', currentUserId);
+
+        (remoteReads || []).forEach(r => {
+            const t = new Date(r.last_read_at).getTime();
+            if (!isNaN(t)) {
+                if (r.counterpart_id) {
+                    const prev = readMap.get(r.counterpart_id) || 0;
+                    if (t > prev) readMap.set(r.counterpart_id, t);
+                }
+                if (r.conversation_id) {
+                    const prev = readMap.get(r.conversation_id) || 0;
+                    if (t > prev) readMap.set(r.conversation_id, t);
+                }
+            }
+        });
+    } catch {}
+
     (messages || []).forEach(msg => {
         if (msg.conversation_id) {
             // Group message
@@ -46,8 +81,12 @@ export async function getMyChats() {
                 latest = msg;
             }
 
+            const convLastRead = readMap.get(msg.conversation_id) || 0;
+            const msgTime = new Date(msg.created_at).getTime();
+            const isMsgRead = Boolean(msg.is_read || (convLastRead > 0 && msgTime <= convLastRead));
+
             let unreadInc = 0;
-            if (msg.sender_id !== currentUserId && !msg.is_read) {
+            if (msg.sender_id !== currentUserId && !isMsgRead) {
                 unreadInc = 1;
             }
 
@@ -66,8 +105,12 @@ export async function getMyChats() {
                 latest = msg;
             }
 
+            const partnerLastRead = readMap.get(partnerId) || 0;
+            const msgTime = new Date(msg.created_at).getTime();
+            const isMsgRead = Boolean(msg.is_read || (partnerLastRead > 0 && msgTime <= partnerLastRead));
+
             let unreadInc = 0;
-            if (msg.receiver_id === currentUserId && !msg.is_read) {
+            if (msg.receiver_id === currentUserId && !isMsgRead) {
                 unreadInc = 1;
             }
 
@@ -95,17 +138,26 @@ export async function getMyChats() {
     const partnerIds = Array.from(partnerMap.keys());
     let chats: any[] = [];
     if (partnerIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
+        let profilesRes: any = await supabase
             .from('profiles')
-            .select('id, first_name, last_name, middle_name, role, avatar_url')
+            .select('id, first_name, last_name, middle_name, role, avatar_url, suffix')
             .in('id', partnerIds);
+
+        if (profilesRes.error && (profilesRes.error.code === '42703' || profilesRes.error.message?.includes('suffix'))) {
+            profilesRes = await supabase
+                .from('profiles')
+                .select('id, first_name, last_name, middle_name, role, avatar_url')
+                .in('id', partnerIds);
+        }
+
+        const { data: profiles, error: profilesError } = profilesRes;
 
         if (profilesError) {
             console.error('[getMyChats] error fetching profiles:', profilesError);
         } else if (profiles) {
             const profileMap = new Map<string, any>();
-            profiles.forEach(p => {
-                const fullName = `${p.first_name || ''} ${p.middle_name || ''} ${p.last_name || ''}`.trim().replace(/\s+/g, ' ') || "Unknown User";
+            profiles.forEach((p: any) => {
+                const fullName = formatTeacherName(p) || `${p.first_name || ''} ${p.last_name || ''}`.trim() || "Unknown User";
                 profileMap.set(p.id, {
                     ...p,
                     full_name: fullName

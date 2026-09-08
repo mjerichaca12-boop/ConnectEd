@@ -1,46 +1,90 @@
-import { Stack } from "expo-router";
+import { useEffect } from "react";
+import { Stack, useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LogBox, View } from "react-native";
 import GlobalMessageNotification from "../src/components/common/GlobalMessageNotification";
+import { initializeDeviceNotifications, subscribeToNotificationResponse } from "../src/utils/device-notifications";
 
-LogBox.ignoreLogs([
+const ignoredWarnings = [
   'AuthApiError: Invalid Refresh Token: Already Used',
   'Invalid Refresh Token',
   'Your JavaScript code tried to access a native module that doesn\'t exist.',
   'PushNotificationIOS',
+  'PushNotificationIOS has been extracted from react-native core',
+  'Due to changes in Androids permission requirements, Expo Go can no longer provide full access to the media library',
   'Unable to activate keep awake',
-]);
-// Ignore the PushNotificationIOS native module error entirely - it's a known Expo Go
-// incompatibility with React Native 0.81.x and has no effect on app functionality.
-if (typeof (global as any).__disablePushNotificationIOS === 'undefined') {
-  try {
-    // Polyfill to silence the missing native module
-    const ReactNativeIndex = require('react-native');
-    if (!ReactNativeIndex.PushNotificationIOS) {
-      ReactNativeIndex.PushNotificationIOS = {
-        addEventListener: () => ({ remove: () => {} }),
-        removeEventListener: () => {},
-        requestPermissions: () => Promise.resolve({}),
-        abandonPermissions: () => {},
-        checkPermissions: () => {},
-        getInitialNotification: () => Promise.resolve(null),
-        getScheduledLocalNotifications: () => Promise.resolve([]),
-        setApplicationIconBadgeNumber: () => {},
-        getApplicationIconBadgeNumber: () => {},
-        cancelLocalNotifications: () => {},
-        cancelAllLocalNotifications: () => {},
-        presentLocalNotification: () => {},
-        scheduleLocalNotification: () => {},
-        addListener: () => ({ remove: () => {} }),
-      };
+  'The network connection was lost',
+  'UnexpectedException: The network connection was lost',
+  'fetch failed: UnexpectedException: The network connection was lost',
+  'fetch failed',
+  'AuthRetryableFetchError',
+  'Network request failed',
+  '[assignments] Invalid subjectId provided',
+  '[materials] Invalid subjectId provided',
+  '[announcements] Invalid or unresolved subjectId provided',
+  'Invalid subjectId provided',
+];
+
+LogBox.ignoreLogs(ignoredWarnings);
+
+if (__DEV__) {
+  const originalWarn = console.warn;
+  console.warn = (...args: any[]) => {
+    const message = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+    if (ignoredWarnings.some(w => message.includes(w))) {
+      return;
     }
-    (global as any).__disablePushNotificationIOS = true;
-  } catch (_) {}
+    originalWarn(...args);
+  };
+
+  const originalError = console.error;
+  console.error = (...args: any[]) => {
+    const message = args.map(a => (typeof a === 'string' ? a : (a?.message || ''))).join(' ');
+    if (
+      message.includes('The network connection was lost') ||
+      message.includes('UnexpectedException: The network connection was lost') ||
+      message.includes('AuthRetryableFetchError')
+    ) {
+      return;
+    }
+    originalError(...args);
+  };
 }
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Initialize OS notification channels and request permissions (if supported)
+    initializeDeviceNotifications();
+
+    // Handle user tapping on system notification (in supported builds)
+    const unsubscribe = subscribeToNotificationResponse(data => {
+      try {
+        if (data?.type === 'chat' && data?.partnerId) {
+          router.push({
+            pathname: "/conversation/[id]",
+            params: {
+              id: data.partnerId,
+              name: data.name || "Chat",
+              isRoom: data.isRoom || "false",
+            }
+          });
+        } else if (data?.type === 'activity' || data?.type === 'assignment' || data?.type === 'quiz') {
+          router.push("/(tabs)/assignment" as any);
+        }
+      } catch (e) {
+        console.warn('[RootLayout] Error handling notification response:', e);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [router]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <View style={{ flex: 1 }}>

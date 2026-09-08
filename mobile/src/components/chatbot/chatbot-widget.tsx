@@ -10,11 +10,10 @@ import {
     Platform, 
     ActivityIndicator,
     Modal,
-    SafeAreaView,
     ScrollView,
     Alert
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import Colors from '../../constants/Colors';

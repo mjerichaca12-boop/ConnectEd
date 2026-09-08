@@ -5,5 +5,6 @@ export function useChatListQuery() {
     return useQuery({
         queryKey: ['chat-list'],
         queryFn: getMyChats,
+        staleTime: 15000,
     });
 }

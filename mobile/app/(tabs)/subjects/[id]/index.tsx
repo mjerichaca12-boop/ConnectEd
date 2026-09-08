@@ -39,19 +39,19 @@ export default function SubjectOverview() {
                 </View>
             </View>
 
-            {subject?.grade_level && (
+            {Boolean(subject?.grade_level) && (
                 <View style={styles.infoSection}>
                     <Text style={styles.sectionTitle}>Year Level</Text>
                     <Text style={styles.text}>{subject.grade_level}</Text>
                 </View>
             )}
 
-
-
-            <View style={styles.infoSection}>
-                <Text style={styles.sectionTitle}>Schedule</Text>
-                <Text style={styles.text}>{subject?.schedule || "TBA"}</Text>
-            </View>
+            {(Boolean(subject?.section) || Boolean(subject?.grade_level)) && (
+                <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>Section</Text>
+                    <Text style={styles.text}>{subject?.section || "N/A"}</Text>
+                </View>
+            )}
         </ScrollView>
     );
 }

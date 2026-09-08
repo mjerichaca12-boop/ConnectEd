@@ -74,16 +74,30 @@ export default function ForgotPasswordScreen() {
 
     // 1. Submit email to receive 6-digit OTP
     const handleSendOTP = async () => {
-        setError("");
-        if (!email.trim()) {
+        const trimmedEmail = email.trim().toLowerCase();
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+        if (!trimmedEmail) {
             setError("Please enter your email address.");
             return;
         }
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email.trim())) {
+        if (!emailRegex.test(trimmedEmail)) {
             setError("Please enter a valid email address.");
             return;
+        }
+
+        const domain = trimmedEmail.split("@")[1];
+        if (!domain || !domain.includes(".") || domain.endsWith(".") || domain.startsWith(".")) {
+            setError("Please enter a valid email domain (e.g. gmail.com).");
+            return;
+        }
+
+        if (domain === "gmail.com") {
+            const rawUser = trimmedEmail.split("@")[0].replace(/\./g, "");
+            if (rawUser.length < 6 || rawUser.length > 30) {
+                setError("Gmail usernames must be between 6 and 30 characters.");
+                return;
+            }
         }
 
         setIsLoading(true);
@@ -251,14 +265,17 @@ export default function ForgotPasswordScreen() {
 
                                 {error ? <Text style={styles.errorText}>• {error}</Text> : null}
 
-                                <View style={styles.inputContainer}>
-                                    <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.icon} />
+                                <View style={[styles.inputContainer, Boolean(error) && { borderColor: "#EF4444", borderWidth: 1.5 }]}>
+                                    <Ionicons name="mail-outline" size={20} color={error ? "#EF4444" : "#94A3B8"} style={styles.icon} />
                                     <TextInput
                                         style={styles.input}
                                         placeholder="email@example.com"
                                         placeholderTextColor="#94A3B8"
                                         value={email}
-                                        onChangeText={setEmail}
+                                        onChangeText={(text) => {
+                                            setEmail(text);
+                                            if (error) setError("");
+                                        }}
                                         keyboardType="email-address"
                                         autoCapitalize="none"
                                         autoComplete="email"
@@ -292,14 +309,17 @@ export default function ForgotPasswordScreen() {
 
                                 {error ? <Text style={styles.errorText}>• {error}</Text> : null}
 
-                                <View style={styles.inputContainer}>
-                                    <Ionicons name="key-outline" size={20} color="#94A3B8" style={styles.icon} />
+                                <View style={[styles.inputContainer, Boolean(error) && { borderColor: "#EF4444", borderWidth: 1.5 }]}>
+                                    <Ionicons name="key-outline" size={20} color={error ? "#EF4444" : "#94A3B8"} style={styles.icon} />
                                     <TextInput
                                         style={[styles.input, { letterSpacing: 4, fontWeight: "bold" }]}
                                         placeholder="000000"
                                         placeholderTextColor="#94A3B8"
                                         value={otpCode}
-                                        onChangeText={(val) => setOtpCode(val.replace(/[^0-9]/g, "").slice(0, 6))}
+                                        onChangeText={(val) => {
+                                            setOtpCode(val.replace(/[^0-9]/g, "").slice(0, 6));
+                                            if (error) setError("");
+                                        }}
                                         keyboardType="number-pad"
                                         maxLength={6}
                                         autoFocus

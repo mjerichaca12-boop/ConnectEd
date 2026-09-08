@@ -5,11 +5,10 @@ import { supabase } from '../../../lib/supabase';
 
 export function useMaterialsQuery(args: GetMaterialsArgs) {
     const queryClient = useQueryClient();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const isValidUuid = !!(args.subjectId && uuidRegex.test(args.subjectId));
 
     useEffect(() => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        const isValidUuid = !!(args.subjectId && uuidRegex.test(args.subjectId));
-
         const channelName = isValidUuid ? `materials-rt-${args.subjectId}` : 'materials-rt-global';
         const invalidate = () => {
             queryClient.invalidateQueries({ queryKey: ['materials'] });
@@ -43,7 +42,7 @@ export function useMaterialsQuery(args: GetMaterialsArgs) {
         queryKey: ['materials', args.subjectId, args.teacherId, args.allowFallback],
         queryFn: () => getMaterials(args),
         enabled: !!(
-            (args.subjectId && args.subjectId !== 'undefined' && args.subjectId !== '[id]') || 
+            isValidUuid || 
             args.teacherId ||
             args.allowFallback !== false
         ),

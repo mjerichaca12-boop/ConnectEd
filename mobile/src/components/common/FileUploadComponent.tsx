@@ -42,24 +42,19 @@ export const FileUploadComponent: React.FC<FileUploadComponentProps> = ({
                 </View>
 
                 {/* Actions bottom bar */}
-                <View style={styles.actionBar}>
-                    {onRemoveFile && (
+                {onRemoveFile && (
+                    <View style={styles.actionBar}>
                         <TouchableOpacity 
                             style={styles.actionButtonDanger} 
                             onPress={onRemoveFile}
                             activeOpacity={0.7}
                             accessibilityLabel="Remove selected file"
                         >
-                            <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                            <Ionicons name="close-circle-outline" size={16} color="#EF4444" />
                             <Text style={styles.actionButtonDangerText}>Remove (X)</Text>
                         </TouchableOpacity>
-                    )}
-
-                    <View style={styles.statusBadge}>
-                        <Ionicons name="checkmark-circle-outline" size={18} color="#10B981" />
-                        <Text style={styles.statusBadgeText}>Ready</Text>
                     </View>
-                </View>
+                )}
             </View>
         );
     }
@@ -141,7 +136,8 @@ const styles = StyleSheet.create({
     },
     previewContainer: {
         width: "100%",
-        height: 160,
+        height: 180,
+        padding: 8,
         justifyContent: "center",
         alignItems: "center",
     },
@@ -149,22 +145,24 @@ const styles = StyleSheet.create({
         width: "100%",
         height: "100%",
         resizeMode: "contain",
+        borderRadius: 8,
     },
     actionBar: {
         flexDirection: "row",
         borderTopWidth: 1,
         borderTopColor: "#E2E8F0",
-        padding: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
         backgroundColor: "#FFFFFF",
-        justifyContent: "space-between",
         alignItems: "center",
+        justifyContent: "flex-start",
     },
     actionButtonDanger: {
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
+        paddingVertical: 7,
+        paddingHorizontal: 12,
         borderRadius: 8,
         borderWidth: 1,
         borderColor: "#FCA5A5",
@@ -172,37 +170,7 @@ const styles = StyleSheet.create({
     },
     actionButtonDangerText: {
         color: "#DC2626",
-        fontSize: 12,
-        fontWeight: "600",
-    },
-    actionButtonSecondary: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: "#CBD5E1",
-        backgroundColor: "#F8FAFC",
-    },
-    actionButtonSecondaryText: {
-        color: "#475569",
-        fontSize: 12,
-        fontWeight: "600",
-    },
-    statusBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderRadius: 8,
-        backgroundColor: "#ECFDF5",
-    },
-    statusBadgeText: {
-        color: "#059669",
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: "600",
     },
 });

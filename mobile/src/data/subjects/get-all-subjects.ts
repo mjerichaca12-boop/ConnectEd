@@ -9,11 +9,14 @@ export interface Subject {
     profiles?: {
         first_name: string;
         last_name: string;
+        middle_name?: string;
+        suffix?: string;
+        name_extension?: string;
     };
 }
 
 export async function getAllSubjects(): Promise<Subject[]> {
-    const { data, error } = await supabase
+    let res = await supabase
         .from('subjects')
         .select(`
             id,
@@ -23,13 +26,30 @@ export async function getAllSubjects(): Promise<Subject[]> {
             teacher_id,
             profiles:teacher_id (
                 first_name,
-                last_name
+                last_name,
+                suffix
             )
         `);
 
-    if (error) {
-        throw error;
+    if (res.error && (res.error.code === '42703' || res.error.message?.includes('suffix'))) {
+        res = await supabase
+            .from('subjects')
+            .select(`
+                id,
+                code,
+                name,
+                description,
+                teacher_id,
+                profiles:teacher_id (
+                    first_name,
+                    last_name
+                )
+            `);
     }
 
-    return data as any[];
+    if (res.error) {
+        throw res.error;
+    }
+
+    return res.data as any[];
 }

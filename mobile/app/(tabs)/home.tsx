@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, ActivityIndicator, RefreshControl } from "react-native";
 import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "../../src/constants/Colors";
 import AnnouncementCard from "../../src/components/cards/AnnouncementCard";
@@ -14,6 +14,7 @@ import { useMyAssignmentsQuery } from "../../src/hooks/query/assignments/use-my-
 import { TaskSummarySection } from "../../src/components/sections/TaskSummarySection";
 import { useMaterialsQuery } from "../../src/hooks/query/materials/use-materials-query";
 import { AssessmentTypeBadge } from "../../src/components/common/AssessmentTypeBadge";
+import { formatTeacherName } from "../../src/utils/name-formatter";
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -37,22 +38,15 @@ export default function HomeScreen() {
             id: e.subject_id,
             code: e.subjects.code,
             name: e.subjects.name,
-            teacher: e.subjects.profiles
-                ? `${e.subjects.profiles.first_name || ""} ${e.subjects.profiles.last_name || ""}`.trim()
-                : "Faculty",
+            teacher: formatTeacherName(e.subjects.profiles) || "Faculty",
             schedule: e.subjects.schedule || "TBA",
         }));
 
     const enrolledSubjectIds = enrolledSubjects.map(s => s.id);
 
-    // Filter upcoming deadlines (assessment_type === 'assignment')
+    // Filter upcoming deadlines across all pending tasks
     const upcomingDeadlines = assignments
-        .filter(a => a.status === 'pending' && a.assessment_type === 'assignment')
-        .slice(0, 3);
-
-    // Filter pending activities & quizzes (assessment_type === 'activity' || assessment_type === 'quiz')
-    const pendingActivities = assignments
-        .filter(a => a.status === 'pending' && (a.assessment_type === 'activity' || a.assessment_type === 'quiz'))
+        .filter(a => a.status === 'pending')
         .slice(0, 3);
 
     // Filter recently published lessons for the enrolled subjects
@@ -80,14 +74,24 @@ export default function HomeScreen() {
             const userId = session.user.id;
 
             // Try profiles table first (reflects edits made in profile page)
-            const { data: profile } = await supabase
+            let profileRes = await supabase
                 .from("profiles")
-                .select("first_name, last_name, is_verified")
+                .select("first_name, last_name, is_verified, suffix")
                 .eq("id", userId)
                 .single();
 
+            if (profileRes.error && (profileRes.error.code === '42703' || profileRes.error.message?.includes('suffix'))) {
+                profileRes = await supabase
+                    .from("profiles")
+                    .select("first_name, last_name, is_verified")
+                    .eq("id", userId)
+                    .single();
+            }
+
+            const profile = profileRes.data;
+
             if (profile?.first_name) {
-                const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
+                const fullName = formatTeacherName(profile);
                 setDisplayName(fullName);
                 return;
             }
@@ -224,7 +228,7 @@ export default function HomeScreen() {
                     ) : upcomingDeadlines.length === 0 ? (
                         <View style={styles.emptyCard}>
                             <Ionicons name="checkmark-circle-outline" size={24} color="#10B981" style={{ marginBottom: 4 }} />
-                            <Text style={styles.emptyText}>No upcoming assignment deadlines!</Text>
+                            <Text style={styles.emptyText}>No upcoming deadlines!</Text>
                         </View>
                     ) : (
                         upcomingDeadlines.map((item) => (
@@ -234,55 +238,17 @@ export default function HomeScreen() {
                                 onPress={() => router.push("/(tabs)/assignment" as any)}
                                 activeOpacity={0.7}
                             >
-                                <View style={styles.deadlineInfo}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                        <Text style={styles.deadlineSubject}>{item.subject}</Text>
+                                <View style={styles.deadlineHeaderRow}>
+                                    <View style={styles.deadlineSubjectRow}>
+                                        <Text style={styles.deadlineSubject} numberOfLines={1}>{item.subject}</Text>
                                         <AssessmentTypeBadge type={item.assessment_type || 'assignment'} size="small" />
                                     </View>
-                                    <Text style={styles.deadlineTitle} numberOfLines={1}>{item.title}</Text>
-                                </View>
-                                <View style={styles.deadlineDateContainer}>
-                                    <Ionicons name="calendar-outline" size={14} color="#EF4444" style={{ marginRight: 4 }} />
-                                    <Text style={styles.deadlineDate}>{item.dueDate}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        ))
-                    )}
-                </View>
-
-                {/* Pending Activities Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Pending Activities & Quizzes</Text>
-                        <TouchableOpacity onPress={() => router.push("/(tabs)/assignment" as any)}>
-                            <Text style={styles.link}>View Tasks</Text>
-                        </TouchableOpacity>
-                    </View>
-                    {isAssignmentsLoading ? (
-                        <ActivityIndicator size="small" color={Colors.light.primary} />
-                    ) : pendingActivities.length === 0 ? (
-                        <View style={styles.emptyCard}>
-                            <Ionicons name="sparkles-outline" size={24} color="#F59E0B" style={{ marginBottom: 4 }} />
-                            <Text style={styles.emptyText}>No pending activities or quizzes.</Text>
-                        </View>
-                    ) : (
-                        pendingActivities.map((item) => (
-                            <TouchableOpacity 
-                                key={item.id} 
-                                style={styles.activityCard}
-                                onPress={() => router.push("/(tabs)/assignment" as any)}
-                                activeOpacity={0.7}
-                            >
-                                <View style={styles.activityInfo}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                        <Text style={styles.activitySubject}>{item.subject}</Text>
-                                        <AssessmentTypeBadge type={item.assessment_type} size="small" />
+                                    <View style={styles.deadlineDateBadge}>
+                                        <Ionicons name="calendar-outline" size={12} color="#DC2626" style={{ marginRight: 4 }} />
+                                        <Text style={styles.deadlineDateText}>{item.dueDate}</Text>
                                     </View>
-                                    <Text style={styles.activityTitle} numberOfLines={1}>{item.title}</Text>
                                 </View>
-                                <View style={styles.activityDueDateContainer}>
-                                    <Text style={styles.activityDueDate}>Due: {item.dueDate}</Text>
-                                </View>
+                                <Text style={styles.deadlineTitle} numberOfLines={2}>{item.title}</Text>
                             </TouchableOpacity>
                         ))
                     )}
@@ -604,101 +570,57 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     deadlineCard: {
-        flexDirection: 'row',
         backgroundColor: '#FFFFFF',
-        borderRadius: 12,
+        borderRadius: 14,
         padding: 14,
-        marginBottom: 8,
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        marginBottom: 10,
         borderWidth: 1,
-        borderColor: '#F1F5F9',
+        borderColor: '#E2E8F0',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.03,
-        shadowRadius: 2,
+        shadowOpacity: 0.04,
+        shadowRadius: 3,
         elevation: 1,
     },
-    deadlineInfo: {
+    deadlineHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    deadlineSubjectRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
         flex: 1,
         marginRight: 8,
     },
     deadlineSubject: {
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 'bold',
         color: Colors.light.primary,
-        marginBottom: 2,
+        flexShrink: 1,
     },
-    deadlineTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#1E293B',
-    },
-    deadlineDateContainer: {
+    deadlineDateBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#FEF2F2',
         paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-    },
-    deadlineDate: {
-        fontSize: 11,
-        fontWeight: 'bold',
-        color: '#EF4444',
-    },
-    activityCard: {
-        flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 8,
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        paddingVertical: 3.5,
+        borderRadius: 6,
         borderWidth: 1,
-        borderColor: '#F1F5F9',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.03,
-        shadowRadius: 2,
-        elevation: 1,
+        borderColor: '#FEE2E2',
     },
-    activityInfo: {
-        flex: 1,
-        marginRight: 8,
-    },
-    activitySubject: {
+    deadlineDateText: {
         fontSize: 11,
-        fontWeight: 'bold',
-        color: Colors.light.primary,
-        marginRight: 6,
-    },
-    typeBadge: {
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
-    },
-    typeBadgeText: {
-        fontSize: 9,
-        fontWeight: 'bold',
-    },
-    activityTitle: {
-        fontSize: 14,
         fontWeight: '600',
-        color: '#1E293B',
+        color: '#DC2626',
     },
-    activityDueDateContainer: {
-        backgroundColor: '#F8FAFC',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    activityDueDate: {
-        fontSize: 11,
-        fontWeight: '500',
-        color: '#64748B',
+    deadlineTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#0F172A',
+        lineHeight: 20,
     },
     lessonCard: {
         flexDirection: 'row',

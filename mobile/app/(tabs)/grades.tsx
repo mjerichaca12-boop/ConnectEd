@@ -1,127 +1,70 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, StatusBar } from "react-native";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    TouchableOpacity,
+    ActivityIndicator,
+    StatusBar,
+    Image,
+    RefreshControl
+} from "react-native";
 import Colors from "../../src/constants/Colors";
 import AppHeader from "../../src/components/common/AppHeader";
 import { supabase } from "../../src/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
-import { getMyEnrollments, EnrollmentWithSubject } from "../../src/data/enrollments/get-my-enrollments";
-import { useFocusEffect } from "@react-navigation/native";
+import { getMyEnrollments } from "../../src/data/enrollments/get-my-enrollments";
+import { useFocusEffect } from "expo-router/react-navigation";
 
-function gradeToPoints(numericGrade: number): number {
-    if (numericGrade >= 90) return 4.0;
-    if (numericGrade >= 85) return 3.0;
-    if (numericGrade >= 80) return 2.0;
-    if (numericGrade >= 75) return 1.0;
-    return 0.0;
+interface StudentProfile {
+    id: string;
+    fullName: string;
+    lrn: string;
+    avatarUrl: string;
 }
 
-function computeGPA(items: { grade: Record<string, any> | null; units: number }[]): string {
-    const valid = items.filter(g => g.grade && g.grade.overall !== undefined && g.grade.overall > 0);
-    if (valid.length === 0) return "N/A";
-    const totalPoints = valid.reduce((sum, g) => sum + gradeToPoints(g.grade!.overall) * g.units, 0);
-    const totalUnits = valid.reduce((sum, g) => sum + g.units, 0);
-    if (totalUnits === 0) return "N/A";
-    return (totalPoints / totalUnits).toFixed(2);
-}
-
-interface GradeItem {
+interface SubjectGradeRecord {
     enrollmentId: string;
     subjectId: string;
     code: string;
     title: string;
+    section?: string;
+    category?: string;
     units: number;
-    grade: Record<string, any> | null;
+    q1: number;
+    q2: number;
+    q3: number;
+    q4: number;
+    quiz: number;
+    activity: number | string;
+    assignment: number;
+    exam: number;
+    overall: number;
+    completionPercent: number;
+    submissionCount: number;
+    totalAssessments: number;
+    lastActivity: string;
+    remarks: string;
+    isPassed: boolean;
 }
 
-const DetailedGradeView = ({ grade, onBack }: { grade: GradeItem; onBack: () => void }) => {
-    const gradePoints = grade.grade?.overall ? gradeToPoints(grade.grade.overall) : null;
-    return (
-        <View style={styles.detailedContainer}>
-            <AppHeader title={grade.title} showBack={true} onBack={onBack} />
-            <ScrollView contentContainerStyle={styles.detailedContent}>
-                <View style={styles.detailHeader}>
-                    <Text style={styles.subjectCode}>{grade.code}</Text>
-                    <Text style={styles.subjectTitleLg}>{grade.title}</Text>
-                    <Text style={styles.units}>{grade.units} units</Text>
-                </View>
-
-                <View style={styles.overallGradeCard}>
-                    <Text style={styles.overallGradeLabel}>Overall Grade</Text>
-                    <Text style={styles.overallGradeValue}>{grade.grade?.overall ?? "—"}</Text>
-                    {gradePoints !== null && gradePoints >= 0 && (
-                        <Text style={styles.gradePointsLabel}>{gradePoints.toFixed(1)} GPA Points</Text>
-                    )}
-                </View>
-
-                {!grade.grade ? (
-                    <View style={styles.noGradeCard}>
-                        <Ionicons name="time-outline" size={36} color="#94A3B8" />
-                        <Text style={styles.noGradeTitle}>Grade Not Yet Released</Text>
-                        <Text style={styles.noGradeText}>
-                            Your teacher has not submitted a grade for this subject yet.
-                        </Text>
-                    </View>
-                ) : (
-                    <>
-                        <View style={styles.infoCard}>
-                            <Text style={styles.infoTitle}>Term Breakdown</Text>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Term 1 (T1)</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.t1 ?? "—"}</Text>
-                            </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Term 2 (T2)</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.t2 ?? "—"}</Text>
-                            </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Term 3 (T3)</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.t3 ?? "—"}</Text>
-                            </View>
-                        </View>
-
-                        <View style={[styles.infoCard, { marginTop: 16 }]}>
-                            <Text style={styles.infoTitle}>Assessment Breakdown</Text>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Quiz Average</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.quiz ?? "—"}</Text>
-                            </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Activity Score</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.activity ?? "—"}</Text>
-                            </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Assignment Score</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.assignment ?? "—"}</Text>
-                            </View>
-                            <View style={styles.infoRow}>
-                                <Text style={styles.infoLabel}>Exam Score</Text>
-                                <Text style={styles.infoValue}>{grade.grade?.exam ?? "—"}</Text>
-                            </View>
-                            <View style={[styles.infoRow, { borderBottomWidth: 0, marginTop: 12 }]}>
-                                <Text style={styles.infoLabel}>Remarks</Text>
-                                <Text style={[styles.infoValue, { color: Colors.light.primary }]}>
-                                    {grade.grade?.remarks ?? "No Remarks"}
-                                </Text>
-                            </View>
-                        </View>
-                    </>
-                )}
-            </ScrollView>
-        </View>
-    );
-};
+type QuarterFilter = "all" | "term1" | "term2" | "term3" | "term4";
 
 export default function GradesScreen() {
-    const [selectedGrade, setSelectedGrade] = useState<GradeItem | null>(null);
-    const [grades, setGrades] = useState<GradeItem[]>([]);
+    const [grades, setGrades] = useState<SubjectGradeRecord[]>([]);
+    const [selectedSubjectId, setSelectedSubjectId] = useState<string>("all");
+    const [activeQuarter, setActiveQuarter] = useState<QuarterFilter>("term1");
+    const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const getGradeRemarks = (grade: number) => {
         if (grade >= 90) return "Outstanding";
-        if (grade >= 85) return "Excellent";
-        if (grade >= 80) return "Very Good";
-        if (grade >= 75) return "Good";
+        if (grade >= 85) return "Very Satisfactory";
+        if (grade >= 80) return "Satisfactory";
+        if (grade >= 75) return "Passed";
         return "Needs Improvement";
     };
 
@@ -129,11 +72,37 @@ export default function GradesScreen() {
         try {
             setError(null);
             const { data: userData } = await supabase.auth.getUser();
-            if (!userData?.user) return;
+            if (!userData?.user) {
+                setIsLoading(false);
+                return;
+            }
+            const userId = userData.user.id;
 
+            // 1. Fetch student's profile (name, LRN, avatar)
+            const { data: profileData } = await supabase
+                .from("profiles")
+                .select("id, first_name, middle_name, last_name, lrn, avatar_url")
+                .eq("id", userId)
+                .maybeSingle();
+
+            if (profileData) {
+                const fullName = [profileData.first_name, profileData.middle_name, profileData.last_name]
+                    .map((p) => String(p || "").trim())
+                    .filter(Boolean)
+                    .join(" ") || "Student";
+
+                setStudentProfile({
+                    id: String(profileData.id),
+                    fullName,
+                    lrn: String(profileData.lrn || "N/A"),
+                    avatarUrl: String(profileData.avatar_url || ""),
+                });
+            }
+
+            // 2. Fetch student's active enrollments
             const enrollments = await getMyEnrollments();
-            const activeEnrollments = enrollments.filter(e => {
-                const s = e.status.toLowerCase();
+            const activeEnrollments = enrollments.filter((e) => {
+                const s = (e.status || "").toLowerCase();
                 return s === "accepted" || s === "approved" || s === "active";
             });
 
@@ -143,44 +112,246 @@ export default function GradesScreen() {
                 return;
             }
 
-            const { data: gradesData, error: gradesError } = await supabase
-                .from('teacher_student_grades')
-                .select('*')
-                .eq('student_id', userData.user.id);
+            const subjectIds = activeEnrollments
+                .map((e) => e.subjects?.id)
+                .filter((id): id is string => Boolean(id));
 
-            const gradesMap = new Map();
-            (gradesData || []).forEach(g => gradesMap.set(g.subject_id, g));
+            // 3. Fetch grades from teacher_student_grades
+            const { data: dbGradesData } = await supabase
+                .from("teacher_student_grades")
+                .select("*")
+                .eq("student_id", userId);
 
-            const mapped: GradeItem[] = activeEnrollments.map(enrollment => {
-                const sId = enrollment.subjects?.id;
-                const dbGrade = sId ? gradesMap.get(sId) : null;
-                
+            const dbGradesMap = new Map<string, any>();
+            (dbGradesData || []).forEach((g) => dbGradesMap.set(g.subject_id, g));
+
+            // 4. Fetch detailed grades from teacher_assessment_grades
+            const { data: assessmentGradesData } = await supabase
+                .from("teacher_assessment_grades")
+                .select("*")
+                .eq("student_id", userId);
+
+            const assessmentGradesBySubject = new Map<string, any[]>();
+            (assessmentGradesData || []).forEach((ag) => {
+                const sId = String(ag.subject_id);
+                const list = assessmentGradesBySubject.get(sId) || [];
+                list.push(ag);
+                assessmentGradesBySubject.set(sId, list);
+            });
+
+            // 5. Fetch submissions to calculate completion and last activity
+            const { data: submissionsData } = await supabase
+                .from("teacher_assessment_submissions")
+                .select("id, subject_id, assessment_id, submitted_at")
+                .eq("student_id", userId);
+
+            const submissionsBySubject = new Map<string, any[]>();
+            (submissionsData || []).forEach((sub) => {
+                const sId = String(sub.subject_id);
+                const existing = submissionsBySubject.get(sId) || [];
+                existing.push(sub);
+                submissionsBySubject.set(sId, existing);
+            });
+
+            // 6. Fetch lesson assessments count per subject
+            let assessmentsCountBySubject = new Map<string, number>();
+            try {
+                const { data: lessonsData } = await supabase
+                    .from("lessons")
+                    .select("id, subject_id")
+                    .in("subject_id", subjectIds);
+
+                if (lessonsData && lessonsData.length > 0) {
+                    const lessonIds = lessonsData.map((l) => l.id);
+                    const { data: assignmentsData } = await supabase
+                        .from("assignments")
+                        .select("id, lesson_id")
+                        .in("lesson_id", lessonIds);
+
+                    (assignmentsData || []).forEach((a) => {
+                        const lesson = lessonsData.find((l) => l.id === a.lesson_id);
+                        if (lesson?.subject_id) {
+                            const current = assessmentsCountBySubject.get(lesson.subject_id) || 0;
+                            assessmentsCountBySubject.set(lesson.subject_id, current + 1);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn("[Grades] Failed to fetch assessment counts:", err);
+            }
+
+            // 7. Map each subject enrollment to full grade record matching teacher table
+            const mapped: SubjectGradeRecord[] = activeEnrollments.map((enrollment) => {
+                const sId = enrollment.subjects?.id ?? "";
+                const dbGrade = sId ? dbGradesMap.get(sId) : null;
+                const agList = sId ? assessmentGradesBySubject.get(sId) || [] : [];
+                const subs = sId ? submissionsBySubject.get(sId) || [] : [];
+                const totalAssessments = Math.max(
+                    assessmentsCountBySubject.get(sId) || 0,
+                    subs.length,
+                    agList.length
+                );
+
+                let lastDate: Date | null = null;
+                subs.forEach((s) => {
+                    if (s.submitted_at) {
+                        const d = new Date(s.submitted_at);
+                        if (!lastDate || d > lastDate) lastDate = d;
+                    }
+                });
+
+                const lastActivity = lastDate ? (lastDate as Date).toLocaleDateString() : "Never";
+                const completionPercent = totalAssessments > 0
+                    ? Math.round((subs.length / totalAssessments) * 100)
+                    : (subs.length > 0 ? 100 : 0);
+
+                // Compute per-category assessment totals directly from teacher_assessment_grades
+                const totals = {
+                    quiz: { score: 0, max: 0, count: 0 },
+                    activity: { score: 0, max: 0, count: 0 },
+                    assignment: { score: 0, max: 0, count: 0 },
+                    exam: { score: 0, max: 0, count: 0 },
+                    all: { score: 0, max: 0, count: 0 },
+                };
+
+                let computedPerformanceTasksScore = 0;
+                let computedPerformanceTasksMax = 0;
+                let computedWrittenWorksScore = 0;
+                let computedWrittenWorksMax = 0;
+
+                agList.forEach((item) => {
+                    const gradeVal = Number(item.grade_value || 0);
+                    const maxPts = Math.max(1, Number(item.max_points || 100));
+                    const rawType = String(item.assessment_type || item.assessment_title || "").toLowerCase();
+
+                    let category: "quiz" | "activity" | "assignment" | "exam" = "activity";
+                    if (rawType.includes("quiz")) category = "quiz";
+                    else if (rawType.includes("exam") || rawType.includes("test")) category = "exam";
+                    else if (rawType.includes("assignment") || rawType.includes("homework")) category = "assignment";
+                    else category = "activity";
+
+                    totals[category].score += gradeVal;
+                    totals[category].max += maxPts;
+                    totals[category].count += 1;
+
+                    totals.all.score += gradeVal;
+                    totals.all.max += maxPts;
+                    totals.all.count += 1;
+
+                    if (category === "quiz" || category === "assignment" || category === "exam") {
+                        computedWrittenWorksScore += gradeVal;
+                        computedWrittenWorksMax += maxPts;
+                    } else {
+                        computedPerformanceTasksScore += gradeVal;
+                        computedPerformanceTasksMax += maxPts;
+                    }
+                });
+
+                const calcPercent = (score: number, max: number) => {
+                    if (!max || max <= 0) return 0;
+                    return Math.round((score / max) * 100);
+                };
+
+                const computedQuiz = calcPercent(totals.quiz.score, totals.quiz.max);
+                const computedActivity = calcPercent(totals.activity.score, totals.activity.max);
+                const computedAssignment = calcPercent(totals.assignment.score, totals.assignment.max);
+                const computedExam = calcPercent(totals.exam.score, totals.exam.max);
+
+                // DepEd Transmutation formula: 37.5 + (initialGrade * 0.625)
+                const perfPercent = calcPercent(computedPerformanceTasksScore, computedPerformanceTasksMax);
+                const writtenPercent = calcPercent(computedWrittenWorksScore, computedWrittenWorksMax);
+
+                let initialGrade = 0;
+                if (computedPerformanceTasksMax > 0 && computedWrittenWorksMax > 0) {
+                    initialGrade = Math.round((writtenPercent * 0.4) + (perfPercent * 0.6));
+                } else if (computedPerformanceTasksMax > 0) {
+                    initialGrade = Math.round(perfPercent * 0.6);
+                } else if (computedWrittenWorksMax > 0) {
+                    initialGrade = Math.round(writtenPercent * 0.4);
+                } else if (totals.all.max > 0) {
+                    initialGrade = Math.round(calcPercent(totals.all.score, totals.all.max) * 0.6);
+                }
+
+                const computedTransmutedGrade = initialGrade > 0
+                    ? Math.max(0, Math.min(100, Math.round(37.5 + (initialGrade * 0.625))))
+                    : 0;
+
+                let computation: any = null;
+                try {
+                    computation = dbGrade?.grade_computation
+                        ? typeof dbGrade.grade_computation === "string"
+                            ? JSON.parse(dbGrade.grade_computation)
+                            : dbGrade.grade_computation
+                        : null;
+                } catch {
+                    computation = null;
+                }
+
+                const quarterOne = computation?.quarters?.quarter1 || null;
+                const fallbackWrittenWorks = quarterOne?.writtenWorks?.percentageScore ?? computedWrittenWorksScore;
+                const fallbackPerformanceTasks = quarterOne?.performanceTasks?.percentageScore ?? perfPercent;
+                const fallbackInitialGrade = quarterOne?.initialGrade ?? initialGrade;
+                const fallbackQuarterlyGrade = quarterOne?.quarterlyGrade ?? computedTransmutedGrade;
+
+                const q1 = Number(dbGrade?.quarter1_grade || fallbackQuarterlyGrade || computedTransmutedGrade);
+                const q2 = Number(dbGrade?.quarter2_grade || 0);
+                const q3 = Number(dbGrade?.quarter3_grade || 0);
+                const q4 = Number(dbGrade?.quarter4_grade || 0);
+
+                const quiz = Number(dbGrade?.quiz_average || (computedQuiz > 0 ? computedQuiz : fallbackWrittenWorks));
+
+                const rawActivity = dbGrade?.activity_grade;
+                const activityVal = (rawActivity != null && Number(rawActivity) > 0)
+                    ? Number(rawActivity)
+                    : (computedActivity > 0
+                        ? computedActivity
+                        : (fallbackPerformanceTasks > 0 ? fallbackPerformanceTasks : (computedAssignment > 0 ? computedAssignment : 0)));
+
+                const activity: number | string = activityVal > 0 ? activityVal : "Not yet graded";
+
+                const assignment = Number(
+                    dbGrade?.assignment_grade || (computedAssignment > 0 ? computedAssignment : (fallbackInitialGrade > 0 ? fallbackInitialGrade : 0))
+                );
+
+                const exam = Number(dbGrade?.exam_grade || computedExam || 0);
+
+                const overall = Number(dbGrade?.overall_grade || q1 || computedTransmutedGrade || 0);
+                const isPassed = overall >= 75;
+                const remarks = overall > 0 ? getGradeRemarks(overall) : "Needs Improvement";
+
                 return {
-                    enrollmentId: enrollment.id,
-                    subjectId: sId ?? "",
+                    enrollmentId: String(enrollment.id),
+                    subjectId: sId,
                     code: enrollment.subjects?.code ?? "N/A",
                     title: enrollment.subjects?.name ?? "Unknown Subject",
+                    section: (enrollment.subjects as any)?.section ?? "Amethyst",
+                    category: (enrollment.subjects as any)?.subject_category ?? "General",
                     units: 3,
-                    grade: dbGrade ? {
-                        t1: dbGrade.term1_grade,
-                        t2: dbGrade.term2_grade,
-                        t3: dbGrade.term3_grade,
-                        quiz: dbGrade.quiz_average,
-                        activity: dbGrade.activity_grade,
-                        assignment: dbGrade.assignment_grade,
-                        exam: dbGrade.exam_grade,
-                        overall: dbGrade.overall_grade,
-                        remarks: getGradeRemarks(dbGrade.overall_grade),
-                    } : null,
+                    q1,
+                    q2,
+                    q3,
+                    q4,
+                    quiz,
+                    activity,
+                    assignment,
+                    exam,
+                    overall,
+                    completionPercent,
+                    submissionCount: subs.length,
+                    totalAssessments,
+                    lastActivity,
+                    remarks,
+                    isPassed,
                 };
             });
 
             setGrades(mapped);
         } catch (err: any) {
-            console.warn("Failed to fetch grades:", err);
+            console.warn("Failed to fetch student grades:", err);
             setError(err?.message || "Failed to load grades.");
         } finally {
             setIsLoading(false);
+            setRefreshing(false);
         }
     }, []);
 
@@ -191,168 +362,1061 @@ export default function GradesScreen() {
     );
 
     useEffect(() => {
-        // Real-time: teacher gives/updates a grade → re-fetch
+        // Real-time listener: instantly reflect when teacher changes student grades or assessment grades
         const channel = supabase
-            .channel('grades-realtime')
+            .channel("student-grades-realtime-sync")
             .on(
-                'postgres_changes',
+                "postgres_changes",
                 { event: "*", schema: "public", table: "teacher_student_grades" },
+                () => {
+                    fetchGrades();
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "teacher_assessment_grades" },
+                () => {
+                    fetchGrades();
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "teacher_assessment_submissions" },
                 () => {
                     fetchGrades();
                 }
             )
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [fetchGrades]);
 
-    if (selectedGrade) {
-        return <DetailedGradeView grade={selectedGrade} onBack={() => setSelectedGrade(null)} />;
-    }
+    const handleRefresh = () => {
+        setRefreshing(true);
+        fetchGrades();
+    };
 
-    const gpa = computeGPA(grades);
+    const displayedGrades = useMemo(() => {
+        if (selectedSubjectId === "all") return grades;
+        return grades.filter((g) => g.subjectId === selectedSubjectId);
+    }, [grades, selectedSubjectId]);
+
+    const summaryRecord = useMemo(() => {
+        if (selectedSubjectId !== "all") {
+            const found = grades.find((g) => g.subjectId === selectedSubjectId);
+            if (found) return found;
+        }
+        const withGrades = grades.find((g) => g.overall > 0 || g.q1 > 0);
+        return withGrades || grades[0] || null;
+    }, [grades, selectedSubjectId]);
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={Colors.light.forestGreen} />
             <AppHeader title="Grades" hasNotifications={true} />
-            <ScrollView contentContainerStyle={styles.content}>
-                <Text style={styles.header}>Academic Performance</Text>
 
-                <View style={styles.gpaCard}>
-                    <Text style={styles.gpaLabel}>Current GPA</Text>
-                    {isLoading ? (
-                        <ActivityIndicator color="#FFFFFF" size="large" style={{ marginVertical: 8 }} />
-                    ) : (
-                        <Text style={styles.gpaValue}>{gpa}</Text>
-                    )}
-                    <Text style={styles.gpaScale}>4.0 Scale</Text>
+            {isLoading && !refreshing ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={Colors.light.primary} />
+                    <Text style={styles.loadingText}>Loading your grades...</Text>
                 </View>
-
-                {isLoading ? (
-                    <ActivityIndicator size="large" color={Colors.light.primary} style={{ marginTop: 24 }} />
-                ) : error ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="cloud-offline-outline" size={56} color="#CBD5E1" />
-                        <Text style={styles.emptyTitle}>Could Not Load Grades</Text>
-                        <Text style={styles.emptyText}>{error}</Text>
+            ) : error ? (
+                <ScrollView
+                    contentContainerStyle={styles.centerContainer}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+                >
+                    <Ionicons name="cloud-offline-outline" size={56} color="#CBD5E1" />
+                    <Text style={styles.emptyTitle}>Could Not Load Grades</Text>
+                    <Text style={styles.emptySubtitle}>{error}</Text>
+                </ScrollView>
+            ) : grades.length === 0 ? (
+                <ScrollView
+                    contentContainerStyle={styles.centerContainer}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+                >
+                    <Ionicons name="school-outline" size={56} color="#CBD5E1" />
+                    <Text style={styles.emptyTitle}>No Grades Available</Text>
+                    <Text style={styles.emptySubtitle}>
+                        Your grades will appear here once your teacher enters and saves them.
+                    </Text>
+                </ScrollView>
+            ) : (
+                <ScrollView
+                    contentContainerStyle={styles.contentContainer}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[Colors.light.primary]} />}
+                >
+                    {/* Enrolled Subjects Horizontal Pills */}
+                    <View style={styles.sectionHeaderRow}>
+                        <Text style={styles.sectionHeading}>Enrolled Subjects</Text>
+                        <Text style={styles.sectionSubCount}>{grades.length} {grades.length === 1 ? "Subject" : "Subjects"}</Text>
                     </View>
-                ) : grades.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="school-outline" size={56} color="#CBD5E1" />
-                        <Text style={styles.emptyTitle}>No Grades Yet</Text>
-                        <Text style={styles.emptyText}>
-                            Your grades will appear here once{"\n"}a teacher submits them.
-                        </Text>
-                    </View>
-                ) : (
-                    grades.map((item) => (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsContainer}>
+                        {/* All Subjects Pill */}
                         <TouchableOpacity
-                            key={item.enrollmentId}
-                            style={styles.gradeItem}
-                            onPress={() => setSelectedGrade(item)}
+                            style={[styles.subjectPill, selectedSubjectId === "all" && styles.subjectPillActive]}
+                            onPress={() => setSelectedSubjectId("all")}
+                            activeOpacity={0.7}
                         >
-                            <View style={styles.gradeInfo}>
-                                <Text style={styles.subjectCode}>{item.code}</Text>
-                                <Text style={styles.subjectTitle}>{item.title}</Text>
-                                <Text style={styles.units}>{item.units} units</Text>
-                            </View>
-                            <View style={[
-                                styles.gradeBox,
-                                item.grade
-                                    ? { backgroundColor: Colors.light.primary + "15" }
-                                    : { backgroundColor: "#F1F5F9" }
-                            ]}>
-                                <Text style={[
-                                    styles.gradeText,
-                                    !item.grade && { color: "#94A3B8", fontSize: 13 }
-                                ]}>
-                                    {item.grade?.overall ?? "—"}
+                            <Text style={[styles.subjectCode, selectedSubjectId === "all" && styles.subjectCodeActive]} numberOfLines={1}>
+                                ALL
+                            </Text>
+                            <Text style={[styles.subjectTitle, selectedSubjectId === "all" && styles.subjectTitleActive]} numberOfLines={1}>
+                                All Subjects
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* Individual Subject Pills */}
+                        {grades.map((item) => {
+                            const isSelected = item.subjectId === selectedSubjectId;
+                            return (
+                                <TouchableOpacity
+                                    key={item.enrollmentId}
+                                    style={[styles.subjectPill, isSelected && styles.subjectPillActive]}
+                                    onPress={() => setSelectedSubjectId(item.subjectId)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={[styles.subjectCode, isSelected && styles.subjectCodeActive]} numberOfLines={1}>
+                                        {item.code}
+                                    </Text>
+                                    <Text style={[styles.subjectTitle, isSelected && styles.subjectTitleActive]} numberOfLines={1}>
+                                        {item.title}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+
+                    {/* Quarter Filter Pills matching web teacher interface */}
+                    <View style={styles.quarterFilterContainer}>
+                        <View style={styles.quarterTabsGroup}>
+                            {[
+                                { key: "all" as QuarterFilter, label: "All Quarters" },
+                                { key: "term1" as QuarterFilter, label: "Q1" },
+                                { key: "term2" as QuarterFilter, label: "Q2" },
+                                { key: "term3" as QuarterFilter, label: "Q3" },
+                                { key: "term4" as QuarterFilter, label: "Q4" },
+                            ].map(({ key, label }) => {
+                                const isActive = activeQuarter === key;
+                                return (
+                                    <TouchableOpacity
+                                        key={key}
+                                        style={[styles.quarterTabBtn, isActive && styles.quarterTabBtnActive]}
+                                        onPress={() => setActiveQuarter(key)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text style={[styles.quarterTabBtnText, isActive && styles.quarterTabBtnTextActive]}>
+                                            {label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+
+                    {/* Active Subject Banner */}
+                    <View style={styles.subjectBanner}>
+                        <View style={styles.subjectBannerIcon}>
+                            <Ionicons name="book-outline" size={20} color={Colors.light.primary} />
+                        </View>
+                        <View style={styles.subjectBannerTextContainer}>
+                            <Text style={styles.subjectBannerCode} numberOfLines={1}>
+                                {selectedSubjectId === "all" ? "ALL ENROLLED CLASSES" : summaryRecord?.code}
+                            </Text>
+                            <Text style={styles.subjectBannerName} numberOfLines={1}>
+                                {selectedSubjectId === "all" ? "Full Gradebook Overview" : `${summaryRecord?.title} (${summaryRecord?.section || "Amethyst"})`}
+                            </Text>
+                        </View>
+                        {summaryRecord?.overall !== undefined && summaryRecord.overall > 0 && (
+                            <View style={[styles.miniBadge, summaryRecord.isPassed ? styles.miniBadgePass : styles.miniBadgeFail]}>
+                                <Text style={[styles.miniBadgeText, summaryRecord.isPassed ? styles.miniBadgeTextPass : styles.miniBadgeTextFail]}>
+                                    {summaryRecord.overall}%
                                 </Text>
                             </View>
-                        </TouchableOpacity>
-                    ))
-                )}
-            </ScrollView>
+                        )}
+                    </View>
+
+                    {/* Table View matching web teacher table */}
+                    <View style={styles.tableCard}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={true}
+                            contentContainerStyle={styles.tableScrollInner}
+                        >
+                            <View>
+                                {/* Table Header */}
+                                <View style={styles.tableHeaderRow}>
+                                    <View style={[styles.thCell, styles.studentCol]}>
+                                        <Text style={styles.thTitle} numberOfLines={1}>STUDENT</Text>
+                                    </View>
+
+                                    {/* Conditional Quarters */}
+                                    {(activeQuarter === "all" || activeQuarter === "term1") && (
+                                        <View style={[styles.thCell, styles.quarterCol, styles.bgGreen]}>
+                                            <Text style={[styles.thTitle, styles.colorGreen]} numberOfLines={1}>Q1</Text>
+                                            <Text style={styles.thSub} numberOfLines={1}>1st Quarter</Text>
+                                        </View>
+                                    )}
+                                    {(activeQuarter === "all" || activeQuarter === "term2") && (
+                                        <View style={[styles.thCell, styles.quarterCol, styles.bgGreen]}>
+                                            <Text style={[styles.thTitle, styles.colorGreen]} numberOfLines={1}>Q2</Text>
+                                            <Text style={styles.thSub} numberOfLines={1}>2nd Quarter</Text>
+                                        </View>
+                                    )}
+                                    {(activeQuarter === "all" || activeQuarter === "term3") && (
+                                        <View style={[styles.thCell, styles.quarterCol, styles.bgGreen]}>
+                                            <Text style={[styles.thTitle, styles.colorGreen]} numberOfLines={1}>Q3</Text>
+                                            <Text style={styles.thSub} numberOfLines={1}>3rd Quarter</Text>
+                                        </View>
+                                    )}
+                                    {(activeQuarter === "all" || activeQuarter === "term4") && (
+                                        <View style={[styles.thCell, styles.quarterCol, styles.bgGreen]}>
+                                            <Text style={[styles.thTitle, styles.colorGreen]} numberOfLines={1}>Q4</Text>
+                                            <Text style={styles.thSub} numberOfLines={1}>4th Quarter</Text>
+                                        </View>
+                                    )}
+
+                                    {/* QUIZ (Avg 0-100) */}
+                                    <View style={[styles.thCell, styles.quizCol, styles.bgViolet]}>
+                                        <Text style={[styles.thTitle, styles.colorViolet]} numberOfLines={1}>QUIZ</Text>
+                                        <Text style={styles.thSub} numberOfLines={1}>Avg (0-100)</Text>
+                                    </View>
+
+                                    {/* ACTIVITY (Score 0-100) */}
+                                    <View style={[styles.thCell, styles.activityCol, styles.bgOrange]}>
+                                        <Text style={[styles.thTitle, styles.colorOrange]} numberOfLines={1}>ACTIVITY</Text>
+                                        <Text style={styles.thSub} numberOfLines={1}>Score (0-100)</Text>
+                                    </View>
+
+                                    {/* ASSIGNMENT (Score 0-100) */}
+                                    <View style={[styles.thCell, styles.assignmentCol, styles.bgSky]}>
+                                        <Text style={[styles.thTitle, styles.colorSky]} numberOfLines={1}>ASSIGNMENT</Text>
+                                        <Text style={styles.thSub} numberOfLines={1}>Score (0-100)</Text>
+                                    </View>
+
+                                    {/* EXAM (Score 0-100) */}
+                                    <View style={[styles.thCell, styles.examCol, styles.bgRed]}>
+                                        <Text style={[styles.thTitle, styles.colorRed]} numberOfLines={1}>EXAM</Text>
+                                        <Text style={styles.thSub} numberOfLines={1}>Score (0-100)</Text>
+                                    </View>
+
+                                    {/* OVERALL */}
+                                    <View style={[styles.thCell, styles.overallCol]}>
+                                        <Text style={styles.thTitle} numberOfLines={1}>OVERALL</Text>
+                                    </View>
+
+                                    {/* COMPLETION */}
+                                    <View style={[styles.thCell, styles.completionCol]}>
+                                        <Text style={styles.thTitle} numberOfLines={1}>COMPLETION</Text>
+                                    </View>
+
+                                    {/* LAST ACTIVITY */}
+                                    <View style={[styles.thCell, styles.lastActivityCol]}>
+                                        <Text style={styles.thTitle} numberOfLines={1}>LAST ACTIVITY</Text>
+                                    </View>
+
+                                    {/* REMARKS */}
+                                    <View style={[styles.thCell, styles.remarksCol]}>
+                                        <Text style={styles.thTitle} numberOfLines={1}>REMARKS</Text>
+                                    </View>
+                                </View>
+
+                                {/* Table Body Rows */}
+                                {displayedGrades.map((item) => {
+                                    const avatarLetter = (studentProfile?.fullName || item.title).charAt(0).toUpperCase();
+                                    const isRowFail = !item.isPassed;
+
+                                    return (
+                                        <View
+                                            key={item.enrollmentId}
+                                            style={[
+                                                styles.tableBodyRow,
+                                                isRowFail ? styles.rowFailed : styles.rowPassed
+                                            ]}
+                                        >
+                                            {/* STUDENT COLUMN */}
+                                            <View style={[styles.tdCell, styles.studentCol]}>
+                                                <View style={styles.studentInfoRow}>
+                                                    {studentProfile?.avatarUrl ? (
+                                                        <Image
+                                                            source={{ uri: studentProfile.avatarUrl }}
+                                                            style={styles.avatarImg}
+                                                        />
+                                                    ) : (
+                                                        <View style={[styles.avatarCircle, { backgroundColor: item.isPassed ? "#16A34A" : "#DC2626" }]}>
+                                                            <Text style={styles.avatarLetter}>{avatarLetter}</Text>
+                                                        </View>
+                                                    )}
+                                                    <View style={styles.studentNameContainer}>
+                                                        <Text style={styles.studentNameText} numberOfLines={1}>
+                                                            {studentProfile?.fullName || "Student"}
+                                                        </Text>
+                                                        <Text style={styles.studentLrnText} numberOfLines={1}>
+                                                            {studentProfile?.lrn || "123456789111"}
+                                                        </Text>
+                                                        {selectedSubjectId === "all" && (
+                                                            <Text style={styles.studentSubjectTag} numberOfLines={1}>
+                                                                {item.code} - {item.title}
+                                                            </Text>
+                                                        )}
+                                                    </View>
+                                                </View>
+                                            </View>
+
+                                            {/* Q1 */}
+                                            {(activeQuarter === "all" || activeQuarter === "term1") && (
+                                                <View style={[styles.tdCell, styles.quarterCol, styles.bgCellGreen]}>
+                                                    <View style={styles.quarterBox}>
+                                                        <Text style={styles.quarterScoreText}>{item.q1}</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* Q2 */}
+                                            {(activeQuarter === "all" || activeQuarter === "term2") && (
+                                                <View style={[styles.tdCell, styles.quarterCol, styles.bgCellGreen]}>
+                                                    <View style={styles.quarterBox}>
+                                                        <Text style={styles.quarterScoreText}>{item.q2}</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* Q3 */}
+                                            {(activeQuarter === "all" || activeQuarter === "term3") && (
+                                                <View style={[styles.tdCell, styles.quarterCol, styles.bgCellGreen]}>
+                                                    <View style={styles.quarterBox}>
+                                                        <Text style={styles.quarterScoreText}>{item.q3}</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* Q4 */}
+                                            {(activeQuarter === "all" || activeQuarter === "term4") && (
+                                                <View style={[styles.tdCell, styles.quarterCol, styles.bgCellGreen]}>
+                                                    <View style={styles.quarterBox}>
+                                                        <Text style={styles.quarterScoreText}>{item.q4}</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {/* QUIZ */}
+                                            <View style={[styles.tdCell, styles.quizCol, styles.bgCellViolet]}>
+                                                <Text style={styles.quizText}>{item.quiz}</Text>
+                                            </View>
+
+                                            {/* ACTIVITY */}
+                                            <View style={[styles.tdCell, styles.activityCol, styles.bgCellOrange]}>
+                                                <Text
+                                                    style={[
+                                                        styles.activityText,
+                                                        typeof item.activity === "string" && styles.textNotGraded
+                                                    ]}
+                                                    numberOfLines={1}
+                                                >
+                                                    {item.activity}
+                                                </Text>
+                                            </View>
+
+                                            {/* ASSIGNMENT */}
+                                            <View style={[styles.tdCell, styles.assignmentCol, styles.bgCellSky]}>
+                                                <Text style={styles.assignmentText}>{item.assignment}</Text>
+                                            </View>
+
+                                            {/* EXAM */}
+                                            <View style={[styles.tdCell, styles.examCol, styles.bgCellRed]}>
+                                                <Text style={styles.examText}>{item.exam}</Text>
+                                            </View>
+
+                                            {/* OVERALL */}
+                                            <View style={[styles.tdCell, styles.overallCol]}>
+                                                <View
+                                                    style={[
+                                                        styles.overallBadge,
+                                                        { backgroundColor: item.isPassed ? "#DCFCE7" : "#FEE2E2" }
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.overallText,
+                                                            { color: item.isPassed ? "#15803D" : "#B91C1C" }
+                                                        ]}
+                                                    >
+                                                        {item.overall}%
+                                                    </Text>
+                                                </View>
+                                            </View>
+
+                                            {/* COMPLETION */}
+                                            <View style={[styles.tdCell, styles.completionCol]}>
+                                                <Text style={styles.completionText}>
+                                                    {item.completionPercent}%{" "}
+                                                    <Text style={styles.completionRatio}>
+                                                        ({item.submissionCount}/{item.totalAssessments})
+                                                    </Text>
+                                                </Text>
+                                            </View>
+
+                                            {/* LAST ACTIVITY */}
+                                            <View style={[styles.tdCell, styles.lastActivityCol]}>
+                                                <Text style={styles.lastActivityText} numberOfLines={1}>{item.lastActivity}</Text>
+                                            </View>
+
+                                            {/* REMARKS */}
+                                            <View style={[styles.tdCell, styles.remarksCol]}>
+                                                <View
+                                                    style={[
+                                                        styles.remarksBadge,
+                                                        {
+                                                            backgroundColor: item.isPassed ? "#F0FDF4" : "#FEF2F2",
+                                                            borderColor: item.isPassed ? "#BBF7D0" : "#FECACA",
+                                                        }
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.remarksText,
+                                                            { color: item.isPassed ? "#15803D" : "#DC2626" }
+                                                        ]}
+                                                        numberOfLines={1}
+                                                    >
+                                                        {item.remarks}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        </ScrollView>
+                    </View>
+
+                    {/* Detailed Summary Cards Below Table */}
+                    {summaryRecord && (
+                        <View style={styles.summaryContainer}>
+                            <View style={styles.summaryHeaderRow}>
+                                <Text style={styles.summaryTitle}>
+                                    Grade Breakdown Summary {selectedSubjectId !== "all" ? `(${summaryRecord.code})` : ""}
+                                </Text>
+                            </View>
+
+                            {/* Row 1: Quarterly Grades */}
+                            <Text style={styles.subCategoryHeading}>Quarterly Grades</Text>
+                            <View style={styles.quarterGridRow}>
+                                <View style={[styles.summaryTile, styles.bgGreenLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>1st Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q1}</Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgGreenLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>2nd Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q2}</Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgGreenLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>3rd Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q3}</Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgGreenLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>4th Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q4}</Text>
+                                </View>
+                            </View>
+
+                            {/* Row 2: Assessment Types */}
+                            <Text style={styles.subCategoryHeading}>Assessment Breakdown</Text>
+                            <View style={styles.assessmentGridRow}>
+                                <View style={[styles.summaryTile, styles.bgVioletLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#6D28D9" }]}>Quiz Avg</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#7C3AED" }]}>{summaryRecord.quiz}</Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgOrangeLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#C2410C" }]}>Activity</Text>
+                                    <Text
+                                        style={[
+                                            styles.summaryTileValue,
+                                            { color: "#EA580C" },
+                                            typeof summaryRecord.activity === "string" && { fontSize: 13, color: "#94A3B8" }
+                                        ]}
+                                    >
+                                        {summaryRecord.activity}
+                                    </Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgSkyLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#0369A1" }]}>Assignment</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#0284C7" }]}>{summaryRecord.assignment}</Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgRedLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#B91C1C" }]}>Exam</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#DC2626" }]}>{summaryRecord.exam}</Text>
+                                </View>
+                            </View>
+
+                            {/* Row 3: Overall & Performance */}
+                            <Text style={styles.subCategoryHeading}>Overall Performance</Text>
+                            <View style={styles.performanceGridRow}>
+                                <View style={[styles.summaryTile, summaryRecord.isPassed ? styles.bgGreenLight : styles.bgRedLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: summaryRecord.isPassed ? "#166534" : "#B91C1C" }]}>
+                                        Overall Grade
+                                    </Text>
+                                    <Text style={[styles.summaryTileValue, { color: summaryRecord.isPassed ? "#15803D" : "#DC2626" }]}>
+                                        {summaryRecord.overall}%
+                                    </Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgNeutralLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]}>Completion</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#0F172A", fontSize: 16 }]}>
+                                        {summaryRecord.completionPercent}%
+                                    </Text>
+                                    <Text style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>
+                                        ({summaryRecord.submissionCount}/{summaryRecord.totalAssessments} Submitted)
+                                    </Text>
+                                </View>
+                                <View style={[styles.summaryTile, styles.bgNeutralLight]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]}>Remarks</Text>
+                                    <View
+                                        style={[
+                                            styles.remarksBadge,
+                                            {
+                                                backgroundColor: summaryRecord.isPassed ? "#DCFCE7" : "#FEE2E2",
+                                                borderColor: summaryRecord.isPassed ? "#86EFAC" : "#FCA5A5",
+                                                marginTop: 4
+                                            }
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.remarksText,
+                                                { color: summaryRecord.isPassed ? "#15803D" : "#DC2626" }
+                                            ]}
+                                        >
+                                            {summaryRecord.remarks}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
+                    )}
+
+                    <View style={{ height: 32 }} />
+                </ScrollView>
+            )}
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#F8FAFC" },
-    content: { padding: 16, paddingBottom: 40 },
-    detailedContainer: { flex: 1, backgroundColor: "#F8FAFC" },
-    detailedContent: { padding: 16, paddingBottom: 40 },
-    detailHeader: { marginBottom: 24, alignItems: "center" },
-    subjectTitleLg: {
-        fontSize: 24, color: "#1E293B", fontWeight: "bold",
-        marginVertical: 8, textAlign: "center",
+    container: {
+        flex: 1,
+        backgroundColor: "#F8FAFC",
     },
-    header: { fontSize: 22, fontWeight: "bold", color: "#1E293B", marginBottom: 16 },
-    gpaCard: {
-        backgroundColor: Colors.light.primary, borderRadius: 16,
-        padding: 24, alignItems: "center", marginBottom: 24,
+    loadingContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 24,
     },
-    gpaLabel: { fontSize: 14, color: "rgba(255,255,255,0.8)", marginBottom: 4 },
-    gpaValue: { fontSize: 52, fontWeight: "bold", color: "#FFFFFF" },
-    gpaScale: { fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 4 },
-    gradeItem: {
-        backgroundColor: "#FFFFFF", borderRadius: 12, padding: 16,
-        marginBottom: 12, flexDirection: "row", justifyContent: "space-between",
-        alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
-        borderWidth: 1, borderColor: "#F1F5F9",
+    loadingText: {
+        marginTop: 12,
+        fontSize: 14,
+        color: "#64748B",
+        fontWeight: "500",
     },
-    gradeInfo: { flex: 1 },
-    subjectCode: { fontSize: 12, color: Colors.light.primary, fontWeight: "600", marginBottom: 2 },
-    subjectTitle: { fontSize: 16, color: "#1E293B", fontWeight: "600", marginVertical: 4 },
-    units: { fontSize: 12, color: "#64748B" },
-    gradeBox: {
-        width: 52, height: 52, borderRadius: 12,
-        justifyContent: "center", alignItems: "center", marginLeft: 12,
-    },
-    gradeText: { fontSize: 18, fontWeight: "bold", color: Colors.light.primary },
-    overallGradeCard: {
-        backgroundColor: Colors.light.primary, borderRadius: 16,
-        padding: 28, alignItems: "center", marginBottom: 24,
-    },
-    overallGradeLabel: { fontSize: 16, color: "rgba(255,255,255,0.8)", marginBottom: 8 },
-    overallGradeValue: { fontSize: 64, fontWeight: "bold", color: "#FFFFFF" },
-    gradePointsLabel: { fontSize: 14, color: "rgba(255,255,255,0.75)", marginTop: 4 },
-    infoCard: {
-        backgroundColor: "#FFFFFF", borderRadius: 16, padding: 20,
-        shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
-    },
-    infoTitle: {
-        fontSize: 18, fontWeight: "bold", color: "#1E293B", marginBottom: 16,
-        borderBottomWidth: 1, borderBottomColor: "#F1F5F9", paddingBottom: 12,
-    },
-    infoRow: {
-        flexDirection: "row", justifyContent: "space-between",
-        paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: "#F1F5F9",
-    },
-    infoLabel: { fontSize: 15, color: "#64748B" },
-    infoValue: { fontSize: 15, fontWeight: "bold", color: "#1E293B" },
-    noGradeCard: {
-        backgroundColor: "#FFFFFF", borderRadius: 16, padding: 32,
-        alignItems: "center", borderWidth: 1, borderColor: "#F1F5F9",
-    },
-    noGradeTitle: {
-        fontSize: 17, fontWeight: "bold", color: "#1E293B",
-        marginTop: 12, marginBottom: 8,
-    },
-    noGradeText: { fontSize: 14, color: "#64748B", textAlign: "center", lineHeight: 22 },
-    emptyContainer: {
-        alignItems: "center", justifyContent: "center", paddingVertical: 40,
+    centerContainer: {
+        flexGrow: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 32,
     },
     emptyTitle: {
-        fontSize: 18, fontWeight: "bold", color: "#1E293B",
-        marginTop: 16, marginBottom: 8,
+        fontSize: 18,
+        fontWeight: "700",
+        color: "#1E293B",
+        marginTop: 16,
     },
-    emptyText: {
-        fontSize: 14, color: "#64748B", textAlign: "center",
-        lineHeight: 22, paddingHorizontal: 24,
+    emptySubtitle: {
+        fontSize: 14,
+        color: "#64748B",
+        textAlign: "center",
+        marginTop: 8,
+        lineHeight: 20,
+    },
+    contentContainer: {
+        padding: 16,
+        paddingBottom: 40,
+    },
+    sectionHeaderRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    sectionHeading: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#334155",
+        textTransform: "uppercase",
+        letterSpacing: 0.6,
+    },
+    sectionSubCount: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: "#94A3B8",
+    },
+    pillsContainer: {
+        flexDirection: "row",
+        gap: 8,
+        paddingBottom: 14,
+    },
+    subjectPill: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 14,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderWidth: 1.5,
+        borderColor: "#E2E8F0",
+        minWidth: 100,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    subjectPillActive: {
+        borderColor: "#059669",
+        backgroundColor: "#ECFDF5",
+    },
+    subjectCode: {
+        fontSize: 12,
+        fontWeight: "800",
+        color: "#475569",
+    },
+    subjectCodeActive: {
+        color: "#059669",
+    },
+    subjectTitle: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#1E293B",
+        marginTop: 2,
+    },
+    subjectTitleActive: {
+        color: "#047857",
+    },
+    quarterFilterContainer: {
+        marginBottom: 12,
+    },
+    quarterTabsGroup: {
+        flexDirection: "row",
+        backgroundColor: "#E2E8F0",
+        borderRadius: 10,
+        padding: 3,
+        alignSelf: "flex-start",
+    },
+    quarterTabBtn: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+    },
+    quarterTabBtnActive: {
+        backgroundColor: "#059669",
+    },
+    quarterTabBtnText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#475569",
+    },
+    quarterTabBtnTextActive: {
+        color: "#FFFFFF",
+    },
+    subjectBanner: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 14,
+        padding: 14,
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        gap: 12,
+    },
+    subjectBannerIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        backgroundColor: "#ECFDF5",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    subjectBannerTextContainer: {
+        flex: 1,
+    },
+    subjectBannerCode: {
+        fontSize: 11,
+        fontWeight: "800",
+        color: "#059669",
+        letterSpacing: 0.5,
+    },
+    subjectBannerName: {
+        fontSize: 15,
+        fontWeight: "800",
+        color: "#0F172A",
+        marginTop: 1,
+    },
+    miniBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    miniBadgePass: {
+        backgroundColor: "#DCFCE7",
+    },
+    miniBadgeFail: {
+        backgroundColor: "#FEE2E2",
+    },
+    miniBadgeText: {
+        fontSize: 12,
+        fontWeight: "800",
+    },
+    miniBadgeTextPass: {
+        color: "#166534",
+    },
+    miniBadgeTextFail: {
+        color: "#991B1B",
+    },
+    tableCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        overflow: "hidden",
+        marginBottom: 20,
+    },
+    tableScrollInner: {
+        flexDirection: "column",
+    },
+    tableHeaderRow: {
+        flexDirection: "row",
+        backgroundColor: "#FFFFFF",
+        borderBottomWidth: 1,
+        borderBottomColor: "#E2E8F0",
+        height: 54,
+    },
+    thCell: {
+        paddingVertical: 8,
+        paddingHorizontal: 8,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    thTitle: {
+        fontSize: 11,
+        fontWeight: "800",
+        color: "#64748B",
+        letterSpacing: 0.5,
+        textAlign: "center",
+    },
+    thSub: {
+        fontSize: 9,
+        fontWeight: "500",
+        color: "#94A3B8",
+        marginTop: 2,
+        textAlign: "center",
+    },
+    studentCol: {
+        width: 190,
+        alignItems: "flex-start",
+        paddingLeft: 14,
+    },
+    quarterCol: {
+        width: 85,
+    },
+    quizCol: {
+        width: 110,
+    },
+    activityCol: {
+        width: 130,
+    },
+    assignmentCol: {
+        width: 135,
+    },
+    examCol: {
+        width: 110,
+    },
+    overallCol: {
+        width: 100,
+    },
+    completionCol: {
+        width: 120,
+    },
+    lastActivityCol: {
+        width: 115,
+    },
+    remarksCol: {
+        width: 155,
+    },
+    colorGreen: {
+        color: "#15803D",
+    },
+    colorViolet: {
+        color: "#7C3AED",
+    },
+    colorOrange: {
+        color: "#EA580C",
+    },
+    colorSky: {
+        color: "#0284C7",
+    },
+    colorRed: {
+        color: "#DC2626",
+    },
+    bgGreen: {
+        backgroundColor: "#F0FDF4",
+    },
+    bgViolet: {
+        backgroundColor: "#F5F3FF",
+    },
+    bgOrange: {
+        backgroundColor: "#FFF7ED",
+    },
+    bgSky: {
+        backgroundColor: "#F0F9FF",
+    },
+    bgRed: {
+        backgroundColor: "#FEF2F2",
+    },
+    bgCellGreen: {
+        backgroundColor: "#F0FDF430",
+    },
+    bgCellViolet: {
+        backgroundColor: "#F5F3FF30",
+    },
+    bgCellOrange: {
+        backgroundColor: "#FFF7ED30",
+    },
+    bgCellSky: {
+        backgroundColor: "#F0F9FF30",
+    },
+    bgCellRed: {
+        backgroundColor: "#FEF2F230",
+    },
+    tableBodyRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        borderBottomWidth: 1,
+        borderBottomColor: "#F1F5F9",
+        minHeight: 68,
+    },
+    rowPassed: {
+        backgroundColor: "#FFFFFF",
+    },
+    rowFailed: {
+        backgroundColor: "#FFF5F5",
+    },
+    tdCell: {
+        paddingVertical: 12,
+        paddingHorizontal: 8,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    studentInfoRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+    },
+    avatarImg: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+    },
+    avatarCircle: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    avatarLetter: {
+        color: "#FFFFFF",
+        fontWeight: "bold",
+        fontSize: 16,
+    },
+    studentNameContainer: {
+        flex: 1,
+    },
+    studentNameText: {
+        fontSize: 13,
+        fontWeight: "700",
+        color: "#1E293B",
+    },
+    studentLrnText: {
+        fontSize: 10,
+        color: "#64748B",
+        marginTop: 1,
+    },
+    studentSubjectTag: {
+        fontSize: 10,
+        fontWeight: "700",
+        color: "#059669",
+        marginTop: 2,
+    },
+    quarterBox: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: "#FFFFFF",
+        borderWidth: 1,
+        borderColor: "#86EFAC",
+        borderRadius: 8,
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 44,
+    },
+    quarterScoreText: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#14532D",
+    },
+    quizText: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#7C3AED",
+    },
+    activityText: {
+        fontSize: 13,
+        fontWeight: "700",
+        color: "#EA580C",
+    },
+    textNotGraded: {
+        color: "#94A3B8",
+        fontWeight: "500",
+        fontSize: 11,
+    },
+    assignmentText: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#0284C7",
+    },
+    examText: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#DC2626",
+    },
+    overallBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 14,
+    },
+    overallText: {
+        fontSize: 14,
+        fontWeight: "800",
+    },
+    completionText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: "#1E293B",
+    },
+    completionRatio: {
+        fontSize: 10,
+        color: "#64748B",
+        fontWeight: "500",
+    },
+    lastActivityText: {
+        fontSize: 12,
+        color: "#64748B",
+        fontWeight: "500",
+    },
+    remarksBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    remarksText: {
+        fontSize: 11,
+        fontWeight: "700",
+    },
+    summaryContainer: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+    },
+    summaryHeaderRow: {
+        marginBottom: 12,
+    },
+    summaryTitle: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#1E293B",
+        textTransform: "uppercase",
+        letterSpacing: 0.6,
+    },
+    subCategoryHeading: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#64748B",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        marginTop: 10,
+        marginBottom: 8,
+    },
+    quarterGridRow: {
+        flexDirection: "row",
+        gap: 8,
+        marginBottom: 6,
+    },
+    assessmentGridRow: {
+        flexDirection: "row",
+        gap: 8,
+        marginBottom: 6,
+    },
+    performanceGridRow: {
+        flexDirection: "row",
+        gap: 8,
+    },
+    summaryTile: {
+        flex: 1,
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 6,
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 70,
+    },
+    summaryTileLabel: {
+        fontSize: 10,
+        fontWeight: "700",
+        marginBottom: 4,
+        textAlign: "center",
+    },
+    summaryTileValue: {
+        fontSize: 18,
+        fontWeight: "800",
+        textAlign: "center",
+    },
+    bgGreenLight: {
+        backgroundColor: "#F0FDF4",
+        borderWidth: 1,
+        borderColor: "#DCFCE7",
+    },
+    bgVioletLight: {
+        backgroundColor: "#F5F3FF",
+        borderWidth: 1,
+        borderColor: "#EDE9FE",
+    },
+    bgOrangeLight: {
+        backgroundColor: "#FFF7ED",
+        borderWidth: 1,
+        borderColor: "#FFEDD5",
+    },
+    bgSkyLight: {
+        backgroundColor: "#F0F9FF",
+        borderWidth: 1,
+        borderColor: "#E0F2FE",
+    },
+    bgRedLight: {
+        backgroundColor: "#FEF2F2",
+        borderWidth: 1,
+        borderColor: "#FEE2E2",
+    },
+    bgNeutralLight: {
+        backgroundColor: "#F8FAFC",
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
     },
 });
