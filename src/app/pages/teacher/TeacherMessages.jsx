@@ -760,56 +760,62 @@ function TeacherMessages() {
       // Filter out any dismissed groups from groupConvList
       groupConvList = groupConvList.filter((cg) => !dismissedSet.has(cg.id));
 
-      for (const conv of groupConvList) {
-        const { data: groupParticipants, error: groupPartError } = await db
-          .from("conversation_participants")
-          .select("profile_id")
-          .eq("conversation_id", conv.id);
+      const loadedGroupConvs = await Promise.all(
+        groupConvList.map(async (conv) => {
+          const { data: groupParticipants, error: groupPartError } = await db
+            .from("conversation_participants")
+            .select("profile_id")
+            .eq("conversation_id", conv.id);
 
-        const participantIds = (!groupPartError && groupParticipants) 
-          ? buildStableIdList(groupParticipants.map((p) => p.profile_id))
-          : [currentTeacherId];
+          const participantIds = (!groupPartError && groupParticipants) 
+            ? buildStableIdList(groupParticipants.map((p) => p.profile_id))
+            : [currentTeacherId];
 
-        let groupMsgRows = [];
-        const { data: groupMessages, error: groupMsgError } = await db
-          .from(MESSAGE_TABLE)
-          .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
-          .eq("conversation_id", conv.id)
-          .order("created_at", { ascending: true });
-
-        if (groupMsgError) {
-          const { data: groupFallback } = await db
+          let groupMsgRows = [];
+          const { data: groupMessages, error: groupMsgError } = await db
             .from(MESSAGE_TABLE)
-            .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+            .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
             .eq("conversation_id", conv.id)
             .order("created_at", { ascending: true });
-          groupMsgRows = groupFallback || [];
-        } else {
-          groupMsgRows = groupMessages || [];
-        }
 
-        const groupMsgObjs = groupMsgRows.map((row) => 
-          toConversationMessage(row, currentTeacherId, teacherDisplayName)
-        );
+          if (groupMsgError) {
+            const { data: groupFallback } = await db
+              .from(MESSAGE_TABLE)
+              .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+              .eq("conversation_id", conv.id)
+              .order("created_at", { ascending: true });
+            groupMsgRows = groupFallback || [];
+          } else {
+            groupMsgRows = groupMessages || [];
+          }
 
-        groupMsgRows.forEach((row) => markMessageSeen(row.id));
+          const groupMsgObjs = groupMsgRows.map((row) => 
+            toConversationMessage(row, currentTeacherId, teacherDisplayName)
+          );
 
-        conversationsByParticipant.set(conv.id, {
-          id: conv.id,
-          participantId: "",
-          participantIds: participantIds,
-          participantName: conv.name || `${participantIds.length} members`,
-          participantRole: "group",
-          classCode: `${participantIds.length} members`,
-          messages: groupMsgObjs,
-          lastMessageTime: groupMsgObjs.length > 0 
-            ? groupMsgObjs[groupMsgObjs.length - 1].time 
-            : new Date().toISOString(),
-          unreadCount: 0,
-          isVideoMeet: false,
-          isGroup: true,
-        });
-      }
+          groupMsgRows.forEach((row) => markMessageSeen(row.id));
+
+          return {
+            id: conv.id,
+            participantId: "",
+            participantIds: participantIds,
+            participantName: conv.name || `${participantIds.length} members`,
+            participantRole: "group",
+            classCode: `${participantIds.length} members`,
+            messages: groupMsgObjs,
+            lastMessageTime: groupMsgObjs.length > 0 
+              ? groupMsgObjs[groupMsgObjs.length - 1].time 
+              : new Date().toISOString(),
+            unreadCount: 0,
+            isVideoMeet: false,
+            isGroup: true,
+          };
+        })
+      );
+
+      loadedGroupConvs.filter(Boolean).forEach((groupConv) => {
+        conversationsByParticipant.set(groupConv.id, groupConv);
+      });
 
       // Merge in-memory active conversations AND cached local storage conversations (respecting dismissedSet)
       const allLoaded = Array.from(conversationsByParticipant.values());
@@ -1073,74 +1079,6 @@ function TeacherMessages() {
     
     const groupTitle = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
     
-    // Insert conversation into database using Supabase client
-    try {
-      // 1. Insert into groupchats table (CRITICAL: satisfies foreign key constraints on conversation_participants & messages)
-      try {
-        const { error: gcErr } = await db
-          .from("groupchats")
-          .insert({
-            id: conversationId,
-            name: groupTitle,
-            is_group: true,
-            created_by: teacherId,
-          });
-
-        if (gcErr) {
-          console.warn("[TeacherMessages] groupchats insert notice:", gcErr);
-        }
-      } catch (e) {
-        console.warn("[TeacherMessages] groupchats insert exception:", e);
-      }
-
-      // 2. Insert into conversations table as well for backwards compatibility
-      try {
-        const { error: convErr } = await db
-          .from("conversations")
-          .insert({
-            id: conversationId,
-            name: groupTitle,
-            is_group: true,
-            created_by: teacherId,
-          });
-
-        if (convErr) {
-          console.warn("[TeacherMessages] Conversations insert error:", convErr);
-        }
-      } catch (e) {
-        console.warn("[TeacherMessages] Conversations insert exception:", e);
-      }
-
-      // Add all participants including the teacher who created it
-      const allParticipantIds = buildStableIdList([teacherId, ...memberIds]);
-      const participantInserts = allParticipantIds.map((profileId) => ({
-        conversation_id: conversationId,
-        profile_id: profileId,
-      }));
-
-      // Non-blocking insert for conversation participants
-      try {
-        const { error: partError } = await db
-          .from("conversation_participants")
-          .insert(participantInserts);
-
-        if (partError) {
-          console.warn("[TeacherMessages] Participant insert notice (individual fallback):", partError);
-          for (const pId of allParticipantIds) {
-            try {
-              await db.from("conversation_participants").insert({ conversation_id: conversationId, profile_id: pId });
-            } catch (e) {
-              console.warn(`Individual participant insert failed for ${pId}:`, e);
-            }
-          }
-        }
-      } catch (pErr) {
-        console.warn("[TeacherMessages] Participant insert exception:", pErr);
-      }
-    } catch (error) {
-      console.warn("[TeacherMessages] Non-fatal database notice during group chat creation:", error);
-    }
-
     const groupConversation = {
       id: conversationId,
       participantId: "",
@@ -1161,6 +1099,22 @@ function TeacherMessages() {
     setGroupSearch("");
     setSelectedGroupMemberIds([]);
     setPageError("");
+
+    // Parallel background DB sync
+    const allParticipantIds = buildStableIdList([teacherId, ...memberIds]);
+    const gcData = { id: conversationId, name: groupTitle, is_group: true, created_by: teacherId };
+    const participantInserts = allParticipantIds.map((profileId) => ({
+      conversation_id: conversationId,
+      profile_id: profileId,
+    }));
+
+    Promise.allSettled([
+      db.from("groupchats").insert(gcData),
+      db.from("conversations").insert(gcData),
+      db.from("conversation_participants").insert(participantInserts)
+    ]).catch((err) => {
+      console.warn("[TeacherMessages] Group creation background notice:", err);
+    });
   };
 
   const handleSend = async (e) => {

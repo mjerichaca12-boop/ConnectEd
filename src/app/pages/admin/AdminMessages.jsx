@@ -695,27 +695,21 @@ const removeDismissedConvId = (userId, convId) => {
         console.log("[AdminMessages] Conversation data query result:", { conversationData, convError });
 
         if (!convError && conversationData) {
-          for (const conv of conversationData) {
-            // Load participants for this group
-            const { data: groupParticipants, error: groupPartError } = await db
-              .from("conversation_participants")
-              .select("profile_id")
-              .eq("conversation_id", conv.id);
-            
-            if (!groupPartError && groupParticipants) {
+          const loadedGroupConvs = await Promise.all(
+            conversationData.map(async (conv) => {
+              const { data: groupParticipants, error: groupPartError } = await db
+                .from("conversation_participants")
+                .select("profile_id")
+                .eq("conversation_id", conv.id);
+              
+              if (groupPartError || !groupParticipants) return null;
+
               const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
               
-              // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await adminApi.db("messages", "select", {
+              const { data: groupMessages } = await adminApi.db("messages", "select", {
                 select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
                 eq: { column: "conversation_id", value: conv.id },
                 order: { column: "created_at", options: { ascending: true } }
-              });
-
-              console.log("[AdminMessages] Group messages loaded for conversation", conv.id, ":", {
-                count: groupMessages?.length || 0,
-                messages: groupMessages,
-                error: groupMsgError
               });
 
               const groupMsgObjs = (groupMessages || []).map((row) => {
@@ -725,7 +719,6 @@ const removeDismissedConvId = (userId, convId) => {
                 let fileSize = Number(row.file_size || 0);
                 let text = String(row.message_text || "").trim();
 
-                // Try parsing content as JSON for file metadata if direct fields are empty
                 if (!fileUrl && row.content) {
                   try {
                     const contentObj = JSON.parse(row.content);
@@ -734,63 +727,57 @@ const removeDismissedConvId = (userId, convId) => {
                       fileName = String(contentObj.file_name || "").trim();
                       fileType = String(contentObj.file_type || "").trim();
                       fileSize = Number(contentObj.file_size || 0);
-                      text = String(contentObj.message_text || "").trim();
                     }
-                  } catch (e) {
-                    // content is not JSON, use as text
-                    text = String(row.content || "").trim();
+                  } catch (e) {}
+                }
+
+                if (!fileUrl && row.message_attachments && row.message_attachments.length > 0) {
+                  const firstAtt = row.message_attachments[0];
+                  fileUrl = String(firstAtt.file_url || "").trim();
+                  fileName = String(firstAtt.file_name || "").trim();
+                  fileType = String(firstAtt.file_type || "").trim();
+                  fileSize = Number(firstAtt.file_size || 0);
+                }
+
+                const msgSenderId = String(row.sender_id || "").trim();
+                const isFromAdmin = msgSenderId === currentAdminId;
+                let senderName = isFromAdmin ? (adminName || "Admin") : "User";
+                if (!isFromAdmin) {
+                  const senderTeacher = allTeachers.find((t) => t.id === msgSenderId);
+                  if (senderTeacher) {
+                    senderName = senderTeacher.name;
                   }
                 }
 
-                const attachmentKind = fileType ? (fileType.startsWith("image/") ? "image" : fileType.startsWith("video/") ? "video" : "document") : "";
-                console.log("[AdminMessages] Processing group message with file:", {
-                  hasFile: !!fileUrl,
-                  fileName: fileName,
-                  fileType: fileType,
-                  attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
-                  rawRow: row
-                });
                 return {
                   id: String(row.id || `${Date.now()}_${Math.random()}`),
-                  from: String(row.sender_id || "") === currentAdminId ? "admin" : "other",
-                  senderName: String(row.sender_id || "") === currentAdminId ? adminName || "Admin" : "Group Member",
-                  text: text,
+                  senderId: msgSenderId,
+                  senderName,
+                  receiverId: String(row.receiver_id || ""),
+                  text,
                   time: String(row.timestamp || row.created_at || new Date().toISOString()),
-                  fileUrl: fileUrl,
-                  fileName: fileName,
-                  fileType: fileType,
-                  fileSize: fileSize,
-                  attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
+                  status: row.status || (row.is_read ? "read" : "delivered"),
                   isRead: Boolean(row.is_read),
+                  fileUrl,
+                  fileName,
+                  fileType,
+                  fileSize,
+                  attachments: Array.isArray(row.message_attachments)
+                    ? row.message_attachments.map((att) => ({
+                        id: att.id,
+                        fileUrl: String(att.file_url || "").trim(),
+                        fileName: String(att.file_name || "").trim(),
+                        fileType: String(att.file_type || "").trim(),
+                        fileSize: Number(att.file_size || 0)
+                      }))
+                    : [],
                   isSeen: String(row.sender_id || "") === currentAdminId,
                 };
               });
 
               (groupMessages || []).forEach((row) => markMessageSeen(row.id));
 
-              groupConversations.push({
+              return {
                 id: conv.id,
                 participantId: "",
                 participantIds: participantIds,
@@ -803,9 +790,11 @@ const removeDismissedConvId = (userId, convId) => {
                 unreadCount: 0,
                 isVideoMeet: false,
                 isGroup: true,
-              });
-            }
-          }
+              };
+            })
+          );
+
+          groupConversations = loadedGroupConvs.filter(Boolean);
         }
       }
       
@@ -1393,49 +1382,6 @@ const removeDismissedConvId = (userId, convId) => {
     const fallbackTitle = selectedMembers.length > 2 ? `${previewName} +${selectedMembers.length - 2}` : previewName;
     const groupTitle = customTitle || fallbackTitle || "Group Chat";
 
-    try {
-      try {
-        await adminApi.db("groupchats", "insert", {
-          payload: {
-            id: conversationId,
-            name: groupTitle,
-            is_group: true,
-            created_by: currentAdminId,
-          }
-        });
-      } catch (e) {
-        console.warn("[AdminMessages] groupchats insert notice:", e);
-      }
-
-      try {
-        await adminApi.db("conversations", "insert", {
-          payload: {
-            id: conversationId,
-            name: groupTitle,
-            is_group: true,
-            created_by: currentAdminId,
-          }
-        });
-      } catch (e) {
-        console.warn("[AdminMessages] conversations insert notice:", e);
-      }
-
-      for (const pId of memberIds) {
-        try {
-          await adminApi.db("conversation_participants", "insert", {
-            payload: {
-              conversation_id: conversationId,
-              profile_id: pId,
-            }
-          });
-        } catch (err) {
-          console.warn(`[AdminMessages] Participant insert error for ${pId}:`, err);
-        }
-      }
-    } catch (err) {
-      console.warn("[AdminMessages] Non-fatal database notice during group chat creation:", err);
-    }
-
     const groupConversation = {
       id: conversationId,
       participantId: "",
@@ -1459,6 +1405,18 @@ const removeDismissedConvId = (userId, convId) => {
     setGroupSearch("");
     setSelectedGroupMemberIds([]);
     setPageError("");
+
+    // Parallel background DB sync
+    const gcPayload = { id: conversationId, name: groupTitle, is_group: true, created_by: currentAdminId };
+    const participantInserts = memberIds.map((pId) => ({ conversation_id: conversationId, profile_id: pId }));
+
+    Promise.allSettled([
+      adminApi.db("groupchats", "insert", { payload: gcPayload }),
+      adminApi.db("conversations", "insert", { payload: gcPayload }),
+      adminApi.db("conversation_participants", "insert", { payload: participantInserts })
+    ]).catch((err) => {
+      console.warn("[AdminMessages] Background group creation sync notice:", err);
+    });
   };
 
   const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
