@@ -156,7 +156,7 @@ export default async function handler(req, res) {
 
     let { data, error, count } = await query;
 
-    if (error && table === "profiles" && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist"))) {
+    if (error && table === "profiles" && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist") || error.message?.includes("schema cache"))) {
       console.warn("[api/admin/db] Handling missing column error for profiles table:", error.message);
       
       let cleanedPayload = payload;

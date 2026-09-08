@@ -84,12 +84,28 @@ export default async function handler(req, res) {
       const { id, payload } = body;
       if (!id || !payload) return res.status(400).json({ error: "Missing id or payload" });
       
-      const { data, error } = await supabaseAdmin
+      let { data, error } = await supabaseAdmin
         .from("profiles")
         .update(payload)
         .eq("id", id)
         .select()
         .maybeSingle();
+
+      if (error && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist") || error.message?.includes("schema cache"))) {
+        const cleanedPayload = { ...payload };
+        delete cleanedPayload.suffix;
+        delete cleanedPayload.employee_id;
+
+        const retry = await supabaseAdmin
+          .from("profiles")
+          .update(cleanedPayload)
+          .eq("id", id)
+          .select()
+          .maybeSingle();
+
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
       return res.status(200).json(data);

@@ -57,9 +57,20 @@ export const adminApi = {
   },
 
   async updateProfile(id, payload) {
-    return this.fetchWithToken("/api/admin/profiles", {
+    const res = await this.fetchWithToken("/api/admin/profiles", {
       method: "PUT",
       body: JSON.stringify({ id, payload }),
+    });
+
+    if (!res.error && res.data) {
+      return res;
+    }
+
+    console.warn("[adminApi] /api/admin/profiles failed, executing fallback update via adminApi.db:", res.error?.message || res.error);
+    return this.db("profiles", "update", {
+      payload,
+      eq: { column: "id", value: id },
+      single: true
     });
   },
 
