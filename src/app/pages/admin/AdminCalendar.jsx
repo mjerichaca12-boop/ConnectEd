@@ -10,6 +10,7 @@ import { adminApi } from "@/app/lib/adminApi";
 import { generateCalendarPdf } from "@/app/lib/calendarPdfExporter";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { toast } from "sonner";
+import { notifyAdmin } from "@/app/services/notificationService";
 
 const db = supabase;
 
@@ -406,6 +407,14 @@ export function AdminCalendar() {
       if (data && Array.isArray(data) && data.length > 0) {
         const newEvent = normalizeEvent(data[0]);
         setEvents((current) => sortEvents([newEvent, ...current]));
+        notifyAdmin({
+          type: "event",
+          title: "Calendar Event Added",
+          message: `New calendar event added: ${newEvent.title || formData.title}`,
+          relatedId: newEvent.id,
+          relatedType: "school_calendar",
+          path: "/admin/calendar"
+        });
 
         // Update the calendar preview
         if (calendarRef.current?.upsertEvent) {

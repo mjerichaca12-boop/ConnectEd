@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useCallback } from "react";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { notifyAdmin } from "@/app/services/notificationService";
 import { Search, Plus, Eye, Edit, Trash2, Download, User, X, BookOpen, Users, AlertTriangle, Award, Loader2, UserPlus, CheckSquare, Square, Archive, RotateCcw } from "lucide-react";
 
 const emptyForm = {
@@ -792,6 +793,15 @@ function SubjectManagement() {
         entityName: `${next.code} - ${next.name}`,
         details: { teacher: getTeacherNameById(next.teacher_id) },
         timestamp: next.created_at
+      });
+
+      notifyAdmin({
+        type: "subject",
+        title: "Subject Added",
+        message: `New subject added: ${next.code} - ${next.name}`,
+        relatedId: next.id,
+        relatedType: "subjects",
+        path: "/admin/subjects"
       });
 
       setSubjectFormData(emptyForm);

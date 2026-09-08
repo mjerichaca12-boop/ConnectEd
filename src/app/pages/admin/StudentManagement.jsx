@@ -10,6 +10,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { notifyAdmin } from "@/app/services/notificationService";
 import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen } from "lucide-react";
 
 const db = supabase;
@@ -736,6 +737,14 @@ function StudentManagement() {
           details: { username: username, lrn: data.lrn, section: data.section },
           timestamp: data.created_at
         });
+        notifyAdmin({
+          type: "account",
+          title: "Student Account Created",
+          message: `New student account created for ${studentName}`,
+          relatedId: data.id,
+          relatedType: "profiles",
+          path: "/admin/students"
+        });
       }
 
       setStudentFormData({
@@ -800,6 +809,14 @@ function StudentManagement() {
           entityName: studentName,
           details: { email: data.email, lrn: data.lrn, section: data.section },
           timestamp: new Date().toISOString()
+        });
+        notifyAdmin({
+          type: "account",
+          title: "Student Account Updated",
+          message: `Student account updated for ${studentName}`,
+          relatedId: data.id,
+          relatedType: "profiles",
+          path: "/admin/students"
         });
       }
 

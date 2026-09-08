@@ -10,6 +10,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { notifyAdmin } from "@/app/services/notificationService";
 import {
   Search,
 
@@ -1090,6 +1091,14 @@ function TeacherManagement() {
         details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
         timestamp: nextTeacher.created_at
       });
+      notifyAdmin({
+        type: "teacher",
+        title: "Teacher Account Created",
+        message: `New teacher account created for ${nextTeacherName}`,
+        relatedId: nextTeacher.id,
+        relatedType: "profiles",
+        path: "/admin/teachers"
+      });
       toast.success(`${nextTeacherName} added successfully.`, { duration: 6000 });
       resetAddModal();
       
@@ -1210,6 +1219,15 @@ function TeacherManagement() {
           phone: nextTeacher.phone
         },
         timestamp: nextTeacher.updated_at || new Date().toISOString()
+      });
+
+      notifyAdmin({
+        type: "teacher",
+        title: "Teacher Account Updated",
+        message: `Teacher account updated for ${nextTeacherName}`,
+        relatedId: nextTeacher.id,
+        relatedType: "profiles",
+        path: "/admin/teachers"
       });
 
       toast.success(`${nextTeacherName} updated successfully`);

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, X, MessageSquare, FileSpreadsheet, BookOpen, Calendar, AlertCircle, Trash2, CheckCircle2 } from "lucide-react";
+import { Bell, X, MessageSquare, FileSpreadsheet, BookOpen, Calendar, AlertCircle, Trash2, CheckCircle2, User, BookMarked } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 import {
   resolveCurrentUserId,
@@ -26,6 +26,14 @@ const getCurrentUser = () => {
 const getIconForType = (type) => {
   const t = String(type || "").toLowerCase().trim();
   switch (t) {
+    case "account":
+    case "user":
+    case "student":
+    case "teacher":
+      return <User className="w-4 h-4 text-emerald-500 flex-shrink-0" />;
+    case "subject":
+    case "subjects":
+      return <BookMarked className="w-4 h-4 text-teal-500 flex-shrink-0" />;
     case "messages":
     case "message":
     case "chat":
@@ -37,6 +45,7 @@ const getIconForType = (type) => {
     case "assignment":
       return <BookOpen className="w-4 h-4 text-orange-500 flex-shrink-0" />;
     case "event":
+    case "calendar":
       return <Calendar className="w-4 h-4 text-purple-500 flex-shrink-0" />;
     case "announcement":
     case "announcements":

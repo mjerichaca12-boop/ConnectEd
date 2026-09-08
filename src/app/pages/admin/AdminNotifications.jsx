@@ -9,7 +9,11 @@ import {
   Info,
   Clock,
   Trash2,
-  Check
+  Check,
+  User,
+  BookMarked,
+  Calendar,
+  Megaphone
 } from "lucide-react";
 import {
   resolveCurrentUserId,
@@ -32,8 +36,14 @@ const getCurrentUser = () => {
 
 const getTypeIcon = (type) => {
   const t = String(type || "").toLowerCase();
+  if (t.includes("account") || t.includes("user") || t.includes("student") || t.includes("teacher")) {
+    return <User className="w-5 h-5 text-emerald-500" />;
+  }
+  if (t.includes("subject")) return <BookMarked className="w-5 h-5 text-teal-500" />;
+  if (t.includes("event") || t.includes("calendar")) return <Calendar className="w-5 h-5 text-purple-500" />;
+  if (t.includes("announcement")) return <Megaphone className="w-5 h-5 text-indigo-500" />;
   if (t.includes("message")) return <MessageCircle className="w-5 h-5 text-blue-500" />;
-  if (t.includes("alert") || t.includes("system") || t.includes("announcement") || t.includes("security")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
+  if (t.includes("alert") || t.includes("system") || t.includes("security")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
   return <Info className="w-5 h-5 text-gray-500" />;
 };
 
@@ -184,8 +194,11 @@ export function AdminNotifications() {
     if (filter === "all") return true;
     const t = String(n.type || "").toLowerCase().trim();
     if (filter === "unread") return !n.isRead;
+    if (filter === "accounts" && (t === "account" || t === "user" || t === "student" || t === "teacher")) return true;
+    if (filter === "announcements" && (t === "announcement" || t === "announcements" || t === "event" || t === "calendar")) return true;
+    if (filter === "subjects" && (t === "subject" || t === "subjects")) return true;
     if (filter === "messages" && (t === "messages" || t === "message" || t === "chat")) return true;
-    if (filter === "system" && (t === "system" || t === "announcement" || t === "announcements" || t === "event" || t === "security" || t === "alert")) return true;
+    if (filter === "system" && (t === "system" || t === "security" || t === "alert")) return true;
     return t === filter;
   });
 
@@ -228,8 +241,10 @@ export function AdminNotifications() {
               {[
                 { id: "all", label: "All Notifications" },
                 { id: "unread", label: "Unread Only" },
-                { id: "messages", label: "Messages" },
-                { id: "system", label: "System & Announcements" }
+                { id: "accounts", label: "Account Updates" },
+                { id: "announcements", label: "Announcements & Events" },
+                { id: "subjects", label: "Subjects" },
+                { id: "messages", label: "Messages" }
               ].map((f) => (
                 <button
                   key={f.id}

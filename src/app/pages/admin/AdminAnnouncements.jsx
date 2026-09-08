@@ -9,6 +9,7 @@ import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
+import { notifyAdmin } from "@/app/services/notificationService";
 import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
 import {
   AlertTriangle,
@@ -865,6 +866,14 @@ function AdminAnnouncements() {
         const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "id", single: true });
 
         if (!error) {
+          notifyAdmin({
+            type: "announcement",
+            title: "Announcement Posted",
+            message: `School announcement posted: ${payload.title}`,
+            relatedId: data?.id || null,
+            relatedType: "school_announcements",
+            path: "/admin/announcements"
+          });
           return {
             payload,
             recordId: data?.id ?? null
@@ -873,6 +882,13 @@ function AdminAnnouncements() {
 
         const fallbackInsert = await adminApi.db(tableName, "insert", { payload });
         if (!fallbackInsert.error) {
+          notifyAdmin({
+            type: "announcement",
+            title: "Announcement Posted",
+            message: `School announcement posted: ${payload.title}`,
+            relatedType: "school_announcements",
+            path: "/admin/announcements"
+          });
           return {
             payload,
             recordId: null

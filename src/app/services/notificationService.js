@@ -5,6 +5,25 @@ const isValidUuid = (value) =>
   typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
 
+export const ADMIN_ALLOWED_TYPES = new Set([
+  "account",
+  "user",
+  "student",
+  "teacher",
+  "announcement",
+  "announcements",
+  "event",
+  "calendar",
+  "subject",
+  "subjects",
+  "message",
+  "messages",
+  "chat",
+  "system",
+  "security",
+  "alert",
+]);
+
 const TEACHER_STUDENT_ONLY_TYPES = new Set([
   "assignment",
   "assignments",
@@ -57,6 +76,55 @@ export const resolveCurrentUserId = async (user) => {
 };
 
 /**
+ * Create a notification specifically targeted for Administrator accounts when:
+ * - Account (Student / Teacher) is updated or created
+ * - Announcement is posted
+ * - Event in the calendar is added
+ * - Subject was added
+ * - Message is sent to Admin
+ */
+export const notifyAdmin = async ({ type, title, message, relatedId = null, relatedType = null, path = null }) => {
+  const adminId = "11111111-1111-1111-1111-111111111111";
+  const safeType = String(type || "system").toLowerCase().trim();
+
+  if (!ADMIN_ALLOWED_TYPES.has(safeType)) {
+    console.warn(`[notificationService] Blocked non-admin notification type '${safeType}' for Admin.`);
+    return null;
+  }
+
+  if (supabase) {
+    try {
+      const targetPath = path || getNotificationNavigationPath({ type: safeType, relatedId }, "admin");
+      const payload = {
+        user_id: adminId,
+        type: safeType,
+        title: String(title || "Admin Alert").trim(),
+        body: String(message || "").trim(),
+        message: String(message || "").trim(),
+        is_read: false,
+        related_id: relatedId ? String(relatedId) : null,
+        related_type: relatedType ? String(relatedType) : null,
+        path: targetPath,
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase.from("notifications").insert([payload]).select().single();
+      if (!error) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("connected_notification_change", {
+            detail: { action: "new_admin_notification", userId: adminId }
+          }));
+        }
+        return data;
+      }
+    } catch (err) {
+      console.error("[notificationService] notifyAdmin error:", err);
+    }
+  }
+  return null;
+};
+
+/**
  * Get localStorage cache key for notifications scoped strictly to user ID & role
  */
 export const getNotificationStorageKey = (role, userId) => {
@@ -77,6 +145,22 @@ export const getNotificationNavigationPath = (notification, role, currentPath = 
   const isAdmin = role === "admin";
 
   switch (type) {
+    case "student":
+    case "user":
+    case "account":
+      return isAdmin ? "/admin/students" : "/profile";
+
+    case "teacher":
+      return isAdmin ? "/admin/teachers" : "/teacher/profile";
+
+    case "subject":
+    case "subjects":
+      return isAdmin ? "/admin/subjects" : "/subjects";
+
+    case "event":
+    case "calendar":
+      return isAdmin ? "/admin/calendar" : "/dashboard";
+
     case "assignment":
     case "assignments":
       if (classId) {
@@ -244,7 +328,7 @@ export const fetchUserNotifications = async (currentUser) => {
       const stored = localStorage.getItem(storageKey);
       let items = stored ? deduplicateNotifications(JSON.parse(stored)) : [];
       if (role === "admin") {
-        items = items.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+        items = items.filter((n) => ADMIN_ALLOWED_TYPES.has(String(n.type || "").toLowerCase().trim()));
       }
       return items;
     } catch {
@@ -272,7 +356,7 @@ export const fetchUserNotifications = async (currentUser) => {
     if (!error && data) {
       let mapped = data.map((n) => mapNotificationRow(n, role));
       if (role === "admin") {
-        mapped = mapped.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+        mapped = mapped.filter((n) => ADMIN_ALLOWED_TYPES.has(String(n.type || "").toLowerCase().trim()));
       }
       const deduplicated = deduplicateNotifications(mapped);
       localStorage.setItem(storageKey, JSON.stringify(deduplicated));
@@ -287,7 +371,7 @@ export const fetchUserNotifications = async (currentUser) => {
     const stored = localStorage.getItem(storageKey);
     let items = stored ? deduplicateNotifications(JSON.parse(stored)) : [];
     if (role === "admin") {
-      items = items.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+      items = items.filter((n) => ADMIN_ALLOWED_TYPES.has(String(n.type || "").toLowerCase().trim()));
     }
     return items;
   } catch {
