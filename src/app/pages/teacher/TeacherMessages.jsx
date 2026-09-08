@@ -1968,19 +1968,28 @@ function TeacherMessages() {
                   ))}
                 </div>
 
-                <select
-                  value={gradeFilter}
-                  onChange={(e) => setGradeFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer"
-                >
-                  <option value="all">All Grades</option>
-                  <option value="Grade 7">Grade 7</option>
-                  <option value="Grade 8">Grade 8</option>
-                  <option value="Grade 9">Grade 9</option>
-                  <option value="Grade 10">Grade 10</option>
-                  <option value="Grade 11">Grade 11</option>
-                  <option value="Grade 12">Grade 12</option>
-                </select>
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-hide">
@@ -2083,19 +2092,28 @@ function TeacherMessages() {
                   ))}
                 </div>
 
-                <select
-                  value={gradeFilter}
-                  onChange={(e) => setGradeFilter(e.target.value)}
-                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 cursor-pointer"
-                >
-                  <option value="all">All Grades</option>
-                  <option value="Grade 7">Grade 7</option>
-                  <option value="Grade 8">Grade 8</option>
-                  <option value="Grade 9">Grade 9</option>
-                  <option value="Grade 10">Grade 10</option>
-                  <option value="Grade 11">Grade 11</option>
-                  <option value="Grade 12">Grade 12</option>
-                </select>
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-hide">
