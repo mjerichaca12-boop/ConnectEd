@@ -3,14 +3,26 @@ import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPubli
 
 const isValidUuid = (value) =>
   typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+
+const TEACHER_STUDENT_ONLY_TYPES = new Set([
+  "assignment",
+  "assignments",
+  "quiz",
+  "quizzes",
+  "lesson",
+  "lessons",
+  "grade",
+  "grades",
+  "class_announcement",
+]);
 
 /**
  * Resolve the current authenticated user's authoritative profile ID.
  * Prevents sharing generic fallback IDs across different user accounts.
  */
 export const resolveCurrentUserId = async (user) => {
-  if (user?.id && isValidUuid(user.id) && user.id !== "11111111-1111-1111-1111-111111111111") {
+  if (user?.id && isValidUuid(user.id)) {
     return String(user.id).trim();
   }
 
@@ -203,11 +215,16 @@ export const clearUserNotificationCache = (role, userId) => {
       const key = getNotificationStorageKey(role, userId);
       localStorage.removeItem(key);
     }
-    Object.keys(localStorage).forEach((k) => {
-      if (k.startsWith("notifications_")) {
-        localStorage.removeItem(k);
+    if (typeof localStorage !== "undefined") {
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("notifications_")) {
+          keysToRemove.push(k);
+        }
       }
-    });
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    }
   } catch (e) {}
 };
 
@@ -225,7 +242,11 @@ export const fetchUserNotifications = async (currentUser) => {
     const storageKey = getNotificationStorageKey(role, "guest");
     try {
       const stored = localStorage.getItem(storageKey);
-      return stored ? deduplicateNotifications(JSON.parse(stored)) : [];
+      let items = stored ? deduplicateNotifications(JSON.parse(stored)) : [];
+      if (role === "admin") {
+        items = items.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+      }
+      return items;
     } catch {
       return [];
     }
@@ -249,7 +270,10 @@ export const fetchUserNotifications = async (currentUser) => {
       .limit(150);
 
     if (!error && data) {
-      const mapped = data.map((n) => mapNotificationRow(n, role));
+      let mapped = data.map((n) => mapNotificationRow(n, role));
+      if (role === "admin") {
+        mapped = mapped.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+      }
       const deduplicated = deduplicateNotifications(mapped);
       localStorage.setItem(storageKey, JSON.stringify(deduplicated));
       return deduplicated;
@@ -261,7 +285,11 @@ export const fetchUserNotifications = async (currentUser) => {
   // Fallback to cached local storage
   try {
     const stored = localStorage.getItem(storageKey);
-    return stored ? deduplicateNotifications(JSON.parse(stored)) : [];
+    let items = stored ? deduplicateNotifications(JSON.parse(stored)) : [];
+    if (role === "admin") {
+      items = items.filter((n) => !TEACHER_STUDENT_ONLY_TYPES.has(String(n.type || "").toLowerCase().trim()));
+    }
+    return items;
   } catch {
     return [];
   }

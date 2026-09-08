@@ -6,12 +6,18 @@ import {
   LayoutDashboard, BookOpen, GraduationCap,
   MessageSquare, User, Menu, X, LogOut, ChevronRight, Shield, Sparkles
 } from "lucide-react";
+import { clearUserNotificationCache } from "@/app/services/notificationService";
 
 function Sidebar({ studentName, onLogout }) {
   const { unreadCount } = useUnreadMessages();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const location = useLocation();
+
+  const handleConfirmLogout = () => {
+    clearUserNotificationCache();
+    onLogout?.();
+  };
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard",        path: "/dashboard",        color: "blue" },
@@ -139,7 +145,7 @@ function Sidebar({ studentName, onLogout }) {
       <ConfirmDialog
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
-        onConfirm={onLogout}
+        onConfirm={handleConfirmLogout}
         title="Logout"
         message="Are you sure you want to logout?"
         confirmText="Logout"

@@ -33,8 +33,7 @@ const getCurrentUser = () => {
 const getTypeIcon = (type) => {
   const t = String(type || "").toLowerCase();
   if (t.includes("message")) return <MessageCircle className="w-5 h-5 text-blue-500" />;
-  if (t.includes("assignment") || t.includes("grade")) return <CheckCircle className="w-5 h-5 text-green-500" />;
-  if (t.includes("alert") || t.includes("system") || t.includes("announcement")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
+  if (t.includes("alert") || t.includes("system") || t.includes("announcement") || t.includes("security")) return <AlertCircle className="w-5 h-5 text-orange-500" />;
   return <Info className="w-5 h-5 text-gray-500" />;
 };
 
@@ -186,9 +185,7 @@ export function AdminNotifications() {
     const t = String(n.type || "").toLowerCase().trim();
     if (filter === "unread") return !n.isRead;
     if (filter === "messages" && (t === "messages" || t === "message" || t === "chat")) return true;
-    if (filter === "assignments" && (t === "assignments" || t === "assignment")) return true;
-    if (filter === "grades" && (t === "grades" || t === "grade")) return true;
-    if (filter === "system" && (t === "system" || t === "announcement" || t === "announcements" || t === "event")) return true;
+    if (filter === "system" && (t === "system" || t === "announcement" || t === "announcements" || t === "event" || t === "security" || t === "alert")) return true;
     return t === filter;
   });
 

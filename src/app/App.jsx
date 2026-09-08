@@ -8,6 +8,7 @@ import { isStaticAdminUser } from "./lib/staticAdminAuth";
 import { Toaster } from "sonner";
 import { Loader2 } from "lucide-react";
 import { ScheduledReloadManager } from "./components/ScheduledReloadManager";
+import { clearUserNotificationCache } from "./services/notificationService";
 
 const handleChunkError = () => {
   if (typeof window === "undefined") return;
@@ -200,6 +201,7 @@ function DeviceRestricted({ role, allowed }) {
         </p>
         <button
           onClick={() => {
+            clearUserNotificationCache();
             localStorage.removeItem("currentUser");
             window.location.href = "/login";
           }}
