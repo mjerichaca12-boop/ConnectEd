@@ -58,6 +58,9 @@ const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
 
+const buildStableIdList = (ids) =>
+  [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
+
 const FILTERS = [
   { key: "all",       label: "All",        icon: MessageSquare },
   { key: "unread",    label: "Unread",     icon: Circle },
@@ -89,6 +92,8 @@ export function AdminMessages() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
   const [allTeachers, setAllTeachers] = useState([]);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState([]);
@@ -108,7 +113,7 @@ export function AdminMessages() {
     try {
       let rawRows = null;
       const { data: adminApiProfiles, error: adminApiErr } = await adminApi.db("profiles", "select", {
-        select: "id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status, created_at",
+        select: "id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status, created_at",
         order: { column: "created_at", options: { ascending: false } }
       });
 
@@ -117,7 +122,7 @@ export function AdminMessages() {
       } else {
         const { data: directProfiles } = await db
           .from("profiles")
-          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, status, created_at")
+          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status, created_at")
           .order("created_at", { ascending: false });
         rawRows = directProfiles || [];
       }
@@ -143,6 +148,8 @@ export function AdminMessages() {
             name: fullName || fallback || defaultName,
             email: String(row.email || ""),
             role: roleStr,
+            yearLevel: String(row.year_level || row.yearLevel || "").trim(),
+            section: String(row.section || "").trim(),
             createdAt: row.created_at || "",
           };
         });
@@ -1334,26 +1341,41 @@ const removeDismissedConvId = (userId, convId) => {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const filteredRecipients = allTeachers.filter(
-    (t) => {
-      const searchLower = recipientSearch.toLowerCase();
-      const matches =
-        t.name.toLowerCase().includes(searchLower) ||
-        t.email?.toLowerCase().includes(searchLower) ||
-        t.role?.toLowerCase().includes(searchLower);
-      return matches;
-    }
-  );
+  const applyRecipientFilters = (personList, searchStr) => {
+    const searchLower = String(searchStr || "").trim().toLowerCase();
+    return (personList || []).filter((t) => {
+      if (adminId && t.id === adminId) return false;
 
-  const filteredGroupRecipients = allTeachers.filter((t) => {
-    if (adminId && t.id === adminId) return false;
-    const searchLower = groupSearch.toLowerCase();
-    return (
-      t.name.toLowerCase().includes(searchLower) ||
-      t.email?.toLowerCase().includes(searchLower) ||
-      t.role?.toLowerCase().includes(searchLower)
-    );
-  });
+      // Role filter
+      if (roleFilter !== "all" && String(t.role || "").toLowerCase() !== roleFilter.toLowerCase()) {
+        return false;
+      }
+
+      // Grade filter
+      if (gradeFilter !== "all") {
+        const yl = String(t.yearLevel || "").toLowerCase();
+        const targetG = gradeFilter.toLowerCase();
+        if (!yl.includes(targetG) && !yl.includes(targetG.replace("grade ", ""))) {
+          return false;
+        }
+      }
+
+      // Text search
+      if (searchLower) {
+        const nameMatch = (t.name || "").toLowerCase().includes(searchLower);
+        const emailMatch = (t.email || "").toLowerCase().includes(searchLower);
+        const roleMatch = (t.role || "").toLowerCase().includes(searchLower);
+        const ylMatch = (t.yearLevel || "").toLowerCase().includes(searchLower);
+        const secMatch = (t.section || "").toLowerCase().includes(searchLower);
+        return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+      }
+
+      return true;
+    });
+  };
+
+  const filteredRecipients = applyRecipientFilters(allTeachers, recipientSearch);
+  const filteredGroupRecipients = applyRecipientFilters(allTeachers, groupSearch);
 
   const toggleGroupMember = (recipientId) => {
     setSelectedGroupMemberIds((prev) =>
@@ -1884,7 +1906,7 @@ const removeDismissedConvId = (userId, convId) => {
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                 <input
@@ -1892,9 +1914,48 @@ const removeDismissedConvId = (userId, convId) => {
                   type="text"
                   value={recipientSearch}
                   onChange={(e) => setRecipientSearch(e.target.value)}
-                  placeholder="Search teachers, students, or admins by name or email..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Search teachers, students, or admins..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <select
+                  value={gradeFilter}
+                  onChange={(e) => setGradeFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="all">All Grades</option>
+                  <option value="Grade 7">Grade 7</option>
+                  <option value="Grade 8">Grade 8</option>
+                  <option value="Grade 9">Grade 9</option>
+                  <option value="Grade 10">Grade 10</option>
+                  <option value="Grade 11">Grade 11</option>
+                  <option value="Grade 12">Grade 12</option>
+                </select>
               </div>
             </div>
 
@@ -1905,37 +1966,40 @@ const removeDismissedConvId = (userId, convId) => {
                   <p className="text-sm text-gray-500">No users found.</p>
                   <p className="text-xs text-gray-600 mt-1">Users must be registered first.</p>
                 </div>
-              ) : filteredRecipients.length === 0 && recipientSearch ? (
+              ) : filteredRecipients.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <Search className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No matches found.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-white/5">
-                  {(recipientSearch ? filteredRecipients : allTeachers).map((person) => {
+                <div className="divide-y divide-gray-100">
+                  {filteredRecipients.map((person) => {
                     const hasConv = conversations.find((c) => c.participantId === person.id);
-                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-green-500 to-emerald-600";
-                    const badgeColor = person.role === "teacher" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : person.role === "admin" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-green-50 text-green-700 border-green-200";
+                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-blue-500 to-indigo-600";
                     return (
                       <button
                         key={person.id}
                         onClick={() => handleStartConversation(person)}
-                        className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
+                        className="w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer"
                       >
-                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm`}>
                           {person.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{person.name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium capitalize flex-shrink-0 ${badgeColor}`}>{person.role}</span>
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{person.email || person.role}</p>
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{person.name}</p>
+                          <p className="text-xs font-semibold text-emerald-600 capitalize mt-0.5 leading-tight">
+                            {person.role === "student" ? "Student" : person.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {person.yearLevel
+                              ? (person.section ? `${person.yearLevel} - ${person.section}` : person.yearLevel)
+                              : (person.email || "No grade specified")}
+                          </p>
                           {hasConv && (
-                            <p className="text-xs text-emerald-600 font-medium mt-0.5">Existing conversation</p>
+                            <p className="text-[11px] text-emerald-600 font-semibold mt-1">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-emerald-600 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-emerald-600 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -1977,7 +2041,7 @@ const removeDismissedConvId = (userId, convId) => {
                   type="text"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="e.g. Grade 8 Teachers"
+                  placeholder="e.g. Grade 10 Section Opal"
                   className="w-full px-3.5 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -1991,6 +2055,45 @@ const removeDismissedConvId = (userId, convId) => {
                   placeholder="Search teachers, students, or admins..."
                   className="w-full pl-9 pr-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <select
+                  value={gradeFilter}
+                  onChange={(e) => setGradeFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="all">All Grades</option>
+                  <option value="Grade 7">Grade 7</option>
+                  <option value="Grade 8">Grade 8</option>
+                  <option value="Grade 9">Grade 9</option>
+                  <option value="Grade 10">Grade 10</option>
+                  <option value="Grade 11">Grade 11</option>
+                  <option value="Grade 12">Grade 12</option>
+                </select>
               </div>
             </div>
 
@@ -2009,31 +2112,33 @@ const removeDismissedConvId = (userId, convId) => {
                         ? "bg-gradient-to-br from-emerald-500 to-teal-600"
                         : recipient.role === "admin"
                         ? "bg-gradient-to-br from-purple-500 to-indigo-600"
-                        : "bg-gradient-to-br from-green-500 to-emerald-600";
+                        : "bg-gradient-to-br from-blue-500 to-indigo-600";
                     return (
                       <button
                         key={`group-${recipient.id}-${index}`}
                         type="button"
                         onClick={() => toggleGroupMember(recipient.id)}
-                        className={`w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left cursor-pointer ${
+                        className={`w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left cursor-pointer ${
                           isSelected ? "bg-emerald-50/60" : ""
                         }`}
                       >
                         <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm ${
                             isSelected ? "bg-emerald-600" : avatarColor
                           }`}
                         >
                           {isSelected ? <CheckCheck className="w-5 h-5" /> : recipient.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 capitalize flex-shrink-0">
-                              {recipient.role}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{recipient.email}</p>
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{recipient.name}</p>
+                          <p className="text-xs font-semibold text-emerald-600 capitalize mt-0.5 leading-tight">
+                            {recipient.role === "student" ? "Student" : recipient.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {recipient.yearLevel
+                              ? (recipient.section ? `${recipient.yearLevel} - ${recipient.section}` : recipient.yearLevel)
+                              : (recipient.email || "No grade specified")}
+                          </p>
                         </div>
                       </button>
                     );
