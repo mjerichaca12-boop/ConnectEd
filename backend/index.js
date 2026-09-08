@@ -1065,18 +1065,46 @@ app.post("/auth/update-password", async (req, res) => {
         }
 
         // 3. Update the password server-to-server securely using Supabase Admin Auth API!
-        const { error: updateError } = await supabase.auth.admin.updateUserById(
-            targetUserId,
-            {
+        let updateError = null;
+        try {
+            const res = await supabase.auth.admin.updateUserById(
+                targetUserId,
+                {
+                    password: password,
+                    user_metadata: {
+                        must_change_password: false,
+                        force_password_change: false
+                    }
+                }
+            );
+            updateError = res.error;
+        } catch (e) {
+            updateError = e;
+        }
+
+        // If user is not yet in auth.users (e.g. created in profiles table only), create them in auth.users
+        if (updateError && (updateError.message?.toLowerCase().includes("not found") || updateError.status === 404)) {
+            console.log(`[update-password] User ${targetUserId} not found in auth.users, creating auth account...`);
+            const { error: createError } = await supabase.auth.admin.createUser({
+                id: targetUserId,
+                email: targetEmail,
                 password: password,
+                email_confirm: true,
                 user_metadata: {
+                    role: profileRecord?.role || 'student',
+                    first_name: profileRecord?.first_name || '',
+                    last_name: profileRecord?.last_name || '',
+                    email_verified: true,
                     must_change_password: false,
                     force_password_change: false
                 }
-            }
-        );
+            });
 
-        if (updateError) throw updateError;
+            if (createError) throw createError;
+            updateError = null;
+        } else if (updateError) {
+            throw updateError;
+        }
 
         // Reset password change flags on the profile
         try {
