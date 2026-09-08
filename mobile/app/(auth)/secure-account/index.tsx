@@ -212,6 +212,21 @@ export default function SecureAccountScreen() {
                 { auth: { persistSession: false, autoRefreshToken: false } }
             );
 
+            // Check if another profile is already using this email
+            const { data: profileWithEmail } = await supabaseAdmin
+                .from("profiles")
+                .select("id, email")
+                .ilike("email", trimmedEmail)
+                .neq("id", user.id)
+                .maybeSingle();
+
+            if (profileWithEmail) {
+                setEmailServerError("This email is already in use by another active account.");
+                Alert.alert("Email In Use", "This email address is already in use by another active account. Please provide a different personal email address.");
+                setIsLoading(false);
+                return;
+            }
+
             // Check if an orphaned auth account exists with this email (e.g. deleted from profiles table)
             const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
             if (listData?.users) {
@@ -229,7 +244,10 @@ export default function SecureAccountScreen() {
                         // Orphaned auth record without a profile in the database — delete it so the user can claim their email
                         await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id);
                     } else {
-                        throw new Error("This email is already in use by another active account.");
+                        setEmailServerError("This email is already in use by another active account.");
+                        Alert.alert("Email In Use", "This email address is already in use by another active account. Please provide a different personal email address.");
+                        setIsLoading(false);
+                        return;
                     }
                 }
             }
@@ -264,10 +282,10 @@ export default function SecureAccountScreen() {
                 `A 4-digit verification code has been sent to ${trimmedEmail}.\n\nPlease check your inbox (or spam folder) to complete your account setup.`
             );
         } catch (err: any) {
-            console.error("Forced password change error:", err);
             let errorMessage = err.message || "An error occurred while setting your password.";
-            if (errorMessage === "Error updating user" || errorMessage.toLowerCase().includes("email already exists")) {
+            if (errorMessage === "Error updating user" || errorMessage.toLowerCase().includes("email already exists") || errorMessage.toLowerCase().includes("already in use")) {
                 errorMessage = "This email is already in use. Please use a different email address.";
+                setEmailServerError("This email is already in use.");
             }
             Alert.alert("Error", errorMessage);
         } finally {
@@ -549,7 +567,7 @@ export default function SecureAccountScreen() {
                         </View>
                         {showEmailNotReal ? (
                             <Text style={{ fontSize: 11, color: "#EF4444", marginTop: -12, marginBottom: 16, marginLeft: 4, fontWeight: "600" }}>
-                                Not a real email
+                                {emailServerError || "Not a real email"}
                             </Text>
                         ) : (
                             <Text style={{ fontSize: 11, color: "#94A3B8", marginTop: -12, marginBottom: 16, marginLeft: 4 }}>
