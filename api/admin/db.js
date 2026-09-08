@@ -154,7 +154,54 @@ export default async function handler(req, res) {
       query = query.maybeSingle();
     }
 
-    const { data, error, count } = await query;
+    let { data, error, count } = await query;
+
+    if (error && table === "profiles" && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist"))) {
+      console.warn("[api/admin/db] Handling missing column error for profiles table:", error.message);
+      
+      let cleanedPayload = payload;
+      if (typeof payload === "object" && payload !== null) {
+        cleanedPayload = { ...payload };
+        delete cleanedPayload.suffix;
+        delete cleanedPayload.employee_id;
+      } else if (typeof payload === "string" && payload !== "*") {
+        cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "employee_id").join(", ");
+      }
+
+      let cleanedSelect = select;
+      if (typeof select === "string" && select !== "*") {
+        cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "employee_id").join(", ");
+      }
+
+      let retryQuery = supabaseAdmin.from(table);
+      if (action === "select") {
+        const selectOpts = countOption ? { count: countOption, head: !!head } : undefined;
+        retryQuery = retryQuery.select(cleanedPayload || "*", selectOpts);
+      } else if (action === "insert") {
+        retryQuery = retryQuery.insert(cleanedPayload).select(cleanedSelect || "*");
+      } else if (action === "update") {
+        retryQuery = retryQuery.update(cleanedPayload).select(cleanedSelect || "*");
+      } else if (action === "upsert") {
+        retryQuery = retryQuery.upsert(cleanedPayload, onConflict ? { onConflict } : undefined).select(cleanedSelect || "*");
+      } else if (action === "delete") {
+        retryQuery = retryQuery.delete();
+        if (select) retryQuery = retryQuery.select(cleanedSelect || "*");
+      }
+
+      if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
+      if (neq) retryQuery = retryQuery.neq(neq.column, neq.value);
+      if (inArgs) retryQuery = retryQuery.in(inArgs.column, inArgs.value);
+      if (or) retryQuery = retryQuery.or(or);
+      if (isArgs) retryQuery = retryQuery.is(isArgs.column, isArgs.value);
+      if (match) retryQuery = retryQuery.match(match);
+      if (order) retryQuery = retryQuery.order(order.column, order.options);
+      if (single) retryQuery = retryQuery.maybeSingle();
+
+      const retryRes = await retryQuery;
+      data = retryRes.data;
+      error = retryRes.error;
+      count = retryRes.count;
+    }
 
     if (error) throw error;
     if (countOption) {

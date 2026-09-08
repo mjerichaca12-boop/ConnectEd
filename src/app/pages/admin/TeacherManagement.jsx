@@ -48,6 +48,7 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
+const teacherSelectBaseColumns = "id, first_name, middle_name, last_name, email, phone, year_level, section, subjects, status, created_at, role";
 const teacherSelectColumns = "id, first_name, middle_name, last_name, suffix, employee_id, email, phone, year_level, section, subjects, status, created_at, role";
 const emptyTeacherForm = {
   first_name: "",
@@ -586,11 +587,22 @@ function TeacherManagement() {
       throw new Error("Supabase client is not configured.");
     }
 
-    const { data, error } = await db
+    let { data, error } = await db
       .from("profiles")
       .select(teacherSelectColumns)
       .eq("role", "teacher")
       .order("created_at", { ascending: false });
+
+    if (error && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist"))) {
+      console.warn("[TeacherManagement] Fallback fetching teachers without optional columns:", error.message);
+      const fallback = await db
+        .from("profiles")
+        .select(teacherSelectBaseColumns)
+        .eq("role", "teacher")
+        .order("created_at", { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       throw new Error(error.message);
@@ -758,10 +770,14 @@ function TeacherManagement() {
 
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
-    const [teachersRes, subjectsRes] = await Promise.all([
-      db.from("profiles").select(teacherSelectColumns).eq("role", "teacher").order("created_at", { ascending: false }),
-      db.from("subjects").select("*").order("code", { ascending: true })
-    ]);
+    let teachersRes = await db.from("profiles").select(teacherSelectColumns).eq("role", "teacher").order("created_at", { ascending: false });
+
+    if (teachersRes.error && (teachersRes.error.message?.includes("suffix") || teachersRes.error.message?.includes("employee_id") || teachersRes.error.message?.includes("does not exist"))) {
+      console.warn("[TeacherManagement] Fallback fetching teachers data without optional columns:", teachersRes.error.message);
+      teachersRes = await db.from("profiles").select(teacherSelectBaseColumns).eq("role", "teacher").order("created_at", { ascending: false });
+    }
+
+    const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
 
     if (teachersRes.error) throw new Error(teachersRes.error.message);
 

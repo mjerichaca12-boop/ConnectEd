@@ -270,17 +270,25 @@ function StudentManagement() {
 
   const fetchStudentsData = useCallback(async () => {
     if (!db) return null;
-    const [profilesRes, masterlistRes] = await Promise.all([
-      adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+    let profilesRes = await adminApi.db("profiles", "select", {
+      payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+      eq: { column: "role", value: "student" },
+      order: { column: "created_at", options: { ascending: false } }
+    });
+
+    if (profilesRes.error && (profilesRes.error.message?.includes("suffix") || profilesRes.error.message?.includes("does not exist"))) {
+      console.warn("[StudentManagement] Fallback fetching profiles without suffix:", profilesRes.error.message);
+      profilesRes = await adminApi.db("profiles", "select", {
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
         eq: { column: "role", value: "student" },
         order: { column: "created_at", options: { ascending: false } }
-      }),
-      adminApi.db("student_masterlist", "select", {
-        payload: "*",
-        order: { column: "created_at", options: { ascending: false } }
-      })
-    ]);
+      });
+    }
+
+    const masterlistRes = await adminApi.db("student_masterlist", "select", {
+      payload: "*",
+      order: { column: "created_at", options: { ascending: false } }
+    });
 
     if (profilesRes.error) {
       throw new Error(profilesRes.error.message);
@@ -312,12 +320,21 @@ function StudentManagement() {
   const refreshStudents = async () => {
     if (!db) return;
 
-    const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
-      adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+    let profilesRes = await adminApi.db("profiles", "select", {
+      payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+      eq: { column: "role", value: "student" },
+      order: { column: "created_at", options: { ascending: false } }
+    });
+
+    if (profilesRes.error && (profilesRes.error.message?.includes("suffix") || profilesRes.error.message?.includes("does not exist"))) {
+      profilesRes = await adminApi.db("profiles", "select", {
+        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
         eq: { column: "role", value: "student" },
         order: { column: "created_at", options: { ascending: false } }
-      }),
+      });
+    }
+
+    const [masterlistRes, gradeSectionsRes] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
         payload: "*",
         order: { column: "created_at", options: { ascending: false } }
