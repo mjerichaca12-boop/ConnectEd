@@ -311,11 +311,44 @@ function SubjectManagement() {
     }
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
-      const teacherSubjectRows = (subjectRows ?? [])
+      const { data: teacherProfile } = await supabase
+        .from("profiles")
+        .select("year_level, grade_level")
+        .eq("id", teacherId)
+        .maybeSingle();
+
+      const profileGradeRaw = teacherProfile?.year_level || teacherProfile?.grade_level || "";
+      let primaryGradeNorm = normalizeGradeLevel(profileGradeRaw);
+
+      const allAssignedSubjects = (subjectRows ?? [])
         .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived");
-      const assignedSubjectIds = [...new Set(teacherSubjectRows.map((subject) => String(subject.id || "").trim()).filter(Boolean))];
-      const assignedSectionsList = [...new Set(teacherSubjectRows.map((s) => s.section).filter(Boolean))];
-      const assignedGradeLevels = [...new Set(teacherSubjectRows.map((s) => s.grade_level).filter(Boolean))];
+
+      if (!primaryGradeNorm && allAssignedSubjects.length > 0) {
+        primaryGradeNorm = normalizeGradeLevel(allAssignedSubjects[0].grade_level || "");
+      }
+
+      let validTeacherSubjectRows = allAssignedSubjects;
+      if (primaryGradeNorm) {
+        const invalidSubjects = allAssignedSubjects.filter((s) => {
+          const subjGradeNorm = normalizeGradeLevel(s.grade_level || "");
+          return subjGradeNorm && subjGradeNorm !== primaryGradeNorm;
+        });
+
+        if (invalidSubjects.length > 0) {
+          const invalidIds = invalidSubjects.map((s) => s.id);
+          console.warn("[SubjectManagement] Automatically unassigning teacher from non-matching grade subjects:", { teacherId, invalidIds });
+          await adminApi.db("subjects", "update", {
+            payload: { teacher_id: null },
+            in: { column: "id", value: invalidIds }
+          });
+
+          validTeacherSubjectRows = allAssignedSubjects.filter((s) => !invalidIds.includes(s.id));
+        }
+      }
+
+      const assignedSubjectIds = [...new Set(validTeacherSubjectRows.map((s) => String(s.id || "").trim()).filter(Boolean))];
+      const assignedSectionsList = [...new Set(validTeacherSubjectRows.map((s) => s.section).filter(Boolean))];
+      const assignedGradeLevels = [...new Set(validTeacherSubjectRows.map((s) => s.grade_level).filter(Boolean))];
 
       const profilePayload = {
         subjects: assignedSubjectIds,
@@ -324,6 +357,8 @@ function SubjectManagement() {
 
       if (assignedGradeLevels.length > 0) {
         profilePayload.year_level = assignedGradeLevels[0];
+      } else if (primaryGradeNorm) {
+        profilePayload.year_level = profileGradeRaw || primaryGradeNorm;
       }
 
       const { error: updateError } = await adminApi.updateProfile(teacherId, profilePayload);
