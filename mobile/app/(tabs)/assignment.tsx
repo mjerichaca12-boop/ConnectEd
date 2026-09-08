@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal, RefreshControl } from "react-native";
+import React, { useState, useCallback, useRef } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, StatusBar, ScrollView, TextInput, Image, Modal, RefreshControl, Keyboard } from "react-native";
 import { useFocusEffect } from "expo-router/react-navigation";
 import Colors from "../../src/constants/Colors";
 import Layout from "../../src/constants/Layout";
@@ -69,6 +69,7 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
     const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
     const [isQuizStarted, setIsQuizStarted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const submittingRef = useRef(false);
     const [viewerVisible, setViewerVisible] = useState(false);
     const [viewerUrl, setViewerUrl] = useState<string | null>(null);
     const [viewerTitle, setViewerTitle] = useState<string | null>(null);
@@ -293,6 +294,9 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
     };
 
     const handleSubmit = async () => {
+        if (submittingRef.current || isSubmitting) return;
+        Keyboard.dismiss();
+
         const isQuiz = assignment.assessment_type === 'quiz';
         
         if (isQuiz) {
@@ -319,6 +323,7 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
             return;
         }
 
+        submittingRef.current = true;
         setIsSubmitting(true);
         try {
             const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -498,8 +503,10 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                 }}]
             );
         } catch (err: any) {
+            console.error("Submit error:", err);
             Alert.alert("Error", err.message || "Failed to submit assignment.");
         } finally {
+            submittingRef.current = false;
             setIsSubmitting(false);
         }
     };
@@ -651,7 +658,11 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                hasNotifications={true}
            />
 
-            <ScrollView contentContainerStyle={styles.detailedContent}>
+            <ScrollView 
+                contentContainerStyle={styles.detailedContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+            >
                 <View style={styles.detailHeader}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
                         {assignment.subject ? <Text style={styles.subject}>{assignment.subject}</Text> : null}
@@ -1028,6 +1039,7 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                             title={isSubmitting ? "Submitting..." : "Submit"} 
                             onPress={handleSubmit} 
                             disabled={isSubmitDisabled}
+                            loading={isSubmitting}
                         />
                     </View>
                 )}
@@ -1337,7 +1349,11 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                         </View>
                     </View>
 
-                    <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 140 }}>
+                    <ScrollView 
+                        contentContainerStyle={{ padding: 18, paddingBottom: 140 }}
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="on-drag"
+                    >
                         {/* Instruction Banner inside Quiz Player */}
                         <View style={{
                             backgroundColor: '#FFFFFF',
