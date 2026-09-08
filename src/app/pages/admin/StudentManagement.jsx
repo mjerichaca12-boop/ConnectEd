@@ -72,6 +72,7 @@ function StudentManagement() {
     first_name: "",
     middle_name: "",
     last_name: "",
+    suffix: "",
     email: "",
     lrn: "",
     year_level: "",
@@ -83,6 +84,7 @@ function StudentManagement() {
     first_name: "",
     middle_name: "",
     last_name: "",
+    suffix: "",
     email: "",
     lrn: "",
     year_level: "",
@@ -270,7 +272,7 @@ function StudentManagement() {
     if (!db) return null;
     const [profilesRes, masterlistRes] = await Promise.all([
       adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
         eq: { column: "role", value: "student" },
         order: { column: "created_at", options: { ascending: false } }
       }),
@@ -312,7 +314,7 @@ function StudentManagement() {
 
     const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
       adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
+        payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
         eq: { column: "role", value: "student" },
         order: { column: "created_at", options: { ascending: false } }
       }),
@@ -440,7 +442,7 @@ function StudentManagement() {
     }
   };
 
-  const getFullName = (student) => [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ");
+  const getFullName = (student) => [student.first_name, student.middle_name, student.last_name, student.suffix].filter(Boolean).join(" ");
 
   const getDisplayUsername = (student) => {
     if (student?.username) return student.username;
@@ -572,6 +574,7 @@ function StudentManagement() {
     first_name: formData.first_name.trim(),
     middle_name: formData.middle_name.trim() || null,
     last_name: formData.last_name.trim(),
+    suffix: formData.suffix?.trim() || null,
     email: formData.email.trim().toLowerCase(),
     lrn: normalizeLrn(formData.lrn),
     year_level: normalizeYearLevel(formData.year_level),
@@ -848,6 +851,7 @@ function StudentManagement() {
     first_name: ["first_name", "first name", "firstname", "first", "given_name", "given name"],
     last_name: ["last_name", "last name", "lastname", "last", "surname", "family_name", "family name"],
     middle_name: ["middle_name", "middle name", "middlename", "middle", "middle_initial", "middle initial"],
+    suffix: ["suffix", "name_extension", "name extension", "extension", "ext"],
     full_name: ["full_name", "full name", "fullname", "student name", "student_name", "name"],
     year_level: ["year_level", "year level", "yearlevel", "year", "grade", "grade_level", "grade level", "level"],
     section: ["section", "section_name", "section name", "class_section", "class section"],
@@ -1402,6 +1406,7 @@ function StudentManagement() {
       first_name: student.first_name ?? "",
       middle_name: student.middle_name ?? "",
       last_name: student.last_name ?? "",
+      suffix: student.suffix ?? "",
       email: student.email ?? "",
       lrn: student.lrn ?? "",
       year_level: student.year_level ?? "",
@@ -1418,6 +1423,7 @@ function StudentManagement() {
       first_name: "",
       middle_name: "",
       last_name: "",
+      suffix: "",
       email: "",
       lrn: "",
       year_level: "",
@@ -1436,6 +1442,7 @@ function StudentManagement() {
       first_name: "",
       middle_name: "",
       last_name: "",
+      suffix: "",
       email: "",
       lrn: "",
       year_level: "",
@@ -2304,6 +2311,10 @@ function StudentManagement() {
                     <input type="text" value={studentFormData.last_name} onChange={(e) => handleAddStudentFieldChange("last_name", e.target.value)} placeholder="Enter last name" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Name Extension / Suffix</label>
+                    <input type="text" value={studentFormData.suffix} onChange={(e) => handleAddStudentFieldChange("suffix", e.target.value)} placeholder="e.g. Jr., Sr., II, III" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
@@ -2393,17 +2404,21 @@ function StudentManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">First Name</label>
-                    <input type="text" value={editFormData.first_name} onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })} placeholder="Enter first name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.first_name} onChange={(e) => handleEditFieldChange("first_name", e.target.value)} placeholder="Enter first name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.first_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.first_name}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Middle Name</label>
-                    <input type="text" value={editFormData.middle_name} onChange={(e) => setEditFormData({ ...editFormData, middle_name: e.target.value })} placeholder="Enter middle name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.middle_name} onChange={(e) => handleEditFieldChange("middle_name", e.target.value)} placeholder="Enter middle name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Last Name</label>
-                    <input type="text" value={editFormData.last_name} onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.last_name} onChange={(e) => handleEditFieldChange("last_name", e.target.value)} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Name Extension / Suffix</label>
+                    <input type="text" value={editFormData.suffix || ""} onChange={(e) => handleEditFieldChange("suffix", e.target.value)} placeholder="e.g. Jr., Sr., II, III" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
 
                   <div>

@@ -48,12 +48,13 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
-const teacherSelectColumns = "id, first_name, middle_name, last_name, email, phone, year_level, section, subjects, status, created_at, role";
-const subjectSelectColumns = "id, code, name, section, grade_level";
+const teacherSelectColumns = "id, first_name, middle_name, last_name, suffix, employee_id, email, phone, year_level, section, subjects, status, created_at, role";
 const emptyTeacherForm = {
   first_name: "",
   middle_name: "",
   last_name: "",
+  suffix: "",
+  employee_id: "",
   email: "",
   phone: "",
   grade_level: "",
@@ -133,14 +134,15 @@ function TeacherManagement() {
 
   const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
-  const composeTeacherName = (formData) => [formData.first_name, formData.middle_name, formData.last_name].map((value) => value.trim()).filter(Boolean).join(" ");
+  const composeTeacherName = (formData) => [formData.first_name, formData.middle_name, formData.last_name, formData.suffix].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
   const formatTeacherFullName = (teacher) => {
     if (!teacher) return "Unknown teacher";
 
     const firstName = String(teacher.first_name ?? "").trim();
     const middleName = String(teacher.middle_name ?? "").trim();
     const lastName = String(teacher.last_name ?? "").trim();
-    const combined = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+    const suffix = String(teacher.suffix ?? "").trim();
+    const combined = [firstName, middleName, lastName, suffix].filter(Boolean).join(" ").trim();
 
     if (combined) return combined;
 
@@ -172,21 +174,31 @@ function TeacherManagement() {
     if (!subject) return null;
     return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"} - ${subject.section || "All Sections"})`;
   };
-  const splitTeacherName = (fullName) => {
-    const parts = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  const splitTeacherName = (teacherOrName) => {
+    if (typeof teacherOrName === "object" && teacherOrName !== null) {
+      return {
+        first_name: teacherOrName.first_name || "",
+        middle_name: teacherOrName.middle_name || "",
+        last_name: teacherOrName.last_name || "",
+        suffix: teacherOrName.suffix || ""
+      };
+    }
+    const fullName = String(teacherOrName ?? "").trim();
+    const parts = fullName.split(/\s+/).filter(Boolean);
 
     if (parts.length === 0) {
-      return { first_name: "", middle_name: "", last_name: "" };
+      return { first_name: "", middle_name: "", last_name: "", suffix: "" };
     }
 
     if (parts.length === 1) {
-      return { first_name: parts[0], middle_name: "", last_name: "" };
+      return { first_name: parts[0], middle_name: "", last_name: "", suffix: "" };
     }
 
     return {
       first_name: parts[0],
       middle_name: parts.slice(1, -1).join(" "),
-      last_name: parts[parts.length - 1]
+      last_name: parts[parts.length - 1],
+      suffix: ""
     };
   };
   const normalizePhone = (value) => value.replace(/\D/g, "").slice(0, 11);
@@ -316,6 +328,12 @@ function TeacherManagement() {
       case "last_name":
         if (!nextValue.trim()) return "Last name is required";
         if (!isLettersOnly(nextValue.trim())) return "Last name can only contain letters";
+        return "";
+      case "suffix":
+        if (!nextValue.trim()) return "";
+        if (!/^[A-Za-z0-9\s.\-]+$/.test(nextValue.trim())) return "Suffix can only contain letters, numbers, and periods";
+        return "";
+      case "employee_id":
         return "";
       case "email":
         if (!nextValue.trim()) return "Email is required";
@@ -641,9 +659,21 @@ function TeacherManagement() {
       errors.subjects = "At least one subject is required";
     }
 
+    const hasDuplicateSubjects = normalizedSubjects.length !== new Set(normalizedSubjects).size;
+    if (hasDuplicateSubjects) {
+      errors.subjects = "Duplicate subject assignments are not allowed.";
+    }
+
     if (!formData.status) {
       errors.status = "Status is required";
     }
+
+    const trimmedSuffix = (formData.suffix || "").trim();
+    if (trimmedSuffix && !/^[A-Za-z0-9\s.\-]+$/.test(trimmedSuffix)) {
+      errors.suffix = "Suffix can only contain letters, numbers, and periods";
+    }
+
+    const trimmedEmpId = (formData.employee_id || "").trim();
 
     if (assignedClass && !isValidAssignedClass(assignedClass)) {
       errors.assigned_class = "Assigned class or section is invalid";
@@ -679,6 +709,15 @@ function TeacherManagement() {
     if (!db) {
       errors.form = "Supabase client is not configured.";
       return errors;
+    }
+
+    if (trimmedEmpId) {
+      let empQuery = db.from("profiles").select("id").eq("employee_id", trimmedEmpId).limit(1);
+      if (excludeId) empQuery = empQuery.neq("id", excludeId);
+      const empResult = await empQuery;
+      if (empResult.data && empResult.data.length > 0) {
+        errors.employee_id = "Employee ID / Identification already exists";
+      }
     }
 
     if (excludeId !== null) {
@@ -854,7 +893,7 @@ function TeacherManagement() {
 
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
-    const { first_name, middle_name, last_name } = splitTeacherName(formatTeacherFullName(teacher));
+    const { first_name, middle_name, last_name, suffix } = splitTeacherName(teacher);
     const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
     const initialSubjects = normalizeSubjects(teacher.subjects).filter((subjId) =>
       validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase())
@@ -864,6 +903,8 @@ function TeacherManagement() {
       first_name,
       middle_name,
       last_name,
+      suffix,
+      employee_id: teacher.employee_id ?? "",
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
       grade_level: teacher.grade_level ?? "",
@@ -986,6 +1027,7 @@ function TeacherManagement() {
     const matchesSearch =
       getTeacherName(teacher).toLowerCase().includes(search) ||
       String(teacher.email || "").toLowerCase().includes(search) ||
+      String(teacher.employee_id || "").toLowerCase().includes(search) ||
       subjectText.includes(search) ||
       sectionText.includes(search);
     const matchesFilter = filterStatus === "all" || normalizeTeacherStatus(teacher.status).toLowerCase() === filterStatus;
@@ -1049,6 +1091,8 @@ function TeacherManagement() {
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
         last_name: teacherFormData.last_name.trim() || null,
+        suffix: teacherFormData.suffix.trim() || null,
+        employee_id: teacherFormData.employee_id.trim() || null,
         email: tempEmail,
         username: username,
         phone: normalizePhone(teacherFormData.phone),
@@ -1104,8 +1148,10 @@ function TeacherManagement() {
       
       setCreatedCredentials({
         name: nextTeacherName,
+        employee_id: teacherFormData.employee_id.trim() || "N/A",
         username: username,
-        password: tempPassword
+        password: tempPassword,
+        assignedSubjects: selectedSubjectIds.map(getSubjectLabel).filter(Boolean)
       });
       setShowCredentialsModal(true);
       
@@ -1153,6 +1199,8 @@ function TeacherManagement() {
         first_name: editFormData.first_name.trim(),
         middle_name: editFormData.middle_name.trim() || null,
         last_name: editFormData.last_name.trim() || null,
+        suffix: editFormData.suffix.trim() || null,
+        employee_id: editFormData.employee_id.trim() || null,
         email: editFormData.email.trim().toLowerCase(),
         phone: normalizePhone(editFormData.phone),
         status: normalizeTeacherStatus(editFormData.status),
@@ -1802,6 +1850,17 @@ function TeacherManagement() {
                     {formErrors.first_name && <p className="text-red-500 text-sm mt-1">{formErrors.first_name}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                    <input
+                      type="text"
+                      value={teacherFormData.middle_name}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "middle_name", e.target.value)}
+                      placeholder="Enter middle name, if any"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
                       type="text"
@@ -1812,16 +1871,27 @@ function TeacherManagement() {
                     />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={teacherFormData.middle_name}
-                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "middle_name", e.target.value)}
-                      placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                      value={teacherFormData.suffix}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "suffix", e.target.value)}
+                      placeholder="e.g. Jr., Sr., II, III"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.suffix ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
-                    {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
+                    {formErrors.suffix && <p className="text-red-500 text-sm mt-1">{formErrors.suffix}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
+                    <input
+                      type="text"
+                      value={teacherFormData.employee_id}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "employee_id", e.target.value)}
+                      placeholder="Enter employee ID or identification"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.employee_id ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {formErrors.employee_id && <p className="text-red-500 text-sm mt-1">{formErrors.employee_id}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -1865,6 +1935,78 @@ function TeacherManagement() {
                       className="min-w-[180px]"
                     />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
+                  </div>
+
+                  <div className="md:col-span-2 space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentSubjects = teacherFormData.subjects || [];
+                          const nextSubjects = [...currentSubjects, ""];
+                          updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", nextSubjects);
+                        }}
+                        className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
+                      >
+                        + Add Subject & Section
+                      </button>
+                    </div>
+                    
+                    {(teacherFormData.subjects || []).length === 0 ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+                        No subject assignments added yet. Click "+ Add Subject & Section" above to assign subjects to this teacher.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(teacherFormData.subjects || []).map((subjectId, idx) => {
+                          const selectedSubj = availableSubjects.find(s => String(s.id) === String(subjectId) || String(s.code || "").toLowerCase() === String(subjectId).toLowerCase());
+                          const filteredOptions = availableSubjects
+                            .filter((subject) => {
+                              if (!teacherFormData.grade_level) return true;
+                              const subjGradeRaw = String(subject.grade_level || "").trim();
+                              return !subjGradeRaw || normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(teacherFormData.grade_level);
+                            })
+                            .map((s) => ({ value: s.id, label: `${s.code} - ${s.name} (${s.section || "All Sections"})` }));
+
+                          return (
+                            <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
+                              <div className="flex-1 min-w-0">
+                                <CustomSelect
+                                  value={subjectId || ""}
+                                  onChange={(val) => {
+                                    const updatedList = [...(teacherFormData.subjects || [])];
+                                    updatedList[idx] = val;
+                                    updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", updatedList);
+                                  }}
+                                  options={filteredOptions}
+                                  placeholder="Select Subject & Section"
+                                  icon={<BookOpen className="w-4 h-4" />}
+                                  className="w-full"
+                                />
+                              </div>
+                              {selectedSubj && (
+                                <span className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-lg whitespace-nowrap">
+                                  Sec: {selectedSubj.section || "All Sections"}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedList = (teacherFormData.subjects || []).filter((_, i) => i !== idx);
+                                  updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", updatedList);
+                                }}
+                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Remove assignment"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {formErrors.subjects && <p className="text-red-500 text-sm mt-1">{formErrors.subjects}</p>}
                   </div>
                 </div>
                 {formErrors.form && (
@@ -1911,6 +2053,17 @@ function TeacherManagement() {
                     {editFormErrors.first_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.first_name}</p>}
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.middle_name}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "middle_name", e.target.value)}
+                      placeholder="Enter middle name, if any"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
                       type="text"
@@ -1921,16 +2074,27 @@ function TeacherManagement() {
                     />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={editFormData.middle_name}
-                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "middle_name", e.target.value)}
-                      placeholder="Enter middle name, if any"
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.middle_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                      value={editFormData.suffix}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "suffix", e.target.value)}
+                      placeholder="e.g. Jr., Sr., II, III"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.suffix ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
-                    {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
+                    {editFormErrors.suffix && <p className="text-red-500 text-sm mt-1">{editFormErrors.suffix}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
+                    <input
+                      type="text"
+                      value={editFormData.employee_id}
+                      onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "employee_id", e.target.value)}
+                      placeholder="Enter employee ID or identification"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.employee_id ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {editFormErrors.employee_id && <p className="text-red-500 text-sm mt-1">{editFormErrors.employee_id}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -1986,26 +2150,76 @@ function TeacherManagement() {
                     />
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Subjects</label>
-                    <CustomSelect
-                      multiple
-                      value={editFormData.subjects}
-                      onChange={(value) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", value)}
-                      options={availableSubjects
-                        .filter((subject) => {
-                          if (!editFormData.grade_level) return true;
-                          const subjGradeRaw = String(subject.grade_level || "").trim();
-                          return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
-                        })
-                        .map((subject) => ({ value: subject.id, label: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})` }))}
-                      placeholder={availableSubjects.length > 0 ? "Select subjects" : "No subjects available"}
-                      icon={<BookOpen className="w-5 h-5" />}
-                      className="min-w-[180px]"
-                      disabled={availableSubjects.length === 0}
-                    />
+
+                  <div className="md:col-span-2 space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentSubjects = editFormData.subjects || [];
+                          const nextSubjects = [...currentSubjects, ""];
+                          updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", nextSubjects);
+                        }}
+                        className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
+                      >
+                        + Add Subject & Section
+                      </button>
+                    </div>
                     
-                    <p className="text-xs text-gray-500 mt-1">Choose one or more subjects from the dropdown.</p>
+                    {(editFormData.subjects || []).length === 0 ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+                        No subject assignments added yet. Click "+ Add Subject & Section" above to assign subjects to this teacher.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {(editFormData.subjects || []).map((subjectId, idx) => {
+                          const selectedSubj = availableSubjects.find(s => String(s.id) === String(subjectId) || String(s.code || "").toLowerCase() === String(subjectId).toLowerCase());
+                          const filteredOptions = availableSubjects
+                            .filter((subject) => {
+                              if (!editFormData.grade_level) return true;
+                              const subjGradeRaw = String(subject.grade_level || "").trim();
+                              return !subjGradeRaw || normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
+                            })
+                            .map((s) => ({ value: s.id, label: `${s.code} - ${s.name} (${s.section || "All Sections"})` }));
+
+                          return (
+                            <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
+                              <div className="flex-1 min-w-0">
+                                <CustomSelect
+                                  value={subjectId || ""}
+                                  onChange={(val) => {
+                                    const updatedList = [...(editFormData.subjects || [])];
+                                    updatedList[idx] = val;
+                                    updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", updatedList);
+                                  }}
+                                  options={filteredOptions}
+                                  placeholder="Select Subject & Section"
+                                  icon={<BookOpen className="w-4 h-4" />}
+                                  className="w-full"
+                                />
+                              </div>
+                              {selectedSubj && (
+                                <span className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-lg whitespace-nowrap">
+                                  Sec: {selectedSubj.section || "All Sections"}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updatedList = (editFormData.subjects || []).filter((_, i) => i !== idx);
+                                  updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", updatedList);
+                                }}
+                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Remove assignment"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {editFormErrors.subjects && <p className="text-red-500 text-sm mt-1">{editFormErrors.subjects}</p>}
                   </div>
                 </div>
@@ -2112,6 +2326,13 @@ function TeacherManagement() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Employee ID / Identification</label>
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-green-600" />
+                      <p className="text-gray-900 font-mono">{selectedTeacher.employee_id || "N/A"}</p>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
                     <div className="flex items-center gap-2">
@@ -2229,19 +2450,35 @@ function TeacherManagement() {
                 <p className="font-semibold text-gray-900">{createdCredentials.name}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-500 mb-1">Identification / Employee ID</p>
+                <p className="font-semibold text-gray-900 font-mono">{createdCredentials.employee_id || "N/A"}</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <p className="text-sm font-medium text-gray-500 mb-1">Username</p>
                 <div className="flex items-center justify-between">
                   <p className="font-mono text-gray-900">{createdCredentials.username}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.username); toast.success("Username copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.username); toast.success("Username copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium cursor-pointer">Copy</button>
                 </div>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <p className="text-sm font-medium text-gray-500 mb-1">Temporary Password</p>
                 <div className="flex items-center justify-between">
                   <p className="font-mono text-gray-900">{createdCredentials.password}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.password); toast.success("Password copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.password); toast.success("Password copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium cursor-pointer">Copy</button>
                 </div>
               </div>
+              {createdCredentials.assignedSubjects && createdCredentials.assignedSubjects.length > 0 && (
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <p className="text-sm font-medium text-gray-500 mb-2">Assigned Subjects & Sections</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {createdCredentials.assignedSubjects.map((label, idx) => (
+                      <span key={idx} className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-md">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button 
@@ -2249,7 +2486,7 @@ function TeacherManagement() {
                   setShowCredentialsModal(false);
                   setCreatedCredentials(null);
                 }} 
-                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 Done
               </button>
