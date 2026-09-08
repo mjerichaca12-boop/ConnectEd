@@ -303,7 +303,7 @@ function SubjectManagement() {
 
     const { data: subjectRows, error: subjectError } = await supabase
       .from("subjects")
-      .select("id, teacher_id")
+      .select("id, teacher_id, grade_level, section, status")
       .in("teacher_id", uniqueTeacherIds);
 
     if (subjectError) {
@@ -311,11 +311,22 @@ function SubjectManagement() {
     }
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
-      const assignedSubjectIds = (subjectRows ?? [])
-        .filter((subject) => String(subject.teacher_id) === String(teacherId))
-        .map((subject) => subject.id);
+      const teacherSubjectRows = (subjectRows ?? [])
+        .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived");
+      const assignedSubjectIds = [...new Set(teacherSubjectRows.map((subject) => String(subject.id || "").trim()).filter(Boolean))];
+      const assignedSectionsList = [...new Set(teacherSubjectRows.map((s) => s.section).filter(Boolean))];
+      const assignedGradeLevels = [...new Set(teacherSubjectRows.map((s) => s.grade_level).filter(Boolean))];
 
-      const { error: updateError } = await adminApi.updateProfile(teacherId, { subjects: assignedSubjectIds });
+      const profilePayload = {
+        subjects: assignedSubjectIds,
+        assigned_class: assignedSectionsList.join(", ") || null
+      };
+
+      if (assignedGradeLevels.length > 0) {
+        profilePayload.year_level = assignedGradeLevels[0];
+      }
+
+      const { error: updateError } = await adminApi.updateProfile(teacherId, profilePayload);
 
       if (updateError) {
         throw new Error(updateError.message);

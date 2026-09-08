@@ -516,7 +516,7 @@ function TeacherManagement() {
 
     const { data: subjectRows, error: subjectError } = await db
       .from("subjects")
-      .select("id, teacher_id, status")
+      .select("id, teacher_id, grade_level, section, status")
       .in("teacher_id", uniqueTeacherIds);
 
     if (subjectError) {
@@ -524,19 +524,27 @@ function TeacherManagement() {
     }
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
-      const assignedSubjectIds = [...new Set((subjectRows ?? [])
-        .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived")
-        .map((subject) => String(subject.id || "").trim())
-        .filter(Boolean))];
+      const teacherSubjectRows = (subjectRows ?? [])
+        .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived");
+      const assignedSubjectIds = [...new Set(teacherSubjectRows.map((subject) => String(subject.id || "").trim()).filter(Boolean))];
+      const assignedSectionsList = [...new Set(teacherSubjectRows.map((s) => s.section).filter(Boolean))];
+      const assignedGradeLevels = [...new Set(teacherSubjectRows.map((s) => s.grade_level).filter(Boolean))];
+
+      const profilePayload = {
+        subjects: assignedSubjectIds,
+        assigned_class: assignedSectionsList.join(", ") || null
+      };
+
+      if (assignedGradeLevels.length > 0) {
+        profilePayload.year_level = assignedGradeLevels[0];
+      }
 
       console.log("[TeacherManagement] refreshing teacher subjects", {
         teacherId,
-        assignedSubjectIds
+        profilePayload
       });
 
-      const { error: updateError } = await adminApi.updateProfile(teacherId, {
-        subjects: assignedSubjectIds
-      });
+      const { error: updateError } = await adminApi.updateProfile(teacherId, profilePayload);
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -677,13 +685,23 @@ function TeacherManagement() {
       throw new Error(error.message);
     }
 
-    setTeachers((data ?? []).map((teacher) => ({
-      ...teacher,
-      display_name: formatTeacherFullName(teacher),
-      status: normalizeTeacherStatus(teacher.status),
-      subjects: normalizeSubjects(teacher.subjects),
-      grade_level: teacher.grade_level || teacher.year_level || ""
-    })));
+    setTeachers((data ?? []).map((teacher) => {
+      const dbTeacherSubjs = availableSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id) && String(s.status || "Active").toLowerCase() !== "archived");
+      const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
+      const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
+      const mergedSubjects = [...new Set([...normalizeSubjects(teacher.subjects), ...dbSubjIds])];
+      const mergedClass = teacher.assigned_class || dbSections || "";
+      const mergedGrade = teacher.grade_level || teacher.year_level || dbTeacherSubjs[0]?.grade_level || "";
+
+      return {
+        ...teacher,
+        display_name: formatTeacherFullName(teacher),
+        status: normalizeTeacherStatus(teacher.status),
+        subjects: mergedSubjects,
+        assigned_class: mergedClass,
+        grade_level: mergedGrade
+      };
+    }));
   };
 
   const validateTeacherForm = async (formData, excludeId = null, options = {}) => {
@@ -744,6 +762,22 @@ function TeacherManagement() {
           break;
         }
         seenCombos.add(comboKey);
+
+        const valLow = String(row.subjectCode || row.subjectId).toLowerCase().trim();
+        const matchedSubj = availableSubjects.find((s) => {
+          const sGrade = normalizeGradeLevel(s.grade_level);
+          const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+          return sGrade === normGrade && (sCode === valLow || String(s.id).toLowerCase() === valLow);
+        });
+
+        if (matchedSubj && matchedSubj.section && row.section) {
+          const defSecLow = String(matchedSubj.section).toLowerCase().trim();
+          const rowSecLow = String(row.section).toLowerCase().trim();
+          if (defSecLow !== rowSecLow) {
+            errors.subjects = `Subject "${matchedSubj.code || matchedSubj.name}" is defined only for Section "${matchedSubj.section}".`;
+            break;
+          }
+        }
 
         const resolvedSubjId = resolveSubjectId(row.subjectCode || row.subjectId, row.section, formData.grade_level);
         const subjObj = availableSubjects.find((s) => String(s.id) === String(resolvedSubjId));
@@ -839,20 +873,31 @@ function TeacherManagement() {
     }
 
     const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
+    const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
 
     if (teachersRes.error) throw new Error(teachersRes.error.message);
 
-    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => ({
-      ...teacher,
-      display_name: formatTeacherFullName(teacher),
-      status: normalizeTeacherStatus(teacher.status),
-      subjects: normalizeSubjects(teacher.subjects),
-      grade_level: teacher.grade_level || teacher.year_level || ""
-    }));
+    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => {
+      const dbTeacherSubjs = allSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id));
+      const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
+      const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
+      const mergedSubjects = [...new Set([...normalizeSubjects(teacher.subjects), ...dbSubjIds])];
+      const mergedClass = teacher.assigned_class || dbSections || "";
+      const mergedGrade = teacher.grade_level || teacher.year_level || dbTeacherSubjs[0]?.grade_level || "";
+
+      return {
+        ...teacher,
+        display_name: formatTeacherFullName(teacher),
+        status: normalizeTeacherStatus(teacher.status),
+        subjects: mergedSubjects,
+        assigned_class: mergedClass,
+        grade_level: mergedGrade
+      };
+    });
 
     return {
       teachers: formattedTeachers,
-      subjects: (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived")
+      subjects: allSubjects
     };
   }, []);
 
@@ -1726,6 +1771,19 @@ function TeacherManagement() {
                 (opt) => !selectedInOtherRows.has(opt.value)
               );
 
+              let rowSectionOptions = sectionOptions;
+              const valLow = String(row.subjectCode || row.subjectId || "").toLowerCase().trim();
+              if (valLow) {
+                const matchedSubjects = subjectsForGrade.filter((s) => {
+                  const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+                  return sCode === valLow || String(s.id).toLowerCase() === valLow;
+                });
+                const definedSections = [...new Set(matchedSubjects.map((s) => s.section).filter(Boolean))];
+                if (definedSections.length > 0) {
+                  rowSectionOptions = definedSections.map((sec) => ({ value: sec, label: sec }));
+                }
+              }
+
               return (
                 <div key={row.id || idx} className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl relative group shadow-sm">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
@@ -1735,10 +1793,21 @@ function TeacherManagement() {
                         value={row.subjectCode || row.subjectId || ""}
                         onChange={(val) => {
                           const updatedRows = [...rows];
-                          const resolvedId = resolveSubjectId(val, updatedRows[idx].section, formData.grade_level);
+                          const matchedSubjs = subjectsForGrade.filter((s) => {
+                            const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+                            return sCode === String(val).toLowerCase().trim() || String(s.id).toLowerCase() === String(val).toLowerCase().trim();
+                          });
+                          const definedSecs = [...new Set(matchedSubjs.map((s) => s.section).filter(Boolean))];
+                          let targetSec = updatedRows[idx].section || "";
+                          if (definedSecs.length > 0 && (!targetSec || !definedSecs.includes(targetSec))) {
+                            targetSec = definedSecs[0];
+                          }
+
+                          const resolvedId = resolveSubjectId(val, targetSec, formData.grade_level);
                           updatedRows[idx] = {
                             ...updatedRows[idx],
                             subjectCode: val,
+                            section: targetSec,
                             subjectId: resolvedId
                           };
                           updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
@@ -1771,15 +1840,15 @@ function TeacherManagement() {
                           };
                           updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
                         }}
-                        options={sectionOptions}
+                        options={rowSectionOptions}
                         placeholder={
                           isSectionsLoading
                             ? "Loading sections..."
-                            : sectionOptions.length === 0
+                            : rowSectionOptions.length === 0
                             ? "No sections available for this grade."
                             : "Select Section"
                         }
-                        disabled={isSectionsLoading || sectionOptions.length === 0}
+                        disabled={isSectionsLoading || rowSectionOptions.length === 0}
                         className="w-full"
                       />
                     </div>
