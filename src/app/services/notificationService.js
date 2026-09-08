@@ -104,7 +104,6 @@ export const notifyAdmin = async ({ type, title, message, relatedId = null, rela
         is_read: false,
         related_id: relatedId ? String(relatedId) : null,
         related_type: relatedType ? String(relatedType) : null,
-        path: targetPath,
         created_at: new Date().toISOString()
       };
 

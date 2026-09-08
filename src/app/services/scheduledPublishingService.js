@@ -1,5 +1,8 @@
 import { supabase } from "@/app/lib/supabaseClient";
 
+let lastPublishCheckTime = 0;
+let inFlightPublishPromise = null;
+
 /**
  * Evaluates and publishes any scheduled items that are due.
  * First tries calling server-side Supabase RPC 'check_and_process_scheduled_publishing'.
@@ -9,66 +12,82 @@ import { supabase } from "@/app/lib/supabaseClient";
 export async function triggerScheduledPublishingProcess() {
   if (!supabase) return;
 
-  const nowIso = new Date().toISOString();
-  const nowDate = new Date();
-
-  try {
-    const { error } = await supabase.rpc("check_and_process_scheduled_publishing");
-    if (!error) return; // RPC succeeded!
-  } catch (_) {
-    // RPC failed or returned network error
+  const now = Date.now();
+  if (inFlightPublishPromise) {
+    return inFlightPublishPromise;
+  }
+  if (now - lastPublishCheckTime < 15000) {
+    return;
   }
 
-  // Fallback direct table updates if RPC is not present on remote Supabase instance
-  try {
-    await Promise.allSettled([
-      supabase
-        .from("lessons")
-        .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
-        .eq("status", "Scheduled")
-        .lte("scheduled_publish_at", nowIso),
-      supabase
-        .from("assignments_activity")
-        .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
-        .eq("status", "Scheduled")
-        .lte("scheduled_publish_at", nowIso),
-      supabase
-        .from("quizzes")
-        .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
-        .eq("status", "Scheduled")
-        .lte("scheduled_publish_at", nowIso),
-      supabase
-        .from("class_announcements")
-        .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
-        .eq("status", "Scheduled")
-        .lte("scheduled_publish_at", nowIso)
-    ]);
+  lastPublishCheckTime = now;
 
-    // Handle announcements where scheduled status/time is stored inside priority JSON
+  inFlightPublishPromise = (async () => {
+    const nowIso = new Date().toISOString();
+    const nowDate = new Date();
+
     try {
-      const { data: scheduledAnns } = await supabase
-        .from("class_announcements")
-        .select("id, priority");
+      const { error } = await supabase.rpc("check_and_process_scheduled_publishing");
+      if (!error) return; // RPC succeeded!
+    } catch (_) {
+      // RPC failed or returned network error
+    }
 
-      if (Array.isArray(scheduledAnns) && scheduledAnns.length > 0) {
-        for (const ann of scheduledAnns) {
-          if (!ann?.priority || !String(ann.priority).includes('"status":"Scheduled"')) continue;
+    // Fallback direct table updates if RPC is not present on remote Supabase instance
+    try {
+      await Promise.allSettled([
+        supabase
+          .from("lessons")
+          .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
+          .eq("status", "Scheduled")
+          .lte("scheduled_publish_at", nowIso),
+        supabase
+          .from("assignments_activity")
+          .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
+          .eq("status", "Scheduled")
+          .lte("scheduled_publish_at", nowIso),
+        supabase
+          .from("quizzes")
+          .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
+          .eq("status", "Scheduled")
+          .lte("scheduled_publish_at", nowIso),
+        supabase
+          .from("class_announcements")
+          .update({ status: "Published", published_at: nowIso, scheduled_publish_at: null })
+          .eq("status", "Scheduled")
+          .lte("scheduled_publish_at", nowIso)
+      ]);
 
-          try {
-            const parsedPriority = JSON.parse(ann.priority);
-            if (parsedPriority?.scheduled_at && new Date(parsedPriority.scheduled_at) <= nowDate) {
-              parsedPriority.status = "Published";
-              parsedPriority.scheduled_at = null;
+      // Handle announcements where scheduled status/time is stored inside priority JSON
+      try {
+        const { data: scheduledAnns } = await supabase
+          .from("class_announcements")
+          .select("id, priority");
 
-              await supabase
-                .from("class_announcements")
-                .update({ priority: JSON.stringify(parsedPriority) })
-                .eq("id", ann.id)
-                .catch(() => {});
-            }
-          } catch (_) {}
+        if (Array.isArray(scheduledAnns) && scheduledAnns.length > 0) {
+          for (const ann of scheduledAnns) {
+            if (!ann?.priority || !String(ann.priority).includes('"status":"Scheduled"')) continue;
+
+            try {
+              const parsedPriority = JSON.parse(ann.priority);
+              if (parsedPriority?.scheduled_at && new Date(parsedPriority.scheduled_at) <= nowDate) {
+                parsedPriority.status = "Published";
+                parsedPriority.scheduled_at = null;
+
+                await supabase
+                  .from("class_announcements")
+                  .update({ priority: JSON.stringify(parsedPriority) })
+                  .eq("id", ann.id)
+                  .catch(() => {});
+              }
+            } catch (_) {}
+          }
         }
-      }
+      } catch (_) {}
     } catch (_) {}
-  } catch (_) {}
+  })().finally(() => {
+    inFlightPublishPromise = null;
+  });
+
+  return inFlightPublishPromise;
 }

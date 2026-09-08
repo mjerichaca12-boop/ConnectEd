@@ -1521,7 +1521,7 @@ export function ClassDetail() {
               schedule: String(subData.schedule || ""),
               room: "",
               semester: "Current School Year",
-              studentCount: Number(subData.enrolled || 0),
+              studentCount: 0,
               capacity: Number(subData.capacity || 0),
               gradeLevel: String(subData.grade_level || "")
             };

@@ -271,19 +271,10 @@ function StudentManagement() {
   const fetchStudentsData = useCallback(async () => {
     if (!db) return null;
     let profilesRes = await adminApi.db("profiles", "select", {
-      payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+      payload: "*",
       eq: { column: "role", value: "student" },
       order: { column: "created_at", options: { ascending: false } }
     });
-
-    if (profilesRes.error && (profilesRes.error.message?.includes("suffix") || profilesRes.error.message?.includes("does not exist"))) {
-      console.warn("[StudentManagement] Fallback fetching profiles without suffix:", profilesRes.error.message);
-      profilesRes = await adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
-        eq: { column: "role", value: "student" },
-        order: { column: "created_at", options: { ascending: false } }
-      });
-    }
 
     const masterlistRes = await adminApi.db("student_masterlist", "select", {
       payload: "*",
@@ -321,18 +312,10 @@ function StudentManagement() {
     if (!db) return;
 
     let profilesRes = await adminApi.db("profiles", "select", {
-      payload: "id, username, first_name, middle_name, last_name, suffix, email, lrn, year_level, section, status, role, created_at",
+      payload: "*",
       eq: { column: "role", value: "student" },
       order: { column: "created_at", options: { ascending: false } }
     });
-
-    if (profilesRes.error && (profilesRes.error.message?.includes("suffix") || profilesRes.error.message?.includes("does not exist"))) {
-      profilesRes = await adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
-        eq: { column: "role", value: "student" },
-        order: { column: "created_at", options: { ascending: false } }
-      });
-    }
 
     const [masterlistRes, gradeSectionsRes] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
@@ -587,19 +570,23 @@ function StudentManagement() {
     });
   };
 
-  const buildPayload = (formData) => ({
-    first_name: formData.first_name.trim(),
-    middle_name: formData.middle_name.trim() || null,
-    last_name: formData.last_name.trim(),
-    suffix: formData.suffix?.trim() || null,
-    email: formData.email.trim().toLowerCase(),
-    lrn: normalizeLrn(formData.lrn),
-    year_level: normalizeYearLevel(formData.year_level),
-
-    section: formData.section?.trim() || null,
-    status: formData.status,
-    role: "student"
-  });
+  const buildPayload = (formData) => {
+    const payload = {
+      first_name: formData.first_name.trim(),
+      middle_name: formData.middle_name.trim() || null,
+      last_name: formData.last_name.trim(),
+      email: formData.email.trim().toLowerCase(),
+      lrn: normalizeLrn(formData.lrn),
+      year_level: normalizeYearLevel(formData.year_level),
+      section: formData.section?.trim() || null,
+      status: formData.status,
+      role: "student"
+    };
+    if (formData.suffix?.trim()) {
+      payload.suffix = formData.suffix.trim();
+    }
+    return payload;
+  };
 
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};

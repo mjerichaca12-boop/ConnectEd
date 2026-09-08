@@ -182,6 +182,7 @@ export const getTeacherAssignedClasses = async (storedUser) => {
         const { data: assignmentRows } = await supabase
           .from("teacher_student_assignments")
           .select("subject_id, student_id")
+          .in("teacher_id", queryIds)
           .in("subject_id", subjectIds);
 
         const rows = assignmentRows || [];

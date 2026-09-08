@@ -875,6 +875,7 @@ function TeacherMessages() {
           return;
         }
         setTeacherId(resolvedTeacherId);
+        conversationsRef.current = [];
         await loadConversations(resolvedTeacherId, teacherDisplayName);
       } catch (err) {
         console.warn("[TeacherMessages] Initialize error:", err);

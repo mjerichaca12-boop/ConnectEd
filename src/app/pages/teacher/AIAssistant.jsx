@@ -409,12 +409,13 @@ export function AIAssistant() {
         const subjectIds = classesList.map((c) => c.id);
         let lessonsList = [];
         if (subjectIds.length > 0) {
-          const { data: lessonsData } = await supabase
-            .from("lessons")
-            .select("id, subject_id, title, topic, status")
-            .in("subject_id", subjectIds);
+          const { data: rawLessons, error: lErr } = await supabase
+          .from("lessons")
+          .select("id, subject_id, title, topic, status")
+          .in("subject_id", subjectIds)
+          .eq("teacher_id", teacherId);
 
-          lessonsList = (lessonsData || []).map((l) => ({
+          lessonsList = (rawLessons || []).map((l) => ({
             id: String(l.id),
             subjectId: String(l.subject_id),
             title: String(l.title || l.topic || "Untitled Lesson").trim(),

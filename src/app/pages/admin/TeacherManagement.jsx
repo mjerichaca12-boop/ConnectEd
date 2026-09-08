@@ -48,8 +48,7 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
-const teacherSelectBaseColumns = "id, first_name, middle_name, last_name, email, phone, year_level, section, subjects, status, created_at, role";
-const teacherSelectColumns = "id, first_name, middle_name, last_name, suffix, employee_id, email, phone, year_level, section, subjects, status, created_at, role";
+
 const emptyTeacherForm = {
   first_name: "",
   middle_name: "",
@@ -671,20 +670,9 @@ function TeacherManagement() {
 
     let { data, error } = await db
       .from("profiles")
-      .select(teacherSelectColumns)
+      .select("*")
       .eq("role", "teacher")
       .order("created_at", { ascending: false });
-
-    if (error && (error.message?.includes("suffix") || error.message?.includes("employee_id") || error.message?.includes("does not exist"))) {
-      console.warn("[TeacherManagement] Fallback fetching teachers without optional columns:", error.message);
-      const fallback = await db
-        .from("profiles")
-        .select(teacherSelectBaseColumns)
-        .eq("role", "teacher")
-        .order("created_at", { ascending: false });
-      data = fallback.data;
-      error = fallback.error;
-    }
 
     if (error) {
       throw new Error(error.message);
@@ -859,7 +847,7 @@ function TeacherManagement() {
       let empQuery = db.from("profiles").select("id").eq("employee_id", trimmedEmpId).limit(1);
       if (excludeId) empQuery = empQuery.neq("id", excludeId);
       const empResult = await empQuery;
-      if (empResult.data && empResult.data.length > 0) {
+      if (!empResult.error && empResult.data && empResult.data.length > 0) {
         errors.employee_id = "Employee ID / Identification already exists";
       }
     }
@@ -883,12 +871,7 @@ function TeacherManagement() {
 
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
-    let teachersRes = await db.from("profiles").select(teacherSelectColumns).eq("role", "teacher").order("created_at", { ascending: false });
-
-    if (teachersRes.error && (teachersRes.error.message?.includes("suffix") || teachersRes.error.message?.includes("employee_id") || teachersRes.error.message?.includes("does not exist"))) {
-      console.warn("[TeacherManagement] Fallback fetching teachers data without optional columns:", teachersRes.error.message);
-      teachersRes = await db.from("profiles").select(teacherSelectBaseColumns).eq("role", "teacher").order("created_at", { ascending: false });
-    }
+    let teachersRes = await db.from("profiles").select("*").eq("role", "teacher").order("created_at", { ascending: false });
 
     const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
     const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
@@ -1263,6 +1246,8 @@ function TeacherManagement() {
         must_change_password: true,
         is_verified: false
       };
+      if (!teacherFormData.suffix.trim()) delete payload.suffix;
+      if (!teacherFormData.employee_id.trim()) delete payload.employee_id;
 
       const { data, error } = await adminApi.db("profiles", "insert", {
         payload,
@@ -1375,6 +1360,8 @@ function TeacherManagement() {
         year_level: editFormData.grade_level?.trim() || null,
         assigned_class: editFormattedClass || null
       };
+      if (!editFormData.suffix.trim()) delete payload.suffix;
+      if (!editFormData.employee_id.trim()) delete payload.employee_id;
 
       const supportsYearLevel = Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "year_level") || Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "grade_level");
       if (!supportsYearLevel) {
@@ -1641,7 +1628,7 @@ function TeacherManagement() {
 
       const { data: teacherRows, error: teacherRowsError } = await db
         .from("profiles")
-        .select(teacherSelectColumns)
+        .select("*")
         .eq("role", "teacher")
         .neq("id", teacherToAssign.id);
 

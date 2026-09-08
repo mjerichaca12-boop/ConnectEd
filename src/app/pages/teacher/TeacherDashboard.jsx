@@ -237,7 +237,7 @@ export function TeacherDashboard() {
   };
 
   const fetchLessonsCount = async (id) => {
-    if (!supabase || !id) return;
+    if (!supabase || !id || !activeSchoolYear || !activeQuarter) return;
     const { data, error } = await supabase
       .from("lessons")
       .select("status")

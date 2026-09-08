@@ -138,6 +138,7 @@ function Classes() {
         const { data: assignmentRows } = await supabase
           .from("teacher_student_assignments")
           .select("subject_id, student_id")
+          .eq("teacher_id", id)
           .in("subject_id", subjectIds);
 
         const rows = assignmentRows || [];
@@ -203,7 +204,7 @@ function Classes() {
     if (cachedClassesCards && cachedClassesCards.length > 0) {
       setClasses(cachedClassesCards);
       setLoading(false);
-    } else {
+    } else if (classes.length === 0) {
       setLoading(isCachedClassesLoading);
     }
   }, [cachedClassesCards, isCachedClassesLoading]);
