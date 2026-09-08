@@ -38,7 +38,7 @@ function FinalCTA() {
         </h2>
 
         <p className="text-gray-600 text-lg mb-8 max-w-2xl mx-auto">
-          Join the public schools in Dasmariñas already using ConnectEd. Free to use, simple to set up.
+          Join the schools in Dasmariñas already using ConnectEd. Free to use, simple to set up.
         </p>
 
         <button

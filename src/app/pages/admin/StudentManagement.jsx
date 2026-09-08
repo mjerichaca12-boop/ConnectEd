@@ -6,11 +6,11 @@ import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { toast } from "sonner";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { notifyAdmin } from "@/app/services/notificationService";
 import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen } from "lucide-react";
 
 const db = supabase;
@@ -57,7 +57,6 @@ function StudentManagement() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -73,6 +72,7 @@ function StudentManagement() {
     first_name: "",
     middle_name: "",
     last_name: "",
+    suffix: "",
     email: "",
     lrn: "",
     year_level: "",
@@ -84,6 +84,7 @@ function StudentManagement() {
     first_name: "",
     middle_name: "",
     last_name: "",
+    suffix: "",
     email: "",
     lrn: "",
     year_level: "",
@@ -140,8 +141,105 @@ function StudentManagement() {
   const [showBulkAssignSectionModal, setShowBulkAssignSectionModal] = useState(false);
   const [targetBulkSection, setTargetBulkSection] = useState("");
   const [isBulkAssigning, setIsBulkAssigning] = useState(false);
+  const [sectionCapacityInfo, setSectionCapacityInfo] = useState(null);
+  const [isLoadingCapacity, setIsLoadingCapacity] = useState(false);
 
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!showBulkAssignSectionModal || !targetBulkSection) {
+      setSectionCapacityInfo(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchCapacityInfo = async () => {
+      setIsLoadingCapacity(true);
+      try {
+        const selectedSet = activeTab === "Profiles" ? selectedStudentIds : selectedMasterlistIds;
+        const currentList = activeTab === "Profiles" ? students : masterlist;
+        const selectedRows = currentList.filter(s => selectedSet.has(s.id));
+        
+        const firstGrade = selectedRows[0]?.year_level || "";
+        const formattedGradeLevel = firstGrade ? `Grade ${firstGrade.replace(/\D/g, "")}` : "Grade 7";
+        const targetNormGradeNum = formattedGradeLevel.replace(/\D/g, "");
+        const cleanSection = formatSectionName(targetBulkSection);
+
+        if (!cleanSection) {
+          if (isMounted) {
+            setSectionCapacityInfo(null);
+            setIsLoadingCapacity(false);
+          }
+          return;
+        }
+
+        // Query subjects table for capacity
+        const { data: subsData } = await adminApi.db("subjects", "select", {
+          payload: "id, name, code, capacity, enrolled, grade_level, section"
+        });
+
+        const matchingSubs = (subsData || []).filter(s => {
+          const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+          const sSec = (s.section || "").trim().toLowerCase();
+          return sGradeNum === targetNormGradeNum && sSec === cleanSection.toLowerCase();
+        });
+
+        let capacity = 0;
+        if (matchingSubs.length > 0) {
+          const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+          if (caps.length > 0) {
+            capacity = Math.min(...caps);
+          }
+        }
+
+        // Count enrolled profiles in this section (source of truth)
+        const { count: profileEnrolledCount } = await db
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "student")
+          .ilike("section", cleanSection);
+
+        const currentEnrolled = profileEnrolledCount || 0;
+
+        // Calculate deduplicated student count
+        const alreadyEnrolledCount = selectedRows.filter(s => {
+          const studentSec = (s.section || "").trim().toLowerCase();
+          return studentSec === cleanSection.toLowerCase();
+        }).length;
+
+        const newStudentsCount = selectedSet.size - alreadyEnrolledCount;
+        const projectedEnrolled = currentEnrolled + newStudentsCount;
+        const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : "Unlimited";
+        const isExceeded = capacity > 0 && projectedEnrolled > capacity;
+
+        if (isMounted) {
+          setSectionCapacityInfo({
+            capacity,
+            currentEnrolled,
+            availableSlots,
+            newStudentsCount,
+            alreadyEnrolledCount,
+            totalSelected: selectedSet.size,
+            projectedEnrolled,
+            isExceeded,
+            cleanSection,
+            formattedGradeLevel,
+            matchingSubjects: matchingSubs
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching capacity info:", err);
+      } finally {
+        if (isMounted) setIsLoadingCapacity(false);
+      }
+    };
+
+    fetchCapacityInfo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showBulkAssignSectionModal, targetBulkSection, selectedStudentIds, selectedMasterlistIds, activeTab, students, masterlist]);
 
   useEffect(() => {
     if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal) {
@@ -172,17 +270,16 @@ function StudentManagement() {
 
   const fetchStudentsData = useCallback(async () => {
     if (!db) return null;
-    const [profilesRes, masterlistRes] = await Promise.all([
-      adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
-        eq: { column: "role", value: "student" },
-        order: { column: "created_at", options: { ascending: false } }
-      }),
-      adminApi.db("student_masterlist", "select", {
-        payload: "*",
-        order: { column: "created_at", options: { ascending: false } }
-      })
-    ]);
+    let profilesRes = await adminApi.db("profiles", "select", {
+      payload: "*",
+      eq: { column: "role", value: "student" },
+      order: { column: "created_at", options: { ascending: false } }
+    });
+
+    const masterlistRes = await adminApi.db("student_masterlist", "select", {
+      payload: "*",
+      order: { column: "created_at", options: { ascending: false } }
+    });
 
     if (profilesRes.error) {
       throw new Error(profilesRes.error.message);
@@ -214,12 +311,13 @@ function StudentManagement() {
   const refreshStudents = async () => {
     if (!db) return;
 
-    const [profilesRes, masterlistRes, gradeSectionsRes] = await Promise.all([
-      adminApi.db("profiles", "select", {
-        payload: "id, username, first_name, middle_name, last_name, email, lrn, year_level, section, status, role, created_at",
-        eq: { column: "role", value: "student" },
-        order: { column: "created_at", options: { ascending: false } }
-      }),
+    let profilesRes = await adminApi.db("profiles", "select", {
+      payload: "*",
+      eq: { column: "role", value: "student" },
+      order: { column: "created_at", options: { ascending: false } }
+    });
+
+    const [masterlistRes, gradeSectionsRes] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
         payload: "*",
         order: { column: "created_at", options: { ascending: false } }
@@ -344,7 +442,7 @@ function StudentManagement() {
     }
   };
 
-  const getFullName = (student) => [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ");
+  const getFullName = (student) => [student.first_name, student.middle_name, student.last_name, student.suffix].filter(Boolean).join(" ");
 
   const getDisplayUsername = (student) => {
     if (student?.username) return student.username;
@@ -472,18 +570,23 @@ function StudentManagement() {
     });
   };
 
-  const buildPayload = (formData) => ({
-    first_name: formData.first_name.trim(),
-    middle_name: formData.middle_name.trim() || null,
-    last_name: formData.last_name.trim(),
-    email: formData.email.trim().toLowerCase(),
-    lrn: normalizeLrn(formData.lrn),
-    year_level: normalizeYearLevel(formData.year_level),
-
-    section: formData.section?.trim() || null,
-    status: formData.status,
-    role: "student"
-  });
+  const buildPayload = (formData) => {
+    const payload = {
+      first_name: formData.first_name.trim(),
+      middle_name: formData.middle_name.trim() || null,
+      last_name: formData.last_name.trim(),
+      email: formData.email.trim().toLowerCase(),
+      lrn: normalizeLrn(formData.lrn),
+      year_level: normalizeYearLevel(formData.year_level),
+      section: formData.section?.trim() || null,
+      status: formData.status,
+      role: "student"
+    };
+    if (formData.suffix?.trim()) {
+      payload.suffix = formData.suffix.trim();
+    }
+    return payload;
+  };
 
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};
@@ -522,6 +625,45 @@ function StudentManagement() {
 
     if ((lrnResult.data ?? []).length > 0) {
       errors.lrn = "LRN already exists";
+    }
+
+    if (formData.section && formData.year_level) {
+      const cleanSec = formatSectionName(formData.section);
+      const normGrade = normalizeYearLevel(formData.year_level);
+      if (cleanSec && normGrade) {
+        const originalStudent = excludeId ? students.find(s => s.id === excludeId) : null;
+        const isSameSection = originalStudent && (originalStudent.section || "").trim().toLowerCase() === cleanSec.toLowerCase();
+
+        if (!isSameSection) {
+          const { data: subsData } = await adminApi.db("subjects", "select", {
+            payload: "capacity, grade_level, section"
+          });
+
+          const matchingSubs = (subsData || []).filter(s => {
+            const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+            const sSec = (s.section || "").trim().toLowerCase();
+            return sGradeNum === normGrade && sSec === cleanSec.toLowerCase();
+          });
+
+          let capacity = 0;
+          if (matchingSubs.length > 0) {
+            const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+            if (caps.length > 0) capacity = Math.min(...caps);
+          }
+
+          if (capacity > 0) {
+            const { count: enrolledCount } = await db
+              .from("profiles")
+              .select("id", { count: "exact", head: true })
+              .eq("role", "student")
+              .ilike("section", cleanSec);
+
+            if ((enrolledCount || 0) >= capacity) {
+              errors.section = `Section ${cleanSec} is at full capacity (${enrolledCount}/${capacity} students).`;
+            }
+          }
+        }
+      }
     }
 
     return errors;
@@ -602,6 +744,14 @@ function StudentManagement() {
           details: { username: username, lrn: data.lrn, section: data.section },
           timestamp: data.created_at
         });
+        notifyAdmin({
+          type: "account",
+          title: "Student Account Created",
+          message: `New student account created for ${studentName}`,
+          relatedId: data.id,
+          relatedType: "profiles",
+          path: "/admin/students"
+        });
       }
 
       setStudentFormData({
@@ -667,6 +817,14 @@ function StudentManagement() {
           details: { email: data.email, lrn: data.lrn, section: data.section },
           timestamp: new Date().toISOString()
         });
+        notifyAdmin({
+          type: "account",
+          title: "Student Account Updated",
+          message: `Student account updated for ${studentName}`,
+          relatedId: data.id,
+          relatedType: "profiles",
+          path: "/admin/students"
+        });
       }
 
       setEditFormData({
@@ -697,6 +855,7 @@ function StudentManagement() {
     first_name: ["first_name", "first name", "firstname", "first", "given_name", "given name"],
     last_name: ["last_name", "last name", "lastname", "last", "surname", "family_name", "family name"],
     middle_name: ["middle_name", "middle name", "middlename", "middle", "middle_initial", "middle initial"],
+    suffix: ["suffix", "name_extension", "name extension", "extension", "ext"],
     full_name: ["full_name", "full name", "fullname", "student name", "student_name", "name"],
     year_level: ["year_level", "year level", "yearlevel", "year", "grade", "grade_level", "grade level", "level"],
     section: ["section", "section_name", "section name", "class_section", "class section"],
@@ -763,7 +922,7 @@ function StudentManagement() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", "connected_student_masterlist_template.csv");
+    link.setAttribute("download", "Student_Masterlist_Import_Template.csv");
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
@@ -1106,44 +1265,38 @@ function StudentManagement() {
       return;
     }
 
+    if (sectionCapacityInfo?.isExceeded) {
+      toast.error(`Cannot assign section: Capacity for Section ${cleanSection} will be exceeded (${sectionCapacityInfo.projectedEnrolled}/${sectionCapacityInfo.capacity}).`);
+      return;
+    }
+
     setIsBulkAssigning(true);
     try {
       const selectedIds = Array.from(selectedSet);
+      const isMasterlist = activeTab !== "Profiles";
 
-      if (activeTab === "Profiles") {
-        const { error: updErr } = await adminApi.db("profiles", "update", {
-          payload: { section: cleanSection },
-          in: { column: "id", value: selectedIds }
-        });
-        if (updErr) throw updErr;
+      const res = await adminApi.bulkAssignSection({
+        gradeLevel: sectionCapacityInfo?.formattedGradeLevel || "Grade 7",
+        targetSection: cleanSection,
+        studentIds: selectedIds,
+        isMasterlist
+      });
 
-        const targetStudents = students.filter(s => selectedSet.has(s.id));
-        const targetLrns = targetStudents.map(s => s.lrn).filter(Boolean);
-        if (targetLrns.length > 0) {
-          await db.from("student_masterlist").update({ section: cleanSection }).in("lrn", targetLrns);
-        }
+      if (res.error) {
+        throw new Error(res.error.message || "Failed to assign section.");
+      }
 
-        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
-        setSelectedStudentIds(new Set());
-      } else {
-        const { error: updErr } = await adminApi.db("student_masterlist", "update", {
-          payload: { section: cleanSection },
-          in: { column: "id", value: selectedIds }
-        });
-        if (updErr) throw updErr;
-
-        const targetMaster = masterlist.filter(m => selectedSet.has(m.id));
-        const targetLrns = targetMaster.map(m => m.lrn).filter(Boolean);
-        if (targetLrns.length > 0) {
-          await db.from("profiles").update({ section: cleanSection }).in("lrn", targetLrns);
-        }
-
+      if (isMasterlist) {
         toast.success(`Successfully assigned ${selectedIds.length} masterlist record(s) to Section ${cleanSection}.`);
         setSelectedMasterlistIds(new Set());
+      } else {
+        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
+        setSelectedStudentIds(new Set());
       }
 
       setShowBulkAssignSectionModal(false);
       setTargetBulkSection("");
+      setSectionCapacityInfo(null);
       await refreshStudents();
     } catch (err) {
       console.error("Bulk section assignment error:", err);
@@ -1257,6 +1410,7 @@ function StudentManagement() {
       first_name: student.first_name ?? "",
       middle_name: student.middle_name ?? "",
       last_name: student.last_name ?? "",
+      suffix: student.suffix ?? "",
       email: student.email ?? "",
       lrn: student.lrn ?? "",
       year_level: student.year_level ?? "",
@@ -1273,6 +1427,7 @@ function StudentManagement() {
       first_name: "",
       middle_name: "",
       last_name: "",
+      suffix: "",
       email: "",
       lrn: "",
       year_level: "",
@@ -1291,6 +1446,7 @@ function StudentManagement() {
       first_name: "",
       middle_name: "",
       last_name: "",
+      suffix: "",
       email: "",
       lrn: "",
       year_level: "",
@@ -1405,72 +1561,29 @@ function StudentManagement() {
     setIsBulkDeleting(true);
     try {
       const idsToDelete = Array.from(selectedStudentIds);
-      
-      const results = await Promise.allSettled(
-        idsToDelete.map(async (id) => {
-          // 1. Manually delete related records to prevent 409 Foreign Key Constraint Errors
-          // This is necessary if the Supabase schema lacks ON DELETE CASCADE for these tables.
-          const cleanupTables = [
-            { name: "notifications", col: "user_id" },
-            { name: "password_reset_logs", col: "user_id" },
-            { name: "conversation_participants", col: "profile_id" },
-            { name: "conversation_reads", col: "user_id" },
-            { name: "messages", col: "sender_id" },
-            { name: "teacher_student_grades", col: "student_id" },
-            { name: "teacher_assessment_submissions", col: "student_id" },
-            { name: "teacher_assessment_grades", col: "student_id" },
-          ];
+      const idsSet = new Set(idsToDelete);
 
-          for (const table of cleanupTables) {
-            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
-          }
+      const res = await adminApi.bulkDeleteStudents(idsToDelete);
+      if (res.error) {
+        throw res.error;
+      }
 
-          // 2. Delete the profile
-          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
-          if (profileError) throw profileError;
+      const successCount = res.data?.count || idsToDelete.length;
 
-          // 3. Fully delete the user from Auth
-          try {
-             await adminApi.deleteUser(id);
-          } catch (e) {
-             console.error("Non-fatal: Failed to delete auth user", e);
-          }
-        })
-      );
-
-      let successCount = 0;
-      let failureCount = 0;
-
-      results.forEach(result => {
-        if (result.status === "fulfilled") {
-          successCount++;
-        } else {
-          failureCount++;
-          console.error("Delete failed for a student:", result.reason);
-        }
+      logActivity({
+        actionType: "deleted",
+        entityType: "student",
+        entityName: `${successCount} students`,
+        details: { action: "bulk_delete", student_ids: idsToDelete },
+        timestamp: new Date().toISOString()
       });
 
-      if (successCount > 0) {
-        logActivity({
-          actionType: "deleted",
-          entityType: "student",
-          entityName: `${successCount} students`,
-          details: { action: "bulk_delete" },
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      if (failureCount === 0) {
-        toast.success(`Successfully deleted ${successCount} students.`);
-      } else if (successCount > 0) {
-        toast.warning(`Deleted ${successCount} students. ${failureCount} failed (likely due to linked records).`);
-      } else {
-        throw new Error(`Failed to delete students. They might have linked records (e.g., grades, messages) that prevent deletion.`);
-      }
-
+      // Optimistically update local state for instant UI responsiveness
+      setStudents(prev => prev.filter(s => !idsSet.has(s.id)));
       setSelectedStudentIds(new Set());
       setShowBulkDeleteConfirm(false);
-      await refreshStudents();
+
+      toast.success(`Successfully deleted ${successCount} student(s).`);
     } catch (err) {
       console.error("Bulk delete error:", err);
       toast.error(err.message || "Unable to bulk delete students.");
@@ -1631,6 +1744,10 @@ function StudentManagement() {
   }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
   const handleExportToCSV = () => {
+    const yearContext = yearFilter !== "All" ? `Grade${yearFilter}` : "AllGrades";
+    const sectionContext = sectionFilter !== "All" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const dateStr = new Date().toISOString().split("T")[0];
+
     if (activeTab === "Profiles") {
       const headers = ["Full Name", "Username", "LRN", "Year Level", "Section", "Status", "Created At"];
       const rows = filteredStudents.map((student) => [
@@ -1646,7 +1763,7 @@ function StudentManagement() {
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.setAttribute("href", URL.createObjectURL(blob));
-      link.setAttribute("download", `students_${new Date().toISOString().split("T")[0]}.csv`);
+      link.setAttribute("download", `Student_Records_${yearContext}_${sectionContext}_${dateStr}.csv`);
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
@@ -1665,7 +1782,7 @@ function StudentManagement() {
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.setAttribute("href", URL.createObjectURL(blob));
-      link.setAttribute("download", `masterlist_${new Date().toISOString().split("T")[0]}.csv`);
+      link.setAttribute("download", `Student_Masterlist_${yearContext}_${sectionContext}_${dateStr}.csv`);
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
@@ -1688,11 +1805,7 @@ function StudentManagement() {
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>
@@ -1701,18 +1814,18 @@ function StudentManagement() {
           <div data-tour="students-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
-              <div className="flex-1 bg-blue-600" />
-              <div className="flex-1 bg-red-600" />
+              <div className="flex-1 bg-emerald-600" />
+              <div className="flex-1 bg-teal-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-emerald-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-400">Student Management</h1>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Student Management</h1>
                 <p className="text-gray-600">Student records are up to date.</p>
               </div>
               <div className="flex items-center gap-3">
                 <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-blue-600 border border-blue-200 rounded-xl hover:bg-blue-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 border border-green-200 rounded-xl hover:bg-green-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
                   {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                   {isImporting ? "Importing..." : "Import Masterlist"}
                 </button>
@@ -1720,7 +1833,7 @@ function StudentManagement() {
                   <Download className="w-4 h-4 text-gray-500" />
                   CSV Template
                 </button>
-                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 cursor-pointer">
+                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Student
                 </button>
@@ -1735,7 +1848,7 @@ function StudentManagement() {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Newest Registration</p>
-              <p className="text-lg font-semibold text-blue-400">{students[0] ? getFullName(students[0]) : "No students yet"}</p>
+              <p className="text-lg font-semibold text-green-600">{students[0] ? getFullName(students[0]) : "No students yet"}</p>
               <p className="text-sm text-gray-500 mt-1">{students[0] ? formatDate(students[0].created_at) : "Add the first student to get started"}</p>
             </div>
           </div>
@@ -1752,7 +1865,7 @@ function StudentManagement() {
               onClick={() => setActiveTab("Profiles")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Profiles"
-                  ? "border-blue-600 text-blue-600"
+                  ? "border-green-600 text-green-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -1763,7 +1876,7 @@ function StudentManagement() {
               onClick={() => setActiveTab("Masterlist")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Masterlist"
-                  ? "border-blue-600 text-blue-600"
+                  ? "border-green-600 text-green-600"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
@@ -2202,6 +2315,10 @@ function StudentManagement() {
                     <input type="text" value={studentFormData.last_name} onChange={(e) => handleAddStudentFieldChange("last_name", e.target.value)} placeholder="Enter last name" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.last_name ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.last_name && <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>}
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Name Extension / Suffix</label>
+                    <input type="text" value={studentFormData.suffix} onChange={(e) => handleAddStudentFieldChange("suffix", e.target.value)} placeholder="e.g. Jr., Sr., II, III" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">LRN</label>
@@ -2291,17 +2408,21 @@ function StudentManagement() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">First Name</label>
-                    <input type="text" value={editFormData.first_name} onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })} placeholder="Enter first name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.first_name} onChange={(e) => handleEditFieldChange("first_name", e.target.value)} placeholder="Enter first name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.first_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.first_name}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Middle Name</label>
-                    <input type="text" value={editFormData.middle_name} onChange={(e) => setEditFormData({ ...editFormData, middle_name: e.target.value })} placeholder="Enter middle name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.middle_name} onChange={(e) => handleEditFieldChange("middle_name", e.target.value)} placeholder="Enter middle name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Last Name</label>
-                    <input type="text" value={editFormData.last_name} onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    <input type="text" value={editFormData.last_name} onChange={(e) => handleEditFieldChange("last_name", e.target.value)} placeholder="Enter last name" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                     {editFormErrors.last_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.last_name}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Name Extension / Suffix</label>
+                    <input type="text" value={editFormData.suffix || ""} onChange={(e) => handleEditFieldChange("suffix", e.target.value)} placeholder="e.g. Jr., Sr., II, III" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
 
                   <div>
@@ -2999,6 +3120,109 @@ function StudentManagement() {
                     Or click the settings icon in the section dropdown to create a new section for {formattedGradeLevel}.
                   </p>
                 </div>
+
+                {/* Section Capacity Information & Validation Card */}
+                {targetBulkSection && (
+                  <div className="space-y-3">
+                    {isLoadingCapacity ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-center gap-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                        <span>Calculating section capacity...</span>
+                      </div>
+                    ) : sectionCapacityInfo ? (
+                      <div className={`p-4 rounded-xl border transition-all ${
+                        sectionCapacityInfo.isExceeded 
+                          ? "bg-red-50 border-red-200 text-red-900" 
+                          : sectionCapacityInfo.capacity > 0 && sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity >= 0.8
+                            ? "bg-amber-50 border-amber-200 text-amber-900"
+                            : "bg-indigo-50/60 border-indigo-100 text-indigo-950"
+                      }`}>
+                        <div className="flex items-center justify-between mb-2.5">
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-600">Capacity & Enrollment Status</span>
+                          {sectionCapacityInfo.capacity === 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Unlimited Slots
+                            </span>
+                          ) : sectionCapacityInfo.isExceeded ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                              <AlertTriangle className="w-3.5 h-3.5" /> Exceeded
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Available
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Current Enrolled</span>
+                            <span className="text-sm font-bold text-gray-900">{sectionCapacityInfo.currentEnrolled}</span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Max Capacity</span>
+                            <span className="text-sm font-bold text-gray-900">
+                              {sectionCapacityInfo.capacity === 0 ? "∞ (Unlimited)" : sectionCapacityInfo.capacity}
+                            </span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Available Slots</span>
+                            <span className={`text-sm font-bold ${
+                              sectionCapacityInfo.availableSlots === 0 && sectionCapacityInfo.capacity > 0 
+                                ? "text-red-600" 
+                                : "text-emerald-600"
+                            }`}>
+                              {sectionCapacityInfo.availableSlots}
+                            </span>
+                          </div>
+                          <div className="bg-white/80 p-2.5 rounded-lg border border-black/5">
+                            <span className="text-gray-500 block font-medium">Projected Total</span>
+                            <span className={`text-sm font-bold ${sectionCapacityInfo.isExceeded ? "text-red-600" : "text-indigo-600"}`}>
+                              {sectionCapacityInfo.projectedEnrolled}
+                            </span>
+                          </div>
+                        </div>
+
+                        {sectionCapacityInfo.alreadyEnrolledCount > 0 && (
+                          <p className="text-[11px] text-gray-600 bg-white/60 p-2 rounded-md mb-2 border border-black/5">
+                            💡 <strong>Note:</strong> {sectionCapacityInfo.alreadyEnrolledCount} of {sectionCapacityInfo.totalSelected} selected student(s) already belong to Section {sectionCapacityInfo.cleanSection}. Only {sectionCapacityInfo.newStudentsCount} new student(s) will consume capacity slots.
+                          </p>
+                        )}
+
+                        {sectionCapacityInfo.capacity > 0 && (
+                          <div className="space-y-1">
+                            <div className="w-full bg-gray-200/80 rounded-full h-2 overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-300 ${
+                                  sectionCapacityInfo.isExceeded 
+                                    ? "bg-red-500" 
+                                    : sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity >= 0.8
+                                      ? "bg-amber-500"
+                                      : "bg-emerald-500"
+                                }`}
+                                style={{ width: `${Math.min(100, (sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-gray-500 font-medium">
+                              <span>0</span>
+                              <span>{Math.round((sectionCapacityInfo.projectedEnrolled / sectionCapacityInfo.capacity) * 100)}% Used</span>
+                              <span>{sectionCapacityInfo.capacity}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {sectionCapacityInfo.isExceeded && (
+                          <div className="mt-3 p-2.5 bg-red-100/80 border border-red-200 rounded-lg flex items-start gap-2 text-xs text-red-800">
+                            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                            <span>
+                              <strong>Cannot Assign:</strong> Adding {sectionCapacityInfo.newStudentsCount} student(s) exceeds Section {sectionCapacityInfo.cleanSection}&apos;s capacity of {sectionCapacityInfo.capacity}. ({sectionCapacityInfo.availableSlots} slot(s) remaining).
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
@@ -3013,8 +3237,8 @@ function StudentManagement() {
                 <button
                   type="button"
                   onClick={handleConfirmBulkAssignSection}
-                  disabled={isBulkAssigning || !targetBulkSection}
-                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+                  disabled={isBulkAssigning || !targetBulkSection || isLoadingCapacity || sectionCapacityInfo?.isExceeded}
+                  className="px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isBulkAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isBulkAssigning ? "Assigning..." : `Assign to ${selectedSet.size} Student(s)`}

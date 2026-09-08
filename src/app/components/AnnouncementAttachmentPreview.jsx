@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { File } from "lucide-react";
+import { downloadAttachmentFile } from "./MessageAttachmentPreview";
 
 const getAttachmentLink = (attachment) => String(attachment?.fileUrl || attachment?.filePath || "").trim();
 
@@ -14,8 +15,8 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
     ? "border-gray-200 bg-gray-50 text-gray-700"
     : "border-gray-200 bg-gray-50 text-gray-600";
   const documentClassName = isDark
-    ? "border-gray-200 bg-gray-50 text-gray-700 hover:bg-black/30"
-    : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100";
+    ? "border-gray-200 bg-gray-50 text-gray-700 hover:bg-black/30 cursor-pointer"
+    : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 cursor-pointer";
 
   if (!attachmentLink || loadFailed) {
     return (
@@ -57,24 +58,23 @@ function AnnouncementAttachmentPreview({ attachment, index = 0, announcementId =
   }
 
   return (
-    <a
-      href={attachmentLink}
-      target="_blank"
-      rel="noreferrer"
-      download={fileName}
+    <button
+      type="button"
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${documentClassName}`}
-      onClick={(event) => {
+      onClick={async (event) => {
+        event.stopPropagation();
         if (!attachmentLink) {
-          event.preventDefault();
           setLoadFailed(true);
+          return;
         }
+        await downloadAttachmentFile(attachmentLink, fileName, "Announcement");
       }}
       title={fileName}
       data-announcement-id={announcementId}
     >
       <File className="h-3 w-3" />
       <span className="truncate max-w-[16rem]">{fileName}</span>
-    </a>
+    </button>
   );
 }
 

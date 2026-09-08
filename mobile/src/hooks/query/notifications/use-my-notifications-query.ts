@@ -7,26 +7,39 @@ export function useMyNotificationsQuery() {
     const queryClient = useQueryClient();
 
     useEffect(() => {
-        const channelName = `notifications-rt-${Date.now()}`;
+        let isMounted = true;
+        let channel: any = null;
 
-        const invalidate = () => {
-            queryClient.invalidateQueries({ queryKey: ['my-notifications'] });
+        const setupRealtime = async () => {
+            const { data } = await supabase.auth.getUser();
+            const userId = data?.user?.id;
+            if (!userId || !isMounted) return;
+
+            const channelName = `notifications-rt-${userId}-${Date.now()}`;
+            const invalidate = () => {
+                queryClient.invalidateQueries({ queryKey: ['my-notifications'] });
+            };
+
+            channel = supabase
+                .channel(channelName)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments_activity' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'school_announcements' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'school_calendar_events' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'class_announcements' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, invalidate)
+                .subscribe();
         };
 
-        const channel = supabase
-            .channel(channelName)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments_activity' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'school_announcements' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'school_calendar_events' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'class_announcements' }, invalidate)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, invalidate)
-            .subscribe();
+        setupRealtime();
 
         return () => {
-            supabase.removeChannel(channel);
+            isMounted = false;
+            if (channel) {
+                supabase.removeChannel(channel);
+            }
         };
     }, [queryClient]);
 

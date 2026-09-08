@@ -75,13 +75,39 @@ export function LessonReviewSubTab({ lesson }) {
           .from("class_announcements")
           .select("*")
           .eq("class_id", lesson.subject_id)
-          .order("created_at", { ascending: false })
-          .limit(5); // Show latest 5 announcements
+          .order("created_at", { ascending: false });
         
         if (annError) {
           console.error("Announcements error:", annError);
+          setAnnouncements([]);
         } else {
-          setAnnouncements(annData || []);
+          const userData = localStorage.getItem("currentUser");
+          const user = userData ? JSON.parse(userData) : null;
+          const currentTeacherId = String(user?.id || user?.teacherId || user?.teacher_id || lesson?.teacher_id || "").trim();
+          const currentTeacherEmail = String(user?.email || "").trim().toLowerCase();
+          const currentTeacherName = String(user?.name || user?.full_name || "").trim().toLowerCase();
+
+          // Filter out announcements from other accounts
+          const filteredAnn = (annData || []).filter(ann => {
+            const annTeacherId = String(ann?.teacher_id || ann?.created_by || ann?.author_id || "").trim();
+            const annEmail = String(ann?.email || ann?.created_by_email || "").trim().toLowerCase();
+            const annAuthorName = String(ann?.created_by_name || ann?.author || ann?.author_name || "").trim().toLowerCase();
+
+            if (annTeacherId && currentTeacherId && annTeacherId !== currentTeacherId) {
+              return false;
+            }
+            if (annEmail && currentTeacherEmail && annEmail !== currentTeacherEmail) {
+              return false;
+            }
+            if (annAuthorName && currentTeacherName && annAuthorName !== currentTeacherName && !annAuthorName.includes(currentTeacherName) && !currentTeacherName.includes(annAuthorName)) {
+              if (annTeacherId !== currentTeacherId) {
+                return false;
+              }
+            }
+            return true;
+          }).slice(0, 5);
+
+          setAnnouncements(filteredAnn);
         }
 
       }

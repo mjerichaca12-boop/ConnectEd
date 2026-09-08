@@ -49,6 +49,19 @@ export const isColumnMissingError = (error) => {
 };
 
 /**
+ * Check if error is a Supabase check constraint error (23514 or check_constraint)
+ */
+export const isCheckConstraintError = (error) => {
+  const code = String(error?.code || "").trim();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "23514" ||
+    message.includes("check constraint") ||
+    message.includes("violates check constraint")
+  );
+};
+
+/**
  * Check if error is a storage not found error (404 or similar)
  */
 export const isStorageNotFoundError = (error) => {
@@ -161,13 +174,28 @@ export const getTeacherAssignedClasses = async (storedUser) => {
 
     subjectsData = data || [];
 
-    // Fallback: If 0 subjects returned by teacher_id, fetch subjects list to ensure teacher workspace continuity
-    if (subjectsData.length === 0) {
-      const { data: fallbackSubjects } = await supabase
-        .from("subjects")
-        .select("*")
-        .limit(20);
-      subjectsData = fallbackSubjects || [];
+    const subjectIds = (subjectsData || []).map((s) => String(s.id)).filter(Boolean);
+    const enrollmentCounts = new Map();
+
+    if (subjectIds.length > 0) {
+      try {
+        const { data: assignmentRows } = await supabase
+          .from("teacher_student_assignments")
+          .select("subject_id, student_id")
+          .in("teacher_id", queryIds)
+          .in("subject_id", subjectIds);
+
+        const rows = assignmentRows || [];
+
+        (subjectsData || []).forEach((s) => {
+          const key = String(s.id);
+          const directStudentIds = rows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
+          const totalEnrolled = new Set(directStudentIds).size;
+          enrollmentCounts.set(key, totalEnrolled);
+        });
+      } catch (err) {
+        console.warn("[getTeacherAssignedClasses] error fetching enrollment counts:", err);
+      }
     }
 
     const seen = new Set();
@@ -192,6 +220,10 @@ export const getTeacherAssignedClasses = async (storedUser) => {
       if (key && seen.has(key)) return;
       if (key) seen.add(key);
 
+      const computedEnrolled = enrollmentCounts.has(String(s.id))
+        ? enrollmentCounts.get(String(s.id))
+        : Number(s.enrolled || 0);
+
       classesList.push({
         id: String(s.id),
         code,
@@ -199,7 +231,7 @@ export const getTeacherAssignedClasses = async (storedUser) => {
         gradeLevel,
         section,
         capacity: Number(s.capacity || 0),
-        enrolled: Number(s.enrolled || 0),
+        enrolled: computedEnrolled,
         lessons: [],
       });
     });
@@ -208,6 +240,102 @@ export const getTeacherAssignedClasses = async (storedUser) => {
   } catch (err) {
     console.error("[getTeacherAssignedClasses] error:", err);
     return { teacherId: "", classes: [] };
+  }
+};
+
+/**
+ * Get authorized subject IDs for a teacher (strictly owned/assigned subjects)
+ */
+export const getTeacherAuthorizedSubjectIds = async (teacherIdOrUser) => {
+  if (!supabase || !teacherIdOrUser) return [];
+
+  try {
+    let queryIds = [];
+    if (typeof teacherIdOrUser === "object" && teacherIdOrUser !== null) {
+      const { teacherId, classes } = await getTeacherAssignedClasses(teacherIdOrUser);
+      if (classes && classes.length > 0) {
+        return classes.map((c) => String(c.id)).filter(Boolean);
+      }
+      if (teacherId) queryIds.push(teacherId);
+    } else if (typeof teacherIdOrUser === "string" && teacherIdOrUser.trim()) {
+      queryIds.push(teacherIdOrUser.trim());
+    }
+
+    if (queryIds.length === 0) return [];
+
+    const { data: subjectsData, error } = await supabase
+      .from("subjects")
+      .select("id")
+      .in("teacher_id", queryIds);
+
+    if (error || !subjectsData) {
+      console.warn("[getTeacherAuthorizedSubjectIds] Error fetching subjects:", error);
+      return [];
+    }
+
+    return subjectsData.map((s) => String(s.id)).filter(Boolean);
+  } catch (err) {
+    console.error("[getTeacherAuthorizedSubjectIds] unexpected error:", err);
+    return [];
+  }
+};
+
+/**
+ * Get authorized lesson IDs for a teacher (under teacher's assigned subjects)
+ */
+export const getTeacherAuthorizedLessonIds = async (teacherIdOrUser) => {
+  if (!supabase || !teacherIdOrUser) return [];
+
+  try {
+    const subjectIds = await getTeacherAuthorizedSubjectIds(teacherIdOrUser);
+    if (subjectIds.length === 0) return [];
+
+    const { data: lessonsData, error } = await supabase
+      .from("lessons")
+      .select("id")
+      .in("subject_id", subjectIds);
+
+    if (error || !lessonsData) {
+      console.warn("[getTeacherAuthorizedLessonIds] Error fetching lessons:", error);
+      return [];
+    }
+
+    return lessonsData.map((l) => String(l.id)).filter(Boolean);
+  } catch (err) {
+    console.error("[getTeacherAuthorizedLessonIds] unexpected error:", err);
+    return [];
+  }
+};
+
+/**
+ * Verify if a teacher is authorized to access a given class material or file
+ */
+export const verifyTeacherFileAccess = async (teacherIdOrUser, { materialId, lessonId }) => {
+  if (!supabase || !teacherIdOrUser) return false;
+
+  try {
+    const authorizedLessonIds = await getTeacherAuthorizedLessonIds(teacherIdOrUser);
+    if (authorizedLessonIds.length === 0) return false;
+
+    if (lessonId) {
+      return authorizedLessonIds.includes(String(lessonId).trim());
+    }
+
+    if (materialId) {
+      const { data: materialData, error } = await supabase
+        .from("lesson_materials")
+        .select("lesson_id")
+        .eq("id", materialId)
+        .maybeSingle();
+
+      if (error || !materialData || !materialData.lesson_id) return false;
+      return authorizedLessonIds.includes(String(materialData.lesson_id).trim());
+    }
+
+    return false;
+  } catch (err) {
+    console.error("[verifyTeacherFileAccess] unexpected error:", err);
+    return false;
   }
 };
 

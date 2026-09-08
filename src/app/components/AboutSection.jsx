@@ -19,10 +19,10 @@ function AboutSection() {
         <div ref={headerRef} className="text-center mb-10" style={{ transition: "opacity 0.7s ease, transform 0.7s ease", opacity: headerVisible ? 1 : 0, transform: headerVisible ? "translateY(0)" : "translateY(24px)" }}>
           <p className="text-green-600 text-xs font-bold uppercase tracking-widest mb-3">About ConnectEd</p>
           <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">
-            Built for Philippine{" "}<span className="text-gray-600">public education</span>
+            Built for Philippine{" "}<span className="text-gray-600">education</span>
           </h2>
           <p className="text-gray-600 text-base max-w-2xl mx-auto">
-            ConnectEd was created to bridge the technology gap in public education — giving students and teachers access to tools previously available only in private institutions.
+            ConnectEd was created to bridge the technology gap in education — giving students and teachers access to tools previously available only in private institutions.
           </p>
         </div>
 
@@ -36,7 +36,7 @@ function AboutSection() {
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Our Mission</h3>
                 <p className="text-gray-600 leading-relaxed text-sm">
-                  To bridge the gap between traditional education and modern technology in public schools across Dasmariñas, Cavite — making essential academic tools accessible to every student and teacher.
+                  To bridge the gap between traditional education and modern technology in schools across Dasmariñas, Cavite — making essential academic tools accessible to every student and teacher.
                 </p>
               </div>
             </RevealItem>
@@ -47,7 +47,7 @@ function AboutSection() {
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Our Vision</h3>
                 <p className="text-gray-600 leading-relaxed text-sm">
-                  To become the leading educational platform for public schools in the Philippines — fostering a connected community where learning thrives through innovation, collaboration, and digital equity.
+                  To become the leading educational platform for schools in the Philippines — fostering a connected community where learning thrives through innovation, collaboration, and digital equity.
                 </p>
               </div>
             </RevealItem>

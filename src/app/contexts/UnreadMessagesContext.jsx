@@ -90,7 +90,7 @@ export const UnreadMessagesProvider = ({ children }) => {
       let query = supabase.from('messages').select('id, sender_id, conversation_id, created_at');
       
       if (groupIds.length > 0) {
-        query = query.or(`receiver_id.eq.\${userId},conversation_id.in.(\${groupIds.join(',')})`);
+        query = query.or(`receiver_id.eq.${userId},conversation_id.in.(${groupIds.join(',')})`);
       } else {
         query = query.eq('receiver_id', userId);
       }
@@ -113,10 +113,10 @@ export const UnreadMessagesProvider = ({ children }) => {
         
         let convKey = '';
         if (msg.conversation_id) {
-          convKey = `group_\${msg.conversation_id}`;
+          convKey = `group_${msg.conversation_id}`;
         } else {
           // Direct message
-          convKey = `dm_\${msg.sender_id}`;
+          convKey = `dm_${msg.sender_id}`;
         }
 
         const lastReadTime = readsMap[convKey] || 0;
@@ -205,9 +205,9 @@ export const UnreadMessagesProvider = ({ children }) => {
     let convKey = '';
     
     if (conversationId) {
-      convKey = `group_\${conversationId}`;
+      convKey = `group_${conversationId}`;
     } else if (counterpartId) {
-      convKey = `dm_\${counterpartId}`;
+      convKey = `dm_${counterpartId}`;
     } else {
       return;
     }

@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { CustomSelect } from "@/app/components/CustomSelect";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { teacherNotifications } from "@/app/components/NotificationDefault";
 import { supabase } from "@/app/lib/supabaseClient";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { StudentGradebookModal } from "./components/StudentGradebookModal";
@@ -56,14 +55,13 @@ const exportToExcel = (studentGrades, className) => {
     [`Class: ${className}`],
     [`Generated: ${new Date().toLocaleString()}`],
     [],
-    ["Student Name", "LRN", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
+    ["Student Name", "LRN", "1st Quarter", "2nd Quarter", "3rd Quarter", "Quizzes", "Activities", "Assignments", "Exams", "Overall Grade", "Remarks"],
     ...studentGrades.map((s) => [
       s.studentName,
       s.studentId,
       s.term1Grade,
       s.term2Grade,
       s.term3Grade,
-      s.term4Grade,
       s.quizAverage,
       s.activityGrade,
       s.assignmentGrade,
@@ -443,7 +441,6 @@ function GradesManagement() {
   const isClassSelectStepActive = activeStepId === "grades-class-select" || activeStepId === "teacher-grades-class-select";
 
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState(teacherNotifications);
   const [loading, setLoading] = useState(true);
   const [isSwitchingTerm, setIsSwitchingTerm] = useState(false);
   const [teacherId, setTeacherId] = useState("");
@@ -473,8 +470,7 @@ function GradesManagement() {
       const quarterMap = {
         "1st Quarter": "term1",
         "2nd Quarter": "term2",
-        "3rd Quarter": "term3",
-        "4th Quarter": "term4"
+        "3rd Quarter": "term3"
       };
       setActiveTerm(quarterMap[activeQuarter] || "all");
       hasInitializedTerm.current = true;
@@ -602,24 +598,23 @@ function GradesManagement() {
     }
     if (!supabase || !currentTeacherId || !classId) { setAssessmentItems([]); return []; }
 
+    const cleanClassId = String(classId).trim();
+    const cleanTeacherId = String(currentTeacherId).trim();
     const allAssessments = [];
 
-    // 1. Try to fetch from assignments_activity
+    // 1. Fetch from assignments_activity (strictly scoped to classId and currentTeacherId)
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from("assignments_activity")
         .select("*")
-        .eq("school_year", schoolYear);
-      if (quarter) {
-        query = query.eq("term", quarter);
-      }
-      const { data, error } = await query;
+        .eq("course_id", cleanClassId);
+
       if (!error && data) {
         const rows = (data ?? []).filter((row) => {
           const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
           const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
-          const classMatches = !classId || !rowCourseId || rowCourseId === classId;
-          const teacherMatches = !rowTeacherId || rowTeacherId === currentTeacherId;
+          const classMatches = Boolean(rowCourseId) && rowCourseId === cleanClassId;
+          const teacherMatches = !rowTeacherId || rowTeacherId === cleanTeacherId;
           return classMatches && teacherMatches;
         });
         rows.forEach(row => {
@@ -633,65 +628,60 @@ function GradesManagement() {
     // 2. Fetch lessons of this class to resolve LMS assignments and quizzes
     let lessonIds = [];
     try {
-      let lQuery = supabase
+      const { data: lessons, error: lessonsError } = await supabase
         .from("lessons")
-        .select("id")
-        .eq("subject_id", classId)
-        .eq("school_year", schoolYear);
-      if (quarter) {
-        lQuery = lQuery.eq("term", quarter);
-      }
-      const { data: lessons, error: lessonsError } = await lQuery;
+        .select("id, title, term, school_year, teacher_id")
+        .eq("subject_id", cleanClassId);
       
       if (!lessonsError && lessons) {
-        lessonIds = lessons.map(l => l.id);
+        lessonIds = lessons
+          .filter(l => !l.teacher_id || String(l.teacher_id).trim() === cleanTeacherId)
+          .map(l => l.id);
       }
     } catch (e) {
       console.warn("Failed to fetch lessons:", e);
     }
 
     if (lessonIds.length > 0) {
-      // 3. Try to fetch LMS assignments + their lesson_activities category
+      // 3. Fetch LMS assignments by lesson_id
       try {
-        let asgQuery = supabase
+        const { data, error } = await supabase
           .from("assignments")
           .select("*")
           .in("lesson_id", lessonIds);
         
-        if (quarter) {
-          asgQuery = asgQuery.eq("term", quarter);
-        }
-        
-        const { data, error } = await asgQuery;
-        
         if (!error && data && data.length > 0) {
-          // Fetch lesson_activities to determine activity_type (Assignment vs Assessment/Seatwork)
-          const assignmentIds = data.map(r => r.id);
+          const teacherFiltered = data.filter(row => {
+            const rowTeacherId = String(row.teacher_id || row.created_by || "").trim();
+            return !rowTeacherId || rowTeacherId === cleanTeacherId;
+          });
+
+          const assignmentIds = teacherFiltered.map(r => r.id);
           let activityTypeMap = {};
-          try {
-            const { data: laData, error: laError } = await supabase
-              .from("lesson_activities")
-              .select("activity_id, activity_type")
-              .in("activity_id", assignmentIds);
-            if (!laError && laData) {
-              laData.forEach(la => {
-                activityTypeMap[la.activity_id] = la.activity_type;
-              });
+          if (assignmentIds.length > 0) {
+            try {
+              const { data: laData } = await supabase
+                .from("lesson_activities")
+                .select("activity_id, activity_type")
+                .in("activity_id", assignmentIds);
+              if (laData) {
+                laData.forEach(la => {
+                  activityTypeMap[la.activity_id] = la.activity_type;
+                });
+              }
+            } catch (e) {
+              console.warn("Failed to fetch lesson_activities for assignments:", e);
             }
-          } catch (e) {
-            console.warn("Failed to fetch lesson_activities for assignments:", e);
           }
 
-          data.forEach(row => {
+          teacherFiltered.forEach(row => {
             const normalized = normalizeAssessment(row);
             const isQuiz = String(row.assignment_type || "").trim().toLowerCase() === "quiz" || String(row.title || "").toLowerCase().includes("quiz");
-            // Use lesson_activities.activity_type to determine grading category
-            const laType = activityTypeMap[row.id]; // "Assignment", "Assessment", "Activity", etc.
+            const laType = activityTypeMap[row.id];
             let resolvedType;
             if (isQuiz) {
               resolvedType = "quiz";
-            } else if (laType === "Assessment" || laType === "Activity") {
-              // Seatwork / Activity → maps to "activity" grading component
+            } else if (laType === "Assessment" || laType === "Activity" || laType === "Seatwork") {
               resolvedType = "activity";
             } else {
               resolvedType = "assignment";
@@ -708,21 +698,20 @@ function GradesManagement() {
         console.warn("Failed to fetch LMS assignments:", e);
       }
 
-      // 4. Try to fetch LMS quizzes
+      // 4. Fetch LMS quizzes by lesson_id
       try {
-        let quizQuery = supabase
+        const { data, error } = await supabase
           .from("quizzes")
           .select("*")
           .in("lesson_id", lessonIds);
-          
-        if (quarter) {
-          quizQuery = quizQuery.eq("term", quarter);
-        }
-        
-        const { data, error } = await quizQuery;
         
         if (!error && data) {
-          data.forEach(row => {
+          const teacherFiltered = data.filter(row => {
+            const rowTeacherId = String(row.teacher_id || row.created_by || "").trim();
+            return !rowTeacherId || rowTeacherId === cleanTeacherId;
+          });
+
+          teacherFiltered.forEach(row => {
             allAssessments.push(normalizeAssessment({
               ...row,
               assessment_type: "quiz",
@@ -735,11 +724,27 @@ function GradesManagement() {
       }
     }
 
+    // Term / Quarter Filter (Flexible normalization so items aren't lost due to "Q1" vs "1st Quarter")
+    let filteredAssessments = allAssessments;
+    if (quarter) {
+      const qNorm = String(quarter).trim().toLowerCase();
+      filteredAssessments = allAssessments.filter(item => {
+        if (!item.term) return true;
+        const itemTermNorm = String(item.term).trim().toLowerCase();
+        if (itemTermNorm === qNorm) return true;
+        if (qNorm.includes("1st") && (itemTermNorm.includes("1st") || itemTermNorm === "q1" || itemTermNorm === "1")) return true;
+        if (qNorm.includes("2nd") && (itemTermNorm.includes("2nd") || itemTermNorm === "q2" || itemTermNorm === "2")) return true;
+        if (qNorm.includes("3rd") && (itemTermNorm.includes("3rd") || itemTermNorm === "q3" || itemTermNorm === "3")) return true;
+        if (qNorm.includes("4th") && (itemTermNorm.includes("4th") || itemTermNorm === "q4" || itemTermNorm === "4")) return true;
+        return false;
+      });
+    }
+
     // Deduplicate assessments by ID
     const uniqueMap = new Map();
-    allAssessments.forEach(item => {
+    filteredAssessments.forEach(item => {
       if (item.id) {
-        uniqueMap.set(item.id, item);
+        uniqueMap.set(String(item.id), item);
       }
     });
 
@@ -750,12 +755,12 @@ function GradesManagement() {
     const quizCounters = {};
     const assessmentsWithNames = mapped.map((assessment) => {
       if (assessment.type === 'quiz') {
-        if (!quizCounters[classId]) quizCounters[classId] = 0;
-        quizCounters[classId]++;
+        if (!quizCounters[cleanClassId]) quizCounters[cleanClassId] = 0;
+        quizCounters[cleanClassId]++;
         return {
           ...assessment,
-          displayName: generateQuizName(assessment.title, quizCounters[classId]),
-          quizOrder: quizCounters[classId]
+          displayName: generateQuizName(assessment.title, quizCounters[cleanClassId]),
+          quizOrder: quizCounters[cleanClassId]
         };
       }
       return {
@@ -766,7 +771,7 @@ function GradesManagement() {
     });
 
     return assessmentsWithNames;
-  }, []);
+  }, [isDemoMode]);
 
   const fetchAssessmentGrades = useCallback(async (currentTeacherId, classId, assessments, studentIds) => {
     if (isDemoMode) {
@@ -1153,8 +1158,7 @@ function GradesManagement() {
       const termMap = {
         "term1": "1st Quarter",
         "term2": "2nd Quarter",
-        "term3": "3rd Quarter",
-        "term4": "4th Quarter"
+        "term3": "3rd Quarter"
       };
       const targetQuarter = activeTerm === "all" ? null : termMap[activeTerm];
 
@@ -1205,6 +1209,62 @@ function GradesManagement() {
       isMounted = false;
     };
   }, [teacherId, selectedClass, activeSchoolYear, activeQuarter, viewMode, activeTerm, fetchStudentsForClass, fetchAssessmentsForClass, fetchAssessmentGrades, fetchAssessmentSubmissions, requestedContext.assessmentId]);
+
+  // Reset stale assessment and grade state immediately on class switch
+  useEffect(() => {
+    if (!selectedClass) return;
+    setAssessmentItems([]);
+    setSelectedAssessmentId("");
+    setAssessmentGradesMap({});
+    setAssessmentStatusMap({});
+  }, [selectedClass]);
+
+  // Real-time listener for assessment updates across the system
+  const reloadAssessmentsRef = useRef(null);
+  reloadAssessmentsRef.current = async () => {
+    if (!teacherId || !selectedClass) return;
+    const termMap = {
+      "term1": "1st Quarter",
+      "term2": "2nd Quarter",
+      "term3": "3rd Quarter"
+    };
+    const targetQuarter = activeTerm === "all" ? null : termMap[activeTerm];
+    const assessments = await fetchAssessmentsForClass(teacherId, selectedClass, activeSchoolYear, targetQuarter);
+    setAssessmentItems(assessments);
+    const { studentIds } = await fetchStudentsForClass(teacherId, selectedClass);
+    if (assessments.length > 0 && studentIds.length > 0) {
+      await fetchAssessmentGrades(teacherId, selectedClass, assessments, studentIds);
+      await fetchAssessmentSubmissions(teacherId, selectedClass, assessments, studentIds);
+    }
+  };
+
+  useEffect(() => {
+    const handleAssessmentsChanged = () => {
+      if (reloadAssessmentsRef.current) {
+        reloadAssessmentsRef.current();
+      }
+    };
+
+    window.addEventListener("connected:assessments-changed", handleAssessmentsChanged);
+
+    let channel;
+    if (supabase) {
+      channel = supabase
+        .channel("grades_management_assessments_changes")
+        .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, handleAssessmentsChanged)
+        .on("postgres_changes", { event: "*", schema: "public", table: "assignments" }, handleAssessmentsChanged)
+        .on("postgres_changes", { event: "*", schema: "public", table: "assignments_activity" }, handleAssessmentsChanged)
+        .on("postgres_changes", { event: "*", schema: "public", table: "lesson_activities" }, handleAssessmentsChanged)
+        .subscribe();
+    }
+
+    return () => {
+      window.removeEventListener("connected:assessments-changed", handleAssessmentsChanged);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!saveSuccess) return;
@@ -2017,11 +2077,7 @@ function GradesManagement() {
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
           
@@ -2103,7 +2159,6 @@ function GradesManagement() {
                       { key: "term1", label: "Q1" },
                       { key: "term2", label: "Q2" },
                       { key: "term3", label: "Q3" },
-                      { key: "term4", label: "Q4" },
                     ].map(({ key, label }) => (
                       <button
                         key={key}
@@ -2183,12 +2238,6 @@ function GradesManagement() {
                           <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
                             <div>Q3</div>
                             <div className="text-[10px] font-normal text-gray-400 normal-case">3rd Quarter</div>
-                          </th>
-                        )}
-                        {(activeTerm === "all" || activeTerm === "term4") && (
-                          <th className="px-3 py-3 text-center text-xs font-medium text-green-600 uppercase tracking-wider bg-green-50">
-                            <div>Q4</div>
-                            <div className="text-[10px] font-normal text-gray-400 normal-case">4th Quarter</div>
                           </th>
                         )}
                         {(activeDesignation === "all" || activeDesignation === "Quiz") && (
@@ -2281,13 +2330,6 @@ function GradesManagement() {
                               <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
                                 <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
                                   {student.quarter3Grade ?? 0}
-                                </span>
-                              </td>
-                            )}
-                            {(activeTerm === "all" || activeTerm === "term4") && (
-                              <td className="px-3 py-4 text-center bg-green-50/30" onClick={(e) => e.stopPropagation()}>
-                                <span className="inline-flex min-w-16 justify-center px-2 py-1.5 rounded-lg bg-white text-green-900 border border-green-200 text-sm font-medium">
-                                  {student.quarter4Grade ?? 0}
                                 </span>
                               </td>
                             )}

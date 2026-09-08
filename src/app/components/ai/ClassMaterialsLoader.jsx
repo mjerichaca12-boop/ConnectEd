@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { parseDocument } from "@/app/lib/documentParser";
+import { getTeacherAuthorizedSubjectIds, verifyTeacherFileAccess } from "@/app/lib/teacherHelpers";
 import { BookOpen, Check, Loader2, FileText, File as FileIcon, Table, Presentation, AlertCircle } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
+
+const getStoredUser = () => {
+  try { return JSON.parse(localStorage.getItem("currentUser") || "{}"); } catch { return {}; }
+};
 
 export function ClassMaterialsLoader({ selectedClassId, onMaterialsLoaded }) {
   const [materials, setMaterials] = useState([]);
@@ -24,6 +29,14 @@ export function ClassMaterialsLoader({ selectedClassId, onMaterialsLoaded }) {
       setLoading(true);
       setError("");
       try {
+        const storedUser = getStoredUser();
+        const authorizedSubjectIds = await getTeacherAuthorizedSubjectIds(storedUser);
+        if (!authorizedSubjectIds.includes(String(selectedClassId))) {
+          console.warn("ClassMaterialsLoader: Unauthorized class material access attempt blocked for classId:", selectedClassId);
+          setMaterials([]);
+          return;
+        }
+
         const { data: lessons, error: lessonsErr } = await supabase
           .from("lessons")
           .select("id")
@@ -92,6 +105,14 @@ export function ClassMaterialsLoader({ selectedClassId, onMaterialsLoaded }) {
 
     setLoadingFileId(id);
     try {
+      const storedUser = getStoredUser();
+      const isAuthorized = await verifyTeacherFileAccess(storedUser, { materialId: material.id });
+      if (!isAuthorized) {
+        console.warn("ClassMaterialsLoader: Blocked unauthorized file download attempt:", material.title);
+        setLoadingFileId(null);
+        return;
+      }
+
       let fileBlob = null;
       const filePath = material.filePath;
 

@@ -22,7 +22,6 @@ function Classes() {
   const navigate = useNavigate();
   const { isDemoMode, mockData } = useTourPreview();
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [classes, setClasses] = useState([]);
@@ -58,10 +57,13 @@ function Classes() {
         section: String(subject.section || "").trim() || "No section assigned",
         schedule: String(subject.schedule || "").trim(),
         room: "",
-        semester: "Current School Year",
-        studentCount: Number(enrollmentBySubject.get(String(subject.id)) ?? subject.enrolled ?? 0),
-        capacity: Number(subject.capacity || 0),
+        studentCount: Number(
+          enrollmentBySubject && enrollmentBySubject.has(String(subject.id))
+            ? enrollmentBySubject.get(String(subject.id))
+            : (subject.enrolled !== undefined ? subject.enrolled : 0)
+        ),
         students: [],
+        capacity: Number(subject.capacity || 0),
         gradeLevel: rawGrade
       };
     });
@@ -132,18 +134,23 @@ function Classes() {
     const enrollmentBySubject = new Map();
 
     if (subjectIds.length > 0) {
-      const { data: assignmentRows, error: assignmentError } = await supabase
-        .from("teacher_student_assignments")
-        .select("subject_id")
-        .eq("teacher_id", id)
-        .in("subject_id", subjectIds);
+      try {
+        const { data: assignmentRows } = await supabase
+          .from("teacher_student_assignments")
+          .select("subject_id, student_id")
+          .eq("teacher_id", id)
+          .in("subject_id", subjectIds);
 
-      if (!assignmentError) {
-        (assignmentRows ?? []).forEach((row) => {
-          const key = String(row.subject_id || "");
-          if (!key) return;
-          enrollmentBySubject.set(key, (enrollmentBySubject.get(key) || 0) + 1);
+        const rows = assignmentRows || [];
+
+        (data || []).forEach((subject) => {
+          const key = String(subject.id);
+          const directStudentIds = rows.filter(a => String(a.subject_id) === key).map(a => a.student_id);
+          const totalEnrolled = new Set(directStudentIds).size;
+          enrollmentBySubject.set(key, totalEnrolled);
         });
+      } catch (err) {
+        console.warn("[Classes] error calculating subject enrollment:", err);
       }
     }
 
@@ -179,7 +186,7 @@ function Classes() {
   const { data: cachedClassesCards, loading: isCachedClassesLoading } = useCachedFetch(
     teacherEmail ? `teacher_classes_${teacherEmail}` : "teacher_classes_default",
     fetchTeacherClassesData,
-    { deps: [teacherEmail] }
+    { ttlMs: 0, deps: [teacherEmail] }
   );
 
   useEffect(() => {
@@ -197,7 +204,7 @@ function Classes() {
     if (cachedClassesCards && cachedClassesCards.length > 0) {
       setClasses(cachedClassesCards);
       setLoading(false);
-    } else {
+    } else if (classes.length === 0) {
       setLoading(isCachedClassesLoading);
     }
   }, [cachedClassesCards, isCachedClassesLoading]);
@@ -208,6 +215,9 @@ function Classes() {
     let isMounted = true;
     let subjectsChannel;
     let assignmentChannel;
+
+    // Immediately fetch fresh real-time counts from Supabase on mount
+    loadTeacherSubjects(teacherId);
 
     const setupSubscription = async () => {
       subjectsChannel = supabase
@@ -250,8 +260,35 @@ function Classes() {
 
     setupSubscription();
 
+    const handleEnrollmentChanged = (e) => {
+      if (!isMounted) return;
+      if (e?.detail?.subjectId) {
+        const { subjectId, count } = e.detail;
+        setClasses((prev) =>
+          prev.map((c) =>
+            String(c.id) === String(subjectId)
+              ? { ...c, studentCount: Number(count || 0) }
+              : c
+          )
+        );
+      } else if (teacherId) {
+        loadTeacherSubjects(teacherId);
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (isMounted && teacherId) {
+        loadTeacherSubjects(teacherId);
+      }
+    };
+
+    window.addEventListener("enrollment-changed", handleEnrollmentChanged);
+    window.addEventListener("focus", handleWindowFocus);
+
     return () => {
       isMounted = false;
+      window.removeEventListener("enrollment-changed", handleEnrollmentChanged);
+      window.removeEventListener("focus", handleWindowFocus);
       if (subjectsChannel) {
         supabase.removeChannel(subjectsChannel);
       }
@@ -306,15 +343,7 @@ function Classes() {
         {/* Top Bar */}
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-end gap-4">
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 
@@ -398,7 +427,7 @@ function Classes() {
                     )}
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Users className="w-4 h-4 text-green-600 flex-shrink-0" />
-                      <span>{classItem.studentCount} / {classItem.capacity || 30} students enrolled</span>
+                      <span>{classItem.studentCount} / {classItem.capacity > 0 ? classItem.capacity : (classItem.capacity === 0 ? "∞" : classItem.capacity)} students enrolled</span>
                       {classItem.capacity > 0 && classItem.studentCount >= classItem.capacity && (
                         <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 rounded">Full</span>
                       )}

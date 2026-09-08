@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { supabase } from "../lib/supabaseClient";
+import { clearUserNotificationCache } from "@/app/services/notificationService";
 
 const getStoredCurrentUser = () => {
   try {
@@ -112,6 +113,7 @@ export function TeacherSidebar({ teacherName, onLogout }) {
 
   const handleConfirmLogout = async () => {
     try {
+      clearUserNotificationCache();
       if (supabase) await supabase.auth.signOut();
     } catch {
       // Continue with local logout even if remote sign-out fails.

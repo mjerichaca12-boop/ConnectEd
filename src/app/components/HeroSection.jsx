@@ -54,7 +54,7 @@ function HeroSection() {
           style={{ animation: "fadeSlideDown 0.8s ease-out both" }}
         >
           <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-          Now available for public schools in Cavite
+          Now available for schools in Dasmarinas, Cavite
         </div>
 
         {/* Headline */}
@@ -75,7 +75,7 @@ function HeroSection() {
           style={{ animation: "fadeSlideUp 0.9s ease-out 0.3s both" }}
         >
           ConnectEd unifies classroom management, grading, announcements,
-          and messaging — built specifically for DepEd public schools in Dasmariñas, Cavite.
+          and messaging — built specifically for schools in Dasmariñas, Cavite.
         </p>
 
         {/* CTAs — 2 buttons only */}
@@ -100,7 +100,7 @@ function HeroSection() {
 
         {/* Trust bar */}
         <div style={{ animation: "fadeSlideUp 0.9s ease-out 0.6s both" }}>
-          <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mb-4">Trusted by public schools in Cavite</p>
+          <p className="text-gray-500 text-xs font-medium uppercase tracking-widest mb-4">Trusted by schools in Cavite</p>
           <div className="flex flex-wrap justify-center gap-6">
             {trustItems.map((item) => {
               const Icon = item.icon;

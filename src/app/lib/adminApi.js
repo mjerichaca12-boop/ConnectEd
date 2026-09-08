@@ -57,9 +57,20 @@ export const adminApi = {
   },
 
   async updateProfile(id, payload) {
-    return this.fetchWithToken("/api/admin/profiles", {
+    const res = await this.fetchWithToken("/api/admin/profiles", {
       method: "PUT",
       body: JSON.stringify({ id, payload }),
+    });
+
+    if (!res.error && res.data) {
+      return res;
+    }
+
+    console.warn("[adminApi] /api/admin/profiles failed, executing fallback update via adminApi.db:", res.error?.message || res.error);
+    return this.db("profiles", "update", {
+      payload,
+      eq: { column: "id", value: id },
+      single: true
     });
   },
 
@@ -67,11 +78,163 @@ export const adminApi = {
     return this.fetchWithToken(`/api/admin/users?id=${id}`, { method: "DELETE" });
   },
 
+  async bulkDeleteStudents(studentIds) {
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return { data: { success: true, count: 0 }, error: null };
+    }
+    const res = await this.fetchWithToken("/api/admin/bulk-delete-students", {
+      method: "POST",
+      body: JSON.stringify({ student_ids: studentIds }),
+    });
+
+    if (!res.error) {
+      return res;
+    }
+
+    console.warn("[adminApi] /api/admin/bulk-delete-students failed or unavailable, executing Supabase batch fallback:", res.error?.message || res.error);
+
+    try {
+      const tablesToClean = [
+        { table: "notifications", col: "user_id" },
+        { table: "password_reset_logs", col: "user_id" },
+        { table: "conversation_participants", col: "profile_id" },
+        { table: "conversation_reads", col: "user_id" },
+        { table: "teacher_student_assignments", col: "student_id" },
+        { table: "teacher_student_grades", col: "student_id" },
+        { table: "teacher_assessment_submissions", col: "student_id" },
+        { table: "teacher_assessment_grades", col: "student_id" },
+        { table: "student_attendance", col: "student_id" },
+      ];
+
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < studentIds.length; i += BATCH_SIZE) {
+        const chunk = studentIds.slice(i, i + BATCH_SIZE);
+        await Promise.allSettled(tablesToClean.map(item => supabase.from(item.table).delete().in(item.col, chunk)));
+        await supabase.from("profiles").delete().in("id", chunk).eq("role", "student");
+      }
+
+      return { data: { success: true, count: studentIds.length }, error: null };
+    } catch (fallbackError) {
+      return { data: null, error: fallbackError };
+    }
+  },
+
   async db(table, action, options = {}) {
-    return this.fetchWithToken("/api/admin/db", {
+    const res = await this.fetchWithToken("/api/admin/db", {
       method: "POST",
       body: JSON.stringify({ table, action, ...options }),
     });
+
+    if (!res.error && res.data) {
+      return res;
+    }
+
+    console.warn(`[adminApi] /api/admin/db failed for action "${action}" on table "${table}", executing direct Supabase fallback:`, res.error?.message || res.error);
+
+    try {
+      const { payload, eq, neq, in: inArgs, or, is: isArgs, match, select, order, single } = options;
+
+      if (action === "storage_upload") {
+        const { bucket, path, file, base64File, contentType } = payload || {};
+        let uploadContent = file;
+        if (!uploadContent && base64File) {
+          const byteCharacters = atob(base64File);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          uploadContent = new Blob([byteArray], { type: contentType || "application/octet-stream" });
+        }
+        const { data, error } = await supabase.storage.from(bucket).upload(path, uploadContent, { contentType, upsert: true });
+        return { data, error };
+      } else if (action === "storage_remove") {
+        const { bucket, paths } = payload || {};
+        const { data, error } = await supabase.storage.from(bucket).remove(paths);
+        return { data, error };
+      }
+
+      let query = supabase.from(table);
+
+      if (action === "select") {
+        query = query.select(select || "*");
+      } else if (action === "insert") {
+        query = query.insert(payload).select(select || "*");
+      } else if (action === "update") {
+        query = query.update(payload).select(select || "*");
+      } else if (action === "delete") {
+        query = query.delete();
+        if (select) query = query.select(select);
+      } else if (action === "upsert") {
+        query = query.upsert(payload).select(select || "*");
+      }
+
+      if (eq) query = query.eq(eq.column, eq.value);
+      if (neq) query = query.neq(neq.column, neq.value);
+      if (inArgs) query = query.in(inArgs.column, inArgs.value);
+      if (or) query = query.or(or);
+      if (isArgs) query = query.is(isArgs.column, isArgs.value);
+      if (match) query = query.match(match);
+      if (order) query = query.order(order.column, order.options);
+
+      if (single) {
+        const { data, error } = await query.maybeSingle();
+        return { data, error };
+      } else {
+        const { data, error } = await query;
+        return { data, error };
+      }
+    } catch (fbErr) {
+      return { data: null, error: fbErr };
+    }
+  },
+
+  async uploadStorageFile(bucket, path, file, contentType = "application/octet-stream") {
+    // 1. Try direct Supabase client binary upload first (works for authenticated users with session)
+    try {
+      const { data: directData, error: directErr } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, { contentType, upsert: true });
+
+      if (!directErr && directData) {
+        return { data: directData, error: null };
+      }
+    } catch (e) {
+      // Continue to signed upload flow
+    }
+
+    // 2. Request signed upload URL token from admin API (bypasses RLS & avoids 413 Vercel payload size limit)
+    const signedRes = await this.db("storage", "create_signed_upload_url", {
+      payload: { bucket, path }
+    });
+
+    if (signedRes.error || !signedRes.data?.token) {
+      // Fallback: If create_signed_upload_url is unavailable, attempt small file base64 upload
+      if (file.size && file.size < 2.5 * 1024 * 1024) {
+        const toBase64 = (f) => new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(f);
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = err => reject(err);
+        });
+        const base64File = await toBase64(file);
+        return this.db("storage", "storage_upload", {
+          payload: { bucket, path, base64File, contentType }
+        });
+      }
+      return { data: null, error: signedRes.error || new Error("Failed to generate signed upload authorization.") };
+    }
+
+    const { token } = signedRes.data;
+    const { data: uploadData, error: uploadErr } = await supabase.storage
+      .from(bucket)
+      .uploadToSignedUrl(path, token, file, { contentType, upsert: true });
+
+    if (uploadErr) {
+      return { data: null, error: uploadErr };
+    }
+
+    return { data: uploadData, error: null };
   },
 
   async batchGenerateAccounts(studentsBatch) {
@@ -246,6 +409,105 @@ export const adminApi = {
       };
     } catch (fallbackError) {
       return { data: null, error: fallbackError };
+    }
+  },
+
+  async bulkAssignSection({ gradeLevel, targetSection, studentIds, isMasterlist }) {
+    if (!targetSection || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return { data: null, error: new Error("Invalid parameters for section assignment.") };
+    }
+
+    const formatSection = (secStr) => {
+      const clean = String(secStr || "").trim();
+      if (!clean || clean.toLowerCase() === "unassigned" || clean.toLowerCase() === "unknown") return null;
+      return clean.split(/\s+/).map(w => /^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(" ");
+    };
+
+    const cleanSection = formatSection(targetSection);
+    if (!cleanSection) {
+      return { data: null, error: new Error("Please provide a valid section name.") };
+    }
+
+    const normGradeNum = (gradeLevel || "").replace(/\D/g, "");
+
+    try {
+      // 1. Fetch matching subjects for capacity
+      const { data: subsData } = await supabase.from("subjects").select("id, capacity, enrolled, grade_level, section");
+      const matchingSubs = (subsData || []).filter(s => {
+        const sGradeNum = (s.grade_level || "").replace(/\D/g, "");
+        const sSec = (s.section || "").trim().toLowerCase();
+        return sGradeNum === normGradeNum && sSec === cleanSection.toLowerCase();
+      });
+
+      let capacity = 0;
+      if (matchingSubs.length > 0) {
+        const caps = matchingSubs.map(s => Number(s.capacity || 0)).filter(c => c > 0);
+        if (caps.length > 0) {
+          capacity = Math.min(...caps);
+        }
+      }
+
+      // 2. Count current enrolled in profiles (source of truth)
+      const { count: profileEnrolledCount } = await supabase
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "student")
+        .ilike("section", cleanSection);
+
+      const currentEnrolled = profileEnrolledCount || 0;
+
+      // 3. Fetch target student records to deduplicate
+      const targetTable = isMasterlist ? "student_masterlist" : "profiles";
+      const { data: targetStudents } = await supabase
+        .from(targetTable)
+        .select("id, lrn, section")
+        .in("id", studentIds);
+
+      const alreadyEnrolledCount = (targetStudents || []).filter(s => {
+        const sec = (s.section || "").trim().toLowerCase();
+        return sec === cleanSection.toLowerCase();
+      }).length;
+
+      const newStudentsCount = studentIds.length - alreadyEnrolledCount;
+      const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : Infinity;
+      const projectedEnrolled = currentEnrolled + newStudentsCount;
+
+      // 4. Server-Side Capacity Guard
+      if (capacity > 0 && projectedEnrolled > capacity) {
+        return {
+          data: null,
+          error: new Error(`Cannot assign these students. Section ${cleanSection} only has ${availableSlots} available slot(s) remaining (capacity: ${capacity}, current: ${currentEnrolled}).`)
+        };
+      }
+
+      // 5. Perform Database Update
+      const { error: updateErr } = await this.db(targetTable, "update", {
+        payload: { section: cleanSection },
+        in: { column: "id", value: studentIds }
+      });
+      if (updateErr) throw updateErr;
+
+      // Sync across profiles and student_masterlist by LRN
+      const targetLrns = (targetStudents || []).map(s => s.lrn).filter(Boolean);
+      if (targetLrns.length > 0) {
+        const mirrorTable = isMasterlist ? "profiles" : "student_masterlist";
+        await supabase.from(mirrorTable).update({ section: cleanSection }).in("lrn", targetLrns);
+      }
+
+      return {
+        data: {
+          success: true,
+          count: studentIds.length,
+          newStudentsCount,
+          alreadyEnrolledCount,
+          currentEnrolled,
+          projectedEnrolled,
+          capacity
+        },
+        error: null
+      };
+    } catch (err) {
+      return { data: null, error: err };
     }
   }
 };

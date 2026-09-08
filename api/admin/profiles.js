@@ -93,7 +93,7 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       // Graceful fallback if suffix / employee_id columns don't exist yet in Supabase
-      if (error && (error.code === '42703' || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
+      if (error && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
         const missingFields = ['suffix', 'name_extension', 'employee_id'];
         let hasMissing = false;
         for (const field of missingFields) {

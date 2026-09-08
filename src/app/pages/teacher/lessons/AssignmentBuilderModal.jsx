@@ -230,6 +230,9 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         toast.success(`${formData.task_category === "Assessment" ? "Seatwork" : formData.task_category} created successfully!`);
       }
 
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("connected:assessments-changed", { detail: { lessonId } }));
+      }
       onSuccess();
     } catch (err) {
       console.error(err);

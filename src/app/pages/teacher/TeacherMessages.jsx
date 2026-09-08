@@ -6,9 +6,9 @@ import { NotificationDropdown } from "@/app/components/NotificationDropdown";
 import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
-import { adminApi } from "@/app/lib/adminApi";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
-// Use service role client if available to bypass RLS issues for reliable messaging
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
+// Use Supabase client for teacher operations
 const db = supabase;
 import {
   Search,
@@ -42,6 +42,34 @@ const FILTERS = [
 
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 
+const getDismissedConvIds = (userId) => {
+  if (!userId) return new Set();
+  try {
+    const raw = localStorage.getItem(`dismissed_conversations_${userId}`);
+    return new Set(JSON.parse(raw || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const addDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.add(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
+const removeDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.delete(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
 const buildProfileName = (row) => {
   const fullName = [row?.first_name, row?.middle_name, row?.last_name]
     .map((part) => String(part || "").trim())
@@ -61,7 +89,30 @@ const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
   const cleanSender = String(row?.sender_id || "").toLowerCase();
   const cleanCurrent = String(currentTeacherId || "").toLowerCase();
   const fromTeacher = cleanSender === cleanCurrent;
-  const fileType = String(row?.file_type || "").trim();
+  
+  let fileUrl = String(row?.file_url || "").trim();
+  let fileName = String(row?.file_name || "").trim();
+  let fileType = String(row?.file_type || "").trim();
+  let fileSize = Number(row?.file_size || 0);
+
+  const attachmentsList = Array.isArray(row?.message_attachments) && row.message_attachments.length > 0
+    ? row.message_attachments.map(a => ({
+        id: a.id,
+        url: a.file_url,
+        name: a.file_name,
+        type: a.file_type,
+        size: a.file_size,
+        kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+      }))
+    : [];
+
+  if (!fileUrl && attachmentsList.length > 0) {
+    fileUrl = attachmentsList[0].url || "";
+    fileName = attachmentsList[0].name || "";
+    fileType = attachmentsList[0].type || "";
+    fileSize = attachmentsList[0].size || 0;
+  }
+
   const attachmentKind = fileType.startsWith("image/")
     ? "image"
     : fileType.startsWith("video/")
@@ -69,30 +120,22 @@ const toConversationMessage = (row, currentTeacherId, teacherDisplayName) => {
       : fileType
         ? "document"
         : "";
+
   return {
     id: String(row?.id || `${Date.now()}_${Math.random()}`),
     from: fromTeacher ? "teacher" : "student",
     senderName: fromTeacher ? teacherDisplayName : "Recipient",
     text: String(row?.message_text || "").trim(),
     time: String(row?.timestamp || row?.created_at || new Date().toISOString()),
-    fileUrl: String(row?.file_url || "").trim(),
-    status: String(row?.status || "sent").trim(),
-    attachments: Array.isArray(row?.message_attachments) 
-      ? row.message_attachments.map(a => ({
-          id: a.id,
-          url: a.file_url,
-          name: a.file_name,
-          type: a.file_type,
-          size: a.file_size,
-          kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-        }))
-      : [],
-    fileName: String(row?.file_name || "").trim(),
+    fileUrl,
+    fileName,
     fileType,
-    fileSize: Number(row?.file_size || 0),
+    fileSize,
     attachmentKind,
+    status: String(row?.status || "sent").trim(),
+    attachments: attachmentsList,
     isRead: Boolean(row?.is_read),
-    isSeen: Boolean(row?.is_read || fromTeacher), // teacher's own messages are always "seen"
+    isSeen: Boolean(row?.is_read || fromTeacher),
   };
 };
 
@@ -264,7 +307,6 @@ function TeacherMessages() {
 
   const [teacherName, setTeacherName] = useState("");
   const [teacherId, setTeacherId] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
 
@@ -286,11 +328,16 @@ function TeacherMessages() {
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [activeFilter, setActiveFilter] = useState("all");
 
+  // Remove message confirmation
+  const [deleteMessageConfirm, setDeleteMessageConfirm] = useState({ isOpen: false, messageId: null });
+
   const [showNewModal, setShowNewModal] = useState(false);
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
   const [recipientResults, setRecipientResults] = useState([]);
   const [recipientLoading, setRecipientLoading] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
   const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -305,7 +352,16 @@ function TeacherMessages() {
     const sorted = [...updated].sort(
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
+    conversationsRef.current = sorted;
     setConversations(sorted);
+    const activeTeacherId = typeof teacherId !== 'undefined' && teacherId ? teacherId : null;
+    if (activeTeacherId) {
+      try {
+        localStorage.setItem(`teacher_conversations_${activeTeacherId}`, JSON.stringify(sorted));
+      } catch (e) {
+        console.warn("[TeacherMessages] Failed to save conversations to localStorage:", e);
+      }
+    }
   };
 
   useEffect(() => {
@@ -428,14 +484,13 @@ function TeacherMessages() {
     try {
       const { data, error } = await db
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, avatar_url")
+        .select("id, first_name, middle_name, last_name, email, role")
         .in("id", ids);
       const res = (data || []).map((row) => ({
         id: String(row.id),
         name: buildProfileName(row),
         email: String(row.email || ""),
         role: String(row.role || "student").trim().toLowerCase(),
-        avatarUrl: String(row.avatar_url || ""),
       }));
 
       // If hardcoded admin ID was requested but not returned from DB, append default Admin profile
@@ -460,7 +515,7 @@ function TeacherMessages() {
 
       let staffQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
+        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
         .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -471,7 +526,7 @@ function TeacherMessages() {
 
       let studentQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
+        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
         .in("role", ["student", "Student", "STUDENT"]);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -496,9 +551,9 @@ function TeacherMessages() {
           name: buildProfileName(row),
           email: String(row.email || ""),
           role: String(row.role || "student").trim().toLowerCase(),
-          avatarUrl: String(row.avatar_url || ""),
+          yearLevel: String(row.year_level || row.yearLevel || "").trim(),
+          section: String(row.section || "").trim(),
           classCode: "",
-          section: "",
         }));
 
       // Ensure Admin appears in recipient selection if not already present
@@ -508,9 +563,9 @@ function TeacherMessages() {
           name: "System Administrator",
           email: HARDCODED_ADMIN_EMAIL,
           role: "admin",
-          avatarUrl: "",
-          classCode: "",
-          section: ""
+          yearLevel: "",
+          section: "",
+          classCode: ""
         });
       }
 
@@ -530,7 +585,7 @@ function TeacherMessages() {
 
       let req = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, status, avatar_url")
+        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
         .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,username.ilike.%${q}%`);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
@@ -554,9 +609,9 @@ function TeacherMessages() {
           name: buildProfileName(row),
           email: String(row.email || ""),
           role: String(row.role || "student").trim().toLowerCase(),
-          avatarUrl: String(row.avatar_url || ""),
+          yearLevel: String(row.year_level || row.yearLevel || "").trim(),
+          section: String(row.section || "").trim(),
           classCode: "",
-          section: "",
         }));
     } catch (err) {
       console.error("[TeacherMessages] fetchRecipientsByQuery error:", err);
@@ -629,7 +684,6 @@ function TeacherMessages() {
             participantId: counterpartId,
             participantName: String(profile?.name || (isAdminCounterpart ? "System Administrator" : "User")),
             participantRole: String(profile?.role || (isAdminCounterpart ? "admin" : "student")).toLowerCase(),
-            avatarUrl: String(profile?.avatarUrl || ""),
             email: String(profile?.email || (isAdminCounterpart ? HARDCODED_ADMIN_EMAIL : "")),
             classCode: "",
             section: "",
@@ -647,88 +701,147 @@ function TeacherMessages() {
       });
 
       // Load group conversations
+      const dismissedSet = getDismissedConvIds(currentTeacherId);
+      let groupConvList = [];
       const { data: participantRows, error: participantError } = await db
         .from("conversation_participants")
         .select("conversation_id, profile_id")
         .eq("profile_id", currentTeacherId);
 
       if (!participantError && participantRows && participantRows.length > 0) {
-        const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id));
+        const conversationIds = buildStableIdList(participantRows.map((row) => row.conversation_id))
+          .filter((id) => !dismissedSet.has(id));
 
-        const { data: conversationData, error: convError } = await db
-          .from("groupchats")
-          .select("id, name, is_group, created_by")
-          .in("id", conversationIds)
-          .eq("is_group", true);
+        if (conversationIds.length > 0) {
+          const { data: conversationData } = await db
+            .from("conversations")
+            .select("id, name, is_group, created_by")
+            .in("id", conversationIds)
+            .eq("is_group", true);
+          if (conversationData) groupConvList.push(...conversationData);
 
-        if (!convError && conversationData) {
-          for (const conv of conversationData) {
-            const { data: groupParticipants, error: groupPartError } = await db
-              .from("conversation_participants")
-              .select("profile_id")
-              .eq("conversation_id", conv.id);
-
-            if (!groupPartError && groupParticipants) {
-              const participantIds = buildStableIdList(groupParticipants.map((p) => p.profile_id));
-
-              let groupMsgRows = [];
-              const { data: groupMessages, error: groupMsgError } = await db
-                .from(MESSAGE_TABLE)
-                .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
-                .eq("conversation_id", conv.id)
-                .order("created_at", { ascending: true });
-
-              if (groupMsgError) {
-                const { data: groupFallback } = await db
-                  .from(MESSAGE_TABLE)
-                  .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
-                  .eq("conversation_id", conv.id)
-                  .order("created_at", { ascending: true });
-                groupMsgRows = groupFallback || [];
-              } else {
-                groupMsgRows = groupMessages || [];
+          const { data: groupchatsData } = await db
+            .from("groupchats")
+            .select("id, name, is_group, created_by")
+            .in("id", conversationIds);
+          if (groupchatsData) {
+            groupchatsData.forEach((gc) => {
+              if (!groupConvList.some((existing) => existing.id === gc.id)) {
+                groupConvList.push(gc);
               }
-
-              const groupMsgObjs = groupMsgRows.map((row) => 
-                toConversationMessage(row, currentTeacherId, teacherDisplayName)
-              );
-
-              groupMsgRows.forEach((row) => markMessageSeen(row.id));
-
-              conversationsByParticipant.set(conv.id, {
-                id: conv.id,
-                participantId: "",
-                participantIds: participantIds,
-                participantName: conv.name || `${participantIds.length} members`,
-                participantRole: "group",
-                classCode: `${participantIds.length} members`,
-                messages: groupMsgObjs,
-                lastMessageTime: groupMsgObjs.length > 0 
-                  ? groupMsgObjs[groupMsgObjs.length - 1].time 
-                  : new Date().toISOString(),
-                unreadCount: 0,
-                isVideoMeet: false,
-                isGroup: true,
-              });
-            }
+            });
           }
         }
       }
 
-      // Merge cached local draft conversations if any
+      // ALSO fetch group conversations created by current user to avoid missing groups (excluding dismissed ones)
+      const { data: myCreatedGroups } = await db
+        .from("conversations")
+        .select("id, name, is_group, created_by")
+        .eq("created_by", currentTeacherId)
+        .eq("is_group", true);
+
+      if (myCreatedGroups && myCreatedGroups.length > 0) {
+        myCreatedGroups.forEach((cg) => {
+          if (!dismissedSet.has(cg.id) && !groupConvList.some((existing) => existing.id === cg.id)) {
+            groupConvList.push(cg);
+          }
+        });
+      }
+
+      const { data: myCreatedGroupchats } = await db
+        .from("groupchats")
+        .select("id, name, is_group, created_by")
+        .eq("created_by", currentTeacherId);
+
+      if (myCreatedGroupchats && myCreatedGroupchats.length > 0) {
+        myCreatedGroupchats.forEach((cg) => {
+          if (!dismissedSet.has(cg.id) && !groupConvList.some((existing) => existing.id === cg.id)) {
+            groupConvList.push(cg);
+          }
+        });
+      }
+
+      // Filter out any dismissed groups from groupConvList
+      groupConvList = groupConvList.filter((cg) => !dismissedSet.has(cg.id));
+
+      const loadedGroupConvs = await Promise.all(
+        groupConvList.map(async (conv) => {
+          const { data: groupParticipants, error: groupPartError } = await db
+            .from("conversation_participants")
+            .select("profile_id")
+            .eq("conversation_id", conv.id);
+
+          const participantIds = (!groupPartError && groupParticipants) 
+            ? buildStableIdList(groupParticipants.map((p) => p.profile_id))
+            : [currentTeacherId];
+
+          let groupMsgRows = [];
+          const { data: groupMessages, error: groupMsgError } = await db
+            .from(MESSAGE_TABLE)
+            .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)")
+            .eq("conversation_id", conv.id)
+            .order("created_at", { ascending: true });
+
+          if (groupMsgError) {
+            const { data: groupFallback } = await db
+              .from(MESSAGE_TABLE)
+              .select("id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status")
+              .eq("conversation_id", conv.id)
+              .order("created_at", { ascending: true });
+            groupMsgRows = groupFallback || [];
+          } else {
+            groupMsgRows = groupMessages || [];
+          }
+
+          const groupMsgObjs = groupMsgRows.map((row) => 
+            toConversationMessage(row, currentTeacherId, teacherDisplayName)
+          );
+
+          groupMsgRows.forEach((row) => markMessageSeen(row.id));
+
+          return {
+            id: conv.id,
+            participantId: "",
+            participantIds: participantIds,
+            participantName: conv.name || `${participantIds.length} members`,
+            participantRole: "group",
+            classCode: `${participantIds.length} members`,
+            messages: groupMsgObjs,
+            lastMessageTime: groupMsgObjs.length > 0 
+              ? groupMsgObjs[groupMsgObjs.length - 1].time 
+              : new Date().toISOString(),
+            unreadCount: 0,
+            isVideoMeet: false,
+            isGroup: true,
+          };
+        })
+      );
+
+      loadedGroupConvs.filter(Boolean).forEach((groupConv) => {
+        conversationsByParticipant.set(groupConv.id, groupConv);
+      });
+
+      // Merge in-memory active conversations AND cached local storage conversations (respecting dismissedSet)
       const allLoaded = Array.from(conversationsByParticipant.values());
+      const inMemoryConvs = conversationsRef.current || [];
+      inMemoryConvs.forEach((c) => {
+        if (!dismissedSet.has(c.id) && !allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          allLoaded.push(c);
+        }
+      });
       try {
         const cached = JSON.parse(localStorage.getItem(`teacher_conversations_${currentTeacherId}`) || "[]");
         cached.forEach((c) => {
-          if (!allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          if (!dismissedSet.has(c.id) && !allLoaded.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
             allLoaded.push(c);
           }
         });
       } catch (e) {}
 
-      const mapped = allLoaded.sort(
-        (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
-      );
+      const mapped = allLoaded
+        .filter((c) => !dismissedSet.has(c.id))
+        .sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
 
       saveConversations(mapped);
       setSelectedConvId((prev) => {
@@ -762,6 +875,7 @@ function TeacherMessages() {
           return;
         }
         setTeacherId(resolvedTeacherId);
+        conversationsRef.current = [];
         await loadConversations(resolvedTeacherId, teacherDisplayName);
       } catch (err) {
         console.warn("[TeacherMessages] Initialize error:", err);
@@ -773,13 +887,24 @@ function TeacherMessages() {
     initialize().catch(err => console.warn("[TeacherMessages] Uncaught initialize:", err));
   }, [navigate, resolveTeacherId, loadConversations]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages & deletions
   useEffect(() => {
     if (!supabase || !teacherId) return;
     const channel = supabase
       .channel(`global-chat-${teacherId}-${Math.random().toString(36).substring(7)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: MESSAGE_TABLE }, async (payload) => {
         try {
+          if (payload.eventType === "DELETE") {
+            const deletedId = String(payload.old?.id || "");
+            if (!deletedId) return;
+            setConversations((current) =>
+              current.map((conv) => ({
+                ...conv,
+                messages: (conv.messages || []).filter((m) => String(m.id) !== deletedId),
+              }))
+            );
+            return;
+          }
           if (payload.eventType === "UPDATE") {
             const updatedMsg = payload.new;
             setConversations(current => current.map(conv => {
@@ -814,6 +939,45 @@ function TeacherMessages() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [teacherId, teacherName, appendIncomingMessage]);
+
+  const handleRemoveMessage = async () => {
+    const messageId = deleteMessageConfirm.messageId;
+    if (!messageId || !teacherId) return;
+
+    // Optimistically update local state
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).filter((m) => String(m.id) !== String(messageId)),
+      }))
+    );
+
+    try {
+      // 1. Delete associated attachments
+      try {
+        await supabase
+          .from("message_attachments")
+          .delete()
+          .eq("message_id", messageId);
+      } catch (attErr) {
+        console.warn("[TeacherMessages] Attachment deletion notice:", attErr);
+      }
+
+      // 2. Delete message row from database
+      const { error } = await supabase
+        .from(MESSAGE_TABLE)
+        .delete()
+        .eq("id", messageId)
+        .eq("sender_id", teacherId);
+
+      if (error) {
+        console.error("[TeacherMessages] Failed to delete message from DB:", error);
+        await loadConversations(teacherId, teacherName);
+      }
+    } catch (err) {
+      console.error("[TeacherMessages] Error deleting message:", err);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -886,7 +1050,6 @@ function TeacherMessages() {
       participantId: student.id,
       participantName: student.name,
       participantRole: String(student.role || "student"),
-      avatarUrl: String(student.avatarUrl || ""),
       email: student.email || "",
       classCode: student.classCode || "",
       section: student.section || "",
@@ -917,48 +1080,11 @@ function TeacherMessages() {
     if (memberIds.length < 2) { setPageError("Select at least 2 users."); return; }
     const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const conversationId = `group_${uid}`;
+    removeDismissedConvId(teacherId, conversationId);
     const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
     
-    // Insert conversation into database
-    try {
-      const { error: convError } = await db
-        .from("conversations")
-        .insert({
-          id: conversationId,
-          name: memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName,
-          is_group: true,
-          created_by: teacherId,
-        });
-      
-      if (convError) {
-        console.error("Failed to create conversation:", convError);
-        setPageError("Failed to create group chat.");
-        return;
-      }
-
-      // Add all participants including the teacher who created it
-      const allParticipantIds = buildStableIdList([teacherId, ...memberIds]);
-      const participantInserts = allParticipantIds.map((profileId) => ({
-        conversation_id: conversationId,
-        profile_id: profileId,
-        is_admin: false,
-      }));
-
-      const { error: partError } = await db
-        .from("conversation_participants")
-        .insert(participantInserts);
-
-      if (partError) {
-        console.error("Failed to add participants:", partError);
-        setPageError("Failed to add participants to group chat.");
-        return;
-      }
-    } catch (error) {
-      console.error("Error creating group chat:", error);
-      setPageError("Failed to create group chat.");
-      return;
-    }
-
+    const groupTitle = memberIds.length > 2 ? `${previewName} +${memberIds.length - 2}` : previewName;
+    
     const groupConversation = {
       id: conversationId,
       participantId: "",
@@ -979,11 +1105,28 @@ function TeacherMessages() {
     setGroupSearch("");
     setSelectedGroupMemberIds([]);
     setPageError("");
+
+    // Parallel background DB sync
+    const allParticipantIds = buildStableIdList([teacherId, ...memberIds]);
+    const gcData = { id: conversationId, name: groupTitle, is_group: true, created_by: teacherId };
+    const participantInserts = allParticipantIds.map((profileId) => ({
+      conversation_id: conversationId,
+      profile_id: profileId,
+    }));
+
+    Promise.allSettled([
+      db.from("groupchats").insert(gcData),
+      db.from("conversations").insert(gcData),
+      db.from("conversation_participants").insert(participantInserts)
+    ]).catch((err) => {
+      console.warn("[TeacherMessages] Group creation background notice:", err);
+    });
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
     const text = String(messageInput || "").trim();
+    const messageText = text;
     const activeConversation = selectedConv;
     const currentTeacherId = typeof teacherId !== 'undefined' ? teacherId : (typeof adminId !== 'undefined' ? adminId : null);
     if ((!text && attachmentFiles.length === 0) || !activeConversation || !currentTeacherId || !supabase) return;
@@ -1036,11 +1179,42 @@ function TeacherMessages() {
           return;
         }
         
-        const publicUrlResult = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const publicUrlData = supabase.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pyeckxqaowusxcmeuolk.supabase.co";
+        let filePublicUrl = String(publicUrlData?.data?.publicUrl || "").trim();
+        if (!filePublicUrl || filePublicUrl.endsWith("/null") || filePublicUrl.endsWith("/undefined")) {
+          filePublicUrl = `${supabaseUrl}/storage/v1/object/public/${MESSAGE_ATTACHMENT_BUCKET}/${filePath}`;
+        }
+
+        if (!filePublicUrl) {
+          console.error("[TeacherMessages] Failed to generate storage URL for file:", file.name);
+          setPageError(`Failed to generate storage URL for ${file.name}`);
+          if (typeof setIsUploadingAttachment !== 'undefined') setIsUploadingAttachment(false);
+          if (typeof setIsUploading !== 'undefined') setIsUploading(false);
+          return;
+        }
+
+        const ext = String(cleanedName || "").split(".").pop().toLowerCase();
+        let determinedType = file.type;
+        if (!determinedType || determinedType === "application/octet-stream") {
+          switch (ext) {
+            case "png": determinedType = "image/png"; break;
+            case "jpg": case "jpeg": determinedType = "image/jpeg"; break;
+            case "webp": determinedType = "image/webp"; break;
+            case "gif": determinedType = "image/gif"; break;
+            case "pdf": determinedType = "application/pdf"; break;
+            case "csv": determinedType = "text/csv"; break;
+            case "xls": case "xlsx": determinedType = "application/vnd.ms-excel"; break;
+            case "doc": case "docx": determinedType = "application/msword"; break;
+            case "mp4": determinedType = "video/mp4"; break;
+            default: determinedType = "application/octet-stream"; break;
+          }
+        }
+
         uploadedAttachments.push({
-          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_url: filePublicUrl,
           file_name: cleanedName,
-          file_type: String(file.type || "application/octet-stream").trim(),
+          file_type: determinedType,
           file_size: Number(file.size || 0),
         });
       }
@@ -1048,20 +1222,52 @@ function TeacherMessages() {
       if (typeof setIsUploading !== 'undefined') setIsUploading(false);
     }
 
+    if (attachmentFiles.length > 0 && uploadedAttachments.length === 0) {
+      console.error("[TeacherMessages] Attachment upload failed completely; aborting insert.");
+      setPageError("Attachment upload failed. Message was not sent.");
+      if (typeof setIsUploadingAttachment !== 'undefined') setIsUploadingAttachment(false);
+      if (typeof setIsUploading !== 'undefined') setIsUploading(false);
+      return;
+    }
+
     const firstAttachment = uploadedAttachments[0] || null;
+    if (attachmentFiles.length > 0 && (!firstAttachment || !firstAttachment.file_url)) {
+      console.error("[TeacherMessages] Attachment URL is missing; aborting insert.");
+      setPageError("Attachment URL is missing. Message was not sent.");
+      if (typeof setIsUploadingAttachment !== 'undefined') setIsUploadingAttachment(false);
+      if (typeof setIsUploading !== 'undefined') setIsUploading(false);
+      return;
+    }
+
+    const fileUrlVal = firstAttachment ? firstAttachment.file_url : null;
+    const fileNameVal = firstAttachment ? firstAttachment.file_name : null;
+    const fileTypeVal = firstAttachment ? firstAttachment.file_type : null;
+    const fileSizeVal = firstAttachment ? firstAttachment.file_size : null;
     
     let insertPayload;
     if (activeConversation.isGroup) {
+      // Auto-ensure groupchats table row exists to satisfy messages_conversation_fk foreign key constraint
+      try {
+        await db.from("groupchats").upsert({
+          id: activeConversation.id,
+          name: activeConversation.participantName || "Group Chat",
+          is_group: true,
+          created_by: currentTeacherId,
+        }, { onConflict: "id" });
+      } catch (gcCheckErr) {
+        console.warn("[TeacherMessages] Auto-repair groupchats row notice:", gcCheckErr);
+      }
+
       insertPayload = [{
         sender_id: currentTeacherId,
         receiver_id: null,
         conversation_id: activeConversation.id,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }];
@@ -1072,10 +1278,10 @@ function TeacherMessages() {
         conversation_id: null,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }));
@@ -1093,15 +1299,37 @@ function TeacherMessages() {
       error = err;
     }
 
-    if (error) {
-      console.warn("DB insert failed:", error);
-    } else if (data && uploadedAttachments.length > 0) {
+    if (error || !data || data.length === 0) {
+      console.error("[TeacherMessages] Supabase insert failed:", error);
+      setPageError(`Failed to save message: ${error?.message || "Database insert error"}`);
+      return;
+    }
+
+    if (attachmentFiles.length > 0 && firstAttachment) {
+      const insertedNullCol = data.some(row => !row.file_url);
+      if (insertedNullCol) {
+        console.warn("[TeacherMessages] Inserted row returned null file_url; executing recovery update.");
+        for (const msgRow of data) {
+          await db.from(MESSAGE_TABLE).update({
+            file_url: firstAttachment.file_url,
+            file_name: firstAttachment.file_name,
+            file_type: firstAttachment.file_type,
+            file_size: firstAttachment.file_size
+          }).eq("id", msgRow.id);
+        }
+      }
+    }
+
+    if (data && uploadedAttachments.length > 0) {
       const attachmentPayloads = [];
       for (const msgRow of data) {
         for (const att of uploadedAttachments) {
           attachmentPayloads.push({
             message_id: msgRow.id,
-            ...att
+            file_url: att.file_url,
+            file_name: att.file_name,
+            file_type: att.file_type,
+            file_size: att.file_size
           });
         }
       }
@@ -1131,6 +1359,7 @@ function TeacherMessages() {
       }
     }
 
+    const firstAtt = uploadedAttachments[0] || null;
     const msg = {
       id: String(data?.[0]?.id || `${Date.now()}_${Math.random()}`),
       from: window.location.pathname.includes("admin") ? "admin" : "teacher",
@@ -1138,6 +1367,11 @@ function TeacherMessages() {
       text: messageText,
       time: String(data?.[0]?.timestamp || now),
       status: "sent",
+      fileUrl: firstAtt ? firstAtt.file_url : "",
+      fileName: firstAtt ? firstAtt.file_name : "",
+      fileType: firstAtt ? firstAtt.file_type : "",
+      fileSize: firstAtt ? firstAtt.file_size : 0,
+      attachmentKind: firstAtt ? (firstAtt.file_type?.startsWith('image/') ? 'image' : firstAtt.file_type?.startsWith('video/') ? 'video' : 'document') : "",
       attachments: uploadedAttachments.map(a => ({
         id: Math.random().toString(),
         url: a.file_url,
@@ -1250,9 +1484,10 @@ function TeacherMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
-      if (error) throw error;
+      await db.from("groupchats").update({ name: newName }).eq("id", selectedConv.id);
+      await db.from("conversations").update({ name: newName }).eq("id", selectedConv.id);
       const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
+      conversationsRef.current = updated;
       saveConversations(updated);
       setShowRenameModal(false);
       setPageError("");
@@ -1264,15 +1499,14 @@ function TeacherMessages() {
 
   const handleLeaveConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(teacherId, convId);
     try {
-      const { error } = await db.from("conversation_participants").delete().eq("conversation_id", selectedConv.id).eq("profile_id", teacherId);
-      if (error) throw error;
+      await db.from("conversation_participants").delete().eq("conversation_id", convId).eq("profile_id", teacherId);
     } catch (err) {
       console.error("[TeacherMessages] Leave error:", err);
-      setPageError("Unable to leave group chat.");
-      return;
     }
-    const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+    const remaining = conversations.filter((c) => c.id !== convId);
     saveConversations(remaining);
     setShowDeleteConfirm(false);
     setShowGroupMenu(false);
@@ -1282,15 +1516,17 @@ function TeacherMessages() {
 
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(teacherId, convId);
     try { 
-      const { error } = await db.from("groupchats").delete().eq("id", selectedConv.id);
-      if (error) throw error;
+      await db.from("groupchats").delete().eq("id", convId);
+      await db.from("conversations").delete().eq("id", convId);
+      await db.from("conversation_participants").delete().eq("conversation_id", convId);
+      await db.from(MESSAGE_TABLE).delete().eq("conversation_id", convId);
     } catch (err) {
       console.error("[TeacherMessages] Delete error:", err);
-      setPageError("Unable to delete conversation.");
-      return;
     }
-    const remaining = conversations.filter((c) => c.id !== selectedConv.id);
+    const remaining = conversations.filter((c) => c.id !== convId);
     saveConversations(remaining);
     setShowDeleteConfirm(false);
     setShowGroupMenu(false);
@@ -1306,17 +1542,39 @@ function TeacherMessages() {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const filteredRecipients = recipientResults.filter((r) => {
-    const term = String(recipientSearch || "").trim().toLowerCase();
-    if (!term) return true;
-    return [r.name, r.email, r.role].some((v) => String(v || "").toLowerCase().includes(term));
-  });
+  const applyRecipientFilters = (personList, searchStr) => {
+    const searchLower = String(searchStr || "").trim().toLowerCase();
+    return (personList || []).filter((r) => {
+      // Role filter
+      if (roleFilter !== "all" && String(r.role || "").toLowerCase() !== roleFilter.toLowerCase()) {
+        return false;
+      }
 
-  const filteredGroupRecipients = recipientResults.filter((r) => {
-    const term = String(groupSearch || "").trim().toLowerCase();
-    if (!term) return true;
-    return [r.name, r.email, r.role].some((v) => String(v || "").toLowerCase().includes(term));
-  });
+      // Grade filter
+      if (gradeFilter !== "all") {
+        const yl = String(r.yearLevel || "").toLowerCase();
+        const targetG = gradeFilter.toLowerCase();
+        if (!yl.includes(targetG) && !yl.includes(targetG.replace("grade ", ""))) {
+          return false;
+        }
+      }
+
+      // Text search
+      if (searchLower) {
+        const nameMatch = (r.name || "").toLowerCase().includes(searchLower);
+        const emailMatch = (r.email || "").toLowerCase().includes(searchLower);
+        const roleMatch = (r.role || "").toLowerCase().includes(searchLower);
+        const ylMatch = (r.yearLevel || "").toLowerCase().includes(searchLower);
+        const secMatch = (r.section || "").toLowerCase().includes(searchLower);
+        return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+      }
+
+      return true;
+    });
+  };
+
+  const filteredRecipients = applyRecipientFilters(recipientResults, recipientSearch);
+  const filteredGroupRecipients = applyRecipientFilters(recipientResults, groupSearch);
 
   const totalUnread = activeConversationsList.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
@@ -1343,11 +1601,7 @@ function TeacherMessages() {
               <p className="text-green-600 text-xs font-bold uppercase tracking-widest">Teacher Portal</p>
               <h2 className="text-lg font-bold text-gray-900">Messages</h2>
             </div>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) => setNotificationList((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))}
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 
@@ -1451,19 +1705,11 @@ function TeacherMessages() {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          {conv.avatarUrl ? (
-                            <img
-                              src={conv.avatarUrl}
-                              alt={conv.participantName}
-                              className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                            />
-                          ) : (
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
-                              conv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
-                            }`}>
-                              {conv.isVideoMeet ? <Video className="w-4 h-4" /> : conv.participantName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                            conv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
+                          }`}>
+                            {conv.isVideoMeet ? <Video className="w-4 h-4" /> : conv.participantName.charAt(0).toUpperCase()}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
                               <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
@@ -1500,19 +1746,11 @@ function TeacherMessages() {
                     >
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
-                    {selectedConv.avatarUrl ? (
-                      <img
-                        src={selectedConv.avatarUrl}
-                        alt={selectedConv.participantName}
-                        className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                      />
-                    ) : (
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${
-                        selectedConv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
-                      }`}>
-                        {selectedConv.isVideoMeet ? <Video className="w-4 h-4" /> : selectedConv.participantName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                      selectedConv.isVideoMeet ? "bg-gradient-to-br from-blue-500 to-indigo-600" : "bg-green-600"
+                    }`}>
+                      {selectedConv.isVideoMeet ? <Video className="w-4 h-4" /> : selectedConv.participantName.charAt(0).toUpperCase()}
+                    </div>
                     <div className="flex-1">
                       <p className="font-bold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500">{getConversationDetailLine(selectedConv)}</p>
@@ -1570,7 +1808,7 @@ function TeacherMessages() {
                         const hasMention = !isTeacher && msg.text?.includes(`@${teacherName}`);
                         return (
                           <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isTeacher ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                            <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm group/bubble relative ${
                               isTeacher
                                 ? "bg-green-600 text-white rounded-br-sm"
                                 : hasMention
@@ -1582,11 +1820,23 @@ function TeacherMessages() {
                                   <AtSign className="w-2.5 h-2.5" /> Mentioned you
                                 </p>
                               )}
-                              {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
-                                  <MessageAttachmentPreview msg={msg} isSelf={isTeacher} />
-                                )}
-                              {msg.text && <p className="leading-relaxed">{msg.text}</p>}
+                              {msg.text && !/^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()) && (
+                                <p className="leading-relaxed mb-2 break-words">{msg.text}</p>
+                              )}
+                              {Boolean((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName || (msg.text && /^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()))) && (
+                                <MessageAttachmentPreview msg={msg} isSelf={isTeacher} />
+                              )}
                               <div className={`flex items-center justify-end gap-1 mt-1`}>
+                                {isTeacher && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteMessageConfirm({ isOpen: true, messageId: msg.id })}
+                                    className="opacity-60 md:opacity-0 group-hover/bubble:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-green-700/50 rounded text-green-100 hover:text-white mr-1 cursor-pointer"
+                                    title="Remove message"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                                 <p className={`text-xs ${isTeacher ? "text-green-100" : "text-gray-500"}`}>
                                   {getTimeLabel(msg.time)}
                                 </p>
@@ -1667,7 +1917,7 @@ function TeacherMessages() {
       {/* NEW MESSAGE MODAL */}
       {showNewModal && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[85vh] flex flex-col">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-50 rounded-lg border border-green-100">
@@ -1678,11 +1928,11 @@ function TeacherMessages() {
                   <p className="text-sm text-gray-400">Select a recipient</p>
                 </div>
               </div>
-              <button onClick={() => setShowNewModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={() => setShowNewModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 space-y-3 flex-shrink-0">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -1691,8 +1941,56 @@ function TeacherMessages() {
                   value={recipientSearch}
                   onChange={(e) => setRecipientSearch(e.target.value)}
                   placeholder="Search teachers, students, or admins..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-hide">
@@ -1700,41 +1998,36 @@ function TeacherMessages() {
                 <div className="py-12 text-center"><p className="text-sm text-gray-500">Searching...</p></div>
               ) : filteredRecipients.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                  <p className="text-sm text-gray-500">Type to search teachers, students, or admins.</p>
+                  <Users className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No matches found.</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {filteredRecipients.map((recipient, index) => {
                     const hasConv = conversations.find((c) => !c.isGroup && c.participantId === recipient.id);
-                    const avatarColor = recipient.role === "teacher" ? "bg-blue-600" : recipient.role === "admin" ? "bg-purple-600" : "bg-green-600";
-                    const roleBadgeColor = recipient.role === "teacher" ? "bg-blue-50 text-blue-700 border-blue-200" : recipient.role === "admin" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-green-50 text-green-700 border-green-200";
+                    const avatarColor = recipient.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : recipient.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-blue-500 to-indigo-600";
                     return (
                       <button
                         key={`${recipient.id}-${index}`}
                         onClick={() => handleStartConversation(recipient)}
-                        className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
+                        className="w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer"
                       >
-                        {recipient.avatarUrl ? (
-                          <img
-                            src={recipient.avatarUrl}
-                            alt={recipient.name}
-                            className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                          />
-                        ) : (
-                          <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-                            {recipient.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium capitalize flex-shrink-0 ${roleBadgeColor}`}>{recipient.role}</span>
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{recipient.email}</p>
-                          {hasConv && <p className="text-xs text-green-600 font-medium mt-0.5">Existing conversation</p>}
+                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm`}>
+                          {recipient.name.charAt(0).toUpperCase()}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-green-600 transition-colors flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{recipient.name}</p>
+                          <p className="text-xs font-semibold text-green-600 capitalize mt-0.5 leading-tight">
+                            {recipient.role === "student" ? "Student" : recipient.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {recipient.yearLevel
+                              ? (recipient.section ? `${recipient.yearLevel} - ${recipient.section}` : recipient.yearLevel)
+                              : (recipient.email || "No grade specified")}
+                          </p>
+                          {hasConv && <p className="text-[11px] text-green-600 font-semibold mt-1">Existing conversation</p>}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-green-600 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -1748,7 +2041,7 @@ function TeacherMessages() {
       {/* GROUP CHAT MODAL */}
       {showGroupModal && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[85vh] flex flex-col">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-50 rounded-lg border border-green-100">
@@ -1759,11 +2052,11 @@ function TeacherMessages() {
                   <p className="text-sm text-gray-400">Select at least 2 members</p>
                 </div>
               </div>
-              <button onClick={() => setShowGroupModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={() => setShowGroupModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 space-y-3 flex-shrink-0">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -1772,32 +2065,88 @@ function TeacherMessages() {
                   value={groupSearch}
                   onChange={(e) => setGroupSearch(e.target.value)}
                   placeholder="Search users..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto scrollbar-hide">
               {filteredGroupRecipients.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Users className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <Users className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No users found.</p>
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
                   {filteredGroupRecipients.map((recipient, index) => {
                     const isSelected = selectedGroupMemberIds.includes(recipient.id);
+                    const avatarColor = recipient.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : recipient.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-blue-500 to-indigo-600";
                     return (
                       <button
                         key={`group-${recipient.id}-${index}`}
                         onClick={() => toggleGroupMember(recipient.id)}
-                        className={`w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left ${isSelected ? "bg-green-50" : ""}`}
+                        className={`w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left cursor-pointer ${isSelected ? "bg-green-50/60" : ""}`}
                       >
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${isSelected ? "bg-green-600" : "bg-gray-300 text-gray-700"}`}>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm ${isSelected ? "bg-green-600" : avatarColor}`}>
                           {isSelected ? <CheckCheck className="w-5 h-5" /> : recipient.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{recipient.name}</p>
-                          <p className="text-xs text-gray-500">{recipient.role} · {recipient.email}</p>
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{recipient.name}</p>
+                          <p className="text-xs font-semibold text-green-600 capitalize mt-0.5 leading-tight">
+                            {recipient.role === "student" ? "Student" : recipient.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {recipient.yearLevel
+                              ? (recipient.section ? `${recipient.yearLevel} - ${recipient.section}` : recipient.yearLevel)
+                              : (recipient.email || "No grade specified")}
+                          </p>
                         </div>
                       </button>
                     );
@@ -1809,7 +2158,7 @@ function TeacherMessages() {
               <button
                 onClick={handleCreateGroupChat}
                 disabled={selectedGroupMemberIds.length < 2}
-                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-2.5 font-semibold text-sm transition-all"
+                className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-2.5 font-semibold text-sm transition-all shadow-sm cursor-pointer"
               >
                 Create Group ({selectedGroupMemberIds.length} selected)
               </button>
@@ -1889,6 +2238,18 @@ function TeacherMessages() {
           </div>
         </div>
       )}
+
+      {/* ══ REMOVE SINGLE MESSAGE CONFIRM ══ */}
+      <ConfirmDialog
+        isOpen={deleteMessageConfirm.isOpen}
+        onClose={() => setDeleteMessageConfirm({ isOpen: false, messageId: null })}
+        onConfirm={handleRemoveMessage}
+        title="Remove Message"
+        message="Are you sure you want to remove this message? It will be deleted from the conversation for all participants."
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

@@ -1,5 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "25mb",
+    },
+  },
+};
+
 const getSupabaseAdmin = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
@@ -87,12 +95,17 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head, or, is: isArgs, match } = body;
 
-    if ((!table && action !== "storage_upload" && action !== "storage_remove") || !action) {
+    if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }
 
     let query;
-    if (action === "storage_upload") {
+    if (action === "create_signed_upload_url") {
+      const { bucket, path } = payload || {};
+      const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUploadUrl(path);
+      if (error) throw error;
+      return res.status(200).json(data);
+    } else if (action === "storage_upload") {
       const buffer = Buffer.from(payload.base64File, 'base64');
       const { data, error } = await supabaseAdmin.storage.from(payload.bucket).upload(payload.path, buffer, {
         contentType: payload.contentType,
@@ -143,49 +156,65 @@ export default async function handler(req, res) {
 
     let { data, error, count } = await query;
 
-    if (error && table === "profiles" && (error.code === "42703" || error.message?.includes("does not exist") || error.message?.includes("schema cache"))) {
-      const missingFields = ['suffix', 'name_extension', 'employee_id'];
-      let cleanPayload = Array.isArray(payload) ? [...payload] : { ...payload };
-      let payloadModified = false;
-      const cleanObj = (obj) => {
-        let changed = false;
-        for (const f of missingFields) {
-          if (f in obj) {
-            if ((f === 'suffix' || f === 'name_extension') && obj[f] && obj.last_name) {
-              const suff = String(obj[f]).trim();
-              if (suff && !obj.last_name.toLowerCase().endsWith(suff.toLowerCase())) {
-                obj.last_name = `${obj.last_name} ${suff}`.trim();
-              }
-            }
-            delete obj[f];
-            changed = true;
+    if (error && table === "profiles" && (error.message?.includes("suffix") || error.message?.includes("name_extension") || error.message?.includes("employee_id") || error.message?.includes("does not exist") || error.message?.includes("schema cache") || error.code === "42703")) {
+      console.warn("[api/admin/db] Handling missing column error for profiles table:", error.message);
+      
+      let cleanedPayload = payload;
+      if (typeof payload === "object" && payload !== null) {
+        cleanedPayload = Array.isArray(payload) ? [...payload] : { ...payload };
+        const cleanObj = (obj) => {
+          if (obj.suffix && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.suffix).toLowerCase())) {
+            obj.last_name = `${obj.last_name} ${obj.suffix}`.trim();
           }
+          if (obj.name_extension && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.name_extension).toLowerCase())) {
+            obj.last_name = `${obj.last_name} ${obj.name_extension}`.trim();
+          }
+          delete obj.suffix;
+          delete obj.name_extension;
+          delete obj.employee_id;
+        };
+        if (Array.isArray(cleanedPayload)) {
+          cleanedPayload.forEach(cleanObj);
+        } else {
+          cleanObj(cleanedPayload);
         }
-        return changed;
-      };
-      if (Array.isArray(cleanPayload)) {
-        cleanPayload.forEach(cleanObj);
-        payloadModified = true;
-      } else if (cleanPayload && typeof cleanPayload === 'object') {
-        payloadModified = cleanObj(cleanPayload);
+      } else if (typeof payload === "string" && payload !== "*") {
+        cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
       }
 
-      if (payloadModified) {
-        let retryQuery;
-        if (action === "insert") retryQuery = supabaseAdmin.from(table).insert(cleanPayload);
-        else if (action === "update") retryQuery = supabaseAdmin.from(table).update(cleanPayload);
-        else if (action === "upsert") retryQuery = supabaseAdmin.from(table).upsert(cleanPayload, onConflict ? { onConflict } : undefined);
-
-        if (retryQuery) {
-          if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
-          if (select) retryQuery = retryQuery.select(select);
-          else retryQuery = retryQuery.select("*");
-          if (single) retryQuery = retryQuery.maybeSingle();
-          const retryRes = await retryQuery;
-          data = retryRes.data;
-          error = retryRes.error;
-        }
+      let cleanedSelect = select;
+      if (typeof select === "string" && select !== "*") {
+        cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
       }
+
+      let retryQuery = supabaseAdmin.from(table);
+      if (action === "select") {
+        const selectOpts = countOption ? { count: countOption, head: !!head } : undefined;
+        retryQuery = retryQuery.select(cleanedPayload || "*", selectOpts);
+      } else if (action === "insert") {
+        retryQuery = retryQuery.insert(cleanedPayload).select(cleanedSelect || "*");
+      } else if (action === "update") {
+        retryQuery = retryQuery.update(cleanedPayload).select(cleanedSelect || "*");
+      } else if (action === "upsert") {
+        retryQuery = retryQuery.upsert(cleanedPayload, onConflict ? { onConflict } : undefined).select(cleanedSelect || "*");
+      } else if (action === "delete") {
+        retryQuery = retryQuery.delete();
+        if (select) retryQuery = retryQuery.select(cleanedSelect || "*");
+      }
+
+      if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
+      if (neq) retryQuery = retryQuery.neq(neq.column, neq.value);
+      if (inArgs) retryQuery = retryQuery.in(inArgs.column, inArgs.value);
+      if (or) retryQuery = retryQuery.or(or);
+      if (isArgs) retryQuery = retryQuery.is(isArgs.column, isArgs.value);
+      if (match) retryQuery = retryQuery.match(match);
+      if (order) retryQuery = retryQuery.order(order.column, order.options);
+      if (single) retryQuery = retryQuery.maybeSingle();
+
+      const retryRes = await retryQuery;
+      data = retryRes.data;
+      error = retryRes.error;
+      count = retryRes.count;
     }
 
     if (error) throw error;

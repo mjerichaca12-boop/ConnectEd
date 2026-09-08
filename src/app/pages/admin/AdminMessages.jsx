@@ -3,10 +3,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "@/app/components/AdminSidebar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
-import { adminNotifications } from "@/app/components/NotificationDefault";
 import { MessageAttachmentPreview } from "@/app/components/MessageAttachmentPreview";
 import { supabase } from "@/app/lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 // supabaseAdmin uses the service-role key and bypasses RLS — used for message read/write
 const db = supabase;
 import {
@@ -26,6 +26,7 @@ import {
   Shield,
   UserCog,
   Paperclip,
+  Trash2,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -35,9 +36,30 @@ const sanitizeAttachmentFileName = (fileName) =>
   String(fileName)
     .replace(/[^a-zA-Z0-9.\-_]/g, "_")
     .replace(/_+/g, "_");
+
+const getMimeTypeFromName = (fileName) => {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  switch (ext) {
+    case "png": return "image/png";
+    case "jpg": case "jpeg": return "image/jpeg";
+    case "webp": return "image/webp";
+    case "gif": return "image/gif";
+    case "pdf": return "application/pdf";
+    case "csv": return "text/csv";
+    case "xls": case "xlsx": return "application/vnd.ms-excel";
+    case "doc": case "docx": return "application/msword";
+    case "mp4": return "video/mp4";
+    case "zip": case "rar": return "application/zip";
+    default: return "application/octet-stream";
+  }
+};
+
 const HARDCODED_ADMIN_ID = "11111111-1111-1111-1111-111111111111";
 const HARDCODED_ADMIN_EMAIL = "admin.connected.local";
 const HARDCODED_ADMIN_NAME = "Connected Admin";
+
+const buildStableIdList = (ids) =>
+  [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))].sort();
 
 const FILTERS = [
   { key: "all",       label: "All",        icon: MessageSquare },
@@ -57,7 +79,6 @@ export function AdminMessages() {
   const selectedConvIdRef = useRef(null);
 
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
 
   // Conversations: [{ id, participantName, participantRole, messages, unreadCount, isVideoMeet }]
   const [conversations, setConversations] = useState([]);
@@ -71,10 +92,79 @@ export function AdminMessages() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState("");
   const [allTeachers, setAllTeachers] = useState([]);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
   const [adminId, setAdminId] = useState("");
   const [pageError, setPageError] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Group chat modal
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [selectedGroupMemberIds, setSelectedGroupMemberIds] = useState([]);
+
+  // Remove message confirmation
+  const [deleteMessageConfirm, setDeleteMessageConfirm] = useState({ isOpen: false, messageId: null });
+
+  // Load all teachers, students, and admins from Supabase without RLS truncation limits
+  const loadAllUsers = useCallback(async () => {
+    try {
+      let rawRows = null;
+      const { data: adminApiProfiles, error: adminApiErr } = await adminApi.db("profiles", "select", {
+        select: "id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status, created_at",
+        order: { column: "created_at", options: { ascending: false } }
+      });
+
+      if (!adminApiErr && Array.isArray(adminApiProfiles) && adminApiProfiles.length > 0) {
+        rawRows = adminApiProfiles;
+      } else {
+        const { data: directProfiles } = await db
+          .from("profiles")
+          .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status, created_at")
+          .order("created_at", { ascending: false });
+        rawRows = directProfiles || [];
+      }
+
+      const users = (rawRows || [])
+        .filter((row) => {
+          if (!row || !row.id) return false;
+          const statusStr = String(row.status || "").trim().toLowerCase();
+          if (statusStr === "disabled" || statusStr === "inactive") return false;
+          const roleStr = String(row.role || "").trim().toLowerCase();
+          return ["student", "teacher", "admin"].includes(roleStr);
+        })
+        .map((row) => {
+          const fullName = [row.first_name, row.middle_name, row.last_name]
+            .map((p) => String(p || "").trim())
+            .filter(Boolean)
+            .join(" ");
+          const fallback = String(row.name || row.full_name || row.display_name || "").trim();
+          const roleStr = String(row.role || "student").trim().toLowerCase();
+          const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
+          return {
+            id: String(row.id),
+            name: fullName || fallback || defaultName,
+            email: String(row.email || ""),
+            role: roleStr,
+            yearLevel: String(row.year_level || row.yearLevel || "").trim(),
+            section: String(row.section || "").trim(),
+            createdAt: row.created_at || "",
+          };
+        });
+
+      setAllTeachers(users);
+      try {
+        localStorage.setItem("admin_teacher_list", JSON.stringify(users));
+      } catch (e) {}
+      console.log("[AdminMessages] Loaded all users successfully. Count:", users.length);
+    } catch (err) {
+      console.error("[AdminMessages] Failed to load users:", err);
+      const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
+      setAllTeachers(cached);
+    }
+  }, []);
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -83,54 +173,32 @@ export function AdminMessages() {
     if (user.role !== "admin") { navigate("/login"); return; }
     setAdminName(user.name);
 
-    // Load all teachers and students from Supabase
-    const loadAllUsers = async () => {
-      try {
-        const { data: staffData } = await db
-          .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role, status")
-          .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"])
-          .limit(100);
-
-        const { data: studentData } = await db
-          .from("profiles")
-          .select("id, first_name, middle_name, last_name, email, role, status")
-          .in("role", ["student", "Student", "STUDENT"])
-          .limit(200);
-
-        const combined = [...(staffData || []), ...(studentData || [])];
-
-        const users = combined
-          .filter((row) => {
-            if (!row || !row.id) return false;
-            const statusStr = String(row.status || "").trim().toLowerCase();
-            if (statusStr === "disabled" || statusStr === "inactive") return false;
-            const roleStr = String(row.role || "").trim().toLowerCase();
-            return ["student", "teacher", "admin"].includes(roleStr);
-          })
-          .map((row) => {
-            const fullName = [row.first_name, row.middle_name, row.last_name].map(p => String(p || "").trim()).filter(Boolean).join(" ");
-            const fallback = String(row.name || row.full_name || row.display_name || "").trim();
-            const roleStr = String(row.role || "student").trim().toLowerCase();
-            const defaultName = roleStr === "teacher" ? "Teacher" : roleStr === "admin" ? "Admin" : "Student";
-            return {
-              id: String(row.id),
-              name: fullName || fallback || defaultName,
-              email: String(row.email || ""),
-              role: roleStr,
-            };
-          });
-
-        setAllTeachers(users);
-        console.log("[AdminMessages] Loaded users:", users.length, users);
-      } catch (err) {
-        console.error("[AdminMessages] Failed to load users:", err);
-        const cached = JSON.parse(localStorage.getItem("admin_teacher_list") || "[]");
-        setAllTeachers(cached);
-      }
-    };
     loadAllUsers();
-  }, [navigate]);
+
+    // Subscribe to realtime profile changes so newly created students and teachers appear immediately
+    const channel = supabase
+      .channel("admin-messages-profiles-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          console.log("[AdminMessages] Profile change detected via realtime. Re-fetching users.");
+          loadAllUsers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [navigate, loadAllUsers]);
+
+  // Re-fetch users whenever New Message or New Group modal is opened
+  useEffect(() => {
+    if (showNewModal || showGroupModal) {
+      loadAllUsers();
+    }
+  }, [showNewModal, showGroupModal, loadAllUsers]);
 
   const ensureHardcodedAdminProfileExists = async () => {
     try {
@@ -216,10 +284,39 @@ export function AdminMessages() {
     resolveAdmin();
   }, []);
 
+const getDismissedConvIds = (userId) => {
+  if (!userId) return new Set();
+  try {
+    const raw = localStorage.getItem(`dismissed_conversations_${userId}`);
+    return new Set(JSON.parse(raw || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+
+const addDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.add(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
+const removeDismissedConvId = (userId, convId) => {
+  if (!userId || !convId) return;
+  try {
+    const dismissedSet = getDismissedConvIds(userId);
+    dismissedSet.delete(String(convId));
+    localStorage.setItem(`dismissed_conversations_${userId}`, JSON.stringify(Array.from(dismissedSet)));
+  } catch (e) {}
+};
+
   const saveConversations = (updated) => {
     const sorted = [...updated].sort(
       (a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     );
+    conversationsRef.current = sorted;
     setConversations(sorted);
     try {
       localStorage.setItem("admin_conversations", JSON.stringify(sorted));
@@ -264,6 +361,24 @@ export function AdminMessages() {
     let fileSize = Number(row.file_size || 0);
     let text = String(row.message_text || "").trim();
 
+    const attachmentsList = Array.isArray(row?.message_attachments) && row.message_attachments.length > 0
+      ? row.message_attachments.map(a => ({
+          id: a.id,
+          url: a.file_url,
+          name: a.file_name,
+          type: a.file_type,
+          size: a.file_size,
+          kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+        }))
+      : [];
+
+    if (!fileUrl && attachmentsList.length > 0) {
+      fileUrl = attachmentsList[0].url || "";
+      fileName = attachmentsList[0].name || "";
+      fileType = attachmentsList[0].type || "";
+      fileSize = attachmentsList[0].size || 0;
+    }
+
     if (!fileUrl && row.content) {
       try {
         const contentObj = JSON.parse(row.content);
@@ -294,16 +409,7 @@ export function AdminMessages() {
       fileType: fileTypeValue,
       fileSize,
       attachmentKind: fileTypeValue ? (fileTypeValue.startsWith("image/") ? "image" : fileTypeValue.startsWith("video/") ? "video" : "document") : "",
-      attachments: Array.isArray(row?.message_attachments) 
-        ? row.message_attachments.map(a => ({
-            id: a.id,
-            url: a.file_url,
-            name: a.file_name,
-            type: a.file_type,
-            size: a.file_size,
-            kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-          }))
-        : [],
+      attachments: attachmentsList,
       isRead: Boolean(row.is_read),
       isSeen: isAdminSender || Boolean(row.is_read),
     };
@@ -360,30 +466,80 @@ export function AdminMessages() {
     return true;
   }, [adminName, allTeachers]);
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages & deletions
   useEffect(() => {
     if (!supabase || !adminId) return;
     const channel = supabase
       .channel(`global-chat-${Math.random().toString(36).substring(7)}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-        const newMsg = payload.new;
-        if (!newMsg) return;
-        const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
-
-        // Fetch attachments for real-time messages (not present in the INSERT payload)
-        const { data: attData } = await supabase
-          .from("message_attachments")
-          .select("id, file_url, file_name, file_type, file_size")
-          .eq("message_id", newMsg.id);
-        if (attData && attData.length > 0) {
-          newMsg.message_attachments = attData;
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, async (payload) => {
+        if (payload.eventType === "DELETE") {
+          const deletedId = String(payload.old?.id || "");
+          if (!deletedId) return;
+          setConversations((current) =>
+            current.map((conv) => ({
+              ...conv,
+              messages: (conv.messages || []).filter((m) => String(m.id) !== deletedId),
+            }))
+          );
+          return;
         }
 
-        appendIncomingMessage(newMsg, currentAdminId);
+        if (payload.eventType === "INSERT") {
+          const newMsg = payload.new;
+          if (!newMsg) return;
+          const currentAdminId = adminIdRef.current || HARDCODED_ADMIN_ID;
+
+          // Fetch attachments for real-time messages (not present in the INSERT payload)
+          const { data: attData } = await supabase
+            .from("message_attachments")
+            .select("id, file_url, file_name, file_type, file_size")
+            .eq("message_id", newMsg.id);
+          if (attData && attData.length > 0) {
+            newMsg.message_attachments = attData;
+          }
+
+          appendIncomingMessage(newMsg, currentAdminId);
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [adminId, appendIncomingMessage]);
+
+  const handleRemoveMessage = async () => {
+    const messageId = deleteMessageConfirm.messageId;
+    if (!messageId) return;
+
+    // Optimistically update local state
+    setConversations((prev) =>
+      prev.map((conv) => ({
+        ...conv,
+        messages: (conv.messages || []).filter((m) => String(m.id) !== String(messageId)),
+      }))
+    );
+
+    try {
+      // 1. Delete associated attachments
+      try {
+        await adminApi.db("message_attachments", "delete", {
+          eq: { column: "message_id", value: messageId },
+        });
+      } catch (attErr) {
+        console.warn("[AdminMessages] Attachment deletion notice:", attErr);
+      }
+
+      // 2. Delete message row from database
+      const { error } = await adminApi.db("messages", "delete", {
+        eq: { column: "id", value: messageId },
+      });
+
+      if (error) {
+        console.error("[AdminMessages] Failed to delete message from DB:", error);
+        await loadConversationsFromDB(adminIdsSetRef.current);
+      }
+    } catch (err) {
+      console.error("[AdminMessages] Error deleting message:", err);
+    }
+  };
 
   const loadConversationsFromDB = async (adminIdsSet) => {
     try {
@@ -468,6 +624,24 @@ export function AdminMessages() {
         let fileSize = Number(row.file_size || 0);
         let text = String(row.message_text || "").trim();
 
+        const attachmentsList = Array.isArray(row?.message_attachments) 
+          ? row.message_attachments.map(a => ({
+              id: a.id,
+              url: a.file_url,
+              name: a.file_name,
+              type: a.file_type,
+              size: a.file_size,
+              kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
+            }))
+          : [];
+
+        if (!fileUrl && attachmentsList.length > 0) {
+          fileUrl = attachmentsList[0].url || "";
+          fileName = attachmentsList[0].name || "";
+          fileType = attachmentsList[0].type || "";
+          fileSize = attachmentsList[0].size || 0;
+        }
+
         // Try parsing content as JSON for file metadata if direct fields are empty
         if (!fileUrl && row.content) {
           try {
@@ -480,7 +654,6 @@ export function AdminMessages() {
               text = String(contentObj.message_text || "").trim();
             }
           } catch (e) {
-            // content is not JSON, use as text
             text = String(row.content || "").trim();
           }
         }
@@ -497,17 +670,8 @@ export function AdminMessages() {
           fileType: fileType,
           fileSize: fileSize,
           attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
+          status: String(row?.status || "sent").trim(),
+          attachments: attachmentsList,
         });
         
         // Update last message time
@@ -529,7 +693,7 @@ export function AdminMessages() {
         const conversationIds = [...new Set(participantRows.map((row) => row.conversation_id))];
         
         const { data: conversationData, error: convError } = await db
-          .from("groupchats")
+          .from("conversations")
           .select("id, name, is_group, created_by")
           .in("id", conversationIds)
           .eq("is_group", true);
@@ -538,27 +702,21 @@ export function AdminMessages() {
         console.log("[AdminMessages] Conversation data query result:", { conversationData, convError });
 
         if (!convError && conversationData) {
-          for (const conv of conversationData) {
-            // Load participants for this group
-            const { data: groupParticipants, error: groupPartError } = await db
-              .from("conversation_participants")
-              .select("profile_id")
-              .eq("conversation_id", conv.id);
-            
-            if (!groupPartError && groupParticipants) {
+          const loadedGroupConvs = await Promise.all(
+            conversationData.map(async (conv) => {
+              const { data: groupParticipants, error: groupPartError } = await db
+                .from("conversation_participants")
+                .select("profile_id")
+                .eq("conversation_id", conv.id);
+              
+              if (groupPartError || !groupParticipants) return null;
+
               const participantIds = [...new Set(groupParticipants.map((p) => p.profile_id))];
               
-              // Load messages for this group conversation
-              const { data: groupMessages, error: groupMsgError } = await adminApi.db("messages", "select", {
+              const { data: groupMessages } = await adminApi.db("messages", "select", {
                 select: "id, sender_id, receiver_id, message_text, content, timestamp, created_at, file_url, file_name, file_type, file_size, is_read, status, message_attachments(id, file_url, file_name, file_type, file_size)",
                 eq: { column: "conversation_id", value: conv.id },
                 order: { column: "created_at", options: { ascending: true } }
-              });
-
-              console.log("[AdminMessages] Group messages loaded for conversation", conv.id, ":", {
-                count: groupMessages?.length || 0,
-                messages: groupMessages,
-                error: groupMsgError
               });
 
               const groupMsgObjs = (groupMessages || []).map((row) => {
@@ -568,7 +726,6 @@ export function AdminMessages() {
                 let fileSize = Number(row.file_size || 0);
                 let text = String(row.message_text || "").trim();
 
-                // Try parsing content as JSON for file metadata if direct fields are empty
                 if (!fileUrl && row.content) {
                   try {
                     const contentObj = JSON.parse(row.content);
@@ -577,63 +734,57 @@ export function AdminMessages() {
                       fileName = String(contentObj.file_name || "").trim();
                       fileType = String(contentObj.file_type || "").trim();
                       fileSize = Number(contentObj.file_size || 0);
-                      text = String(contentObj.message_text || "").trim();
                     }
-                  } catch (e) {
-                    // content is not JSON, use as text
-                    text = String(row.content || "").trim();
+                  } catch (e) {}
+                }
+
+                if (!fileUrl && row.message_attachments && row.message_attachments.length > 0) {
+                  const firstAtt = row.message_attachments[0];
+                  fileUrl = String(firstAtt.file_url || "").trim();
+                  fileName = String(firstAtt.file_name || "").trim();
+                  fileType = String(firstAtt.file_type || "").trim();
+                  fileSize = Number(firstAtt.file_size || 0);
+                }
+
+                const msgSenderId = String(row.sender_id || "").trim();
+                const isFromAdmin = msgSenderId === currentAdminId;
+                let senderName = isFromAdmin ? (adminName || "Admin") : "User";
+                if (!isFromAdmin) {
+                  const senderTeacher = allTeachers.find((t) => t.id === msgSenderId);
+                  if (senderTeacher) {
+                    senderName = senderTeacher.name;
                   }
                 }
 
-                const attachmentKind = fileType ? (fileType.startsWith("image/") ? "image" : fileType.startsWith("video/") ? "video" : "document") : "";
-                console.log("[AdminMessages] Processing group message with file:", {
-                  hasFile: !!fileUrl,
-                  fileName: fileName,
-                  fileType: fileType,
-                  attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
-                  rawRow: row
-                });
                 return {
                   id: String(row.id || `${Date.now()}_${Math.random()}`),
-                  from: String(row.sender_id || "") === currentAdminId ? "admin" : "other",
-                  senderName: String(row.sender_id || "") === currentAdminId ? adminName || "Admin" : "Group Member",
-                  text: text,
+                  senderId: msgSenderId,
+                  senderName,
+                  receiverId: String(row.receiver_id || ""),
+                  text,
                   time: String(row.timestamp || row.created_at || new Date().toISOString()),
-                  fileUrl: fileUrl,
-                  fileName: fileName,
-                  fileType: fileType,
-                  fileSize: fileSize,
-                  attachmentKind: attachmentKind,
-            status: String(row?.status || "sent").trim(),
-            attachments: Array.isArray(row?.message_attachments) 
-              ? row.message_attachments.map(a => ({
-                  id: a.id,
-                  url: a.file_url,
-                  name: a.file_name,
-                  type: a.file_type,
-                  size: a.file_size,
-                  kind: a.file_type?.startsWith('image/') ? 'image' : a.file_type?.startsWith('video/') ? 'video' : 'document'
-                }))
-              : [],
+                  status: row.status || (row.is_read ? "read" : "delivered"),
                   isRead: Boolean(row.is_read),
+                  fileUrl,
+                  fileName,
+                  fileType,
+                  fileSize,
+                  attachments: Array.isArray(row.message_attachments)
+                    ? row.message_attachments.map((att) => ({
+                        id: att.id,
+                        fileUrl: String(att.file_url || "").trim(),
+                        fileName: String(att.file_name || "").trim(),
+                        fileType: String(att.file_type || "").trim(),
+                        fileSize: Number(att.file_size || 0)
+                      }))
+                    : [],
                   isSeen: String(row.sender_id || "") === currentAdminId,
                 };
               });
 
               (groupMessages || []).forEach((row) => markMessageSeen(row.id));
 
-              groupConversations.push({
+              return {
                 id: conv.id,
                 participantId: "",
                 participantIds: participantIds,
@@ -646,27 +797,39 @@ export function AdminMessages() {
                 unreadCount: 0,
                 isVideoMeet: false,
                 isGroup: true,
-              });
-            }
-          }
+              };
+            })
+          );
+
+          groupConversations = loadedGroupConvs.filter(Boolean);
         }
       }
       
-      // Combine direct messages and group conversations
-      const allConversations = [...conversationsByParticipant.values(), ...groupConversations];
+      const adminDismissedSet = getDismissedConvIds(currentAdminId);
+
+      // Combine direct messages and group conversations (respecting dismissedSet)
+      const allConversations = [...conversationsByParticipant.values(), ...groupConversations]
+        .filter((c) => !adminDismissedSet.has(c.id));
       
+      const inMemory = conversationsRef.current || [];
+      inMemory.forEach((c) => {
+        if (!adminDismissedSet.has(c.id) && !allConversations.some((existing) => existing.id === c.id || (!c.isGroup && existing.participantId === c.participantId))) {
+          allConversations.push(c);
+        }
+      });
+
       try {
-        const local = JSON.parse(localStorage.getItem("admin_conversations") || "[]");
-        local.forEach(lc => {
-          if (!allConversations.find(c => c.id === lc.id || c.participantId === lc.participantId)) {
-            if (lc.messages && lc.messages.length === 0) {
-              allConversations.push(lc);
-            }
+        const localKey = currentAdminId ? `admin_conversations_${currentAdminId}` : "admin_conversations";
+        const local = JSON.parse(localStorage.getItem(localKey) || localStorage.getItem("admin_conversations") || "[]");
+        local.forEach((lc) => {
+          if (!adminDismissedSet.has(lc.id) && !allConversations.some((existing) => existing.id === lc.id || (!lc.isGroup && existing.participantId === lc.participantId))) {
+            allConversations.push(lc);
           }
         });
       } catch(e) {}
 
-      saveConversations(allConversations);
+      const filteredFinal = allConversations.filter((c) => !adminDismissedSet.has(c.id));
+      saveConversations(filteredFinal);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
     }
@@ -690,10 +853,32 @@ export function AdminMessages() {
     if (!newName) { setPageError("Group name cannot be empty."); return; }
     if (!selectedConv) return;
     try {
-      const { error } = await adminApi.db("conversations", "update", { payload: { name: newName }, eq: { column: "id", value: selectedConv.id } });
-      if (error) throw error;
-      const updated = conversations.map((c) => c.id === selectedConv.id ? { ...c, participantName: newName } : c);
-      setConversations(updated);
+      // 1. Update conversations table via adminApi
+      try {
+        await adminApi.db("conversations", "update", {
+          payload: { name: newName },
+          eq: { column: "id", value: selectedConv.id }
+        });
+      } catch (err) {
+        console.warn("[AdminMessages] conversations rename error:", err);
+      }
+
+      // 2. Update groupchats table via adminApi
+      try {
+        await adminApi.db("groupchats", "update", {
+          payload: { name: newName },
+          eq: { column: "id", value: selectedConv.id }
+        });
+      } catch (err) {
+        console.warn("[AdminMessages] groupchats rename error:", err);
+      }
+
+      // 3. Update local state, in-memory ref, and localStorage
+      const updated = conversations.map((c) =>
+        c.id === selectedConv.id ? { ...c, participantName: newName } : c
+      );
+      conversationsRef.current = updated;
+      saveConversations(updated);
       setShowRenameModal(false);
       setPageError("");
     } catch (err) { 
@@ -704,17 +889,18 @@ export function AdminMessages() {
 
   const handleLeaveConversation = async () => {
     if (!selectedConv || !adminId) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(adminId, convId);
     try {
-      const { error } = await db
+      await db
         .from("conversation_participants")
         .delete()
-        .eq("conversation_id", selectedConv.id)
+        .eq("conversation_id", convId)
         .eq("profile_id", adminId);
       
-      if (error) throw error;
-      
-      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
-      setConversations(remaining);
+      const remaining = conversations.filter((c) => c.id !== convId);
+      conversationsRef.current = remaining;
+      saveConversations(remaining);
       setShowDeleteConfirm(false);
       setShowGroupMenu(false);
       setSelectedConvId(remaining.length ? remaining[0].id : null);
@@ -727,12 +913,18 @@ export function AdminMessages() {
 
   const handleDeleteConversation = async () => {
     if (!selectedConv) return;
+    const convId = selectedConv.id;
+    addDismissedConvId(adminId, convId);
     try { 
-      const { error } = await adminApi.db("conversations", "delete", { eq: { column: "id", value: selectedConv.id } });
-      if (error) throw error;
-      
-      const remaining = conversations.filter((c) => c.id !== selectedConv.id);
-      setConversations(remaining);
+      await adminApi.db("conversations", "delete", { eq: { column: "id", value: convId } });
+      await db.from("groupchats").delete().eq("id", convId);
+      await db.from("conversations").delete().eq("id", convId);
+      await db.from("conversation_participants").delete().eq("conversation_id", convId);
+      await db.from("messages").delete().eq("conversation_id", convId);
+
+      const remaining = conversations.filter((c) => c.id !== convId);
+      conversationsRef.current = remaining;
+      saveConversations(remaining);
       setShowDeleteConfirm(false);
       setShowGroupMenu(false);
       setSelectedConvId(remaining.length ? remaining[0].id : null);
@@ -850,6 +1042,7 @@ export function AdminMessages() {
   const handleSend = async (e) => {
     e.preventDefault();
     const text = String(messageInput || "").trim();
+    const messageText = text;
     const activeConversation = selectedConv;
     const adminSenderId = adminId || HARDCODED_ADMIN_ID;
     if ((!text && attachmentFiles.length === 0) || !activeConversation || !adminSenderId || !supabase) return;
@@ -874,54 +1067,96 @@ export function AdminMessages() {
         }
         const cleanedName = sanitizeAttachmentFileName(file.name);
         const filePath = `${adminSenderId}/${activeConversation.participantId || "group"}/${Date.now()}_${cleanedName}`;
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = e => reject(e);
-        });
-        const base64File = await toBase64(file);
+        const contentType = file.type || "application/octet-stream";
         
-        const uploadResult = await adminApi.db("storage", "storage_upload", {
-          payload: {
-            bucket: MESSAGE_ATTACHMENT_BUCKET,
-            path: filePath,
-            base64File,
-            contentType: file.type || "application/octet-stream"
-          }
-        });
+        const { error: uploadError } = await adminApi.uploadStorageFile(
+          MESSAGE_ATTACHMENT_BUCKET,
+          filePath,
+          file,
+          contentType
+        );
           
-        if (uploadResult.error) {
-          console.error("Upload error:", uploadResult.error);
-          setPageError(`File upload failed: ${uploadResult.error.message}`);
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          setPageError(`File upload failed: ${uploadError.message || uploadError}`);
           setIsUploading(false);
           return;
         }
-        
-        const publicUrlResult = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+
+        const publicUrlData = db.storage.from(MESSAGE_ATTACHMENT_BUCKET).getPublicUrl(filePath);
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://pyeckxqaowusxcmeuolk.supabase.co";
+        let filePublicUrl = String(publicUrlData?.data?.publicUrl || "").trim();
+        if (!filePublicUrl || filePublicUrl.endsWith("/null") || filePublicUrl.endsWith("/undefined")) {
+          filePublicUrl = `${supabaseUrl}/storage/v1/object/public/${MESSAGE_ATTACHMENT_BUCKET}/${filePath}`;
+        }
+
+        if (!filePublicUrl) {
+          console.error("[AdminMessages] Failed to generate storage URL for file:", file.name);
+          setPageError(`Failed to generate storage URL for ${file.name}`);
+          setIsUploading(false);
+          return;
+        }
+
+        const determinedType = (file.type && file.type !== "application/octet-stream") 
+          ? file.type 
+          : getMimeTypeFromName(cleanedName);
+
         uploadedAttachments.push({
-          file_url: String(publicUrlResult?.data?.publicUrl || "").trim(),
+          file_url: filePublicUrl,
           file_name: cleanedName,
-          file_type: String(file.type || "application/octet-stream").trim(),
+          file_type: determinedType,
           file_size: Number(file.size || 0),
         });
       }
     }
 
+    if (attachmentFiles.length > 0 && uploadedAttachments.length === 0) {
+      console.error("[AdminMessages] Attachment upload failed completely; aborting insert.");
+      setPageError("Attachment upload failed. Message was not sent.");
+      setIsUploading(false);
+      return;
+    }
+
     const firstAttachment = uploadedAttachments[0] || null;
+    if (attachmentFiles.length > 0 && (!firstAttachment || !firstAttachment.file_url)) {
+      console.error("[AdminMessages] Attachment URL is missing; aborting insert.");
+      setPageError("Attachment URL is missing. Message was not sent.");
+      setIsUploading(false);
+      return;
+    }
+
+    const fileUrlVal = firstAttachment ? firstAttachment.file_url : null;
+    const fileNameVal = firstAttachment ? firstAttachment.file_name : null;
+    const fileTypeVal = firstAttachment ? firstAttachment.file_type : null;
+    const fileSizeVal = firstAttachment ? firstAttachment.file_size : null;
     
     let insertPayload;
     if (activeConversation.isGroup) {
+      // Auto-ensure groupchats table row exists to satisfy messages_conversation_fk foreign key constraint
+      try {
+        await adminApi.db("groupchats", "upsert", {
+          payload: {
+            id: activeConversation.id,
+            name: activeConversation.participantName || "Group Chat",
+            is_group: true,
+            created_by: adminSenderId,
+          },
+          onConflict: "id"
+        });
+      } catch (gcCheckErr) {
+        console.warn("[AdminMessages] Auto-repair groupchats row notice:", gcCheckErr);
+      }
+
       insertPayload = [{
         sender_id: adminSenderId,
         receiver_id: null,
         conversation_id: activeConversation.id,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }];
@@ -932,10 +1167,10 @@ export function AdminMessages() {
         conversation_id: null,
         message_text: messageText,
         content: messageText,
-        file_url: firstAttachment ? firstAttachment.file_url : null,
-        file_name: firstAttachment ? firstAttachment.file_name : null,
-        file_type: firstAttachment ? firstAttachment.file_type : null,
-        file_size: firstAttachment ? firstAttachment.file_size : null,
+        file_url: fileUrlVal,
+        file_name: fileNameVal,
+        file_type: fileTypeVal,
+        file_size: fileSizeVal,
         timestamp: now,
         status: "sent"
       }));
@@ -953,16 +1188,41 @@ export function AdminMessages() {
       error = err;
     }
 
-    if (error) {
+    if (error || !data || data.length === 0) {
       console.error("[AdminMessages] Supabase insert failed:", JSON.stringify(error, null, 2), error);
-      setPageError(`Failed to send: ${error.message}`);
-    } else if (data && uploadedAttachments.length > 0) {
+      setPageError(`Failed to save message: ${error?.message || "Database insert error"}`);
+      setIsUploading(false);
+      return;
+    }
+
+    if (attachmentFiles.length > 0 && firstAttachment) {
+      const insertedNullCol = data.some(row => !row.file_url);
+      if (insertedNullCol) {
+        console.warn("[AdminMessages] Inserted row returned null file_url; executing recovery update.");
+        for (const msgRow of data) {
+          await adminApi.db("messages", "update", {
+            payload: {
+              file_url: firstAttachment.file_url,
+              file_name: firstAttachment.file_name,
+              file_type: firstAttachment.file_type,
+              file_size: firstAttachment.file_size
+            },
+            eq: { column: "id", value: msgRow.id }
+          });
+        }
+      }
+    }
+
+    if (data && uploadedAttachments.length > 0) {
       const attachmentPayloads = [];
       for (const msgRow of data) {
         for (const att of uploadedAttachments) {
           attachmentPayloads.push({
             message_id: msgRow.id,
-            ...att
+            file_url: att.file_url,
+            file_name: att.file_name,
+            file_type: att.file_type,
+            file_size: att.file_size
           });
         }
       }
@@ -995,6 +1255,7 @@ export function AdminMessages() {
     }
 
     if (data && data.length > 0) {
+      const firstAtt = uploadedAttachments[0] || null;
       const msg = {
         id: String(data[0].id || `${Date.now()}_${Math.random()}`),
         from: "admin",
@@ -1002,6 +1263,11 @@ export function AdminMessages() {
         text: messageText,
         time: String(data[0].timestamp || now),
         status: "sent",
+        fileUrl: firstAtt ? firstAtt.file_url : "",
+        fileName: firstAtt ? firstAtt.file_name : "",
+        fileType: firstAtt ? firstAtt.file_type : "",
+        fileSize: firstAtt ? firstAtt.file_size : 0,
+        attachmentKind: firstAtt ? (firstAtt.file_type?.startsWith('image/') ? 'image' : firstAtt.file_type?.startsWith('video/') ? 'video' : 'document') : "",
         attachments: uploadedAttachments.map(a => ({
           id: Math.random().toString(),
           url: a.file_url,
@@ -1075,16 +1341,105 @@ export function AdminMessages() {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
-  const filteredRecipients = allTeachers.filter(
-    (t) => {
-      const searchLower = recipientSearch.toLowerCase();
-      const matches =
-        t.name.toLowerCase().includes(searchLower) ||
-        t.email?.toLowerCase().includes(searchLower) ||
-        t.role?.toLowerCase().includes(searchLower);
-      return matches;
+  const applyRecipientFilters = (personList, searchStr) => {
+    const searchLower = String(searchStr || "").trim().toLowerCase();
+    return (personList || []).filter((t) => {
+      if (adminId && t.id === adminId) return false;
+
+      // Role filter
+      if (roleFilter !== "all" && String(t.role || "").toLowerCase() !== roleFilter.toLowerCase()) {
+        return false;
+      }
+
+      // Grade filter
+      if (gradeFilter !== "all") {
+        const yl = String(t.yearLevel || "").toLowerCase();
+        const targetG = gradeFilter.toLowerCase();
+        if (!yl.includes(targetG) && !yl.includes(targetG.replace("grade ", ""))) {
+          return false;
+        }
+      }
+
+      // Text search
+      if (searchLower) {
+        const nameMatch = (t.name || "").toLowerCase().includes(searchLower);
+        const emailMatch = (t.email || "").toLowerCase().includes(searchLower);
+        const roleMatch = (t.role || "").toLowerCase().includes(searchLower);
+        const ylMatch = (t.yearLevel || "").toLowerCase().includes(searchLower);
+        const secMatch = (t.section || "").toLowerCase().includes(searchLower);
+        return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+      }
+
+      return true;
+    });
+  };
+
+  const filteredRecipients = applyRecipientFilters(allTeachers, recipientSearch);
+  const filteredGroupRecipients = applyRecipientFilters(allTeachers, groupSearch);
+
+  const toggleGroupMember = (recipientId) => {
+    setSelectedGroupMemberIds((prev) =>
+      prev.includes(recipientId)
+        ? prev.filter((id) => id !== recipientId)
+        : [...prev, recipientId]
+    );
+  };
+
+  const handleCreateGroupChat = async () => {
+    const currentAdminId = adminId || HARDCODED_ADMIN_ID;
+    const selectedMembers = allTeachers.filter((t) => selectedGroupMemberIds.includes(t.id));
+    const memberIds = [...new Set([currentAdminId, ...selectedMembers.map((m) => m.id)])];
+    
+    if (selectedGroupMemberIds.length < 2) {
+      setPageError("Select at least 2 members for the group chat.");
+      return;
     }
-  );
+
+    const uid = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = `group_${uid}`;
+    removeDismissedConvId(currentAdminId, conversationId);
+
+    const customTitle = String(groupName || "").trim();
+    const previewName = selectedMembers.slice(0, 2).map((m) => m.name).join(", ");
+    const fallbackTitle = selectedMembers.length > 2 ? `${previewName} +${selectedMembers.length - 2}` : previewName;
+    const groupTitle = customTitle || fallbackTitle || "Group Chat";
+
+    const groupConversation = {
+      id: conversationId,
+      participantId: "",
+      participantIds: memberIds,
+      participantName: groupTitle,
+      participantRole: "group",
+      messages: [],
+      unreadCount: 0,
+      lastMessageTime: new Date().toISOString(),
+      isVideoMeet: false,
+      isGroup: true,
+    };
+
+    const updated = [groupConversation, ...conversations.filter((c) => c.id !== conversationId)];
+    conversationsRef.current = updated;
+    saveConversations(updated);
+    setSelectedConvId(conversationId);
+    setShowThread(true);
+    setShowGroupModal(false);
+    setGroupName("");
+    setGroupSearch("");
+    setSelectedGroupMemberIds([]);
+    setPageError("");
+
+    // Parallel background DB sync
+    const gcPayload = { id: conversationId, name: groupTitle, is_group: true, created_by: currentAdminId };
+    const participantInserts = memberIds.map((pId) => ({ conversation_id: conversationId, profile_id: pId }));
+
+    Promise.allSettled([
+      adminApi.db("groupchats", "insert", { payload: gcPayload }),
+      adminApi.db("conversations", "insert", { payload: gcPayload }),
+      adminApi.db("conversation_participants", "insert", { payload: participantInserts })
+    ]).catch((err) => {
+      console.warn("[AdminMessages] Background group creation sync notice:", err);
+    });
+  };
 
   const totalUnread = conversations.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
@@ -1116,21 +1471,13 @@ export function AdminMessages() {
               <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Admin Portal</p>
               <h2 className="text-lg font-bold text-gray-900">Messages</h2>
             </div>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-6 gap-4">
           {/* Header banner */}
-          <div data-tour="messages-header" className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-gray-900 shadow-lg flex-shrink-0">
+          <div data-tour="messages-header" className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-lg flex-shrink-0">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white/15 rounded-xl">
@@ -1138,20 +1485,29 @@ export function AdminMessages() {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold">Messages</h1>
-                  <p className="text-blue-100 text-sm">
+                  <p className="text-emerald-100 text-sm">
                     {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
                     {totalUnread > 0 && ` · ${totalUnread} unread`}
                   </p>
                 </div>
               </div>
-              <button
-                data-tour="messages-compose-btn"
-                onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                New Message
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  data-tour="messages-compose-btn"
+                  onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-emerald-700 hover:bg-emerald-50 rounded-xl font-semibold text-sm transition-all cursor-pointer shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Message
+                </button>
+                <button
+                  onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm rounded-xl font-semibold text-sm transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4" />
+                  New Group Chat
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1169,12 +1525,12 @@ export function AdminMessages() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search conversations..."
-                    className="w-full pl-9 pr-3 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
                 <button
                   onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                  className="p-2 bg-blue-600 text-gray-900 rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0"
+                  className="p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0 cursor-pointer"
                   title="New Message"
                 >
                   <Plus className="w-4 h-4" />
@@ -1192,7 +1548,7 @@ export function AdminMessages() {
                       onClick={() => setActiveFilter(key)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                         isActive
-                          ? "bg-blue-600 text-gray-900 shadow-sm"
+                          ? "bg-emerald-600 text-white shadow-sm"
                           : "bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                       }`}
                     >
@@ -1202,9 +1558,9 @@ export function AdminMessages() {
                         <span
                           className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] flex items-center justify-center ${
                             isActive
-                              ? "bg-white/25 text-gray-900"
+                              ? "bg-white/25 text-white"
                               : key === "unread"
-                              ? "bg-blue-500/20 text-blue-400"
+                              ? "bg-emerald-500/20 text-emerald-600 font-bold"
                               : "bg-gray-100 text-gray-600"
                           }`}
                         >
@@ -1222,11 +1578,11 @@ export function AdminMessages() {
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
                     <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
                       {activeFilter === "videomeet" ? (
-                        <Video className="w-6 h-6 text-blue-400" />
+                        <Video className="w-6 h-6 text-emerald-600" />
                       ) : activeFilter === "mentions" ? (
-                        <AtSign className="w-6 h-6 text-blue-400" />
+                        <AtSign className="w-6 h-6 text-emerald-600" />
                       ) : (
-                        <MessageSquare className="w-6 h-6 text-blue-400" />
+                        <MessageSquare className="w-6 h-6 text-emerald-600" />
                       )}
                     </div>
                     <p className="text-sm font-medium text-gray-600 mb-1">
@@ -1252,17 +1608,17 @@ export function AdminMessages() {
                         onClick={() => handleSelectConv(conv)}
                         className={`w-full text-left px-4 py-3.5 hover:bg-gray-50 transition-colors ${
                           selectedConvId === conv.id
-                            ? "bg-blue-500/8 border-l-2 border-blue-500"
+                            ? "bg-emerald-50 border-l-2 border-emerald-500"
                             : ""
                         }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="relative flex-shrink-0">
                             <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
+                              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                                 conv.isVideoMeet
                                   ? "bg-gradient-to-br from-purple-500 to-indigo-600"
-                                  : "bg-gradient-to-br from-blue-500 to-indigo-600"
+                                  : "bg-gradient-to-br from-emerald-500 to-teal-600"
                               }`}
                             >
                               {conv.isVideoMeet ? (
@@ -1273,7 +1629,7 @@ export function AdminMessages() {
                             </div>
                             {conv.isVideoMeet && (
                               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-purple-500 rounded-full border-2 border-gray-900 flex items-center justify-center">
-                                <Video className="w-1.5 h-1.5 text-gray-900" />
+                                <Video className="w-1.5 h-1.5 text-white" />
                               </span>
                             )}
                           </div>
@@ -1282,7 +1638,7 @@ export function AdminMessages() {
                               <p className={`text-sm truncate ${getUnreadCount(conv) > 0 ? "font-bold text-gray-900" : "font-semibold text-gray-700"}`}>
                                 {conv.participantName}
                               </p>
-                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-blue-600" : "text-gray-500"}`}>
+                              <span className={`text-xs ml-2 flex-shrink-0 ${getUnreadCount(conv) > 0 ? "font-bold text-emerald-600" : "text-gray-500"}`}>
                                 {getTimeLabel(conv.lastMessageTime)}
                               </span>
                             </div>
@@ -1293,7 +1649,7 @@ export function AdminMessages() {
                                   : conv.participantRole || "Teacher"}
                               </p>
                               {getUnreadCount(conv) > 0 && (
-                                <span className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
+                                <span className="w-2.5 h-2.5 bg-emerald-600 rounded-full flex-shrink-0 ml-2" title={`${getUnreadCount(conv)} unread`}></span>
                               )}
                             </div>
                             {conv.messages?.length > 0 && (
@@ -1319,16 +1675,16 @@ export function AdminMessages() {
                     <button
                       type="button"
                       onClick={() => setShowThread(false)}
-                      className="lg:hidden p-1.5 hover:bg-blue-100 rounded-lg transition-colors -ml-1 mr-1"
+                      className="lg:hidden p-1.5 hover:bg-emerald-100 rounded-lg transition-colors -ml-1 mr-1"
                       aria-label="Back to conversations"
                     >
                       <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </button>
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center text-gray-900 font-bold text-sm ${
+                      className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
                         selectedConv.isVideoMeet
                           ? "bg-gradient-to-br from-purple-500 to-indigo-600"
-                          : "bg-gradient-to-br from-blue-500 to-indigo-600"
+                          : "bg-gradient-to-br from-emerald-500 to-teal-600"
                       }`}
                     >
                       {selectedConv.isVideoMeet ? (
@@ -1341,11 +1697,11 @@ export function AdminMessages() {
                       <p className="font-semibold text-gray-900">{selectedConv.participantName}</p>
                       <p className="text-xs text-gray-500 flex items-center gap-1">
                         {selectedConv.isGroup ? (
-                          <><Users className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">Group Conversation</span></>
+                          <><Users className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-600 font-medium">Group Conversation</span></>
                         ) : selectedConv.isVideoMeet ? (
                           <><Video className="w-3 h-3 text-purple-400" /> <span className="text-purple-400">Video Meet Chat</span></>
                         ) : (
-                          <><UserCog className="w-3 h-3 text-blue-400" /> <span className="text-blue-400">{selectedConv.participantRole || "Teacher"}</span></>
+                          <><UserCog className="w-3 h-3 text-emerald-600" /> <span className="text-emerald-600 font-medium">{selectedConv.participantRole || "Teacher"}</span></>
                         )}
                       </p>
                     </div>
@@ -1367,7 +1723,7 @@ export function AdminMessages() {
                     <div className="relative z-10">
                       <div className="absolute right-6 top-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
                         <button type="button" onClick={handleOpenRename} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
-                          <Edit2 className="w-4 h-4 text-blue-600" /> Rename Group
+                          <Edit2 className="w-4 h-4 text-emerald-600" /> Rename Group
                         </button>
                         <button type="button" onClick={() => { setDeleteMode("leave"); setShowGroupMenu(false); setShowDeleteConfirm(true); }} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-50">
                           <X className="w-4 h-4 text-yellow-500" /> Leave Chat
@@ -1394,9 +1750,9 @@ export function AdminMessages() {
                           const hasMention = !isAdmin && msg.text?.includes(`@${adminName}`);
                           return (
                             <div key={`msg-${msg.id}-${msgIndex}`} className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
-                              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm ${
+                              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-sm shadow-sm group/bubble relative ${
                                 isAdmin
-                                  ? "bg-blue-600 text-white rounded-br-sm"
+                                  ? "bg-emerald-600 text-white rounded-br-sm"
                                   : hasMention
                                   ? "bg-yellow-50 border border-yellow-200 text-gray-900 rounded-bl-sm"
                                   : "bg-gray-50 border border-gray-100 text-gray-800 rounded-bl-sm"
@@ -1406,20 +1762,32 @@ export function AdminMessages() {
                                     <AtSign className="w-2.5 h-2.5" /> Mentioned you
                                   </p>
                                 )}
-                                {((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName) && (
-                                    <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
-                                  )}
-                                {msg.text && <p className="leading-relaxed">{msg.text}</p>}
+                                {msg.text && !/^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()) && (
+                                  <p className="leading-relaxed mb-2 break-words">{msg.text}</p>
+                                )}
+                                {Boolean((msg.attachments && msg.attachments.length > 0) || msg.fileUrl || msg.fileName || (msg.text && /^Sent (\d+ attachment\(s\)|an attachment|an image|a video)$/i.test(msg.text.trim()))) && (
+                                  <MessageAttachmentPreview msg={msg} isSelf={isAdmin} />
+                                )}
                                 <div className={`flex items-center justify-end gap-1 mt-1`}>
-                                  <p className={`text-xs ${isAdmin ? "text-blue-100" : "text-gray-500"}`}>
+                                  {isAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteMessageConfirm({ isOpen: true, messageId: msg.id })}
+                                      className="opacity-60 md:opacity-0 group-hover/bubble:opacity-100 hover:opacity-100 transition-opacity p-0.5 hover:bg-emerald-700/50 rounded text-emerald-100 hover:text-white mr-1 cursor-pointer"
+                                      title="Remove message"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                  <p className={`text-xs ${isAdmin ? "text-emerald-100" : "text-gray-500"}`}>
                                     {getTimeLabel(msg.time)}
                                   </p>
                                   {isAdmin && (
                                     <span className="flex-shrink-0" title={msg.isSeen ? "Seen" : "Sent"}>
                                       {msg.isSeen ? (
-                                        <CheckCheck className="w-3 h-3 text-blue-200" />
+                                        <CheckCheck className="w-3 h-3 text-emerald-100" />
                                       ) : (
-                                        <CheckCheck className="w-3 h-3 text-blue-300/50" />
+                                        <CheckCheck className="w-3 h-3 text-emerald-200/60" />
                                       )}
                                     </span>
                                   )}
@@ -1455,7 +1823,7 @@ export function AdminMessages() {
           )}
                     <div className="flex items-center gap-3">
                       <label className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer flex-shrink-0 group">
-                        <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-blue-600" />
+                        <Paperclip className="w-5 h-5 text-gray-500 group-hover:text-emerald-600" />
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -1471,12 +1839,12 @@ export function AdminMessages() {
                         onChange={(e) => setMessageInput(e.target.value)}
                         placeholder={`Message ${selectedConv.participantName}...`}
                         disabled={isUploading}
-                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-60"
+                        className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent disabled:opacity-60"
                       />
                       <button
                         type="submit"
                         disabled={(!messageInput.trim() && attachmentFiles.length === 0) || isUploading}
-                        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                        className="p-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
                       >
                         {isUploading
                           ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -1488,18 +1856,27 @@ export function AdminMessages() {
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                  <div className="w-16 h-16 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-center mb-4">
-                    <Shield className="w-8 h-8 text-blue-400" />
+                  <div className="w-16 h-16 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-center mb-4">
+                    <Shield className="w-8 h-8 text-emerald-600" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-2">Admin Messaging</h3>
                   <p className="text-gray-500 text-sm mb-5">Select a conversation or start one with any teacher or student.</p>
-                  <button
-                    onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-gray-900 rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm"
-                  >
-                    <Plus className="w-4 h-4" />
-                    New Message
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => { setShowNewModal(true); setRecipientSearch(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold text-sm cursor-pointer shadow-sm"
+                    >
+                      <Plus className="w-4 h-4" />
+                      New Message
+                    </button>
+                    <button
+                      onClick={() => { setShowGroupModal(true); setGroupSearch(""); setSelectedGroupMemberIds([]); setGroupName(""); }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl transition-colors font-semibold text-sm cursor-pointer"
+                    >
+                      <Users className="w-4 h-4" />
+                      New Group Chat
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1513,8 +1890,8 @@ export function AdminMessages() {
           <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
             <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
-                  <UserCog className="w-5 h-5 text-blue-400" />
+                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                  <UserCog className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">New Message</h3>
@@ -1529,7 +1906,7 @@ export function AdminMessages() {
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0">
+            <div className="px-6 py-4 border-b border-gray-100 flex-shrink-0 space-y-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                 <input
@@ -1537,9 +1914,57 @@ export function AdminMessages() {
                   type="text"
                   value={recipientSearch}
                   onChange={(e) => setRecipientSearch(e.target.value)}
-                  placeholder="Search teachers, students, or admins by name or email..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-white/20 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Search teachers, students, or admins..."
+                  className="w-full pl-9 pr-4 py-2.5 bg-gray-50 text-gray-900 placeholder-gray-500 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1550,37 +1975,40 @@ export function AdminMessages() {
                   <p className="text-sm text-gray-500">No users found.</p>
                   <p className="text-xs text-gray-600 mt-1">Users must be registered first.</p>
                 </div>
-              ) : filteredRecipients.length === 0 && recipientSearch ? (
+              ) : filteredRecipients.length === 0 ? (
                 <div className="py-12 text-center">
-                  <Search className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                  <Search className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No matches found.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-white/5">
-                  {(recipientSearch ? filteredRecipients : allTeachers).map((person) => {
+                <div className="divide-y divide-gray-100">
+                  {filteredRecipients.map((person) => {
                     const hasConv = conversations.find((c) => c.participantId === person.id);
-                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-blue-500 to-indigo-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-green-500 to-emerald-600";
-                    const badgeColor = person.role === "teacher" ? "bg-blue-50 text-blue-700 border-blue-200" : person.role === "admin" ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-green-50 text-green-700 border-green-200";
+                    const avatarColor = person.role === "teacher" ? "bg-gradient-to-br from-emerald-500 to-teal-600" : person.role === "admin" ? "bg-gradient-to-br from-purple-500 to-indigo-600" : "bg-gradient-to-br from-blue-500 to-indigo-600";
                     return (
                       <button
                         key={person.id}
                         onClick={() => handleStartConversation(person)}
-                        className="w-full flex items-center gap-3 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group"
+                        className="w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left group cursor-pointer"
                       >
-                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-gray-900 font-bold text-sm flex-shrink-0`}>
+                        <div className={`w-10 h-10 ${avatarColor} rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm`}>
                           {person.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{person.name}</p>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium capitalize flex-shrink-0 ${badgeColor}`}>{person.role}</span>
-                          </div>
-                          <p className="text-xs text-gray-500 truncate">{person.email || person.role}</p>
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{person.name}</p>
+                          <p className="text-xs font-semibold text-emerald-600 capitalize mt-0.5 leading-tight">
+                            {person.role === "student" ? "Student" : person.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {person.yearLevel
+                              ? (person.section ? `${person.yearLevel} - ${person.section}` : person.yearLevel)
+                              : (person.email || "No grade specified")}
+                          </p>
                           {hasConv && (
-                            <p className="text-xs text-blue-400 font-medium mt-0.5">Existing conversation</p>
+                            <p className="text-[11px] text-emerald-600 font-semibold mt-1">Existing conversation</p>
                           )}
                         </div>
-                        <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-emerald-600 transition-colors flex-shrink-0" />
                       </button>
                     );
                   })}
@@ -1590,11 +2018,171 @@ export function AdminMessages() {
           </div>
         </div>
       )}
+
+      {/* ══ NEW GROUP CHAT MODAL ══ */}
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-md w-full shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="border-b border-gray-200 px-6 py-5 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/20 rounded-lg border border-emerald-500/30">
+                  <Users className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">New Group Chat</h3>
+                  <p className="text-sm text-gray-500">Select at least 2 members</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGroupModal(false)}
+                className="p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-100 space-y-3 flex-shrink-0">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+                  Group Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder="e.g. Grade 10 Section Opal"
+                  className="w-full px-3.5 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  placeholder="Search teachers, students, or admins..."
+                  className="w-full pl-9 pr-4 py-2 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Filters: Role & Grade */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "student", label: "Student" },
+                    { key: "teacher", label: "Teacher" },
+                    { key: "admin", label: "Admin" },
+                  ].map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRoleFilter(r.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                        roleFilter === r.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+                  {[
+                    { key: "all", label: "All" },
+                    { key: "Grade 7", label: "G7" },
+                    { key: "Grade 8", label: "G8" },
+                    { key: "Grade 9", label: "G9" },
+                    { key: "Grade 10", label: "G10" },
+                  ].map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      onClick={() => setGradeFilter(g.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        gradeFilter === g.key
+                          ? "bg-white text-emerald-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto scrollbar-hide">
+              {filteredGroupRecipients.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Users className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No users found.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {filteredGroupRecipients.map((recipient, index) => {
+                    const isSelected = selectedGroupMemberIds.includes(recipient.id);
+                    const avatarColor =
+                      recipient.role === "teacher"
+                        ? "bg-gradient-to-br from-emerald-500 to-teal-600"
+                        : recipient.role === "admin"
+                        ? "bg-gradient-to-br from-purple-500 to-indigo-600"
+                        : "bg-gradient-to-br from-blue-500 to-indigo-600";
+                    return (
+                      <button
+                        key={`group-${recipient.id}-${index}`}
+                        type="button"
+                        onClick={() => toggleGroupMember(recipient.id)}
+                        className={`w-full flex items-center gap-3.5 px-6 py-3.5 hover:bg-gray-50 transition-colors text-left cursor-pointer ${
+                          isSelected ? "bg-emerald-50/60" : ""
+                        }`}
+                      >
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm ${
+                            isSelected ? "bg-emerald-600" : avatarColor
+                          }`}
+                        >
+                          {isSelected ? <CheckCheck className="w-5 h-5" /> : recipient.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{recipient.name}</p>
+                          <p className="text-xs font-semibold text-emerald-600 capitalize mt-0.5 leading-tight">
+                            {recipient.role === "student" ? "Student" : recipient.role === "teacher" ? "Teacher" : "Admin"}
+                          </p>
+                          <p className="text-xs text-gray-500 font-medium truncate mt-0.5 leading-tight">
+                            {recipient.yearLevel
+                              ? (recipient.section ? `${recipient.yearLevel} - ${recipient.section}` : recipient.yearLevel)
+                              : (recipient.email || "No grade specified")}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              <button
+                type="button"
+                onClick={handleCreateGroupChat}
+                disabled={selectedGroupMemberIds.length < 2}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl py-2.5 font-semibold text-sm transition-all shadow-sm cursor-pointer"
+              >
+                Create Group ({selectedGroupMemberIds.length} selected)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ══ RENAME MODAL ══ */}
       {showRenameModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white border border-gray-200 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-gray-100 bg-blue-600 text-white">
+            <div className="px-6 py-5 border-b border-gray-100 bg-emerald-600 text-white">
               <h3 className="text-lg font-bold">Rename Group</h3>
             </div>
             <div className="px-6 py-4 mt-2">
@@ -1604,12 +2192,12 @@ export function AdminMessages() {
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 placeholder="Group name..."
-                className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2.5 bg-gray-50 text-gray-900 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
             <div className="px-6 py-4 flex justify-end gap-3 border-t border-gray-100 bg-gray-50">
               <button onClick={() => setShowRenameModal(false)} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm hover:bg-gray-100 font-semibold transition-colors">Cancel</button>
-              <button onClick={handleRenameSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-gray-900 rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
+              <button onClick={handleRenameSubmit} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm">Rename</button>
             </div>
           </div>
         </div>
@@ -1641,6 +2229,18 @@ export function AdminMessages() {
           </div>
         </div>
       )}
+
+      {/* ══ REMOVE SINGLE MESSAGE CONFIRM ══ */}
+      <ConfirmDialog
+        isOpen={deleteMessageConfirm.isOpen}
+        onClose={() => setDeleteMessageConfirm({ isOpen: false, messageId: null })}
+        onConfirm={handleRemoveMessage}
+        title="Remove Message"
+        message="Are you sure you want to remove this message? It will be deleted from the conversation for all participants."
+        confirmText="Remove"
+        cancelText="Cancel"
+        type="danger"
+      />
     </div>
   );
 }

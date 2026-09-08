@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     } else if (fallbackOrigin) {
       finalRedirectUrl = `${fallbackOrigin.replace(/\/$/, "")}/reset-password`;
     } else {
-      finalRedirectUrl = "https://connected-lms.vercel.app/reset-password";
+      finalRedirectUrl = "https://getconnectedlms.online/reset-password";
     }
 
     // 4. Look up user in profiles table first (Part 13 - Prevent Enumeration)

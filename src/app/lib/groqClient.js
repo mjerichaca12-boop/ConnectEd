@@ -356,12 +356,17 @@ export const streamMessage = async ({
 
     const parsedErr = parseGroqError(error);
 
-    // Controlled single fallback to Fallback 1 (llama-3.1-8b-instant has a 5x larger 500k TPD quota)
-    if (parsedErr.isRateLimit || error?.status === 503 || error?.status === 400) {
+    const shouldFallback = parsedErr.isRateLimit || 
+                           parsedErr.isDecommissioned || 
+                           error?.status === 503 || 
+                           error?.status === 404 || 
+                           error?.status === 400;
+
+    if (shouldFallback && GROQ_MODELS.FALLBACK_1) {
       console.log(`Attempting controlled fallback to ${GROQ_MODELS.FALLBACK_1}...`);
       
       if (parsedErr.isTPM) {
-        await new Promise((res) => setTimeout(res, 1500)); // Controlled 1.5s delay for short-term TPM
+        await new Promise((res) => setTimeout(res, 1500));
       }
 
       try {
@@ -369,10 +374,18 @@ export const streamMessage = async ({
       } catch (fallbackError) {
         console.error(`Groq Fallback 1 Error (${GROQ_MODELS.FALLBACK_1}):`, fallbackError);
         const parsedFallbackErr = parseGroqError(fallbackError);
-        if (parsedFallbackErr.isTPD) {
-          console.warn("TPD (Tokens Per Day) limit exhausted across all models. Stopping further attempts.");
+
+        if (GROQ_MODELS.FALLBACK_2) {
+          try {
+            console.log(`Attempting secondary fallback to ${GROQ_MODELS.FALLBACK_2}...`);
+            await executeCompletionCall(GROQ_MODELS.FALLBACK_2);
+          } catch (fb2Err) {
+            console.error(`Groq Fallback 2 Error (${GROQ_MODELS.FALLBACK_2}):`, fb2Err);
+            onError?.(parseGroqError(fb2Err));
+          }
+        } else {
+          onError?.(parsedFallbackErr);
         }
-        onError?.(parsedFallbackErr);
       }
     } else {
       onError?.(parsedErr);

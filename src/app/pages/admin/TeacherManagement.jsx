@@ -6,11 +6,11 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { toast } from "sonner";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
+import { notifyAdmin } from "@/app/services/notificationService";
 import {
   Search,
 
@@ -48,8 +48,7 @@ const generateTempPassword = () => {
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 };
 
-const teacherSelectColumns = "id, first_name, middle_name, last_name, email, phone, year_level, section, subjects, status, created_at, role";
-const subjectSelectColumns = "id, code, name, section, grade_level";
+
 const emptyTeacherForm = {
   first_name: "",
   middle_name: "",
@@ -91,7 +90,6 @@ function TeacherManagement() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
   const [adminName, setAdminName] = useState("");
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [loading, setLoading] = useState(true);
   const [teachers, setTeachers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -119,6 +117,8 @@ function TeacherManagement() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [gradeSectionsMap, setGradeSectionsMap] = useState({});
+  const [loadingSectionsMap, setLoadingSectionsMap] = useState({});
   
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState(null);
@@ -136,26 +136,15 @@ function TeacherManagement() {
 
   const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
-  const composeTeacherName = (formData) => {
-    const base = [formData.first_name, formData.middle_name, formData.last_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
-    const suffix = String(formData.suffix ?? formData.name_extension ?? "").trim();
-    if (suffix && !base.toLowerCase().endsWith(suffix.toLowerCase())) {
-      return `${base} ${suffix}`.trim();
-    }
-    return base;
-  };
+  const composeTeacherName = (formData) => [formData.first_name, formData.middle_name, formData.last_name, formData.suffix].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
   const formatTeacherFullName = (teacher) => {
     if (!teacher) return "Unknown teacher";
 
     const firstName = String(teacher.first_name ?? "").trim();
     const middleName = String(teacher.middle_name ?? "").trim();
     const lastName = String(teacher.last_name ?? "").trim();
-    const suffix = String(teacher.suffix ?? teacher.name_extension ?? "").trim();
-    let combined = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
-
-    if (suffix && !combined.toLowerCase().endsWith(suffix.toLowerCase())) {
-      combined = `${combined} ${suffix}`.trim();
-    }
+    const suffix = String(teacher.suffix ?? "").trim();
+    const combined = [firstName, middleName, lastName, suffix].filter(Boolean).join(" ").trim();
 
     if (combined) return combined;
 
@@ -187,21 +176,31 @@ function TeacherManagement() {
     if (!subject) return null;
     return `${subject.code} - ${subject.name} (${subject.grade_level || "No grade assigned"} - ${subject.section || "All Sections"})`;
   };
-  const splitTeacherName = (fullName) => {
-    const parts = (fullName ?? "").trim().split(/\s+/).filter(Boolean);
+  const splitTeacherName = (teacherOrName) => {
+    if (typeof teacherOrName === "object" && teacherOrName !== null) {
+      return {
+        first_name: teacherOrName.first_name || "",
+        middle_name: teacherOrName.middle_name || "",
+        last_name: teacherOrName.last_name || "",
+        suffix: teacherOrName.suffix || ""
+      };
+    }
+    const fullName = String(teacherOrName ?? "").trim();
+    const parts = fullName.split(/\s+/).filter(Boolean);
 
     if (parts.length === 0) {
-      return { first_name: "", middle_name: "", last_name: "" };
+      return { first_name: "", middle_name: "", last_name: "", suffix: "" };
     }
 
     if (parts.length === 1) {
-      return { first_name: parts[0], middle_name: "", last_name: "" };
+      return { first_name: parts[0], middle_name: "", last_name: "", suffix: "" };
     }
 
     return {
       first_name: parts[0],
       middle_name: parts.slice(1, -1).join(" "),
-      last_name: parts[parts.length - 1]
+      last_name: parts[parts.length - 1],
+      suffix: ""
     };
   };
   const normalizePhone = (value) => value.replace(/\D/g, "").slice(0, 11);
@@ -231,6 +230,58 @@ function TeacherManagement() {
     if (digits) return digits[0];
     return "";
   };
+
+  const loadSectionsForGrade = useCallback(async (gradeLevel) => {
+    if (!gradeLevel) return;
+    const normGrade = normalizeGradeLevel(gradeLevel);
+    if (!normGrade) return;
+
+    setLoadingSectionsMap((prev) => ({ ...prev, [normGrade]: true }));
+    try {
+      const { data } = await adminApi.db("grade_sections", "select", {
+        eq: { column: "grade_level", value: normGrade }
+      });
+      const dbSections = (data || []).map((s) => s.section_name).filter(Boolean);
+      const subjectSections = availableSubjects
+        .filter((s) => normalizeGradeLevel(s.grade_level) === normGrade && s.section)
+        .map((s) => s.section)
+        .filter(Boolean);
+
+      const merged = [...new Set([...dbSections, ...subjectSections])].sort();
+      setGradeSectionsMap((prev) => ({ ...prev, [normGrade]: merged }));
+    } catch (err) {
+      console.error("[TeacherManagement] Error loading sections for grade:", err);
+    } finally {
+      setLoadingSectionsMap((prev) => ({ ...prev, [normGrade]: false }));
+    }
+  }, [availableSubjects]);
+
+  const resolveSubjectId = useCallback((subjectCode, section, gradeLevel) => {
+    if (!subjectCode) return "";
+    const normGrade = normalizeGradeLevel(gradeLevel);
+    const codeLow = String(subjectCode).toLowerCase().trim();
+    const secLow = String(section || "").toLowerCase().trim();
+
+    const exactMatch = availableSubjects.find((s) => {
+      const sGrade = normalizeGradeLevel(s.grade_level);
+      const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+      const sSec = String(s.section || "").toLowerCase().trim();
+      return sGrade === normGrade && (sCode === codeLow || String(s.id).toLowerCase() === codeLow) && sSec === secLow;
+    });
+    if (exactMatch) return exactMatch.id;
+
+    const codeMatch = availableSubjects.find((s) => {
+      const sGrade = normalizeGradeLevel(s.grade_level);
+      const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+      return sGrade === normGrade && (sCode === codeLow || String(s.id).toLowerCase() === codeLow);
+    });
+    if (codeMatch) return codeMatch.id;
+
+    const idMatch = availableSubjects.find((s) => String(s.id) === String(subjectCode));
+    if (idMatch) return idMatch.id;
+
+    return subjectCode;
+  }, [availableSubjects]);
   const normalizeSubjects = (value) => {
     let rawArray = [];
     if (Array.isArray(value)) {
@@ -250,7 +301,7 @@ function TeacherManagement() {
     return rawArray
       .map((item) => {
         if (item && typeof item === "object") {
-          return String(item.value || item.id || item.code || item.name || "").trim();
+          return String(item.subjectId || item.value || item.id || item.code || item.name || "").trim();
         }
         return String(item || "").trim();
       })
@@ -332,6 +383,12 @@ function TeacherManagement() {
         if (!nextValue.trim()) return "Last name is required";
         if (!isLettersOnly(nextValue.trim())) return "Last name can only contain letters";
         return "";
+      case "suffix":
+        if (!nextValue.trim()) return "";
+        if (!/^[A-Za-z0-9\s.\-]+$/.test(nextValue.trim())) return "Suffix can only contain letters, numbers, and periods";
+        return "";
+      case "employee_id":
+        return "";
       case "email":
         if (!nextValue.trim()) return "Email is required";
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextValue.trim().toLowerCase())) return "Invalid email format";
@@ -343,7 +400,7 @@ function TeacherManagement() {
         return "";
       }
       case "subjects":
-        if (normalizeSubjects(value).length === 0) return "At least one subject is required";
+        if (normalizeSubjects(value).length === 0 && (!Array.isArray(value) || value.length === 0)) return "At least one subject & section assignment is required";
         return "";
       case "status":
         return nextValue ? "" : "Status is required";
@@ -364,23 +421,38 @@ function TeacherManagement() {
 
   const updateTeacherField = (setData, setErrors, formData, field, value) => {
     let nextValue = field === "phone" ? normalizePhone(value) : value;
-
-    if (field === "subjects") {
-      const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
-      nextValue = normalizeSubjects(value).filter((subjId) => validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase()));
-    }
-
     const nextFormData = { ...formData, [field]: nextValue };
 
     if (field === "grade_level") {
       const newGradeNorm = normalizeGradeLevel(value);
-      const matchingSubjects = normalizeSubjects(nextFormData.subjects).filter((subjId) => {
-        const subj = availableSubjects.find((s) => String(s.id) === String(subjId) || String(s.code || "").toLowerCase() === String(subjId).toLowerCase());
-        if (!subj) return false;
-        const subjGradeNorm = normalizeGradeLevel(subj.grade_level || "");
-        return !subjGradeNorm || subjGradeNorm === newGradeNorm;
+      if (value) {
+        loadSectionsForGrade(value);
+      }
+
+      const currentRows = Array.isArray(nextFormData.subjects) ? nextFormData.subjects : [];
+      const revalidatedRows = currentRows.map((row) => {
+        if (!row || typeof row !== "object") {
+          return { id: generateUUID(), subjectId: "", subjectCode: "", section: "" };
+        }
+
+        const subj = availableSubjects.find(
+          (s) => String(s.id) === String(row.subjectId) || String(s.code || "").toLowerCase() === String(row.subjectCode || "").toLowerCase()
+        );
+        const subjGradeNorm = normalizeGradeLevel(subj?.grade_level || "");
+
+        if (subjGradeNorm && subjGradeNorm !== newGradeNorm) {
+          return { ...row, subjectId: "", subjectCode: "", section: "" };
+        }
+
+        const validSections = gradeSectionsMap[newGradeNorm] || [];
+        if (row.section && validSections.length > 0 && !validSections.includes(row.section)) {
+          return { ...row, section: "" };
+        }
+
+        return row;
       });
-      nextFormData.subjects = matchingSubjects;
+
+      nextFormData.subjects = revalidatedRows;
     }
 
     const nextError = validateTeacherField(field, nextFormData[field], nextFormData);
@@ -426,8 +498,9 @@ function TeacherManagement() {
       throw new Error(error.message);
     }
 
-    setAvailableSubjects(data ?? []);
-    console.log("[TeacherManagement] fetched subjects:", (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name, grade_level: s.grade_level, year_level: s.year_level, grade: s.grade, year: s.year, section: s.section })));
+    const activeSubjects = (data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
+    setAvailableSubjects(activeSubjects);
+    console.log("[TeacherManagement] fetched active subjects:", activeSubjects.map((s) => ({ id: s.id, code: s.code, name: s.name, grade_level: s.grade_level, year_level: s.year_level, grade: s.grade, year: s.year, section: s.section })));
   };
 
   const refreshTeacherSubjectsFromDatabase = async (teacherIds) => {
@@ -442,7 +515,7 @@ function TeacherManagement() {
 
     const { data: subjectRows, error: subjectError } = await db
       .from("subjects")
-      .select("id, teacher_id")
+      .select("id, teacher_id, grade_level, section, status")
       .in("teacher_id", uniqueTeacherIds);
 
     if (subjectError) {
@@ -450,19 +523,27 @@ function TeacherManagement() {
     }
 
     await Promise.all(uniqueTeacherIds.map(async (teacherId) => {
-      const assignedSubjectIds = [...new Set((subjectRows ?? [])
-        .filter((subject) => String(subject.teacher_id) === String(teacherId))
-        .map((subject) => String(subject.id || "").trim())
-        .filter(Boolean))];
+      const teacherSubjectRows = (subjectRows ?? [])
+        .filter((subject) => String(subject.teacher_id) === String(teacherId) && String(subject.status || "Active").toLowerCase() !== "archived");
+      const assignedSubjectIds = [...new Set(teacherSubjectRows.map((subject) => String(subject.id || "").trim()).filter(Boolean))];
+      const assignedSectionsList = [...new Set(teacherSubjectRows.map((s) => s.section).filter(Boolean))];
+      const assignedGradeLevels = [...new Set(teacherSubjectRows.map((s) => s.grade_level).filter(Boolean))];
+
+      const profilePayload = {
+        subjects: assignedSubjectIds,
+        assigned_class: assignedSectionsList.join(", ") || null
+      };
+
+      if (assignedGradeLevels.length > 0) {
+        profilePayload.year_level = assignedGradeLevels[0];
+      }
 
       console.log("[TeacherManagement] refreshing teacher subjects", {
         teacherId,
-        assignedSubjectIds
+        profilePayload
       });
 
-      const { error: updateError } = await adminApi.updateProfile(teacherId, {
-        subjects: assignedSubjectIds
-      });
+      const { error: updateError } = await adminApi.updateProfile(teacherId, profilePayload);
 
       if (updateError) {
         throw new Error(updateError.message);
@@ -478,7 +559,19 @@ function TeacherManagement() {
     const previousIds = [...new Set(normalizeSubjects(previousSubjectIds))];
     const nextIds = [...new Set(normalizeSubjects(nextSubjectIds))];
     const addSubjectIds = nextIds.filter((id) => !previousIds.includes(id));
-    const affectedSubjectIds = [...new Set([...previousIds, ...nextIds])];
+
+    const { data: dbTeacherSubjs } = await db
+      .from("subjects")
+      .select("id, teacher_id")
+      .eq("teacher_id", teacherId);
+
+    const dbAssignedIds = (dbTeacherSubjs ?? []).map((s) => s.id);
+    const removeSubjectIds = [...new Set([
+      ...previousIds.filter((id) => !nextIds.includes(id)),
+      ...dbAssignedIds.filter((id) => !nextIds.includes(id))
+    ])];
+
+    const affectedSubjectIds = [...new Set([...previousIds, ...nextIds, ...dbAssignedIds])];
 
     if (affectedSubjectIds.length === 0) {
       await refreshTeacherSubjectsFromDatabase([teacherId]);
@@ -500,7 +593,6 @@ function TeacherManagement() {
       return [subject.id, cleanTeacherId];
     }));
     const displacedTeacherIds = new Set();
-    const removeSubjectIds = previousIds.filter((subjectId) => !nextIds.includes(subjectId));
 
     if (addSubjectIds.length > 0) {
       try {
@@ -537,19 +629,13 @@ function TeacherManagement() {
 
       if (removeSubjectIds.length > 0) {
         console.log("[TeacherManagement] removing subjects", { teacherId, removeSubjectIds });
-        const removableIds = (currentSubjects ?? [])
-          .filter((subject) => removeSubjectIds.includes(subject.id) && String(subject.teacher_id) === String(teacherId))
-          .map((subject) => subject.id);
+        const { error: removeError } = await adminApi.db("subjects", "update", {
+          payload: { teacher_id: null },
+          in: { column: "id", value: removeSubjectIds }
+        });
 
-        if (removableIds.length > 0) {
-          const { error: removeError } = await adminApi.db("subjects", "update", {
-            payload: { teacher_id: null },
-            in: { column: "id", value: removableIds }
-          });
-
-          if (removeError) {
-            throw new Error(removeError.message);
-          }
+        if (removeError) {
+          throw new Error(removeError.message);
         }
       }
 
@@ -582,92 +668,144 @@ function TeacherManagement() {
       throw new Error("Supabase client is not configured.");
     }
 
-    let teacherRes = await db
+    let { data, error } = await db
       .from("profiles")
-      .select(`${teacherSelectColumns}, suffix, employee_id`)
+      .select("*")
       .eq("role", "teacher")
       .order("created_at", { ascending: false });
-
-    if (teacherRes.error && (teacherRes.error.code === "42703" || teacherRes.error.message?.includes("suffix") || teacherRes.error.message?.includes("does not exist"))) {
-      teacherRes = await db
-        .from("profiles")
-        .select(teacherSelectColumns)
-        .eq("role", "teacher")
-        .order("created_at", { ascending: false });
-    }
-
-    const { data, error } = teacherRes;
 
     if (error) {
       throw new Error(error.message);
     }
 
-    setTeachers((data ?? []).map((teacher) => ({
-      ...teacher,
-      display_name: formatTeacherFullName(teacher),
-      status: normalizeTeacherStatus(teacher.status),
-      subjects: normalizeSubjects(teacher.subjects),
-      grade_level: teacher.grade_level || teacher.year_level || ""
-    })));
+    setTeachers((data ?? []).map((teacher) => {
+      const dbTeacherSubjs = availableSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id) && String(s.status || "Active").toLowerCase() !== "archived");
+      const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
+      const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
+      const mergedSubjects = [...new Set([...normalizeSubjects(teacher.subjects), ...dbSubjIds])];
+      const mergedClass = teacher.assigned_class || dbSections || "";
+      const mergedGrade = teacher.grade_level || teacher.year_level || dbTeacherSubjs[0]?.grade_level || "";
+
+      return {
+        ...teacher,
+        display_name: formatTeacherFullName(teacher),
+        status: normalizeTeacherStatus(teacher.status),
+        subjects: mergedSubjects,
+        assigned_class: mergedClass,
+        grade_level: mergedGrade
+      };
+    }));
   };
 
   const validateTeacherForm = async (formData, excludeId = null, options = {}) => {
     const { requireSubjects = false } = options;
     const errors = {};
-    const trimmedFirstName = formData.first_name.trim();
-    const trimmedMiddleName = formData.middle_name.trim();
-    const trimmedLastName = formData.last_name.trim();
-    const trimmedEmail = formData.email.trim().toLowerCase();
-    const normalizedPhone = normalizePhone(formData.phone);
-    const normalizedSubjects = normalizeSubjects(formData.subjects);
-    const validSubjectIds = new Set(
-      availableSubjects.flatMap((subject) => [
-        String(subject.id || "").trim(),
-        String(subject.code || "").trim(),
-        `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`
-      ]).filter(Boolean)
-    );
-    const assignedClass = formData.assigned_class?.trim() || "";
+    const trimmedFirstName = String(formData.first_name || "").trim();
+    const trimmedMiddleName = String(formData.middle_name || "").trim();
+    const trimmedLastName = String(formData.last_name || "").trim();
+    const trimmedEmail = String(formData.email || "").trim().toLowerCase();
+    const normalizedPhone = normalizePhone(formData.phone || "");
 
-    if (!trimmedFirstName) {
-      errors.first_name = "First name is required";
-    } else if (!isLettersOnly(trimmedFirstName)) {
-      errors.first_name = "First name can only contain letters";
-    }
-
-    if (trimmedMiddleName && !isLettersOnly(trimmedMiddleName)) {
-      errors.middle_name = "Middle name can only contain letters";
-    }
-
-    if (!trimmedLastName) {
-      errors.last_name = "Last name is required";
-    } else if (!isLettersOnly(trimmedLastName)) {
-      errors.last_name = "Last name can only contain letters";
-    }
-
-    if (excludeId !== null) {
-      if (!trimmedEmail) {
-        errors.email = "Email is required";
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-        errors.email = "Invalid email format";
+    const rawRows = Array.isArray(formData.subjects) ? formData.subjects : [];
+    const assignmentRows = rawRows.map((item) => {
+      if (item && typeof item === "object") {
+        return {
+          subjectId: item.subjectId || "",
+          subjectCode: item.subjectCode || "",
+          section: item.section || ""
+        };
       }
+      return { subjectId: String(item || ""), subjectCode: String(item || ""), section: "" };
+    });
+
+    const normalizedSubjects = assignmentRows
+      .map((r) => r.subjectCode || r.subjectId)
+      .filter(Boolean);
+
+    const assignedClassList = rawRows
+      .map((r) => (typeof r === "object" ? r.section : ""))
+      .filter(Boolean);
+    const assignedClass = formData.assigned_class
+      ? String(formData.assigned_class).trim()
+      : [...new Set(assignedClassList)].join(", ");
+
+    if (requireSubjects && assignmentRows.length === 0) {
+      errors.subjects = "At least one subject & section assignment is required.";
     }
 
-    if (!normalizedPhone) {
-      errors.phone = "Phone number is required";
-    } else if (!/^\d{11}$/.test(normalizedPhone)) {
-      errors.phone = "Phone number must be exactly 11 digits";
-    }
+    const normGrade = normalizeGradeLevel(formData.grade_level);
+    const availableSectionsForGrade = gradeSectionsMap[normGrade] || [];
+    const seenCombos = new Set();
 
-    if (normalizedSubjects.length > 0 && normalizedSubjects.some((subjectId) => !validSubjectIds.has(subjectId))) {
-      errors.subjects = "One or more selected subjects are invalid";
-    } else if (requireSubjects && normalizedSubjects.length === 0) {
-      errors.subjects = "At least one subject is required";
+    for (let i = 0; i < assignmentRows.length; i++) {
+      const row = assignmentRows[i];
+      if (row.subjectCode && !row.section && availableSectionsForGrade.length > 0) {
+        errors.subjects = `Assignment #${i + 1}: Please select a Section for the assigned Subject.`;
+        break;
+      }
+      if (!row.subjectCode && row.section) {
+        errors.subjects = `Assignment #${i + 1}: Please select a Subject for Section "${row.section}".`;
+        break;
+      }
+
+      if (row.subjectCode) {
+        const comboKey = `${row.subjectCode.toLowerCase()}___${(row.section || "").toLowerCase()}`;
+        if (seenCombos.has(comboKey)) {
+          errors.subjects = `Duplicate assignment: Subject and Section "${row.section || 'All'}" is assigned more than once.`;
+          break;
+        }
+        seenCombos.add(comboKey);
+
+        const valLow = String(row.subjectCode || row.subjectId).toLowerCase().trim();
+        const matchedSubj = availableSubjects.find((s) => {
+          const sGrade = normalizeGradeLevel(s.grade_level);
+          const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+          return sGrade === normGrade && (sCode === valLow || String(s.id).toLowerCase() === valLow);
+        });
+
+        if (matchedSubj && matchedSubj.section && row.section) {
+          const defSecLow = String(matchedSubj.section).toLowerCase().trim();
+          const rowSecLow = String(row.section).toLowerCase().trim();
+          if (defSecLow !== rowSecLow) {
+            errors.subjects = `Subject "${matchedSubj.code || matchedSubj.name}" is defined only for Section "${matchedSubj.section}".`;
+            break;
+          }
+        }
+
+        const resolvedSubjId = resolveSubjectId(row.subjectCode || row.subjectId, row.section, formData.grade_level);
+        const subjObj = availableSubjects.find((s) => String(s.id) === String(resolvedSubjId));
+        if (subjObj && subjObj.teacher_id && String(subjObj.teacher_id) !== String(excludeId || "")) {
+          const conflictingTeacher = teachers.find((t) => String(t.id) === String(subjObj.teacher_id));
+          
+          if (conflictingTeacher) {
+            const confGradeNorm = normalizeGradeLevel(conflictingTeacher.grade_level || conflictingTeacher.year_level || "");
+            const confSubjs = normalizeSubjects(conflictingTeacher.subjects);
+            const subjGradeNorm = normalizeGradeLevel(subjObj.grade_level || "");
+
+            if ((confGradeNorm && subjGradeNorm && confGradeNorm !== subjGradeNorm) ||
+                (confSubjs.length > 0 && !confSubjs.includes(subjObj.id) && !confSubjs.includes(subjObj.code))) {
+              adminApi.db("subjects", "update", { payload: { teacher_id: null }, eq: { column: "id", value: subjObj.id } }).catch(() => {});
+              subjObj.teacher_id = null;
+            } else {
+              const teacherName = getTeacherName(conflictingTeacher);
+              errors.subjects = `Subject "${subjObj.code || subjObj.name}" (${subjObj.section || 'All'}) is already assigned to ${teacherName}.`;
+              break;
+            }
+          }
+        }
+      }
     }
 
     if (!formData.status) {
       errors.status = "Status is required";
     }
+
+    const trimmedSuffix = (formData.suffix || "").trim();
+    if (trimmedSuffix && !/^[A-Za-z0-9\s.\-]+$/.test(trimmedSuffix)) {
+      errors.suffix = "Suffix can only contain letters, numbers, and periods";
+    }
+
+    const trimmedEmpId = (formData.employee_id || "").trim();
 
     if (assignedClass && !isValidAssignedClass(assignedClass)) {
       errors.assigned_class = "Assigned class or section is invalid";
@@ -705,7 +843,16 @@ function TeacherManagement() {
       return errors;
     }
 
-    if (excludeId !== null) {
+    if (trimmedEmpId) {
+      let empQuery = db.from("profiles").select("id").eq("employee_id", trimmedEmpId).limit(1);
+      if (excludeId) empQuery = empQuery.neq("id", excludeId);
+      const empResult = await empQuery;
+      if (!empResult.error && empResult.data && empResult.data.length > 0) {
+        errors.employee_id = "Employee ID / Identification already exists";
+      }
+    }
+
+    if (excludeId !== null && trimmedEmail) {
       const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
       const [emailResult] = await Promise.all([emailQuery.neq("id", excludeId)]);
 
@@ -719,59 +866,39 @@ function TeacherManagement() {
       }
     }
 
-    if (assignedClass) {
-      const teacherQuery = supabase
-        .from("profiles")
-        .select(teacherSelectColumns)
-        .eq("role", "teacher");
-
-      const teacherResult = await (excludeId ? teacherQuery.neq("id", excludeId) : teacherQuery);
-
-      if (teacherResult.error) {
-        errors.form = teacherResult.error.message;
-        return errors;
-      }
-
-      const conflictingTeacher = (teacherResult.data ?? []).find((teacher) => hasAssignedClass(teacher.assigned_class, assignedClass));
-      if (conflictingTeacher) {
-        errors.assigned_class = `This class is already assigned to ${getTeacherName(conflictingTeacher)}.`;
-      }
-    }
-
     return errors;
   };
 
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
-    let teachersRes = await db
-      .from("profiles")
-      .select(`${teacherSelectColumns}, suffix, employee_id`)
-      .eq("role", "teacher")
-      .order("created_at", { ascending: false });
-
-    if (teachersRes.error && (teachersRes.error.code === "42703" || teachersRes.error.message?.includes("suffix") || teachersRes.error.message?.includes("does not exist"))) {
-      teachersRes = await db
-        .from("profiles")
-        .select(teacherSelectColumns)
-        .eq("role", "teacher")
-        .order("created_at", { ascending: false });
-    }
+    let teachersRes = await db.from("profiles").select("*").eq("role", "teacher").order("created_at", { ascending: false });
 
     const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
+    const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
 
     if (teachersRes.error) throw new Error(teachersRes.error.message);
 
-    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => ({
-      ...teacher,
-      display_name: formatTeacherFullName(teacher),
-      status: normalizeTeacherStatus(teacher.status),
-      subjects: normalizeSubjects(teacher.subjects),
-      grade_level: teacher.grade_level || teacher.year_level || ""
-    }));
+    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => {
+      const dbTeacherSubjs = allSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id));
+      const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
+      const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
+      const mergedSubjects = [...new Set([...normalizeSubjects(teacher.subjects), ...dbSubjIds])];
+      const mergedClass = teacher.assigned_class || dbSections || "";
+      const mergedGrade = teacher.grade_level || teacher.year_level || dbTeacherSubjs[0]?.grade_level || "";
+
+      return {
+        ...teacher,
+        display_name: formatTeacherFullName(teacher),
+        status: normalizeTeacherStatus(teacher.status),
+        subjects: mergedSubjects,
+        assigned_class: mergedClass,
+        grade_level: mergedGrade
+      };
+    });
 
     return {
       teachers: formattedTeachers,
-      subjects: subjectsRes.data ?? []
+      subjects: allSubjects
     };
   }, []);
 
@@ -889,44 +1016,40 @@ function TeacherManagement() {
 
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
-    let first_name = teacher.first_name || "";
-    let middle_name = teacher.middle_name || "";
-    let last_name = teacher.last_name || "";
-    let suffix = teacher.suffix || teacher.name_extension || "";
+    const { first_name, middle_name, last_name, suffix } = splitTeacherName(teacher);
+    const teacherGrade = teacher.grade_level || teacher.year_level || "";
+    const teacherSubjectIds = normalizeSubjects(teacher.subjects);
+    const assignedClasses = normalizeAssignedClasses(teacher.assigned_class);
 
-    if (!first_name && !last_name) {
-      const split = splitTeacherName(formatTeacherFullName(teacher));
-      first_name = split.first_name;
-      middle_name = split.middle_name;
-      last_name = split.last_name;
-    }
-
-    if (!suffix && last_name) {
-      const suffixMatch = last_name.match(/,\s*(Jr\.?|Sr\.?|II|III|IV|V)$/i) || last_name.match(/\s+(Jr\.?|Sr\.?|II|III|IV|V)$/i);
-      if (suffixMatch) {
-        suffix = suffixMatch[1];
-        last_name = last_name.replace(suffixMatch[0], "").trim();
-      }
-    }
-
-    const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
-    const initialSubjects = normalizeSubjects(teacher.subjects).filter((subjId) =>
-      validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase())
-    );
+    const parsedRows = teacherSubjectIds.map((subjId, idx) => {
+      const subj = availableSubjects.find(
+        (s) => String(s.id) === String(subjId) || String(s.code || "").toLowerCase() === String(subjId).toLowerCase()
+      );
+      const sectionName = subj?.section || assignedClasses[idx] || assignedClasses[0] || "";
+      return {
+        id: generateUUID(),
+        subjectId: subj?.id || subjId,
+        subjectCode: subj?.code || subj?.name || subjId,
+        section: sectionName
+      };
+    });
 
     setEditFormData({
       first_name,
       middle_name,
       last_name,
       suffix,
-      employee_id: teacher.employee_id || teacher.lrn || "",
+      employee_id: teacher.employee_id ?? "",
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
-      grade_level: teacher.grade_level || teacher.year_level || "",
-      subjects: initialSubjects,
+      grade_level: teacherGrade,
+      subjects: parsedRows,
       status: teacher.status ?? "Active"
     });
     setEditFormErrors({});
+    if (teacherGrade) {
+      loadSectionsForGrade(teacherGrade);
+    }
     setShowEditModal(true);
   };
 
@@ -1042,6 +1165,7 @@ function TeacherManagement() {
     const matchesSearch =
       getTeacherName(teacher).toLowerCase().includes(search) ||
       String(teacher.email || "").toLowerCase().includes(search) ||
+      String(teacher.employee_id || "").toLowerCase().includes(search) ||
       subjectText.includes(search) ||
       sectionText.includes(search);
     const matchesFilter = filterStatus === "all" || normalizeTeacherStatus(teacher.status).toLowerCase() === filterStatus;
@@ -1068,7 +1192,13 @@ function TeacherManagement() {
     let createdTeacherId = "";
 
     try {
-      const selectedSubjectIds = normalizeSubjects(teacherFormData.subjects);
+      const rawAddRows = Array.isArray(teacherFormData.subjects) ? teacherFormData.subjects : [];
+      const selectedSubjectIds = [...new Set(rawAddRows
+        .map((row) => resolveSubjectId(row.subjectCode || row.subjectId, row.section, teacherFormData.grade_level))
+        .filter(Boolean))];
+
+      const addSectionsList = rawAddRows.map((r) => r.section).filter(Boolean);
+      const addFormattedClass = [...new Set(addSectionsList)].join(", ");
       const fullName = composeTeacherName(teacherFormData);
       
       const firstNameLow = teacherFormData.first_name.trim().toLowerCase().replace(/\s+/g, "");
@@ -1105,16 +1235,19 @@ function TeacherManagement() {
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
         last_name: teacherFormData.last_name.trim() || null,
-        suffix: teacherFormData.suffix?.trim() || null,
-        employee_id: teacherFormData.employee_id?.trim() || null,
+        suffix: teacherFormData.suffix.trim() || null,
+        employee_id: teacherFormData.employee_id.trim() || null,
         email: tempEmail,
         username: username,
         phone: normalizePhone(teacherFormData.phone),
         status: normalizeTeacherStatus(teacherFormData.status),
         year_level: teacherFormData.grade_level?.trim() || null,
+        assigned_class: addFormattedClass || null,
         must_change_password: true,
         is_verified: false
       };
+      if (!teacherFormData.suffix.trim()) delete payload.suffix;
+      if (!teacherFormData.employee_id.trim()) delete payload.employee_id;
 
       const { data, error } = await adminApi.db("profiles", "insert", {
         payload,
@@ -1149,13 +1282,23 @@ function TeacherManagement() {
         details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
         timestamp: nextTeacher.created_at
       });
+      notifyAdmin({
+        type: "teacher",
+        title: "Teacher Account Created",
+        message: `New teacher account created for ${nextTeacherName}`,
+        relatedId: nextTeacher.id,
+        relatedType: "profiles",
+        path: "/admin/teachers"
+      });
       toast.success(`${nextTeacherName} added successfully.`, { duration: 6000 });
       resetAddModal();
       
       setCreatedCredentials({
         name: nextTeacherName,
+        employee_id: teacherFormData.employee_id.trim() || "N/A",
         username: username,
-        password: tempPassword
+        password: tempPassword,
+        assignedSubjects: selectedSubjectIds.map(getSubjectLabel).filter(Boolean)
       });
       setShowCredentialsModal(true);
       
@@ -1197,19 +1340,28 @@ function TeacherManagement() {
 
     try {
       const previousSubjectIds = normalizeSubjects(selectedTeacher.subjects);
-      const nextSubjectIds = normalizeSubjects(editFormData.subjects);
+      const rawEditRows = Array.isArray(editFormData.subjects) ? editFormData.subjects : [];
+      const nextSubjectIds = [...new Set(rawEditRows
+        .map((row) => resolveSubjectId(row.subjectCode || row.subjectId, row.section, editFormData.grade_level))
+        .filter(Boolean))];
+
+      const editSectionsList = rawEditRows.map((r) => r.section).filter(Boolean);
+      const editFormattedClass = [...new Set(editSectionsList)].join(", ");
       const fullName = composeTeacherName(editFormData);
       const payload = {
         first_name: editFormData.first_name.trim(),
         middle_name: editFormData.middle_name.trim() || null,
         last_name: editFormData.last_name.trim() || null,
-        suffix: editFormData.suffix?.trim() || null,
-        employee_id: editFormData.employee_id?.trim() || null,
+        suffix: editFormData.suffix.trim() || null,
+        employee_id: editFormData.employee_id.trim() || null,
         email: editFormData.email.trim().toLowerCase(),
         phone: normalizePhone(editFormData.phone),
         status: normalizeTeacherStatus(editFormData.status),
-        year_level: editFormData.grade_level?.trim() || null
+        year_level: editFormData.grade_level?.trim() || null,
+        assigned_class: editFormattedClass || null
       };
+      if (!editFormData.suffix.trim()) delete payload.suffix;
+      if (!editFormData.employee_id.trim()) delete payload.employee_id;
 
       const supportsYearLevel = Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "year_level") || Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "grade_level");
       if (!supportsYearLevel) {
@@ -1271,6 +1423,15 @@ function TeacherManagement() {
           phone: nextTeacher.phone
         },
         timestamp: nextTeacher.updated_at || new Date().toISOString()
+      });
+
+      notifyAdmin({
+        type: "teacher",
+        title: "Teacher Account Updated",
+        message: `Teacher account updated for ${nextTeacherName}`,
+        relatedId: nextTeacher.id,
+        relatedType: "profiles",
+        path: "/admin/teachers"
       });
 
       toast.success(`${nextTeacherName} updated successfully`);
@@ -1467,7 +1628,7 @@ function TeacherManagement() {
 
       const { data: teacherRows, error: teacherRowsError } = await db
         .from("profiles")
-        .select(teacherSelectColumns)
+        .select("*")
         .eq("role", "teacher")
         .neq("id", teacherToAssign.id);
 
@@ -1521,6 +1682,10 @@ function TeacherManagement() {
   };
 
   const handleExportToCSV = () => {
+    const statusContext = statusFilter !== "All" ? String(statusFilter).replace(/[^a-zA-Z0-9_\-]/g, "_") : "AllStatus";
+    const dateStr = new Date().toISOString().split("T")[0];
+    const fileName = `Teacher_Masterlist_${statusContext}_${dateStr}.csv`;
+
     const headers = ["Teacher ID", "Teacher Name", "Assigned Subject", "Assigned Class/Section", "Status"];
     const rows = filteredTeachers.map((teacher) => [
       teacher.id,
@@ -1534,11 +1699,185 @@ function TeacherManagement() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `teachers_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", fileName);
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const renderSubjectSectionAssignments = (formData, setFormData, errors, setErrors) => {
+    const normGrade = normalizeGradeLevel(formData.grade_level);
+    const subjectsForGrade = availableSubjects.filter(
+      (s) => normalizeGradeLevel(s.grade_level || "") === normGrade
+    );
+
+    const uniqueSubjectOptionsMap = new Map();
+    subjectsForGrade.forEach((s) => {
+      const key = s.code || s.name || s.id;
+      if (!uniqueSubjectOptionsMap.has(key)) {
+        const label = s.code && s.name && s.code !== s.name ? `${s.code} - ${s.name}` : (s.name || s.code);
+        uniqueSubjectOptionsMap.set(key, { value: key, label });
+      }
+    });
+    const subjectOptions = Array.from(uniqueSubjectOptionsMap.values());
+
+    const sectionsForGrade = gradeSectionsMap[normGrade] || [];
+    const sectionOptions = sectionsForGrade.map((sec) => ({ value: sec, label: sec }));
+
+    const isSectionsLoading = !!loadingSectionsMap[normGrade];
+    const rows = Array.isArray(formData.subjects) ? formData.subjects : [];
+
+    return (
+      <div className="md:col-span-2 space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!formData.grade_level) {
+                toast.error("Please select a Grade Level first.");
+                return;
+              }
+              const selectedSubjectKeys = new Set(
+                rows.map((r) => r.subjectCode || r.subjectId).filter(Boolean)
+              );
+              if (subjectOptions.length > 0 && selectedSubjectKeys.size >= subjectOptions.length) {
+                toast.info("All available subjects for this grade level have already been added.");
+                return;
+              }
+              const newRow = { id: generateUUID(), subjectId: "", subjectCode: "", section: "" };
+              updateTeacherField(setFormData, setErrors, formData, "subjects", [...rows, newRow]);
+            }}
+            className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
+          >
+            + Add Subject & Section
+          </button>
+        </div>
+
+        {!formData.grade_level ? (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-sm text-amber-700">
+            Please select a <strong>Grade Level</strong> first to assign subjects & sections.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+            No subject & section assignments added yet. Click <strong>"+ Add Subject & Section"</strong> above to add one.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rows.map((row, idx) => {
+              const selectedInOtherRows = new Set(
+                rows
+                  .filter((_, i) => i !== idx)
+                  .map((r) => r.subjectCode || r.subjectId)
+                  .filter(Boolean)
+              );
+              const rowSubjectOptions = subjectOptions.filter(
+                (opt) => !selectedInOtherRows.has(opt.value)
+              );
+
+              let rowSectionOptions = sectionOptions;
+              const valLow = String(row.subjectCode || row.subjectId || "").toLowerCase().trim();
+              if (valLow) {
+                const matchedSubjects = subjectsForGrade.filter((s) => {
+                  const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+                  return sCode === valLow || String(s.id).toLowerCase() === valLow;
+                });
+                const definedSections = [...new Set(matchedSubjects.map((s) => s.section).filter(Boolean))];
+                if (definedSections.length > 0) {
+                  rowSectionOptions = definedSections.map((sec) => ({ value: sec, label: sec }));
+                }
+              }
+
+              return (
+                <div key={row.id || idx} className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl relative group shadow-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Subject</label>
+                      <CustomSelect
+                        value={row.subjectCode || row.subjectId || ""}
+                        onChange={(val) => {
+                          const updatedRows = [...rows];
+                          const matchedSubjs = subjectsForGrade.filter((s) => {
+                            const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+                            return sCode === String(val).toLowerCase().trim() || String(s.id).toLowerCase() === String(val).toLowerCase().trim();
+                          });
+                          const definedSecs = [...new Set(matchedSubjs.map((s) => s.section).filter(Boolean))];
+                          let targetSec = updatedRows[idx].section || "";
+                          if (definedSecs.length > 0 && (!targetSec || !definedSecs.includes(targetSec))) {
+                            targetSec = definedSecs[0];
+                          }
+
+                          const resolvedId = resolveSubjectId(val, targetSec, formData.grade_level);
+                          updatedRows[idx] = {
+                            ...updatedRows[idx],
+                            subjectCode: val,
+                            section: targetSec,
+                            subjectId: resolvedId
+                          };
+                          updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                        }}
+                        options={rowSubjectOptions}
+                        placeholder={
+                          subjectOptions.length === 0
+                            ? "No subjects available for this grade."
+                            : rowSubjectOptions.length === 0
+                            ? "No remaining subjects available."
+                            : "Select Subject"
+                        }
+                        disabled={subjectOptions.length === 0 || rowSubjectOptions.length === 0}
+                        icon={<BookOpen className="w-4 h-4" />}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Section</label>
+                      <CustomSelect
+                        value={row.section || ""}
+                        onChange={(val) => {
+                          const updatedRows = [...rows];
+                          const resolvedId = resolveSubjectId(updatedRows[idx].subjectCode, val, formData.grade_level);
+                          updatedRows[idx] = {
+                            ...updatedRows[idx],
+                            section: val,
+                            subjectId: resolvedId
+                          };
+                          updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                        }}
+                        options={rowSectionOptions}
+                        placeholder={
+                          isSectionsLoading
+                            ? "Loading sections..."
+                            : rowSectionOptions.length === 0
+                            ? "No sections available for this grade."
+                            : "Select Section"
+                        }
+                        disabled={isSectionsLoading || rowSectionOptions.length === 0}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedRows = rows.filter((_, i) => i !== idx);
+                      updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                    }}
+                    className="absolute top-3.5 right-3 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                    title="Remove assignment"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {errors.subjects && <p className="text-red-500 text-sm mt-1">{errors.subjects}</p>}
+      </div>
+    );
   };
 
   const activeCount = teachers.filter((teacher) => isTeacherActive(teacher.status)).length;
@@ -1560,11 +1899,7 @@ function TeacherManagement() {
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>
@@ -1573,17 +1908,17 @@ function TeacherManagement() {
           <div data-tour="teachers-header" className="relative rounded-2xl p-8 text-gray-900 shadow-lg overflow-hidden bg-white border border-gray-200">
             <div className="absolute left-0 top-0 bottom-0 w-1 flex flex-col">
               <div className="flex-1 bg-green-500" />
-              <div className="flex-1 bg-blue-600" />
-              <div className="flex-1 bg-red-600" />
+              <div className="flex-1 bg-emerald-600" />
+              <div className="flex-1 bg-teal-600" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-blue-500/5 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-green-500/8 via-emerald-500/5 to-transparent pointer-events-none" />
             <div className="relative pl-4 flex items-center justify-between gap-6">
               <div>
-                <h1 className="text-3xl font-bold mb-2 text-blue-600">Teacher Management</h1>
+                <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Management</h1>
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-lg shadow-blue-600/20 shadow-sm cursor-pointer">
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 shadow-sm cursor-pointer">
                   <UserPlus className="w-5 h-5" />
                   Add Teacher
                 </button>
@@ -1602,7 +1937,7 @@ function TeacherManagement() {
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Assigned Classes</p>
-              <p className="text-3xl font-bold text-blue-400">{assignedCount}</p>
+              <p className="text-3xl font-bold text-green-600">{assignedCount}</p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Inactive Teachers</p>
@@ -1833,7 +2168,6 @@ function TeacherManagement() {
             <div className="p-6">
               <form onSubmit={handleAddTeacher}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Row 1: First Name & Middle Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                     <input
@@ -1856,8 +2190,6 @@ function TeacherManagement() {
                     />
                     {formErrors.middle_name && <p className="text-red-500 text-sm mt-1">{formErrors.middle_name}</p>}
                   </div>
-
-                  {/* Row 2: Last Name & Name Extension / Suffix */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
@@ -1873,23 +2205,23 @@ function TeacherManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={teacherFormData.suffix || ""}
+                      value={teacherFormData.suffix}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "suffix", e.target.value)}
                       placeholder="e.g. Jr., Sr., II, III"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.suffix ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
+                    {formErrors.suffix && <p className="text-red-500 text-sm mt-1">{formErrors.suffix}</p>}
                   </div>
-
-                  {/* Row 3: Identification / Employee ID & Phone */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
                     <input
                       type="text"
-                      value={teacherFormData.employee_id || ""}
+                      value={teacherFormData.employee_id}
                       onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "employee_id", e.target.value)}
                       placeholder="Enter employee ID or identification"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.employee_id ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
+                    {formErrors.employee_id && <p className="text-red-500 text-sm mt-1">{formErrors.employee_id}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -1904,8 +2236,6 @@ function TeacherManagement() {
                     />
                     {formErrors.phone && <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>}
                   </div>
-
-                  {/* Row 4: Grade Level & Status */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
                     <CustomSelect
@@ -1936,6 +2266,8 @@ function TeacherManagement() {
                     />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
                   </div>
+
+                  {renderSubjectSectionAssignments(teacherFormData, setTeacherFormData, formErrors, setFormErrors)}
                 </div>
                 {formErrors.form && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -1969,7 +2301,6 @@ function TeacherManagement() {
             <div className="p-6">
               <form onSubmit={handleUpdateTeacher}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Row 1: First Name & Middle Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
                     <input
@@ -1992,8 +2323,6 @@ function TeacherManagement() {
                     />
                     {editFormErrors.middle_name && <p className="text-red-500 text-sm mt-1">{editFormErrors.middle_name}</p>}
                   </div>
-
-                  {/* Row 2: Last Name & Name Extension / Suffix */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                     <input
@@ -2009,23 +2338,23 @@ function TeacherManagement() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Name Extension / Suffix</label>
                     <input
                       type="text"
-                      value={editFormData.suffix || ""}
+                      value={editFormData.suffix}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "suffix", e.target.value)}
                       placeholder="e.g. Jr., Sr., II, III"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.suffix ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
+                    {editFormErrors.suffix && <p className="text-red-500 text-sm mt-1">{editFormErrors.suffix}</p>}
                   </div>
-
-                  {/* Row 3: Identification / Employee ID & Email */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
                     <input
                       type="text"
-                      value={editFormData.employee_id || ""}
+                      value={editFormData.employee_id}
                       onChange={(e) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "employee_id", e.target.value)}
                       placeholder="Enter employee ID or identification"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${editFormErrors.employee_id ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
+                    {editFormErrors.employee_id && <p className="text-red-500 text-sm mt-1">{editFormErrors.employee_id}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -2038,8 +2367,6 @@ function TeacherManagement() {
                     />
                     {editFormErrors.email && <p className="text-red-500 text-sm mt-1">{editFormErrors.email}</p>}
                   </div>
-
-                  {/* Row 4: Phone & Grade Level */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                     <input
@@ -2069,8 +2396,6 @@ function TeacherManagement() {
                     />
                     {editFormErrors.grade_level && <p className="text-red-500 text-sm mt-1">{editFormErrors.grade_level}</p>}
                   </div>
-
-                  {/* Row 5: Status */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                     <CustomSelect
@@ -2086,29 +2411,7 @@ function TeacherManagement() {
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
 
-                  {/* Row 6: Subjects */}
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Subjects</label>
-                    <CustomSelect
-                      multiple
-                      value={editFormData.subjects}
-                      onChange={(value) => updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", value)}
-                      options={availableSubjects
-                        .filter((subject) => {
-                          if (!editFormData.grade_level) return true;
-                          const subjGradeRaw = String(subject.grade_level || "").trim();
-                          return subjGradeRaw && normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
-                        })
-                        .map((subject) => ({ value: subject.id, label: `${subject.code} - ${subject.name} (${subject.section || "All Sections"})` }))}
-                      placeholder={availableSubjects.length > 0 ? "Select subjects" : "No subjects available"}
-                      icon={<BookOpen className="w-5 h-5" />}
-                      className="min-w-[180px]"
-                      disabled={availableSubjects.length === 0}
-                    />
-                    
-                    <p className="text-xs text-gray-500 mt-1">Choose one or more subjects from the dropdown.</p>
-                    {editFormErrors.subjects && <p className="text-red-500 text-sm mt-1">{editFormErrors.subjects}</p>}
-                  </div>
+                  {renderSubjectSectionAssignments(editFormData, setEditFormData, editFormErrors, setEditFormErrors)}
                 </div>
                 {editFormErrors.form && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -2213,6 +2516,13 @@ function TeacherManagement() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">Employee ID / Identification</label>
+                    <div className="flex items-center gap-2">
+                      <User className="w-4 h-4 text-green-600" />
+                      <p className="text-gray-900 font-mono">{selectedTeacher.employee_id || "N/A"}</p>
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-500 mb-1">Email Address</label>
                     <div className="flex items-center gap-2">
@@ -2330,19 +2640,35 @@ function TeacherManagement() {
                 <p className="font-semibold text-gray-900">{createdCredentials.name}</p>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-500 mb-1">Identification / Employee ID</p>
+                <p className="font-semibold text-gray-900 font-mono">{createdCredentials.employee_id || "N/A"}</p>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <p className="text-sm font-medium text-gray-500 mb-1">Username</p>
                 <div className="flex items-center justify-between">
                   <p className="font-mono text-gray-900">{createdCredentials.username}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.username); toast.success("Username copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.username); toast.success("Username copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium cursor-pointer">Copy</button>
                 </div>
               </div>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <p className="text-sm font-medium text-gray-500 mb-1">Temporary Password</p>
                 <div className="flex items-center justify-between">
                   <p className="font-mono text-gray-900">{createdCredentials.password}</p>
-                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.password); toast.success("Password copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium">Copy</button>
+                  <button onClick={() => { navigator.clipboard.writeText(createdCredentials.password); toast.success("Password copied!"); }} className="text-blue-600 hover:text-blue-800 text-sm font-medium cursor-pointer">Copy</button>
                 </div>
               </div>
+              {createdCredentials.assignedSubjects && createdCredentials.assignedSubjects.length > 0 && (
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <p className="text-sm font-medium text-gray-500 mb-2">Assigned Subjects & Sections</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {createdCredentials.assignedSubjects.map((label, idx) => (
+                      <span key={idx} className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-md">
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button 
@@ -2350,7 +2676,7 @@ function TeacherManagement() {
                   setShowCredentialsModal(false);
                   setCreatedCredentials(null);
                 }} 
-                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm"
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 Done
               </button>

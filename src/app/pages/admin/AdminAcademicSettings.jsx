@@ -22,7 +22,7 @@ export default function AdminAcademicSettings() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   const availableSchoolYears = ["2025-2026", "2026-2027", "2027-2028"];
-  const availableQuarters = ["1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter"];
+  const availableQuarters = ["1st Quarter", "2nd Quarter", "3rd Quarter"];
 
   useEffect(() => {
     const userData = localStorage.getItem("currentUser");
@@ -58,11 +58,12 @@ export default function AdminAcademicSettings() {
       }
 
       if (data) {
+        const loadedQuarter = data.current_quarter === "4th Quarter" ? "3rd Quarter" : (data.current_quarter || "1st Quarter");
         setSchoolYear(data.current_school_year || "2026-2027");
-        setQuarter(data.current_quarter || "1st Quarter");
+        setQuarter(loadedQuarter);
         setOriginalSettings({
           schoolYear: data.current_school_year || "2026-2027",
-          quarter: data.current_quarter || "1st Quarter",
+          quarter: loadedQuarter,
         });
       } else {
         // Fallback defaults

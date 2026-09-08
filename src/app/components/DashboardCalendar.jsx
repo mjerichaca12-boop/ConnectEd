@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, forwardRef, useImperativeHandle, useRef } from "react";
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, School, Users, X, AlertTriangle, Edit2 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 
 const calendarTableCandidates = ["school_calendar_events", "school_events", "calendar_events"];
@@ -123,8 +123,49 @@ const getMonthGrid = (year, month) => {
   return cells;
 };
 
-function DashboardCalendarComponent({ viewerRole }, ref) {
+const isEventUpcoming = (event, viewYear, viewMonth, now = new Date()) => {
+  if (!event || !event.eventDate) return false;
+
+  const parts = String(event.eventDate).split("-");
+  if (parts.length < 3) return false;
+  const eYear = Number(parts[0]);
+  const eMonth = Number(parts[1]) - 1;
+  const eDay = Number(parts[2]);
+
+  if (Number.isNaN(eYear) || Number.isNaN(eMonth) || Number.isNaN(eDay)) return false;
+
+  if (eYear !== viewYear || eMonth !== viewMonth) return false;
+
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const currentDate = now.getDate();
+
+  if (eYear > currentYear) return true;
+  if (eYear < currentYear) return false;
+
+  if (eMonth > currentMonth) return true;
+  if (eMonth < currentMonth) return false;
+
+  if (eDay > currentDate) return true;
+  if (eDay < currentDate) return false;
+
+  if (!event.eventTime) {
+    return true;
+  }
+
+  const timeParts = String(event.eventTime).split(":");
+  const hours = Number(timeParts[0]);
+  const minutes = Number(timeParts[1] || "00");
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return true;
+
+  const eventDateTime = new Date(currentYear, currentMonth, currentDate, hours, minutes, 0, 0);
+  return eventDateTime.getTime() >= now.getTime();
+};
+
+function DashboardCalendarComponent({ viewerRole, onEditEvent }, ref) {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [now, setNow] = useState(() => new Date());
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -132,6 +173,11 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
   const [selectedDay, setSelectedDay] = useState(new Date().toISOString().slice(0, 10));
   const [selectedEvent, setSelectedEvent] = useState(null);
   const loadEventsRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -371,7 +417,10 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
     setSelectedDay(nextDate.toISOString().slice(0, 10));
   };
 
-  const upcomingEvents = useMemo(() => visibleEvents.slice(0, 4), [visibleEvents]);
+  const upcomingEvents = useMemo(
+    () => sortEvents(visibleEvents.filter((event) => isEventUpcoming(event, year, month, now))),
+    [visibleEvents, year, month, now]
+  );
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden h-full flex flex-col min-h-0">
@@ -554,7 +603,7 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
                   {event.description && <p className="text-[10px] text-gray-500 mt-1 line-clamp-2 leading-relaxed">{event.description}</p>}
                 </div>
               </button>
-            )) : <p className="text-xs text-gray-500">No upcoming events</p>}
+            )) : <p className="text-xs text-gray-500">No upcoming events for this month.</p>}
           </div>
         </div>
       </div>
@@ -564,13 +613,29 @@ function DashboardCalendarComponent({ viewerRole }, ref) {
           <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-2xl overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
               <h4 className="text-gray-900 font-bold">Event Details</h4>
-              <button
-                type="button"
-                onClick={() => setSelectedEvent(null)}
-                className="p-1.5 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                {onEditEvent && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const evtToEdit = selectedEvent;
+                      setSelectedEvent(null);
+                      onEditEvent(evtToEdit);
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    Edit Event
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvent(null)}
+                  className="p-1.5 rounded-xl text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="px-5 py-5 space-y-4">

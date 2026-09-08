@@ -5,33 +5,40 @@ import { AdminSidebar } from "../../components/AdminSidebar";
 import { CustomSelect } from "../../components/admin/CustomSelect";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { NotificationDropdown } from "../../components/NotificationDropdown";
-import { adminNotifications } from "../../components/NotificationDefault";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { toast } from "sonner";
 import { useActivity } from "../../lib/ActivityContext";
+import { notifyAdmin } from "@/app/services/notificationService";
 import { parseStoredFileList, sanitizeFileName } from "../../lib/teacherHelpers";
 import {
   AlertTriangle,
+  Check,
   Edit,
+  File,
+  Globe,
+  GraduationCap,
   Loader2,
   Megaphone,
-  Plus,
-  File,
   Paperclip,
+  Plus,
   Search,
   Trash2,
+  UserCheck,
+  Users,
   X,
 } from "lucide-react";
 
 const emptyForm = {
   title: "",
-  content: ""
+  content: "",
+  targetAudience: "School-wide"
 };
 
 const emptyTouchedFields = {
   title: false,
-  content: false
+  content: false,
+  targetAudience: false
 };
 
 const announcementTableCandidates = ["announcements", "school_announcements"];
@@ -257,19 +264,24 @@ const getAnnouncementValidationErrors = (data) => {
   const errors = {};
   const title = String(data?.title || "").trim();
   const content = String(data?.content || "").trim();
+  const targetAudience = String(data?.targetAudience || "").trim();
 
   if (!title) {
     errors.title = "Title is required";
-  } else if (title.length < 5) {
-    errors.title = "Title must be at least 5 characters";
+  } else if (title.length < 3) {
+    errors.title = "Title must be at least 3 characters";
   } else if (title.length > 100) {
     errors.title = "Title must be at most 100 characters";
   }
 
   if (!content) {
     errors.content = "Content is required";
-  } else if (content.length < 10) {
-    errors.content = "Content must be at least 10 characters";
+  } else if (content.length < 5) {
+    errors.content = "Content must be at least 5 characters";
+  }
+
+  if (!targetAudience) {
+    errors.targetAudience = "Target Audience is required";
   }
 
   return errors;
@@ -296,7 +308,6 @@ function AdminAnnouncements() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
-  const [notificationList, setNotificationList] = useState(adminNotifications);
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, announcementId: "", announcementTitle: "" });
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTable, setAnnouncementTable] = useState("");
@@ -375,22 +386,14 @@ function AdminAnnouncements() {
         }
 
         const storagePath = buildAnnouncementAttachmentStoragePath(announcementId, file.name);
-        const toBase64 = (f) => new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(f);
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = e => reject(e);
-        });
-        const base64File = await toBase64(file);
-        
-        const { error: uploadError } = await adminApi.db("storage", "storage_upload", {
-          payload: {
-            bucket: ANNOUNCEMENT_ATTACHMENT_BUCKET,
-            path: storagePath,
-            base64File,
-            contentType: file.type || "application/octet-stream"
-          }
-        });
+        const contentType = file.type || "application/octet-stream";
+
+        const { error: uploadError } = await adminApi.uploadStorageFile(
+          ANNOUNCEMENT_ATTACHMENT_BUCKET,
+          storagePath,
+          file,
+          contentType
+        );
 
         if (uploadError) {
           console.error("Announcement attachment upload failed:", uploadError);
@@ -701,7 +704,7 @@ function AdminAnnouncements() {
     const attachmentForeignKey = getAnnouncementAttachmentForeignKey(tableName);
     const { data, error } = await client
       .from("announcement_attachments")
-      .select("announcement_id, file_name, file_url, file_path, file_type, created_at")
+      .select("id, school_announcement_id, file_name, file_url, file_path, file_type, created_at")
       .eq(attachmentForeignKey, normalizedAnnouncementId)
       .order("created_at", { ascending: true });
 
@@ -787,10 +790,10 @@ function AdminAnnouncements() {
     return payload;
   };
 
-  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "", selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
+  const buildCreatePayloads = (data, timestamp, columns, attachments = [], announcementId = "") => {
     const user = getCurrentUser();
-    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
-    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
+    const audienceValue = normalizeAudience(data.targetAudience || "School-wide");
+    const audienceTypeValue = toDatabaseAudienceType(data.targetAudience || "School-wide");
     const timestampColumn = resolveColumnName(columns, ["created_at", "date_posted", "datePosted", "timestamp"]);
 
     const metadata = {};
@@ -811,23 +814,23 @@ function AdminAnnouncements() {
       ...metadata
     };
 
+    if (!columns.length || columns.includes("target_audience")) basePayload.target_audience = audienceValue;
+    if (columns.includes("audience")) basePayload.audience = audienceValue;
+    if (columns.includes("audience_type")) basePayload.audience_type = audienceTypeValue;
+    if (columns.includes("target_audience_type")) basePayload.target_audience_type = audienceTypeValue;
+
     if (announcementId && columns.includes("id")) {
       basePayload.id = announcementId;
     }
 
     addAttachmentColumnsToPayload(basePayload, attachments, columns);
 
-    const strictPayload = {
-      ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
-    };
-
-    return [strictPayload, basePayload];
+    return [basePayload];
   };
 
-  const buildUpdatePayloads = (data, timestamp, columns, attachments = null, selectedAudienceType = DEFAULT_AUDIENCE_TYPE) => {
-    const audienceTypeValue = toDatabaseAudienceType(selectedAudienceType);
-    const audienceTypeColumn = resolveColumnName(columns, ["audience_type", "audienceType", "target_audience_type"]);
+  const buildUpdatePayloads = (data, timestamp, columns, attachments = null) => {
+    const audienceValue = normalizeAudience(data.targetAudience || "School-wide");
+    const audienceTypeValue = toDatabaseAudienceType(data.targetAudience || "School-wide");
     const timestampColumn = resolveColumnName(columns, ["updated_at"]);
 
     const metadata = {};
@@ -839,16 +842,16 @@ function AdminAnnouncements() {
       ...metadata
     };
 
+    if (!columns.length || columns.includes("target_audience")) basePayload.target_audience = audienceValue;
+    if (columns.includes("audience")) basePayload.audience = audienceValue;
+    if (columns.includes("audience_type")) basePayload.audience_type = audienceTypeValue;
+    if (columns.includes("target_audience_type")) basePayload.target_audience_type = audienceTypeValue;
+
     if (attachments) {
       addAttachmentColumnsToPayload(basePayload, attachments, columns);
     }
 
-    const strictPayload = {
-      ...basePayload,
-      ...(audienceTypeColumn ? { [audienceTypeColumn]: audienceTypeValue } : {})
-    };
-
-    return [strictPayload, basePayload];
+    return [basePayload];
   };
   const writeAnnouncement = async (tableName, mode, payloads, id) => {
     let lastError = null;
@@ -863,6 +866,14 @@ function AdminAnnouncements() {
         const { data, error } = await adminApi.db(tableName, "insert", { payload, select: "id", single: true });
 
         if (!error) {
+          notifyAdmin({
+            type: "announcement",
+            title: "Announcement Posted",
+            message: `School announcement posted: ${payload.title}`,
+            relatedId: data?.id || null,
+            relatedType: "school_announcements",
+            path: "/admin/announcements"
+          });
           return {
             payload,
             recordId: data?.id ?? null
@@ -871,6 +882,13 @@ function AdminAnnouncements() {
 
         const fallbackInsert = await adminApi.db(tableName, "insert", { payload });
         if (!fallbackInsert.error) {
+          notifyAdmin({
+            type: "announcement",
+            title: "Announcement Posted",
+            message: `School announcement posted: ${payload.title}`,
+            relatedType: "school_announcements",
+            path: "/admin/announcements"
+          });
           return {
             payload,
             recordId: null
@@ -987,7 +1005,6 @@ function AdminAnnouncements() {
         }
 
         setAdminName(user.name);
-        setNotificationList(adminNotifications);
 
         const tableName = await getAnnouncementTableName();
         const rows = await loadAnnouncements(tableName);
@@ -1056,7 +1073,8 @@ function AdminAnnouncements() {
     setEditingAnnouncement(announcement);
     setEditFormData({
       title: announcement.title,
-      content: announcement.content
+      content: announcement.content,
+      targetAudience: announcement.targetAudience || "School-wide"
     });
     setEditAudienceType(
       databaseValueToAudienceType(announcement.audienceType ?? announcement.targetAudience)
@@ -1153,12 +1171,14 @@ function AdminAnnouncements() {
         await syncAnnouncementInlineAttachmentColumns(tableName, createdAnnouncementId);
       }
 
+      const selectedAudience = normalizeAudience(formData.targetAudience || "School-wide");
+
       const nextAnnouncement = {
         id: createdAnnouncementId || String(Date.now()),
         title: formData.title.trim(),
         content: formData.content.trim(),
-        targetAudience: "School-wide",
-        audienceType: toDatabaseAudienceType("School-wide"),
+        targetAudience: selectedAudience,
+        audienceType: toDatabaseAudienceType(selectedAudience),
         createdAt: timestamp,
         ...(uploadedAttachments.length > 0
           ? buildAnnouncementAttachments({
@@ -1251,14 +1271,16 @@ function AdminAnnouncements() {
         await syncAnnouncementInlineAttachmentColumns(tableName, announcementId);
       }
 
+      const selectedAudience = normalizeAudience(editFormData.targetAudience || "School-wide");
+
       setAnnouncements((current) => sortAnnouncements(current.map((announcement) => (
         announcement.id === editingAnnouncement.id
           ? {
               ...announcement,
               title: editFormData.title.trim(),
               content: editFormData.content.trim(),
-              targetAudience: "School-wide",
-              audienceType: toDatabaseAudienceType("School-wide"),
+              targetAudience: selectedAudience,
+              audienceType: toDatabaseAudienceType(selectedAudience),
               ...(uploadedAttachments.length > 0
                 ? buildAnnouncementAttachments({
                     file_name: JSON.stringify(uploadedAttachments.map((item) => item.fileName)),
@@ -1452,11 +1474,7 @@ function AdminAnnouncements() {
         <div className="bg-gray-50/80 backdrop-blur-md border-b border-gray-200 sticky top-0 z-20 relative">
           <div className="px-6 py-4">
             <div className="flex items-center justify-end gap-4">
-              <NotificationDropdown
-                notifications={notificationList}
-                onMarkAsRead={(id) => setNotificationList((prev) => prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)))}
-                onNotificationsChange={setNotificationList}
-              />
+              <NotificationDropdown />
             </div>
           </div>
         </div>
@@ -1520,7 +1538,6 @@ function AdminAnnouncements() {
                   <div className="p-6">
                     <div className="flex items-start justify-between gap-4 mb-4">
                       <div className="flex-1">
-                        {console.log("Announcement data:", announcement)}
                         
 
 
@@ -1530,8 +1547,20 @@ function AdminAnnouncements() {
 
 
 
-                        <div className="flex flex-wrap items-start gap-3 mb-3">
-                          <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h3 className="text-lg font-semibold text-gray-900">{announcement.title}</h3>
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                              announcement.targetAudience === "Students"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : announcement.targetAudience === "Teachers" || announcement.targetAudience === "Teacher"
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}>
+                              <Users className="w-3.5 h-3.5" />
+                              {announcement.targetAudience || "School-wide"}
+                            </span>
+                          </div>
                         </div>
                         <p className="text-gray-600 mb-4 line-clamp-2 whitespace-pre-line">{announcement.content}</p>
                         {Array.isArray(announcement.attachments) && announcement.attachments.length > 0 && (
@@ -1637,6 +1666,73 @@ function AdminAnnouncements() {
                   {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
                 </div>
                 <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Target Audience <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: "School-wide",
+                        title: "School-wide",
+                        subtitle: "Students & Teachers",
+                        icon: Globe,
+                        color: "blue"
+                      },
+                      {
+                        id: "Students",
+                        title: "Students Only",
+                        subtitle: "Registered Students",
+                        icon: GraduationCap,
+                        color: "emerald"
+                      },
+                      {
+                        id: "Teacher",
+                        title: "Teachers Only",
+                        subtitle: "Faculty & Staff",
+                        icon: UserCheck,
+                        color: "purple"
+                      }
+                    ].map((option) => {
+                      const isSelected = normalizeAudience(formData.targetAudience || "School-wide") === option.id;
+                      const IconComp = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleCreateFieldChange("targetAudience", option.id)}
+                          className={`relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                            isSelected
+                              ? option.color === "emerald"
+                                ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm"
+                                : option.color === "purple"
+                                ? "border-purple-500 bg-purple-50/50 ring-2 ring-purple-500/20 shadow-sm"
+                                : "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 shadow-sm"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className={`p-1.5 rounded-lg ${
+                              isSelected
+                                ? option.color === "emerald" ? "bg-emerald-100 text-emerald-700" : option.color === "purple" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}>
+                              <IconComp className="w-4 h-4" />
+                            </div>
+                            {isSelected && (
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white ${
+                                option.color === "emerald" ? "bg-emerald-600" : option.color === "purple" ? "bg-purple-600" : "bg-blue-600"
+                              }`}>
+                                <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-gray-900">{option.title}</span>
+                          <span className="text-xs text-gray-500 mt-0.5">{option.subtitle}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {formErrors.targetAudience && <p className="mt-1.5 text-xs text-red-600 font-medium">{formErrors.targetAudience}</p>}
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>
                   <textarea
                     value={formData.content}
@@ -1724,6 +1820,73 @@ function AdminAnnouncements() {
                     placeholder="Enter announcement title"
                   />
                   {editFormErrors.title && <p className="mt-1 text-sm text-red-600">{editFormErrors.title}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Target Audience <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: "School-wide",
+                        title: "School-wide",
+                        subtitle: "Students & Teachers",
+                        icon: Globe,
+                        color: "blue"
+                      },
+                      {
+                        id: "Students",
+                        title: "Students Only",
+                        subtitle: "Registered Students",
+                        icon: GraduationCap,
+                        color: "emerald"
+                      },
+                      {
+                        id: "Teacher",
+                        title: "Teachers Only",
+                        subtitle: "Faculty & Staff",
+                        icon: UserCheck,
+                        color: "purple"
+                      }
+                    ].map((option) => {
+                      const isSelected = normalizeAudience(editFormData.targetAudience || "School-wide") === option.id;
+                      const IconComp = option.icon;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => handleEditFieldChange("targetAudience", option.id)}
+                          className={`relative flex flex-col items-start p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                            isSelected
+                              ? option.color === "emerald"
+                                ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm"
+                                : option.color === "purple"
+                                ? "border-purple-500 bg-purple-50/50 ring-2 ring-purple-500/20 shadow-sm"
+                                : "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20 shadow-sm"
+                              : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1.5">
+                            <div className={`p-1.5 rounded-lg ${
+                              isSelected
+                                ? option.color === "emerald" ? "bg-emerald-100 text-emerald-700" : option.color === "purple" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}>
+                              <IconComp className="w-4 h-4" />
+                            </div>
+                            {isSelected && (
+                              <span className={`w-5 h-5 rounded-full flex items-center justify-center text-white ${
+                                option.color === "emerald" ? "bg-emerald-600" : option.color === "purple" ? "bg-purple-600" : "bg-blue-600"
+                              }`}>
+                                <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-gray-900">{option.title}</span>
+                          <span className="text-xs text-gray-500 mt-0.5">{option.subtitle}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editFormErrors.targetAudience && <p className="mt-1.5 text-xs text-red-600 font-medium">{editFormErrors.targetAudience}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Content <span className="text-red-500">*</span></label>

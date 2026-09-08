@@ -7,6 +7,7 @@ import {
   Calendar, MessageSquare, Settings, HelpCircle
 } from "lucide-react";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
+import { clearUserNotificationCache } from "@/app/services/notificationService";
 
 export function AdminSidebar({ adminName, onLogout }) {
   const { unreadCount } = useUnreadMessages();
@@ -28,6 +29,11 @@ export function AdminSidebar({ adminName, onLogout }) {
 
   const isActive = (path) => location.pathname === path;
   const displayName = adminName || "Administrator";
+
+  const handleConfirmLogout = () => {
+    clearUserNotificationCache();
+    onLogout?.();
+  };
 
   return (
     <>
@@ -148,7 +154,7 @@ export function AdminSidebar({ adminName, onLogout }) {
       <ConfirmDialog
         isOpen={showLogoutConfirm}
         onClose={() => setShowLogoutConfirm(false)}
-        onConfirm={onLogout}
+        onConfirm={handleConfirmLogout}
         title="Confirm Logout"
         description="Are you sure you want to log out of your administrator account? Any unsaved work may be lost."
         confirmText="Log Out"

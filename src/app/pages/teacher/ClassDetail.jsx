@@ -8,6 +8,8 @@ import { LoadingScreen } from "@/app/components/LoadingScreen";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
 import { TeacherLessonsTab } from "./lessons/TeacherLessonsTab";
 import { supabase } from "@/app/lib/supabaseClient";
+import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
+import { scheduleTargetedReloadTimers } from "@/app/services/scheduledReloadService";
 import { adminApi } from "@/app/lib/adminApi";
 import { v4 as uuidv4 } from "uuid";
 import { toast } from "sonner";
@@ -53,6 +55,8 @@ import {
   Send,
   RefreshCw,
   ClipboardList,
+  Loader2,
+  Edit3,
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
@@ -207,6 +211,17 @@ const normalizeAnnouncementRecordLocal = (row) => {
   const attachments = structuredAttachments.length > 0 ? structuredAttachments : legacyAttachment;
   const meta = parsePriorityMetadata(row?.priority);
 
+  let rawStatus = row?.status || meta.status || "Published";
+  let scheduledAt = row?.scheduled_publish_at || row?.scheduled_at || meta.scheduled_at;
+
+  if (rawStatus === "Scheduled" && scheduledAt) {
+    const scheduledTime = new Date(scheduledAt).getTime();
+    if (!isNaN(scheduledTime) && scheduledTime <= Date.now()) {
+      rawStatus = "Published";
+      scheduledAt = null;
+    }
+  }
+
   return {
     id: String(row?.id || ""),
     title: String(row?.title || "").trim(),
@@ -223,9 +238,9 @@ const normalizeAnnouncementRecordLocal = (row) => {
     classCode: String(row?.subject || row?.class_code || "").trim(),
     className: String(row?.class_name || "").trim(),
     section: String(row?.section || "").trim(),
-    isPinned: meta.is_pinned,
-    status: meta.status,
-    scheduledAt: meta.scheduled_at,
+    isPinned: row?.status ? (row.priority === "pinned" || meta.is_pinned) : meta.is_pinned,
+    status: rawStatus,
+    scheduledAt: rawStatus === "Scheduled" ? scheduledAt : null,
     linkUrl: meta.link_url
   };
 };
@@ -255,12 +270,11 @@ export function ClassDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isDemoMode, mockData } = useTourPreview();
-  const { activeSchoolYear, activeQuarter } = useAcademic();
+  const { activeSchoolYear, activeQuarter, viewMode } = useAcademic();
   const fileInputRef = useRef(null);
   const selectAllCheckboxRef = useRef(null);
 
   const [teacherName, setTeacherName] = useState("");
-  const [notificationList, setNotificationList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("lessons");
 
@@ -524,15 +538,42 @@ export function ClassDetail() {
   };
 
   const syncStudentsIntoClassData = (students) => {
-    setAssignedStudents(students);
+    const count = Array.isArray(students) ? students.length : 0;
+    setAssignedStudents(students || []);
     setClassData((current) => {
       if (!current) return current;
       return {
         ...current,
-        students,
-        studentCount: students.length
+        students: students || [],
+        studentCount: count,
+        enrolled: count
       };
     });
+
+    try {
+      const saved = localStorage.getItem("teacher_classes");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.map(c => String(c.id) === String(id) ? { ...c, studentCount: count, enrolled: count } : c);
+          localStorage.setItem("teacher_classes", JSON.stringify(updated));
+        }
+      }
+    } catch (e) {
+      console.warn("[syncStudentsIntoClassData] localStorage update error:", e);
+    }
+
+    if (supabase && id && !String(id).startsWith("demo-")) {
+      const queryId = !isNaN(Number(id)) ? Number(id) : id;
+      supabase
+        .from("subjects")
+        .update({ enrolled: count })
+        .eq("id", queryId)
+        .then(() => {
+          window.dispatchEvent(new CustomEvent("enrollment-changed", { detail: { subjectId: id, count } }));
+        })
+        .catch(e => console.warn("[syncStudentsIntoClassData] sync error:", e));
+    }
   };
 
   const loadAssignedStudents = async (teacherId, subjectId) => {
@@ -618,11 +659,16 @@ export function ClassDetail() {
     if (!supabase || !teacherId || !subjectId || String(subjectId).startsWith("demo-")) return;
     try {
       // 1. Fetch lessons count
-      const { data: lessons, error: lessonsError } = await supabase
+      let lessonsQuery = supabase
         .from("lessons")
         .select("id, status")
         .eq("subject_id", subjectId)
         .eq("teacher_id", teacherId);
+
+      if (activeSchoolYear) lessonsQuery = lessonsQuery.eq("school_year", activeSchoolYear);
+      if (viewMode === "current" && activeQuarter) lessonsQuery = lessonsQuery.eq("term", activeQuarter);
+
+      const { data: lessons, error: lessonsError } = await lessonsQuery;
 
       if (lessonsError) throw lessonsError;
 
@@ -654,13 +700,21 @@ export function ClassDetail() {
           quizzesCount = activities.filter(a => a.activity_type === "Quiz").length;
         }
 
-        // 3. Fetch lesson materials count
-        const { count: matCount, error: matError } = await supabase
-          .from("lesson_materials")
-          .select("*", { count: "exact", head: true })
-          .in("lesson_id", activeLessonIds);
+        // 3. Fetch lesson materials count across all lessons for this subject
+        const { data: allSubjectLessons } = await supabase
+          .from("lessons")
+          .select("id")
+          .eq("subject_id", subjectId);
 
-        if (!matError) materialsCount = matCount || 0;
+        const allSubjectLessonIds = (allSubjectLessons || []).map(l => l.id);
+        if (allSubjectLessonIds.length > 0) {
+          const { count: matCount, error: matError } = await supabase
+            .from("lesson_materials")
+            .select("id", { count: "exact", head: true })
+            .in("lesson_id", allSubjectLessonIds);
+
+          if (!matError) materialsCount = matCount || 0;
+        }
       }
 
       setMetrics({
@@ -1142,12 +1196,7 @@ export function ClassDetail() {
       error = fallback.error;
     }
 
-    if (!error && Array.isArray(data) && data.length === 0) {
-      const fallbackAll = await supabase.from(tableName).select("*");
-      if (!fallbackAll.error && Array.isArray(fallbackAll.data)) {
-        data = fallbackAll.data;
-      }
-    }
+
 
     if (error) {
       console.error("[ClassDetail] Failed to fetch announcements:", error);
@@ -1162,16 +1211,23 @@ export function ClassDetail() {
 
     const filtered = (data ?? []).filter((row) => {
       const rowClassId = String(row?.class_id || row?.course_id || row?.subject_id || "").trim();
+      const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
       const rowSubject = String(row?.subject || row?.class_code || "").trim();
       const rowSection = String(row?.section || "").trim();
 
+      const teacherMatches = !cleanTeacherId || !rowTeacherId || rowTeacherId === cleanTeacherId;
+
       if (rowClassId) {
-        return !classId || rowClassId === classId;
+        return rowClassId === classId && teacherMatches;
       }
 
-      const subjectMatches = !classCode || !rowSubject || rowSubject === classCode;
-      const sectionMatches = !classSection || !rowSection || rowSection === classSection;
-      return subjectMatches && sectionMatches;
+      if (rowSubject && rowSection && classCode && classSection) {
+        const subjectMatches = rowSubject.toLowerCase() === classCode.toLowerCase();
+        const sectionMatches = rowSection.toLowerCase() === classSection.toLowerCase();
+        return subjectMatches && sectionMatches && teacherMatches;
+      }
+
+      return false;
     });
 
     const hydratedRows = await hydrateAnnouncementAttachmentUrls(filtered);
@@ -1192,13 +1248,16 @@ export function ClassDetail() {
 
     // 1. Try to fetch from assignments_activity
     try {
-      const { data, error } = await supabase.from("assignments_activity").select("*");
+      const { data, error } = await supabase
+        .from("assignments_activity")
+        .select("*")
+        .eq("course_id", cleanClassId);
       if (!error && data) {
         const rows = (data ?? []).filter((row) => {
           const rowCourseId = String(row?.course_id || row?.subject_id || row?.class_id || "").trim();
           const rowTeacherId = String(row?.teacher_id || row?.created_by || "").trim();
-          const classMatches = !cleanClassId || !rowCourseId || rowCourseId === cleanClassId;
-          const teacherMatches = !rowTeacherId || rowTeacherId === cleanTeacherId;
+          const classMatches = Boolean(rowCourseId) && rowCourseId === cleanClassId;
+          const teacherMatches = !cleanTeacherId || !rowTeacherId || rowTeacherId === cleanTeacherId;
           return classMatches && teacherMatches;
         });
         rows.forEach(row => allAssignments.push(normalizeAssignmentRecord(row)));
@@ -1306,10 +1365,15 @@ export function ClassDetail() {
       // 1. Fetch materials from class_materials table for this subject if available
       let classMats = [];
       if (classMaterialsTableStatus !== "missing") {
-        const { data: cmData, error: cmErr } = await supabase
+        const queryFilter = !isNaN(Number(cleanClassId)) && Number(cleanClassId) > 0
+          ? `subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId)}`
+          : `subject_id.eq.${cleanClassId}`;
+        let cmQuery = supabase
           .from("class_materials")
           .select("*")
-          .or(`subject_id.eq.${cleanClassId},subject_id.eq.${Number(cleanClassId) || 0}`);
+          .or(queryFilter);
+        if (cleanTeacherId) cmQuery = cmQuery.eq("teacher_id", cleanTeacherId);
+        const { data: cmData, error: cmErr } = await cmQuery;
 
         if (cmErr) {
           if (cmErr.status === 404 || cmErr.code === "PGRST205" || cmErr.code === "42P01" || cmErr.status === 400) {
@@ -1320,11 +1384,13 @@ export function ClassDetail() {
         }
       }
 
-      // 2. Fetch lessons for subject
-      const { data: lessonsData } = await supabase
+      // 2. Fetch lessons for subject (retrieve all lessons under this subject so materials are never lost)
+      let lessonsQuery = supabase
         .from("lessons")
         .select("id, title, topic")
         .eq("subject_id", cleanClassId);
+
+      const { data: lessonsData } = await lessonsQuery;
 
       const lessonMap = new Map();
       (lessonsData || []).forEach(l => {
@@ -1368,25 +1434,60 @@ export function ClassDetail() {
   useEffect(() => {
     if (!supabase || !id || String(id).startsWith("demo-")) return;
 
+    // Trigger server-side scheduled publishing check on DB time NOW()
+    triggerScheduledPublishingProcess();
+
+    const refreshAllClassData = () => {
+      fetchClassMaterials(teacherProfileId, classData);
+      fetchClassAssignments(teacherProfileId, classData);
+      fetchClassAnnouncements(teacherProfileId, classData);
+      fetchDashboardMetrics(teacherProfileId, id);
+    };
+
+    const channelId = `class-detail-rt-${id}-${Math.random().toString(36).substring(7)}`;
     const channel = supabase
-      .channel(`class-detail-materials-rt-${id}-${Math.random().toString(36).substring(7)}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "lesson_materials" },
-        () => {
-          fetchClassMaterials(teacherProfileId, classData);
-          fetchDashboardMetrics(teacherProfileId, id);
-        }
-      )
+      .channel(channelId)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lessons" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lesson_materials" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "assignments_activity" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_announcements" }, refreshAllClassData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, refreshAllClassData)
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [teacherProfileId, id, classData]);
 
   useEffect(() => {
+    const allItems = [...(announcements || []), ...(assignments || [])];
+    const timers = scheduleTargetedReloadTimers(allItems);
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, [announcements, assignments]);
+
+  useEffect(() => {
     let isMounted = true;
+
+    setLoading(true);
+    setClassData(null);
+    setAssignedStudents([]);
+    setMaterials([]);
+    setAssignments([]);
+    setAnnouncements([]);
+    setMetrics({
+      totalLessons: 0,
+      publishedLessons: 0,
+      activitiesCount: 0,
+      seatworksCount: 0,
+      assignmentsCount: 0,
+      quizzesCount: 0,
+      materialsCount: 0
+    });
 
     const initialize = async () => {
       const userData = localStorage.getItem("currentUser");
@@ -1420,7 +1521,7 @@ export function ClassDetail() {
               schedule: String(subData.schedule || ""),
               room: "",
               semester: "Current School Year",
-              studentCount: Number(subData.enrolled || 0),
+              studentCount: 0,
               capacity: Number(subData.capacity || 0),
               gradeLevel: String(subData.grade_level || "")
             };
@@ -1668,7 +1769,7 @@ export function ClassDetail() {
       return;
     }
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -1763,7 +1864,7 @@ export function ClassDetail() {
     const selectedStudents = masterlistStudents.filter(s => selectedMasterlistIds.includes(s.id));
     if (selectedStudents.length === 0) return;
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -1938,7 +2039,7 @@ export function ClassDetail() {
   const handleImportCSV = async () => {
     if (!supabase || !teacherProfileId || csvValidRecords.length === 0) return;
 
-    const currentCapacity = Number(classData?.capacity || 30);
+    const currentCapacity = Number(classData?.capacity || 0);
     const currentEnrolled = assignedStudents.length;
     const availableSlots = Math.max(0, currentCapacity - currentEnrolled);
 
@@ -2048,6 +2149,39 @@ export function ClassDetail() {
     setPendingDeleteStudent(null);
   };
 
+  const ensureSubjectLesson = async (subjectId, teacherId) => {
+    if (!supabase || !subjectId) return null;
+    const cleanId = !isNaN(Number(subjectId)) ? Number(subjectId) : subjectId;
+    const { data: existing } = await supabase
+      .from("lessons")
+      .select("id")
+      .eq("subject_id", cleanId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.id) return existing.id;
+
+    const { data: created, error } = await supabase
+      .from("lessons")
+      .insert({
+        subject_id: cleanId,
+        teacher_id: teacherId || null,
+        school_year: activeSchoolYear || null,
+        term: activeQuarter || null,
+        title: "General Class Materials",
+        status: "Published"
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error("[ensureSubjectLesson] Error creating fallback lesson:", error);
+      return null;
+    }
+
+    return created?.id;
+  };
+
   // Upload Material
   const handleAddMaterial = async () => {
     const title = String(matForm.title || "").trim();
@@ -2111,7 +2245,7 @@ export function ClassDetail() {
           if (errCode === "404" || String(uploadResult.error?.message || "").toLowerCase().includes("not found")) {
             setMatError(`Storage bucket '${STORAGE_BUCKET}' not found. Please create it in Supabase Storage.`);
           } else if (["401", "403"].includes(errCode) || String(uploadResult.error?.message || "").toLowerCase().includes("policy")) {
-            setMatError(`Upload blocked by storage policy. In Supabase: Storage ΓåÆ ${STORAGE_BUCKET} ΓåÆ Policies ΓåÆ Allow uploads for authenticated users.`);
+            setMatError(`Upload blocked by storage policy. In Supabase: Storage → ${STORAGE_BUCKET} → Policies → Allow uploads for authenticated users.`);
           } else {
             setMatError(`File upload failed: ${uploadResult.error.message || "Unknown error"}`);
           }
@@ -2141,7 +2275,7 @@ export function ClassDetail() {
         });
       }
 
-      // Γ£à FIXED: Use FIRST file URL as plain string (not JSON array)
+      // FIXED: Use FIRST file URL as plain string (not JSON array)
       const firstFileUrl = uploadedFiles[0]?.fileUrl;
 
       const columns = await getMaterialColumns();
@@ -2149,11 +2283,11 @@ export function ClassDetail() {
         title,
         description: String(matForm.description || "").trim() || null,
         file_type: fileType,
-        file_url: firstFileUrl,  // ≡ƒæê Plain URL string - CRITICAL FIX
-        teacher_id: effectiveTeacherId  // ≡ƒæê Always include
+        file_url: firstFileUrl,  // FIXED Plain URL string - CRITICAL FIX
+        teacher_id: effectiveTeacherId  // Always include
       };
 
-      // Γ£à FIXED: Conditionally add fields ONLY if columns exist
+      // FIXED: Conditionally add fields ONLY if columns exist
       if (columns.includes("file_name")) {
         payload.file_name = uploadedFiles[0]?.fileName;  // Single file
       }
@@ -2164,9 +2298,6 @@ export function ClassDetail() {
 
       if (columns.includes("subject_id")) {
         payload.subject_id = classData?.id || classData?.subject_id || null;
-        if (!payload.subject_id) {
-          console.warn("[ClassDetail] No subject_id found in classData:", classData);
-        }
       }
 
       if (columns.includes("class_id")) {
@@ -2194,38 +2325,72 @@ export function ClassDetail() {
         payload.created_at = new Date().toISOString();
       }
 
-      console.log("[ClassDetail] Γ£à FIXED DB insert payload:", payload);
+      let insertedRecord = null;
+      let saveError = null;
 
-      const insertResult = await supabase
-        .from("class_materials")
-        .insert(payload)
-        .select("id, *")
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from("class_materials")
+          .insert(payload)
+          .select("id, *")
+          .single();
 
-      console.log("[ClassDetail] DB insert response:", insertResult);
-
-      if (insertResult.error) {
-        console.error("[ClassDetail] DB insert failed:", insertResult.error);
-        const errCode = String(insertResult.error?.code || insertResult.error?.status || "");
-        if (["42501", "401", "403"].includes(errCode) || String(insertResult.error?.message || "").toLowerCase().includes("policy")) {
-          setMatError(`RLS policy violation. Check: 1) subject_id present? 2) file_url is plain string? 3) teacher_id matches auth.uid()`);
+        if (!error && data) {
+          insertedRecord = data;
         } else {
-          setMatError(`Failed to save: ${insertResult.error.message}`);
+          saveError = error;
         }
-
-        // Rollback storage
-        if (uploadedFiles.length > 0) {
-          await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
-        }
-        return;
+      } catch (err) {
+        saveError = err;
       }
 
-      if (insertResult.data) {
-        const normalized = normalizeMaterialRecord(insertResult.data);
+      if (saveError || !insertedRecord) {
+        console.warn("[ClassDetail] class_materials insert notice, attempting lesson_materials fallback:", saveError?.message || saveError);
+        const cleanSubId = classData?.id || classData?.subject_id || id;
+        const targetLessonId = await ensureSubjectLesson(cleanSubId, effectiveTeacherId);
+
+        if (targetLessonId) {
+          const lmPayload = {
+            lesson_id: targetLessonId,
+            file_name: title || uploadedFiles[0]?.fileName || "Attached Material",
+            file_url: firstFileUrl,
+            file_size: matFiles[0]?.size || 0,
+            file_type: fileType || matFiles[0]?.type || "application/pdf"
+          };
+
+          const { data: lmData, error: lmErr } = await supabase
+            .from("lesson_materials")
+            .insert(lmPayload)
+            .select("*")
+            .single();
+
+          if (lmErr) {
+            console.error("[ClassDetail] Fallback insert to lesson_materials failed:", lmErr);
+            setMatError(`Failed to save material: ${lmErr.message}`);
+            if (uploadedFiles.length > 0) {
+              await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+            }
+            return;
+          }
+
+          insertedRecord = lmData;
+          saveError = null;
+        } else {
+          setMatError(`Failed to save material: ${saveError?.message || "Could not resolve lesson or subject ID"}`);
+          if (uploadedFiles.length > 0) {
+            await supabase.storage.from(STORAGE_BUCKET).remove(uploadedFiles.map((item) => item.filePath));
+          }
+          return;
+        }
+      }
+
+      if (insertedRecord) {
+        const normalized = normalizeMaterialRecord(insertedRecord);
         setMaterials((current) => [normalized, ...current]);
       }
 
       await fetchClassMaterials(teacherProfileId, classData);
+      await fetchDashboardMetrics(effectiveTeacherId || teacherProfileId, id);
       setMatSuccess("Material uploaded successfully!");
       resetMaterialForm(true);
       setShowMaterialModal(false);
@@ -2274,9 +2439,45 @@ export function ClassDetail() {
         }
       }
 
-      const { error } = await supabase.from("class_materials").delete().eq("id", materialId);
+      let dbDeleteError = null;
+      let deleteSuccess = false;
 
-      if (error) {
+      // 1. Try class_materials table first
+      const { error: cmError } = await supabase.from("class_materials").delete().eq("id", materialId);
+      if (!cmError) {
+        deleteSuccess = true;
+      } else {
+        dbDeleteError = cmError;
+        console.warn("[ClassDetail] class_materials delete notice, trying lesson_materials fallback:", cmError?.message || cmError);
+
+        // 2. Try lesson_materials table as fallback
+        try {
+          const { error: lmError } = await supabase.from("lesson_materials").delete().eq("id", materialId);
+          if (!lmError) {
+            deleteSuccess = true;
+            dbDeleteError = null;
+          }
+        } catch (lmErr) {
+          console.warn("[ClassDetail] Fallback delete from lesson_materials error:", lmErr);
+        }
+
+        // 3. If missing table (404/400/42P01/PGRST205) or item already gone, treat as successful cleanup
+        const isTableOrNotFoundError = dbDeleteError && (
+          dbDeleteError.status === 404 ||
+          dbDeleteError.status === 400 ||
+          dbDeleteError.code === "PGRST205" ||
+          dbDeleteError.code === "42P01" ||
+          dbDeleteError.code === "PGRST116" ||
+          String(dbDeleteError.message || "").toLowerCase().includes("not found")
+        );
+
+        if (isTableOrNotFoundError) {
+          deleteSuccess = true;
+          dbDeleteError = null;
+        }
+      }
+
+      if (dbDeleteError && !deleteSuccess) {
         if (backups.length > 0) {
           for (const backup of backups) {
             const restoreResult = await supabase.storage.from(STORAGE_BUCKET).upload(backup.filePath, backup.blob, {
@@ -2288,7 +2489,7 @@ export function ClassDetail() {
             }
           }
         }
-        throw error;
+        throw dbDeleteError;
       }
 
       setMatSuccess("Material deleted successfully.");
@@ -2829,6 +3030,9 @@ export function ClassDetail() {
       await fetchClassAssignments(effectiveTeacherId, classData);
       console.log("[ClassDetail] Refreshed assignments count:", assignments.length);
       setAsgSuccess("Assignment/Activity saved successfully.");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("connected:assessments-changed", { detail: { classId: id } }));
+      }
       resetAssignmentForm(true);
       setShowAssignmentModal(false);
     } catch (error) {
@@ -3006,7 +3210,7 @@ export function ClassDetail() {
       link_url: "",
       is_pinned: false,
       status: "Published",
-      scheduled_date: "",
+      scheduled_date: new Date().toISOString().split("T")[0],
       scheduled_time: "08:00",
       publishImmediately: true
     });
@@ -3381,6 +3585,10 @@ export function ClassDetail() {
       if (columns.includes("course_id")) payload.course_id = classId;
       if (columns.includes("subject_id")) payload.subject_id = classId;
 
+      if (columns.includes("status")) payload.status = status;
+      if (columns.includes("scheduled_publish_at")) payload.scheduled_publish_at = scheduled_at;
+      if (columns.includes("published_at")) payload.published_at = status === "Published" ? new Date().toISOString() : null;
+
       if (columns.includes("priority")) {
         payload.priority = JSON.stringify({
           is_pinned: !!annForm.is_pinned,
@@ -3587,7 +3795,7 @@ export function ClassDetail() {
       pinned: true,
       createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
       datePosted: new Date(Date.now() - 3600000 * 24).toISOString(),
-      authorName: "Teacher Maria Santos",
+      authorName: teacherName || "Class Teacher",
       category: "Exam Notice",
       status: "Active",
     },
@@ -3599,7 +3807,7 @@ export function ClassDetail() {
       pinned: false,
       createdAt: new Date(Date.now() - 3600000 * 72).toISOString(),
       datePosted: new Date(Date.now() - 3600000 * 72).toISOString(),
-      authorName: "Teacher Maria Santos",
+      authorName: teacherName || "Class Teacher",
       category: "Project Reminder",
       status: "Active",
     },
@@ -3709,6 +3917,17 @@ export function ClassDetail() {
   };
 
 
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
+          <p className="text-sm font-medium text-gray-600">Loading class details...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!classData) {
     return (
@@ -3822,15 +4041,7 @@ export function ClassDetail() {
         <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">Class Details</h2>
-            <NotificationDropdown
-              notifications={notificationList}
-              onMarkAsRead={(id) =>
-                setNotificationList((prev) =>
-                  prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-                )
-              }
-              onNotificationsChange={setNotificationList}
-            />
+            <NotificationDropdown />
           </div>
         </div>
 
@@ -3865,11 +4076,10 @@ export function ClassDetail() {
                 <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Class Overview</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div 
-                    onClick={() => setActiveTab("students")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <Users className="w-4 h-4 text-white" />
                       </div>
                       Students
@@ -3878,11 +4088,10 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("lessons")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <BookOpen className="w-4 h-4 text-white" />
                       </div>
                       Lessons
@@ -3891,16 +4100,11 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => {
-                      setMatError("");
-                      setMatSuccess("");
-                      setShowMaterialModal(true);
-                    }}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
-                        <BookOpen className="w-4 h-4 text-white" />
+                      <div className="p-1.5 rounded-lg bg-white/10">
+                        <FileText className="w-4 h-4 text-white" />
                       </div>
                       Materials
                     </div>
@@ -3908,11 +4112,10 @@ export function ClassDetail() {
                   </div>
 
                   <div 
-                    onClick={() => setActiveTab("announcements")}
-                    className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group"
+                    className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm"
                   >
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <Megaphone className="w-4 h-4 text-white" />
                       </div>
                       Announcements
@@ -3926,9 +4129,9 @@ export function ClassDetail() {
               <div className="mt-6">
                 <p className="text-sm font-semibold text-green-100 uppercase tracking-wider mb-2">Classroom Activity</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <FileText className="w-4 h-4 text-white" />
                       </div>
                       Seatworks
@@ -3936,9 +4139,9 @@ export function ClassDetail() {
                     <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.seatworksCount}</p>
                   </div>
 
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <ClipboardList className="w-4 h-4 text-white" />
                       </div>
                       Assignments
@@ -3946,9 +4149,9 @@ export function ClassDetail() {
                     <p className="text-3xl font-bold mt-2 text-white">{displayMetrics.assignmentsCount}</p>
                   </div>
 
-                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 hover:bg-white/15 transition-all duration-200 cursor-pointer shadow-sm group">
+                  <div className="rounded-xl bg-white/10 border border-white/20 p-4 shadow-sm">
                     <div className="flex items-center gap-2.5 text-green-100 text-xs font-semibold uppercase tracking-wider">
-                      <div className="p-1.5 rounded-lg bg-white/10 group-hover:scale-110 transition-transform">
+                      <div className="p-1.5 rounded-lg bg-white/10">
                         <CheckCircle className="w-4 h-4 text-white" />
                       </div>
                       Quizzes
@@ -3983,9 +4186,9 @@ export function ClassDetail() {
             <div className="p-6">
               {/* STUDENTS TAB */}
               {activeTab === "students" && (() => {
-                const capacity = Number(classData?.capacity || 30);
+                const capacity = Number(classData?.capacity || 0);
                 const enrolledCount = activeStudentsList.length;
-                const availableSlots = Math.max(0, capacity - enrolledCount);
+                const availableSlots = capacity > 0 ? Math.max(0, capacity - enrolledCount) : "Unlimited";
                 const isClassFull = capacity > 0 && enrolledCount >= capacity;
 
                 return (
@@ -3995,7 +4198,7 @@ export function ClassDetail() {
                       <div>
                         <h3 className="text-lg font-semibold text-gray-900">Student List</h3>
                         <p className="text-sm text-gray-500 mt-0.5">
-                          {enrolledCount} / {capacity} Students
+                          {enrolledCount} / {capacity > 0 ? capacity : "∞"} Students
                           <span className="ml-2 font-medium">
                             ({isClassFull ? "0 slots available" : `${availableSlots} slot(s) available`})
                           </span>
@@ -4114,6 +4317,7 @@ export function ClassDetail() {
                   />
                 </div>
               )}
+
               {/* ANNOUNCEMENTS TAB */}
               {activeTab === "announcements" && (
                 <div data-tour="class-detail-announcements-content">
@@ -4124,7 +4328,7 @@ export function ClassDetail() {
                       </div>
                     <button
                       onClick={openCreateAnnouncementModal}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-sm hover:shadow transition-all font-semibold text-sm whitespace-nowrap self-start md:self-auto"
                     >
                       <Megaphone className="w-4 h-4" />
                       New Announcement
@@ -4138,7 +4342,7 @@ export function ClassDetail() {
                         onClick={() => setActiveAnnouncementTab("Active")}
                         className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                           activeAnnouncementTab === "Active"
-                            ? "bg-white text-purple-700 shadow-sm"
+                            ? "bg-white text-green-700 shadow-sm"
                             : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
@@ -4148,7 +4352,7 @@ export function ClassDetail() {
                         onClick={() => setActiveAnnouncementTab("Archived")}
                         className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                           activeAnnouncementTab === "Archived"
-                            ? "bg-white text-purple-700 shadow-sm"
+                            ? "bg-white text-green-700 shadow-sm"
                             : "text-gray-600 hover:text-gray-900"
                         }`}
                       >
@@ -4157,7 +4361,7 @@ export function ClassDetail() {
                     </div>
 
                     <div className="flex items-center gap-4 text-xs font-medium text-gray-500 self-end sm:self-auto">
-                      <div className="flex items-center gap-1.5 bg-purple-50 text-purple-700 px-3 py-1 rounded-full">
+                      <div className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-full">
                         <span className="font-bold">{activeAnnouncementsList.filter(a => (a.isPinned || a.pinned) && a.status !== "Archived").length}</span> Pinned
                       </div>
                       <div className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-3 py-1 rounded-full">
@@ -4184,8 +4388,8 @@ export function ClassDetail() {
                     if (sortedList.length === 0) {
                       return (
                         <div className="text-center py-16 border border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
-                          <div className="w-14 h-14 bg-purple-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                            <Megaphone className="w-6 h-6 text-purple-600" />
+                          <div className="w-14 h-14 bg-green-100/60 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Megaphone className="w-6 h-6 text-green-600" />
                           </div>
                           <h4 className="font-bold text-gray-900 mb-1">
                             {activeAnnouncementTab === "Archived" ? "No archived announcements" : "No announcements posted yet"}
@@ -4198,7 +4402,7 @@ export function ClassDetail() {
                           {activeAnnouncementTab !== "Archived" && (
                             <button
                               onClick={openCreateAnnouncementModal}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
                             >
                               <Megaphone className="w-4 h-4" />
                               Create Announcement
@@ -4214,16 +4418,16 @@ export function ClassDetail() {
                           <div
                             key={ann.id}
                             onClick={() => setSelectedAnnouncementDetail(ann)}
-                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-purple-200 transition-all duration-200 cursor-pointer relative group ${
-                              ann.isPinned ? "border-purple-200 bg-purple-50/10 ring-1 ring-purple-100" : "border-gray-200"
+                            className={`p-5 bg-white border rounded-2xl hover:shadow-md hover:border-green-200 transition-all duration-200 cursor-pointer relative group ${
+                              ann.isPinned ? "border-green-200 bg-green-50/10 ring-1 ring-green-100" : "border-gray-200"
                             }`}
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap mb-2.5">
                                   {ann.isPinned && (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
-                                      <Sparkles className="w-3.5 h-3.5 fill-purple-600 text-purple-600" />
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                      <Sparkles className="w-3.5 h-3.5 fill-green-600 text-green-600" />
                                       Pinned
                                     </span>
                                   )}
@@ -4238,7 +4442,7 @@ export function ClassDetail() {
                                   </span>
                                 </div>
 
-                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-purple-700 transition-colors">
+                                <h4 className="font-bold text-gray-900 text-base leading-snug group-hover:text-green-700 transition-colors">
                                   {ann.title}
                                 </h4>
 
@@ -4248,7 +4452,7 @@ export function ClassDetail() {
 
                                 {/* Optional Link Indicator */}
                                 {ann.linkUrl && (
-                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-purple-600 font-semibold hover:underline">
+                                  <div className="mt-3 flex items-center gap-1.5 text-xs text-green-600 font-semibold hover:underline">
                                     <Sparkles className="w-3.5 h-3.5" />
                                     <span>Attachment Link Associated</span>
                                   </div>
@@ -4280,12 +4484,12 @@ export function ClassDetail() {
                                           href={attachmentUrl}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-50/50 hover:bg-purple-100/60 text-purple-700 text-xs font-medium border border-purple-100/50 hover:border-purple-200 transition-all"
+                                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-50/50 hover:bg-green-100/60 text-green-700 text-xs font-medium border border-green-100/50 hover:border-green-200 transition-all"
                                         >
                                           {attachmentKind === "image" ? (
                                             <Sparkles className="w-3.5 h-3.5" />
                                           ) : (
-                                            <File className="w-3.5 h-3.5 text-purple-500" />
+                                            <File className="w-3.5 h-3.5 text-green-500" />
                                           )}
                                           <span className="truncate max-w-[180px]">{attachmentName}</span>
                                         </a>
@@ -4315,7 +4519,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         openEditAnnouncementModal(ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <FileText className="w-3.5 h-3.5" />
                                       Edit
@@ -4325,7 +4529,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         togglePinAnnouncement(e, ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <Sparkles className="w-3.5 h-3.5 fill-current" />
                                       {ann.isPinned ? "Unpin" : "Pin"}
@@ -4335,7 +4539,7 @@ export function ClassDetail() {
                                         setOpenMenuId(null);
                                         toggleArchiveAnnouncement(e, ann);
                                       }}
-                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                      className="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-green-50 hover:text-green-700 flex items-center gap-2 transition-colors"
                                     >
                                       <Calendar className="w-3.5 h-3.5" />
                                       {ann.status === "Archived" ? "Restore" : "Archive"}
@@ -4395,9 +4599,9 @@ export function ClassDetail() {
 
             <div className="p-6 overflow-y-auto flex-1">
               {(() => {
-                const capacity = Number(classData?.capacity || 30);
+                const capacity = Number(classData?.capacity || 0);
                 const currentEnrolled = assignedStudents.length;
-                const availableSlots = Math.max(0, capacity - currentEnrolled);
+                const availableSlots = capacity > 0 ? Math.max(0, capacity - currentEnrolled) : Infinity;
                 const selectedCount = addStudentMode === "individual" ? selectedStudentIds.length : (addStudentMode === "masterlist" ? selectedMasterlistIds.length : csvValidRecords.length);
                 const isOverCapacity = capacity > 0 && selectedCount > availableSlots;
 
@@ -4406,7 +4610,7 @@ export function ClassDetail() {
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity} Enrolled ({availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full"})</span>
+                        <span><strong>Capacity Status:</strong> {currentEnrolled} / {capacity > 0 ? capacity : "∞"} Enrolled ({capacity > 0 ? (availableSlots > 0 ? `${availableSlots} slot(s) available` : "Class Full") : "Unlimited"})</span>
                       </div>
                     </div>
 
@@ -4727,6 +4931,166 @@ export function ClassDetail() {
         type="danger"
       />
 
+      {/* ••••• CREATE / EDIT MATERIAL MODAL ••••• */}
+      {showMaterialModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <FileText className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isEditingMaterial ? "Edit Material" : "Upload Class Material"}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {isEditingMaterial ? "Update resource details and links" : "Add learning resources for your students"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowMaterialModal(false);
+                  resetMaterialForm();
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4">
+              {matError && (
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-xs text-red-700 font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{matError}</span>
+                </div>
+              )}
+
+              {matSuccess && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-700 font-medium">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{matSuccess}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Material Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chapter 1: Introduction to Biology"
+                  value={matForm.title}
+                  onChange={(e) => setMatForm({ ...matForm, title: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Category / File Type
+                </label>
+                <select
+                  value={matForm.fileType}
+                  onChange={(e) => setMatForm({ ...matForm, fileType: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
+                >
+                  <option value="PDF">PDF Document</option>
+                  <option value="DOCX">Word Document (DOCX)</option>
+                  <option value="PPTX">Presentation (PPTX)</option>
+                  <option value="Video">Video File</option>
+                  <option value="Audio">Audio Recording</option>
+                  <option value="Link">External Link / URL</option>
+                  <option value="Other">Other Resource</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Description (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide instructions or background details about this material..."
+                  value={matForm.description}
+                  onChange={(e) => setMatForm({ ...matForm, description: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
+                  Attach File {!isEditingMaterial && <span className="text-red-500">*</span>}
+                </label>
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-green-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
+                  <p className="text-xs text-gray-600 mb-1">Click to select files from your device</p>
+                  <p className="text-[10px] text-gray-400">PDF, DOCX, PPTX, Images, MP4 (Max 50MB)</p>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setMatFiles(files);
+                      setMatFileNames(files.map((file) => file.name));
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+                {matFileNames.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {matFileNames.map((name, i) => (
+                      <div key={i} className="flex items-center justify-between bg-green-50/50 border border-green-100 rounded-lg px-3 py-1.5 text-xs text-green-800 font-medium">
+                        <span className="truncate max-w-[280px]">{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextFiles = Array.from(matFiles).filter((_, idx) => idx !== i);
+                            setMatFiles(nextFiles);
+                            setMatFileNames(nextFiles.map(f => f.name));
+                          }}
+                          className="text-red-500 hover:text-red-700 font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 px-6 py-4 flex gap-3 shrink-0">
+              <button
+                onClick={() => {
+                  setShowMaterialModal(false);
+                  resetMaterialForm();
+                }}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={isEditingMaterial ? handleUpdateMaterial : handleAddMaterial}
+                disabled={isUploadingMaterial || (!isEditingMaterial && matFiles.length === 0 && !matForm.title)}
+                className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              >
+                {isUploadingMaterial ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <span>{isEditingMaterial ? "Save Changes" : "Upload Material"}</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={showDeleteAssignmentModal && Boolean(pendingDeleteAssignment)}
         onClose={() => {
@@ -4765,8 +5129,8 @@ export function ClassDetail() {
           <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">
@@ -4793,7 +5157,7 @@ export function ClassDetail() {
                   placeholder="e.g. Midterm Examination Guidelines"
                   value={annForm.title}
                   onChange={(e) => setAnnForm({ ...annForm, title: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
                 />
               </div>
 
@@ -4806,7 +5170,7 @@ export function ClassDetail() {
                   placeholder="Write your announcement details here..."
                   value={annForm.content}
                   onChange={(e) => setAnnForm({ ...annForm, content: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all resize-none"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all resize-none"
                 />
               </div>
 
@@ -4819,7 +5183,7 @@ export function ClassDetail() {
                   placeholder="e.g. https://classroom.google.com/..."
                   value={annForm.link_url}
                   onChange={(e) => setAnnForm({ ...annForm, link_url: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-55/50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm transition-all"
                 />
               </div>
 
@@ -4827,8 +5191,8 @@ export function ClassDetail() {
                 <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1.5">
                   Attachments (Optional)
                 </label>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-purple-50/10 transition-colors cursor-pointer relative">
-                  <Upload className="w-6 h-6 text-purple-400 mx-auto mb-2" />
+                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center hover:bg-green-50/10 transition-colors cursor-pointer relative">
+                  <Upload className="w-6 h-6 text-green-500 mx-auto mb-2" />
                   <p className="text-xs text-gray-650 mb-1">Click to select files from your computer</p>
                   <p className="text-[10px] text-gray-400">PDF, DOCX, Images, and ZIP (Max 15MB)</p>
                   <input
@@ -4846,7 +5210,7 @@ export function ClassDetail() {
                 {annFileNames.length > 0 && (
                   <div className="mt-2 space-y-1">
                     {annFileNames.map((name, i) => (
-                      <div key={i} className="flex items-center justify-between bg-purple-50/40 border border-purple-100 rounded-lg px-3 py-1.5 text-xs text-purple-750 font-medium">
+                      <div key={i} className="flex items-center justify-between bg-green-50/40 border border-green-100 rounded-lg px-3 py-1.5 text-xs text-green-800 font-medium">
                         <span className="truncate max-w-[300px]">{name}</span>
                         <button
                           type="button"
@@ -4878,52 +5242,91 @@ export function ClassDetail() {
                       onChange={(e) => setAnnForm({ ...annForm, is_pinned: e.target.checked })}
                       className="sr-only peer"
                     />
-                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-800">Publish Immediately</span>
-                    <span className="text-[10px] text-gray-550">Post right now or set a date/time to schedule</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={annForm.publishImmediately}
-                      onChange={(e) => setAnnForm({ ...annForm, publishImmediately: e.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                {/* Publish Timing & Scheduling Option */}
+                <div className="space-y-3 pt-2 border-t border-gray-150">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">
+                    Publish Schedule & Timing
                   </label>
-                </div>
-
-                {!annForm.publishImmediately && (
-                  <div className="grid grid-cols-2 gap-3 bg-purple-50/20 border border-purple-100 rounded-xl p-3.5 animate-in slide-in-from-top-2 duration-150">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
-                        Publish Date
-                      </label>
-                      <input
-                        type="date"
-                        value={annForm.scheduled_date}
-                        onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
-                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1">
-                        Publish Time
-                      </label>
-                      <input
-                        type="time"
-                        value={annForm.scheduled_time}
-                        onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
-                        className="w-full px-3 py-1.5 bg-white border border-gray-200 text-gray-900 rounded-lg focus:outline-none text-xs focus:ring-1 focus:ring-purple-500"
-                      />
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setAnnForm({ ...annForm, publishImmediately: true })}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                        annForm.publishImmediately
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Publish Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = new Date().toISOString().split("T")[0];
+                        setAnnForm({
+                          ...annForm,
+                          publishImmediately: false,
+                          scheduled_date: annForm.scheduled_date || today,
+                          scheduled_time: annForm.scheduled_time || "08:00"
+                        });
+                      }}
+                      className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                        !annForm.publishImmediately
+                          ? "bg-white text-green-700 shadow-sm"
+                          : "text-gray-600 hover:text-gray-900"
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      Schedule Date & Time
+                    </button>
                   </div>
-                )}
+
+                  {!annForm.publishImmediately && (
+                    <div className="bg-green-50/40 border border-green-200 rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="flex items-center gap-2 text-xs font-bold text-green-900">
+                        <Clock className="w-4 h-4 text-green-600" />
+                        Set Target Date and Time for Broadcast
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-green-500" /> Publish Date <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            min={new Date().toISOString().split("T")[0]}
+                            value={annForm.scheduled_date || new Date().toISOString().split("T")[0]}
+                            onChange={(e) => setAnnForm({ ...annForm, scheduled_date: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-700 uppercase tracking-wide mb-1 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-green-500" /> Publish Time <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="time"
+                            value={annForm.scheduled_time || "08:00"}
+                            onChange={(e) => setAnnForm({ ...annForm, scheduled_time: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 text-gray-900 rounded-xl focus:outline-none text-xs focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                      </div>
+
+                      {annForm.scheduled_date && (
+                        <p className="text-[11px] text-green-700 font-medium">
+                          📢 Scheduled for <strong>{annForm.scheduled_date}</strong> at <strong>{annForm.scheduled_time || "08:00"}</strong>.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -4937,7 +5340,7 @@ export function ClassDetail() {
               <button
                 onClick={handleSaveAnnouncement}
                 disabled={isPostingAnnouncement}
-                className="flex-1 px-4 py-2.5 bg-purple-600 hover:bg-purple-750 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                className="flex-1 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-semibold shadow-sm disabled:opacity-60 disabled:cursor-not-allowed transition-all"
               >
                 {isPostingAnnouncement ? "Saving..." : isEditingAnnouncement ? "Update Announcement" : "Post Announcement"}
               </button>
@@ -4952,8 +5355,8 @@ export function ClassDetail() {
           <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
             <div className="border-b border-gray-100 px-6 py-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Megaphone className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Megaphone className="w-5 h-5 text-green-600" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 truncate max-w-[320px]">
@@ -4974,8 +5377,8 @@ export function ClassDetail() {
 
             <div className="p-6 overflow-y-auto flex-1 space-y-5">
               {selectedAnnouncementDetail.isPinned && (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-150/40 text-purple-800 rounded-full text-xs font-bold border border-purple-200">
-                  <Sparkles className="w-3.5 h-3.5 fill-purple-650 text-purple-650" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold border border-green-200">
+                  <Sparkles className="w-3.5 h-3.5 fill-green-600 text-green-600" />
                   Pinned Announcement
                 </div>
               )}
@@ -4987,16 +5390,16 @@ export function ClassDetail() {
               </div>
 
               {selectedAnnouncementDetail.linkUrl && (
-                <div className="bg-purple-50/30 border border-purple-100 rounded-xl p-4 flex items-center justify-between gap-3">
+                <div className="bg-green-50/30 border border-green-100 rounded-xl p-4 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-purple-850 uppercase tracking-wider">Reference Link</p>
+                    <p className="text-xs font-bold text-green-800 uppercase tracking-wider">Reference Link</p>
                     <p className="text-xs text-gray-600 truncate mt-0.5">{selectedAnnouncementDetail.linkUrl}</p>
                   </div>
                   <a
                     href={selectedAnnouncementDetail.linkUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="flex-shrink-0 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-750 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
+                    className="flex-shrink-0 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all"
                   >
                     Open Link
                   </a>
