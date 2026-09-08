@@ -118,6 +118,8 @@ function TeacherManagement() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [gradeSectionsMap, setGradeSectionsMap] = useState({});
+  const [loadingSectionsMap, setLoadingSectionsMap] = useState({});
   
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState(null);
@@ -229,6 +231,58 @@ function TeacherManagement() {
     if (digits) return digits[0];
     return "";
   };
+
+  const loadSectionsForGrade = useCallback(async (gradeLevel) => {
+    if (!gradeLevel) return;
+    const normGrade = normalizeGradeLevel(gradeLevel);
+    if (!normGrade) return;
+
+    setLoadingSectionsMap((prev) => ({ ...prev, [normGrade]: true }));
+    try {
+      const { data } = await adminApi.db("grade_sections", "select", {
+        eq: { column: "grade_level", value: normGrade }
+      });
+      const dbSections = (data || []).map((s) => s.section_name).filter(Boolean);
+      const subjectSections = availableSubjects
+        .filter((s) => normalizeGradeLevel(s.grade_level) === normGrade && s.section)
+        .map((s) => s.section)
+        .filter(Boolean);
+
+      const merged = [...new Set([...dbSections, ...subjectSections])].sort();
+      setGradeSectionsMap((prev) => ({ ...prev, [normGrade]: merged }));
+    } catch (err) {
+      console.error("[TeacherManagement] Error loading sections for grade:", err);
+    } finally {
+      setLoadingSectionsMap((prev) => ({ ...prev, [normGrade]: false }));
+    }
+  }, [availableSubjects]);
+
+  const resolveSubjectId = useCallback((subjectCode, section, gradeLevel) => {
+    if (!subjectCode) return "";
+    const normGrade = normalizeGradeLevel(gradeLevel);
+    const codeLow = String(subjectCode).toLowerCase().trim();
+    const secLow = String(section || "").toLowerCase().trim();
+
+    const exactMatch = availableSubjects.find((s) => {
+      const sGrade = normalizeGradeLevel(s.grade_level);
+      const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+      const sSec = String(s.section || "").toLowerCase().trim();
+      return sGrade === normGrade && (sCode === codeLow || String(s.id).toLowerCase() === codeLow) && sSec === secLow;
+    });
+    if (exactMatch) return exactMatch.id;
+
+    const codeMatch = availableSubjects.find((s) => {
+      const sGrade = normalizeGradeLevel(s.grade_level);
+      const sCode = String(s.code || s.name || s.id).toLowerCase().trim();
+      return sGrade === normGrade && (sCode === codeLow || String(s.id).toLowerCase() === codeLow);
+    });
+    if (codeMatch) return codeMatch.id;
+
+    const idMatch = availableSubjects.find((s) => String(s.id) === String(subjectCode));
+    if (idMatch) return idMatch.id;
+
+    return subjectCode;
+  }, [availableSubjects]);
   const normalizeSubjects = (value) => {
     let rawArray = [];
     if (Array.isArray(value)) {
@@ -248,7 +302,7 @@ function TeacherManagement() {
     return rawArray
       .map((item) => {
         if (item && typeof item === "object") {
-          return String(item.value || item.id || item.code || item.name || "").trim();
+          return String(item.subjectId || item.value || item.id || item.code || item.name || "").trim();
         }
         return String(item || "").trim();
       })
@@ -347,7 +401,7 @@ function TeacherManagement() {
         return "";
       }
       case "subjects":
-        if (normalizeSubjects(value).length === 0) return "At least one subject is required";
+        if (normalizeSubjects(value).length === 0 && (!Array.isArray(value) || value.length === 0)) return "At least one subject & section assignment is required";
         return "";
       case "status":
         return nextValue ? "" : "Status is required";
@@ -368,28 +422,38 @@ function TeacherManagement() {
 
   const updateTeacherField = (setData, setErrors, formData, field, value) => {
     let nextValue = field === "phone" ? normalizePhone(value) : value;
-
-    if (field === "subjects") {
-      const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
-      nextValue = normalizeSubjects(value).filter((subjId) => validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase()));
-    }
-
     const nextFormData = { ...formData, [field]: nextValue };
 
     if (field === "grade_level") {
       const newGradeNorm = normalizeGradeLevel(value);
-      if (newGradeNorm) {
-        const matchingGradeSubjects = availableSubjects
-          .filter((s) => {
-            const subjGradeNorm = normalizeGradeLevel(s.grade_level || s.year_level || s.grade || s.year || "");
-            return subjGradeNorm === newGradeNorm;
-          })
-          .map((s) => s.id);
-
-        nextFormData.subjects = matchingGradeSubjects;
-      } else {
-        nextFormData.subjects = [];
+      if (value) {
+        loadSectionsForGrade(value);
       }
+
+      const currentRows = Array.isArray(nextFormData.subjects) ? nextFormData.subjects : [];
+      const revalidatedRows = currentRows.map((row) => {
+        if (!row || typeof row !== "object") {
+          return { id: generateUUID(), subjectId: "", subjectCode: "", section: "" };
+        }
+
+        const subj = availableSubjects.find(
+          (s) => String(s.id) === String(row.subjectId) || String(s.code || "").toLowerCase() === String(row.subjectCode || "").toLowerCase()
+        );
+        const subjGradeNorm = normalizeGradeLevel(subj?.grade_level || "");
+
+        if (subjGradeNorm && subjGradeNorm !== newGradeNorm) {
+          return { ...row, subjectId: "", subjectCode: "", section: "" };
+        }
+
+        const validSections = gradeSectionsMap[newGradeNorm] || [];
+        if (row.section && validSections.length > 0 && !validSections.includes(row.section)) {
+          return { ...row, section: "" };
+        }
+
+        return row;
+      });
+
+      nextFormData.subjects = revalidatedRows;
     }
 
     const nextError = validateTeacherField(field, nextFormData[field], nextFormData);
@@ -630,55 +694,46 @@ function TeacherManagement() {
     const trimmedLastName = formData.last_name.trim();
     const trimmedEmail = formData.email.trim().toLowerCase();
     const normalizedPhone = normalizePhone(formData.phone);
-    const normalizedSubjects = normalizeSubjects(formData.subjects);
-    const validSubjectIds = new Set(
-      availableSubjects.flatMap((subject) => [
-        String(subject.id || "").trim(),
-        String(subject.code || "").trim(),
-        `${subject.code} - ${subject.name} (${subject.section || "All Sections"})`
-      ]).filter(Boolean)
-    );
-    const assignedClass = formData.assigned_class?.trim() || "";
 
-    if (!trimmedFirstName) {
-      errors.first_name = "First name is required";
-    } else if (!isLettersOnly(trimmedFirstName)) {
-      errors.first_name = "First name can only contain letters";
-    }
-
-    if (trimmedMiddleName && !isLettersOnly(trimmedMiddleName)) {
-      errors.middle_name = "Middle name can only contain letters";
-    }
-
-    if (!trimmedLastName) {
-      errors.last_name = "Last name is required";
-    } else if (!isLettersOnly(trimmedLastName)) {
-      errors.last_name = "Last name can only contain letters";
-    }
-
-    if (excludeId !== null) {
-      if (!trimmedEmail) {
-        errors.email = "Email is required";
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-        errors.email = "Invalid email format";
+    const rawRows = Array.isArray(formData.subjects) ? formData.subjects : [];
+    const assignmentRows = rawRows.map((item) => {
+      if (item && typeof item === "object") {
+        return {
+          subjectId: item.subjectId || "",
+          subjectCode: item.subjectCode || "",
+          section: item.section || ""
+        };
       }
+      return { subjectId: String(item || ""), subjectCode: String(item || ""), section: "" };
+    });
+
+    if (requireSubjects && assignmentRows.length === 0) {
+      errors.subjects = "At least one subject & section assignment is required.";
     }
 
-    if (!normalizedPhone) {
-      errors.phone = "Phone number is required";
-    } else if (!/^\d{11}$/.test(normalizedPhone)) {
-      errors.phone = "Phone number must be exactly 11 digits";
-    }
+    const normGrade = normalizeGradeLevel(formData.grade_level);
+    const availableSectionsForGrade = gradeSectionsMap[normGrade] || [];
+    const seenCombos = new Set();
 
-    if (normalizedSubjects.length > 0 && normalizedSubjects.some((subjectId) => !validSubjectIds.has(subjectId))) {
-      errors.subjects = "One or more selected subjects are invalid";
-    } else if (requireSubjects && normalizedSubjects.length === 0) {
-      errors.subjects = "At least one subject is required";
-    }
+    for (let i = 0; i < assignmentRows.length; i++) {
+      const row = assignmentRows[i];
+      if (row.subjectCode && !row.section && availableSectionsForGrade.length > 0) {
+        errors.subjects = `Assignment #${i + 1}: Please select a Section for the assigned Subject.`;
+        break;
+      }
+      if (!row.subjectCode && row.section) {
+        errors.subjects = `Assignment #${i + 1}: Please select a Subject for Section "${row.section}".`;
+        break;
+      }
 
-    const hasDuplicateSubjects = normalizedSubjects.length !== new Set(normalizedSubjects).size;
-    if (hasDuplicateSubjects) {
-      errors.subjects = "Duplicate subject assignments are not allowed.";
+      if (row.subjectCode) {
+        const comboKey = `${row.subjectCode.toLowerCase()}___${(row.section || "").toLowerCase()}`;
+        if (seenCombos.has(comboKey)) {
+          errors.subjects = `Duplicate assignment: Subject and Section "${row.section || 'All'}" is assigned more than once.`;
+          break;
+        }
+        seenCombos.add(comboKey);
+      }
     }
 
     if (!formData.status) {
@@ -915,10 +970,22 @@ function TeacherManagement() {
   const handleEditTeacher = (teacher) => {
     setSelectedTeacher(teacher);
     const { first_name, middle_name, last_name, suffix } = splitTeacherName(teacher);
-    const validSubjectIds = new Set(availableSubjects.flatMap((s) => [String(s.id), String(s.code || "").toLowerCase()]));
-    const initialSubjects = normalizeSubjects(teacher.subjects).filter((subjId) =>
-      validSubjectIds.has(String(subjId)) || validSubjectIds.has(String(subjId).toLowerCase())
-    );
+    const teacherGrade = teacher.grade_level || teacher.year_level || "";
+    const teacherSubjectIds = normalizeSubjects(teacher.subjects);
+    const assignedClasses = normalizeAssignedClasses(teacher.assigned_class);
+
+    const parsedRows = teacherSubjectIds.map((subjId, idx) => {
+      const subj = availableSubjects.find(
+        (s) => String(s.id) === String(subjId) || String(s.code || "").toLowerCase() === String(subjId).toLowerCase()
+      );
+      const sectionName = subj?.section || assignedClasses[idx] || assignedClasses[0] || "";
+      return {
+        id: generateUUID(),
+        subjectId: subj?.id || subjId,
+        subjectCode: subj?.code || subj?.name || subjId,
+        section: sectionName
+      };
+    });
 
     setEditFormData({
       first_name,
@@ -928,11 +995,14 @@ function TeacherManagement() {
       employee_id: teacher.employee_id ?? "",
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
-      grade_level: teacher.grade_level ?? "",
-      subjects: initialSubjects,
+      grade_level: teacherGrade,
+      subjects: parsedRows,
       status: teacher.status ?? "Active"
     });
     setEditFormErrors({});
+    if (teacherGrade) {
+      loadSectionsForGrade(teacherGrade);
+    }
     setShowEditModal(true);
   };
 
@@ -1075,7 +1145,13 @@ function TeacherManagement() {
     let createdTeacherId = "";
 
     try {
-      const selectedSubjectIds = normalizeSubjects(teacherFormData.subjects);
+      const rawAddRows = Array.isArray(teacherFormData.subjects) ? teacherFormData.subjects : [];
+      const selectedSubjectIds = [...new Set(rawAddRows
+        .map((row) => resolveSubjectId(row.subjectCode || row.subjectId, row.section, teacherFormData.grade_level))
+        .filter(Boolean))];
+
+      const addSectionsList = rawAddRows.map((r) => r.section).filter(Boolean);
+      const addFormattedClass = [...new Set(addSectionsList)].join(", ");
       const fullName = composeTeacherName(teacherFormData);
       
       const firstNameLow = teacherFormData.first_name.trim().toLowerCase().replace(/\s+/g, "");
@@ -1119,6 +1195,7 @@ function TeacherManagement() {
         phone: normalizePhone(teacherFormData.phone),
         status: normalizeTeacherStatus(teacherFormData.status),
         year_level: teacherFormData.grade_level?.trim() || null,
+        assigned_class: addFormattedClass || null,
         must_change_password: true,
         is_verified: false
       };
@@ -1214,7 +1291,13 @@ function TeacherManagement() {
 
     try {
       const previousSubjectIds = normalizeSubjects(selectedTeacher.subjects);
-      const nextSubjectIds = normalizeSubjects(editFormData.subjects);
+      const rawEditRows = Array.isArray(editFormData.subjects) ? editFormData.subjects : [];
+      const nextSubjectIds = [...new Set(rawEditRows
+        .map((row) => resolveSubjectId(row.subjectCode || row.subjectId, row.section, editFormData.grade_level))
+        .filter(Boolean))];
+
+      const editSectionsList = rawEditRows.map((r) => r.section).filter(Boolean);
+      const editFormattedClass = [...new Set(editSectionsList)].join(", ");
       const fullName = composeTeacherName(editFormData);
       const payload = {
         first_name: editFormData.first_name.trim(),
@@ -1225,7 +1308,8 @@ function TeacherManagement() {
         email: editFormData.email.trim().toLowerCase(),
         phone: normalizePhone(editFormData.phone),
         status: normalizeTeacherStatus(editFormData.status),
-        year_level: editFormData.grade_level?.trim() || null
+        year_level: editFormData.grade_level?.trim() || null,
+        assigned_class: editFormattedClass || null
       };
 
       const supportsYearLevel = Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "year_level") || Object.prototype.hasOwnProperty.call(selectedTeacher || {}, "grade_level");
@@ -1569,6 +1653,135 @@ function TeacherManagement() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const renderSubjectSectionAssignments = (formData, setFormData, errors, setErrors) => {
+    const normGrade = normalizeGradeLevel(formData.grade_level);
+    const subjectsForGrade = availableSubjects.filter(
+      (s) => normalizeGradeLevel(s.grade_level || "") === normGrade
+    );
+
+    const uniqueSubjectOptionsMap = new Map();
+    subjectsForGrade.forEach((s) => {
+      const key = s.code || s.name || s.id;
+      if (!uniqueSubjectOptionsMap.has(key)) {
+        const label = s.code && s.name && s.code !== s.name ? `${s.code} - ${s.name}` : (s.name || s.code);
+        uniqueSubjectOptionsMap.set(key, { value: key, label });
+      }
+    });
+    const subjectOptions = Array.from(uniqueSubjectOptionsMap.values());
+
+    const sectionsForGrade = gradeSectionsMap[normGrade] || [];
+    const sectionOptions = sectionsForGrade.map((sec) => ({ value: sec, label: sec }));
+
+    const isSectionsLoading = !!loadingSectionsMap[normGrade];
+    const rows = Array.isArray(formData.subjects) ? formData.subjects : [];
+
+    return (
+      <div className="md:col-span-2 space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
+          <button
+            type="button"
+            onClick={() => {
+              if (!formData.grade_level) {
+                toast.error("Please select a Grade Level first.");
+                return;
+              }
+              const newRow = { id: generateUUID(), subjectId: "", subjectCode: "", section: "" };
+              updateTeacherField(setFormData, setErrors, formData, "subjects", [...rows, newRow]);
+            }}
+            className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
+          >
+            + Add Subject & Section
+          </button>
+        </div>
+
+        {!formData.grade_level ? (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center text-sm text-amber-700">
+            Please select a <strong>Grade Level</strong> first to assign subjects & sections.
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
+            No subject & section assignments added yet. Click <strong>"+ Add Subject & Section"</strong> above to add one.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rows.map((row, idx) => (
+              <div key={row.id || idx} className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl relative group shadow-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-10">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Subject</label>
+                    <CustomSelect
+                      value={row.subjectCode || row.subjectId || ""}
+                      onChange={(val) => {
+                        const updatedRows = [...rows];
+                        const resolvedId = resolveSubjectId(val, updatedRows[idx].section, formData.grade_level);
+                        updatedRows[idx] = {
+                          ...updatedRows[idx],
+                          subjectCode: val,
+                          subjectId: resolvedId
+                        };
+                        updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                      }}
+                      options={subjectOptions}
+                      placeholder={
+                        subjectOptions.length === 0
+                          ? "No subjects available for this grade."
+                          : "Select Subject"
+                      }
+                      disabled={subjectOptions.length === 0}
+                      icon={<BookOpen className="w-4 h-4" />}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Section</label>
+                    <CustomSelect
+                      value={row.section || ""}
+                      onChange={(val) => {
+                        const updatedRows = [...rows];
+                        const resolvedId = resolveSubjectId(updatedRows[idx].subjectCode, val, formData.grade_level);
+                        updatedRows[idx] = {
+                          ...updatedRows[idx],
+                          section: val,
+                          subjectId: resolvedId
+                        };
+                        updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                      }}
+                      options={sectionOptions}
+                      placeholder={
+                        isSectionsLoading
+                          ? "Loading sections..."
+                          : sectionOptions.length === 0
+                          ? "No sections available for this grade."
+                          : "Select Section"
+                      }
+                      disabled={isSectionsLoading || sectionOptions.length === 0}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updatedRows = rows.filter((_, i) => i !== idx);
+                    updateTeacherField(setFormData, setErrors, formData, "subjects", updatedRows);
+                  }}
+                  className="absolute top-3.5 right-3 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  title="Remove assignment"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {errors.subjects && <p className="text-red-500 text-sm mt-1">{errors.subjects}</p>}
+      </div>
+    );
   };
 
   const activeCount = teachers.filter((teacher) => isTeacherActive(teacher.status)).length;
@@ -1958,77 +2171,7 @@ function TeacherManagement() {
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
                   </div>
 
-                  <div className="md:col-span-2 space-y-3 pt-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentSubjects = teacherFormData.subjects || [];
-                          const nextSubjects = [...currentSubjects, ""];
-                          updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", nextSubjects);
-                        }}
-                        className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
-                      >
-                        + Add Subject & Section
-                      </button>
-                    </div>
-                    
-                    {(teacherFormData.subjects || []).length === 0 ? (
-                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
-                        No subject assignments added yet. Click "+ Add Subject & Section" above to assign subjects to this teacher.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {(teacherFormData.subjects || []).map((subjectId, idx) => {
-                          const selectedSubj = availableSubjects.find(s => String(s.id) === String(subjectId) || String(s.code || "").toLowerCase() === String(subjectId).toLowerCase());
-                          const filteredOptions = availableSubjects
-                            .filter((subject) => {
-                              if (!teacherFormData.grade_level) return true;
-                              const subjGradeRaw = String(subject.grade_level || "").trim();
-                              return !subjGradeRaw || normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(teacherFormData.grade_level);
-                            })
-                            .map((s) => ({ value: s.id, label: `${s.code} - ${s.name} (${s.section || "All Sections"})` }));
-
-                          return (
-                            <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
-                              <div className="flex-1 min-w-0">
-                                <CustomSelect
-                                  value={subjectId || ""}
-                                  onChange={(val) => {
-                                    const updatedList = [...(teacherFormData.subjects || [])];
-                                    updatedList[idx] = val;
-                                    updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", updatedList);
-                                  }}
-                                  options={filteredOptions}
-                                  placeholder="Select Subject & Section"
-                                  icon={<BookOpen className="w-4 h-4" />}
-                                  className="w-full"
-                                />
-                              </div>
-                              {selectedSubj && (
-                                <span className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-lg whitespace-nowrap">
-                                  Sec: {selectedSubj.section || "All Sections"}
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updatedList = (teacherFormData.subjects || []).filter((_, i) => i !== idx);
-                                  updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "subjects", updatedList);
-                                }}
-                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                title="Remove assignment"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {formErrors.subjects && <p className="text-red-500 text-sm mt-1">{formErrors.subjects}</p>}
-                  </div>
+                  {renderSubjectSectionAssignments(teacherFormData, setTeacherFormData, formErrors, setFormErrors)}
                 </div>
                 {formErrors.form && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -2172,77 +2315,7 @@ function TeacherManagement() {
                     {editFormErrors.status && <p className="text-red-500 text-sm mt-1">{editFormErrors.status}</p>}
                   </div>
 
-                  <div className="md:col-span-2 space-y-3 pt-2">
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700">Subject & Section Assignments</label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentSubjects = editFormData.subjects || [];
-                          const nextSubjects = [...currentSubjects, ""];
-                          updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", nextSubjects);
-                        }}
-                        className="text-xs font-semibold text-green-600 hover:text-green-700 flex items-center gap-1 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg border border-green-200 transition-colors cursor-pointer"
-                      >
-                        + Add Subject & Section
-                      </button>
-                    </div>
-                    
-                    {(editFormData.subjects || []).length === 0 ? (
-                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-center text-sm text-gray-500">
-                        No subject assignments added yet. Click "+ Add Subject & Section" above to assign subjects to this teacher.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {(editFormData.subjects || []).map((subjectId, idx) => {
-                          const selectedSubj = availableSubjects.find(s => String(s.id) === String(subjectId) || String(s.code || "").toLowerCase() === String(subjectId).toLowerCase());
-                          const filteredOptions = availableSubjects
-                            .filter((subject) => {
-                              if (!editFormData.grade_level) return true;
-                              const subjGradeRaw = String(subject.grade_level || "").trim();
-                              return !subjGradeRaw || normalizeGradeLevel(subjGradeRaw) === normalizeGradeLevel(editFormData.grade_level);
-                            })
-                            .map((s) => ({ value: s.id, label: `${s.code} - ${s.name} (${s.section || "All Sections"})` }));
-
-                          return (
-                            <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl">
-                              <div className="flex-1 min-w-0">
-                                <CustomSelect
-                                  value={subjectId || ""}
-                                  onChange={(val) => {
-                                    const updatedList = [...(editFormData.subjects || [])];
-                                    updatedList[idx] = val;
-                                    updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", updatedList);
-                                  }}
-                                  options={filteredOptions}
-                                  placeholder="Select Subject & Section"
-                                  icon={<BookOpen className="w-4 h-4" />}
-                                  className="w-full"
-                                />
-                              </div>
-                              {selectedSubj && (
-                                <span className="px-2.5 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded-lg whitespace-nowrap">
-                                  Sec: {selectedSubj.section || "All Sections"}
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updatedList = (editFormData.subjects || []).filter((_, i) => i !== idx);
-                                  updateTeacherField(setEditFormData, setEditFormErrors, editFormData, "subjects", updatedList);
-                                }}
-                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                title="Remove assignment"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {editFormErrors.subjects && <p className="text-red-500 text-sm mt-1">{editFormErrors.subjects}</p>}
-                  </div>
+                  {renderSubjectSectionAssignments(editFormData, setEditFormData, editFormErrors, setEditFormErrors)}
                 </div>
                 {editFormErrors.form && (
                   <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
