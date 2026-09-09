@@ -121,13 +121,30 @@ export async function getMyNotifications() {
     }
 
     // 2. Fetch enrolled subjects (for students) and taught subjects (for teachers)
-    const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('subject_id')
-        .eq('student_id', user.id)
-        .in('status', ['approved', 'accepted', 'active']);
+    let enrolledSubjectIds: string[] = [];
+    try {
+        const { data: enrollments } = await supabase
+            .from('enrollments')
+            .select('subject_id')
+            .eq('student_id', user.id)
+            .in('status', ['approved', 'accepted', 'active', 'Active']);
 
-    const enrolledSubjectIds = (enrollments || []).map(e => e.subject_id).filter(Boolean);
+        enrolledSubjectIds = (enrollments || []).map((e: any) => e.subject_id).filter(Boolean);
+
+        if (enrolledSubjectIds.length === 0) {
+            const { data: tsaData } = await supabase
+                .from('teacher_student_assignments')
+                .select('subject_id')
+                .eq('student_id', user.id)
+                .or('status.eq.Active,status.eq.active,status.eq.accepted,status.eq.approved');
+
+            if (tsaData && tsaData.length > 0) {
+                enrolledSubjectIds = tsaData.map((e: any) => e.subject_id).filter(Boolean);
+            }
+        }
+    } catch (e) {
+        console.warn('[MobileNotifications] Error fetching enrollments:', e);
+    }
 
     const { data: taughtSubjects } = await supabase
         .from('subjects')
@@ -245,6 +262,89 @@ export async function getMyNotifications() {
             (quizData || []).forEach(a => processActivityItem(a, 'quiz'));
         } catch (e) {
             console.warn('[MobileNotifications] Failed to query quizzes:', e);
+        }
+
+        // Query class_materials (uses subject_id)
+        try {
+            const { data: classMatData } = await supabase
+                .from('class_materials')
+                .select('id, subject_id, title, description, file_name, file_url, created_at')
+                .in('subject_id', allCourseIds)
+                .order('created_at', { ascending: false })
+                .limit(20);
+
+            (classMatData || []).forEach(mat => {
+                if (!mat || !mat.id || seenActivityIds.has(`mat-${mat.id}`) || seenActivityIds.has(mat.id)) return;
+                seenActivityIds.add(`mat-${mat.id}`);
+                seenActivityIds.add(mat.id);
+
+                const notifId = `mat-${mat.id}`;
+                const subjectName = subjectMap.get(mat.subject_id) || 'Subject';
+                const matTitle = mat.title || mat.file_name || 'Learning Material';
+
+                activityNotifs.push({
+                    id: notifId,
+                    user_id: user.id,
+                    title: `New Material: ${matTitle}`,
+                    body: `${subjectName} • ${mat.description || 'New learning material uploaded'}`,
+                    type: 'material',
+                    is_read: readIds.has(notifId),
+                    created_at: mat.created_at || new Date().toISOString(),
+                    related_id: String(mat.id),
+                    subject_id: mat.subject_id,
+                    route: mat.subject_id ? `/(tabs)/subjects/${mat.subject_id}/materials` : '/(tabs)/assignment',
+                    data: {
+                        id: mat.id,
+                        subjectId: mat.subject_id,
+                        type: 'material'
+                    }
+                });
+            });
+        } catch (e) {
+            console.warn('[MobileNotifications] Failed to query class_materials:', e);
+        }
+
+        // Query lesson_materials via allLessonIds
+        if (allLessonIds.length > 0) {
+            try {
+                const { data: lessonMatData } = await supabase
+                    .from('lesson_materials')
+                    .select('id, lesson_id, file_name, file_url, created_at')
+                    .in('lesson_id', allLessonIds)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                (lessonMatData || []).forEach(lm => {
+                    if (!lm || !lm.id || seenActivityIds.has(`lm-${lm.id}`) || seenActivityIds.has(lm.id)) return;
+                    seenActivityIds.add(`lm-${lm.id}`);
+                    seenActivityIds.add(lm.id);
+
+                    const notifId = `lm-${lm.id}`;
+                    const subjectId = lm.lesson_id ? lessonToSubjectMap.get(lm.lesson_id) : undefined;
+                    const subjectName = (subjectId ? subjectMap.get(subjectId) : undefined) || 'Subject';
+                    const matTitle = lm.file_name || 'Attached Material';
+
+                    activityNotifs.push({
+                        id: notifId,
+                        user_id: user.id,
+                        title: `New Material: ${matTitle}`,
+                        body: `${subjectName} • New lesson material uploaded`,
+                        type: 'material',
+                        is_read: readIds.has(notifId),
+                        created_at: lm.created_at || new Date().toISOString(),
+                        related_id: String(lm.id),
+                        subject_id: subjectId,
+                        route: subjectId ? `/(tabs)/subjects/${subjectId}/materials` : '/(tabs)/assignment',
+                        data: {
+                            id: lm.id,
+                            subjectId: subjectId,
+                            type: 'material'
+                        }
+                    });
+                });
+            } catch (e) {
+                console.warn('[MobileNotifications] Failed to query lesson_materials:', e);
+            }
         }
 
         // Query class_announcements (uses class_id which maps to subject_id)

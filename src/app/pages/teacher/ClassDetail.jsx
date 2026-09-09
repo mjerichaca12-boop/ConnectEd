@@ -2387,6 +2387,39 @@ export function ClassDetail() {
       if (insertedRecord) {
         const normalized = normalizeMaterialRecord(insertedRecord);
         setMaterials((current) => [normalized, ...current]);
+
+        // Notify enrolled students about the new material
+        try {
+          const cleanSubjId = classData?.id || classData?.subject_id || id;
+          const { data: enrolledStudents } = await supabase
+            .from("teacher_student_assignments")
+            .select("student_id")
+            .eq("subject_id", cleanSubjId)
+            .in("status", ["Active", "active", "accepted", "approved"]);
+
+          if (Array.isArray(enrolledStudents) && enrolledStudents.length > 0) {
+            const uniqueStudentIds = [...new Set(enrolledStudents.map((s) => s.student_id).filter(Boolean))];
+            const matLabel = title || uploadedFiles[0]?.fileName || "New Learning Material";
+            const notifBody = `${classData?.name || "Your class"} • New learning material uploaded`;
+
+            const notifRows = uniqueStudentIds.map((studentId) => ({
+              user_id: studentId,
+              type: "material",
+              title: `New Material: ${matLabel}`,
+              body: notifBody,
+              message: notifBody,
+              related_id: String(insertedRecord?.id || cleanSubjId),
+              related_type: "class_materials",
+              class_id: cleanSubjId,
+              is_read: false,
+              created_at: new Date().toISOString()
+            }));
+
+            await supabase.from("notifications").insert(notifRows).catch(() => {});
+          }
+        } catch (notifErr) {
+          console.warn("[ClassDetail] Failed to insert material notifications for students:", notifErr);
+        }
       }
 
       await fetchClassMaterials(teacherProfileId, classData);
@@ -3027,7 +3060,40 @@ export function ClassDetail() {
       // Refresh the assignments list to ensure consistency
       await fetchClassAssignments(effectiveTeacherId, classData);
 
-      await fetchClassAssignments(effectiveTeacherId, classData);
+      // Notify enrolled students about the new assignment/activity
+      try {
+        const cleanSubjId = classData?.id || classData?.subject_id || id;
+        const { data: enrolledStudents } = await supabase
+          .from("teacher_student_assignments")
+          .select("student_id")
+          .eq("subject_id", cleanSubjId)
+          .in("status", ["Active", "active", "accepted", "approved"]);
+
+        if (Array.isArray(enrolledStudents) && enrolledStudents.length > 0) {
+          const uniqueStudentIds = [...new Set(enrolledStudents.map((s) => s.student_id).filter(Boolean))];
+          const dueText = dueDate ? `Due: ${new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : null;
+          const notifBody = [classData?.name || "Your class", dueText].filter(Boolean).join(" • ");
+          const typeLabel = assignmentType === "activity" ? "Activity" : "Assignment";
+
+          const notifRows = uniqueStudentIds.map((studentId) => ({
+            user_id: studentId,
+            type: "assignment",
+            title: `New ${typeLabel}: ${title}`,
+            body: notifBody,
+            message: notifBody,
+            related_id: String(assignmentId),
+            related_type: "assignments_activity",
+            class_id: cleanSubjId,
+            is_read: false,
+            created_at: new Date().toISOString()
+          }));
+
+          await supabase.from("notifications").insert(notifRows).catch(() => {});
+        }
+      } catch (notifErr) {
+        console.warn("[ClassDetail] Failed to insert assignment notifications for students:", notifErr);
+      }
+
       console.log("[ClassDetail] Refreshed assignments count:", assignments.length);
       setAsgSuccess("Assignment/Activity saved successfully.");
       if (typeof window !== "undefined") {

@@ -285,4 +285,78 @@ describe('getMyNotifications', () => {
         expect(helloNotif).toBeDefined();
         expect(helloNotif?.title).toBe('New Message from Euri gin Jiao');
     });
+
+    it('creates notifications for class_materials uploaded for enrolled subjects', async () => {
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'notifications') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockReturnThis(),
+                    order: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+            }
+            if (table === 'enrollments') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockReturnThis(),
+                    in: vi.fn().mockResolvedValue({
+                        data: [{ subject_id: mockSubjectId }],
+                        error: null,
+                    }),
+                };
+            }
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+                    in: vi.fn().mockResolvedValue({
+                        data: [{ id: mockSubjectId, name: 'Physics 101' }],
+                        error: null,
+                    }),
+                };
+            }
+            if (table === 'class_materials') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    in: vi.fn().mockReturnThis(),
+                    order: vi.fn().mockReturnThis(),
+                    limit: vi.fn().mockResolvedValue({
+                        data: [
+                            {
+                                id: 'mat-555',
+                                subject_id: mockSubjectId,
+                                title: 'Kinematics Handout',
+                                description: 'Read chapters 1 and 2',
+                                file_name: 'kinematics.pdf',
+                                created_at: '2026-09-08T10:00:00Z',
+                            }
+                        ],
+                        error: null,
+                    }),
+                };
+            }
+            if (table === 'lessons') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    or: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+            }
+            return {
+                select: vi.fn().mockReturnThis(),
+                eq: vi.fn().mockReturnThis(),
+                in: vi.fn().mockReturnThis(),
+                or: vi.fn().mockReturnThis(),
+                order: vi.fn().mockReturnThis(),
+                limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+        });
+
+        const results = await getMyNotifications();
+        const matNotif = results.find(n => n.id === 'mat-mat-555' || n.id === 'mat-555');
+        expect(matNotif).toBeDefined();
+        expect(matNotif?.title).toBe('New Material: Kinematics Handout');
+        expect(matNotif?.body).toContain('Physics 101');
+        expect(matNotif?.type).toBe('material');
+        expect(matNotif?.route).toBe(`/(tabs)/subjects/${mockSubjectId}/materials`);
+    });
 });

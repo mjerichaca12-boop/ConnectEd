@@ -29,6 +29,8 @@ export function useMyNotificationsQuery() {
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'school_announcements' }, invalidate)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'school_calendar_events' }, invalidate)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'class_announcements' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'class_materials' }, invalidate)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'lesson_materials' }, invalidate)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'lessons' }, invalidate)
                 .subscribe();
         };
