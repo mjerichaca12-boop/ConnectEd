@@ -106,6 +106,9 @@ export default async function handler(req, res) {
                 updatePayload.last_name = `${updatePayload.last_name} ${suff}`.trim();
               }
             }
+            if (field === 'employee_id' && updatePayload.employee_id && !updatePayload.lrn) {
+              updatePayload.lrn = updatePayload.employee_id;
+            }
             delete updatePayload[field];
           }
         }

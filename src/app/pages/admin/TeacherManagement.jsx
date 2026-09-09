@@ -854,11 +854,22 @@ function TeacherManagement() {
     }
 
     if (trimmedEmpId) {
-      let empQuery = db.from("profiles").select("id").eq("employee_id", trimmedEmpId).limit(1);
-      if (excludeId) empQuery = empQuery.neq("id", excludeId);
-      const empResult = await empQuery;
-      if (!empResult.error && empResult.data && empResult.data.length > 0) {
-        errors.employee_id = "Employee ID / Identification already exists";
+      try {
+        let empQuery = db.from("profiles").select("id").eq("employee_id", trimmedEmpId).limit(1);
+        if (excludeId) empQuery = empQuery.neq("id", excludeId);
+        const empResult = await empQuery;
+        if (!empResult.error && empResult.data && empResult.data.length > 0) {
+          errors.employee_id = "Employee ID / Identification already exists";
+        } else if (empResult.error && (empResult.error.message?.includes("employee_id") || empResult.error.message?.includes("schema cache") || empResult.error.code === "42703")) {
+          let lrnQuery = db.from("profiles").select("id").eq("lrn", trimmedEmpId).eq("role", "teacher").limit(1);
+          if (excludeId) lrnQuery = lrnQuery.neq("id", excludeId);
+          const lrnResult = await lrnQuery;
+          if (!lrnResult.error && lrnResult.data && lrnResult.data.length > 0) {
+            errors.employee_id = "Employee ID / Identification already exists";
+          }
+        }
+      } catch (e) {
+        console.warn("Employee ID uniqueness check error:", e);
       }
     }
 
@@ -1049,7 +1060,7 @@ function TeacherManagement() {
       middle_name,
       last_name,
       suffix,
-      employee_id: teacher.employee_id ?? "",
+      employee_id: teacher.employee_id || teacher.lrn || "",
       email: teacher.email ?? "",
       phone: teacher.phone ?? "",
       grade_level: teacherGrade,
@@ -1176,7 +1187,7 @@ function TeacherManagement() {
     const matchesSearch =
       getTeacherName(teacher).toLowerCase().includes(search) ||
       String(teacher.email || "").toLowerCase().includes(search) ||
-      String(teacher.employee_id || "").toLowerCase().includes(search) ||
+      String(teacher.employee_id || teacher.lrn || "").toLowerCase().includes(search) ||
       subjectText.includes(search) ||
       sectionText.includes(search);
     const matchesFilter = filterStatus === "all" || normalizeTeacherStatus(teacher.status).toLowerCase() === filterStatus;
@@ -2536,7 +2547,7 @@ function TeacherManagement() {
                     <label className="block text-sm font-medium text-gray-500 mb-1">Employee ID / Identification</label>
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4 text-green-600" />
-                      <p className="text-gray-900 font-mono">{selectedTeacher.employee_id || "N/A"}</p>
+                      <p className="text-gray-900 font-mono">{selectedTeacher.employee_id || selectedTeacher.lrn || "N/A"}</p>
                     </div>
                   </div>
                   <div>

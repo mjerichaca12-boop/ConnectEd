@@ -178,10 +178,134 @@ export const adminApi = {
       if (order) query = query.order(order.column, order.options);
 
       if (single) {
-        const { data, error } = await query.maybeSingle();
+        let { data, error } = await query.maybeSingle();
+
+        if (error && table === "profiles" && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
+          console.warn("[adminApi] Handling missing column fallback for profiles table:", error.message);
+
+          let cleanedPayload = payload;
+          if (typeof payload === "object" && payload !== null) {
+            cleanedPayload = Array.isArray(payload) ? [...payload] : { ...payload };
+            const cleanObj = (obj) => {
+              if (obj.suffix && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.suffix).toLowerCase())) {
+                obj.last_name = `${obj.last_name} ${obj.suffix}`.trim();
+              }
+              if (obj.name_extension && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.name_extension).toLowerCase())) {
+                obj.last_name = `${obj.last_name} ${obj.name_extension}`.trim();
+              }
+              if (obj.employee_id && !obj.lrn) {
+                obj.lrn = obj.employee_id;
+              }
+              delete obj.suffix;
+              delete obj.name_extension;
+              delete obj.employee_id;
+            };
+            if (Array.isArray(cleanedPayload)) {
+              cleanedPayload.forEach(cleanObj);
+            } else {
+              cleanObj(cleanedPayload);
+            }
+          } else if (typeof payload === "string" && payload !== "*") {
+            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+          }
+
+          let cleanedSelect = select;
+          if (typeof select === "string" && select !== "*") {
+            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+          }
+
+          let retryQuery = supabase.from(table);
+          if (action === "select") {
+            retryQuery = retryQuery.select(cleanedSelect || "*");
+          } else if (action === "insert") {
+            retryQuery = retryQuery.insert(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "update") {
+            retryQuery = retryQuery.update(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "upsert") {
+            retryQuery = retryQuery.upsert(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "delete") {
+            retryQuery = retryQuery.delete();
+            if (cleanedSelect) retryQuery = retryQuery.select(cleanedSelect || "*");
+          }
+
+          if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
+          if (neq) retryQuery = retryQuery.neq(neq.column, neq.value);
+          if (inArgs) retryQuery = retryQuery.in(inArgs.column, inArgs.value);
+          if (or) retryQuery = retryQuery.or(or);
+          if (isArgs) retryQuery = retryQuery.is(isArgs.column, isArgs.value);
+          if (match) retryQuery = retryQuery.match(match);
+          if (order) retryQuery = retryQuery.order(order.column, order.options);
+
+          const retryRes = await retryQuery.maybeSingle();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+
         return { data, error };
       } else {
-        const { data, error } = await query;
+        let { data, error } = await query;
+
+        if (error && table === "profiles" && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
+          console.warn("[adminApi] Handling missing column fallback for profiles table:", error.message);
+
+          let cleanedPayload = payload;
+          if (typeof payload === "object" && payload !== null) {
+            cleanedPayload = Array.isArray(payload) ? [...payload] : { ...payload };
+            const cleanObj = (obj) => {
+              if (obj.suffix && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.suffix).toLowerCase())) {
+                obj.last_name = `${obj.last_name} ${obj.suffix}`.trim();
+              }
+              if (obj.name_extension && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.name_extension).toLowerCase())) {
+                obj.last_name = `${obj.last_name} ${obj.name_extension}`.trim();
+              }
+              if (obj.employee_id && !obj.lrn) {
+                obj.lrn = obj.employee_id;
+              }
+              delete obj.suffix;
+              delete obj.name_extension;
+              delete obj.employee_id;
+            };
+            if (Array.isArray(cleanedPayload)) {
+              cleanedPayload.forEach(cleanObj);
+            } else {
+              cleanObj(cleanedPayload);
+            }
+          } else if (typeof payload === "string" && payload !== "*") {
+            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+          }
+
+          let cleanedSelect = select;
+          if (typeof select === "string" && select !== "*") {
+            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+          }
+
+          let retryQuery = supabase.from(table);
+          if (action === "select") {
+            retryQuery = retryQuery.select(cleanedSelect || "*");
+          } else if (action === "insert") {
+            retryQuery = retryQuery.insert(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "update") {
+            retryQuery = retryQuery.update(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "upsert") {
+            retryQuery = retryQuery.upsert(cleanedPayload).select(cleanedSelect || "*");
+          } else if (action === "delete") {
+            retryQuery = retryQuery.delete();
+            if (cleanedSelect) retryQuery = retryQuery.select(cleanedSelect || "*");
+          }
+
+          if (eq) retryQuery = retryQuery.eq(eq.column, eq.value);
+          if (neq) retryQuery = retryQuery.neq(neq.column, neq.value);
+          if (inArgs) retryQuery = retryQuery.in(inArgs.column, inArgs.value);
+          if (or) retryQuery = retryQuery.or(or);
+          if (isArgs) retryQuery = retryQuery.is(isArgs.column, isArgs.value);
+          if (match) retryQuery = retryQuery.match(match);
+          if (order) retryQuery = retryQuery.order(order.column, order.options);
+
+          const retryRes = await retryQuery;
+          data = retryRes.data;
+          error = retryRes.error;
+        }
+
         return { data, error };
       }
     } catch (fbErr) {

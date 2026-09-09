@@ -169,6 +169,9 @@ export default async function handler(req, res) {
           if (obj.name_extension && obj.last_name && !String(obj.last_name).toLowerCase().endsWith(String(obj.name_extension).toLowerCase())) {
             obj.last_name = `${obj.last_name} ${obj.name_extension}`.trim();
           }
+          if (obj.employee_id && !obj.lrn) {
+            obj.lrn = obj.employee_id;
+          }
           delete obj.suffix;
           delete obj.name_extension;
           delete obj.employee_id;
