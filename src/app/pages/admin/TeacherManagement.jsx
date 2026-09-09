@@ -1240,7 +1240,7 @@ function TeacherManagement() {
         username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
       }
 
-      const tempEmail = `${username}@temp.local`;
+      const tempEmail = `${username}.${Date.now().toString(36)}@temp.local`;
 
       const { data: authData, error: authError } = await adminApi.createUser({
         email: tempEmail,
@@ -1271,10 +1271,21 @@ function TeacherManagement() {
       if (!teacherFormData.suffix.trim()) delete payload.suffix;
       if (!teacherFormData.employee_id.trim()) delete payload.employee_id;
 
-      const { data, error } = await adminApi.db("profiles", "insert", {
+      let { data, error } = await adminApi.db("profiles", "insert", {
         payload,
         single: true
       });
+
+      if (error && (error.message?.includes("assigned_class_unique") || error.message?.includes("profiles_teacher_assigned_class_unique") || error.code === "23505")) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.assigned_class;
+        const retryRes = await adminApi.db("profiles", "insert", {
+          payload: fallbackPayload,
+          single: true
+        });
+        data = retryRes.data;
+        error = retryRes.error;
+      }
 
       if (error) {
         await adminApi.deleteUser(resolvedId).catch(() => {});
@@ -1398,7 +1409,15 @@ function TeacherManagement() {
         throw new Error("Teacher ID is missing.");
       }
 
-      const { data, error } = await adminApi.updateProfile(selectedTeacher.id, payload);
+      let { data, error } = await adminApi.updateProfile(selectedTeacher.id, payload);
+
+      if (error && (error.message?.includes("assigned_class_unique") || error.message?.includes("profiles_teacher_assigned_class_unique") || error.code === "23505")) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.assigned_class;
+        const retryRes = await adminApi.updateProfile(selectedTeacher.id, fallbackPayload);
+        data = retryRes.data;
+        error = retryRes.error;
+      }
 
       if (error) {
         throw error;

@@ -92,8 +92,18 @@ export default async function handler(req, res) {
         .select()
         .maybeSingle();
 
-      // Graceful fallback if suffix / employee_id columns don't exist yet in Supabase
-      if (error && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
+      // Graceful fallback if suffix / employee_id columns don't exist yet or assigned_class unique constraint fails
+      if (error && (
+        error.code === '42703' || 
+        error.message?.includes('suffix') || 
+        error.message?.includes('name_extension') || 
+        error.message?.includes('employee_id') || 
+        error.message?.includes('assigned_class_unique') ||
+        error.message?.includes('profiles_teacher_assigned_class_unique') ||
+        error.message?.includes('does not exist') || 
+        error.message?.includes('schema cache') ||
+        (error.code === '23505' && error.message?.includes('assigned_class'))
+      )) {
         const missingFields = ['suffix', 'name_extension', 'employee_id'];
         let hasMissing = false;
         for (const field of missingFields) {
@@ -111,6 +121,10 @@ export default async function handler(req, res) {
             }
             delete updatePayload[field];
           }
+        }
+        if (error.message?.includes("assigned_class") || error.code === "23505") {
+          hasMissing = true;
+          delete updatePayload.assigned_class;
         }
 
         if (hasMissing) {
