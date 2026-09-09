@@ -1653,22 +1653,6 @@ function TeacherManagement() {
         return;
       }
 
-      const { data: teacherRows, error: teacherRowsError } = await db
-        .from("profiles")
-        .select("*")
-        .eq("role", "teacher")
-        .neq("id", teacherToAssign.id);
-
-      if (teacherRowsError) {
-        throw teacherRowsError;
-      }
-
-      const conflictingTeacher = (teacherRows ?? []).find((teacher) => hasAssignedClass(teacher.assigned_class, assignedClass));
-      if (conflictingTeacher) {
-        setAssignFormErrors({ assigned_class: `This class is already assigned to ${getTeacherName(conflictingTeacher)}.` });
-        return;
-      }
-
       const nextAssignedClass = [...currentClasses, assignedClass].join(", ");
 
       const { error } = await adminApi.updateProfile(teacherToAssign.id, { assigned_class: nextAssignedClass });

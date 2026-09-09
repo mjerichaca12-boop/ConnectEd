@@ -90,11 +90,26 @@ export default async function handler(req, res) {
     else if (req.method === "POST") {
       const body = await readJsonBody(req);
       const { email, password, email_confirm } = body;
-      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      let { data, error } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: email_confirm ?? true
       });
+      
+      if (error && (error.message?.includes("already") || error.message?.includes("Database error") || error.message?.includes("registered") || error.code === "email_exists")) {
+        const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+        const existing = (userList?.users || []).find(u => u.email?.toLowerCase() === email?.toLowerCase());
+        if (existing) {
+          const { data: prof } = await supabaseAdmin.from("profiles").select("id").eq("id", existing.id).maybeSingle();
+          if (!prof) {
+            // Orphaned auth user without profile, update password and return
+            await supabaseAdmin.auth.admin.updateUserById(existing.id, { password, email_confirm: true }).catch(() => {});
+            data = { user: existing };
+            error = null;
+          }
+        }
+      }
+
       if (error) throw error;
       return res.status(200).json(data);
     } 

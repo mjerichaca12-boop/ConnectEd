@@ -180,8 +180,18 @@ export const adminApi = {
       if (single) {
         let { data, error } = await query.maybeSingle();
 
-        if (error && table === "profiles" && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
-          console.warn("[adminApi] Handling missing column fallback for profiles table:", error.message);
+        if (error && table === "profiles" && (
+          error.code === '42703' || 
+          error.message?.includes('suffix') || 
+          error.message?.includes('name_extension') || 
+          error.message?.includes('employee_id') || 
+          error.message?.includes('assigned_class_unique') ||
+          error.message?.includes('profiles_teacher_assigned_class_unique') ||
+          error.message?.includes('does not exist') || 
+          error.message?.includes('schema cache') ||
+          (error.code === '23505' && error.message?.includes('assigned_class'))
+        )) {
+          console.warn("[adminApi] Handling missing column/constraint fallback for profiles table:", error.message);
 
           let cleanedPayload = payload;
           if (typeof payload === "object" && payload !== null) {
@@ -199,6 +209,9 @@ export const adminApi = {
               delete obj.suffix;
               delete obj.name_extension;
               delete obj.employee_id;
+              if (error.message?.includes("assigned_class") || error.code === "23505") {
+                delete obj.assigned_class;
+              }
             };
             if (Array.isArray(cleanedPayload)) {
               cleanedPayload.forEach(cleanObj);
@@ -245,8 +258,18 @@ export const adminApi = {
       } else {
         let { data, error } = await query;
 
-        if (error && table === "profiles" && (error.code === '42703' || error.message?.includes('suffix') || error.message?.includes('name_extension') || error.message?.includes('employee_id') || error.message?.includes('does not exist') || error.message?.includes('schema cache'))) {
-          console.warn("[adminApi] Handling missing column fallback for profiles table:", error.message);
+        if (error && table === "profiles" && (
+          error.code === '42703' || 
+          error.message?.includes('suffix') || 
+          error.message?.includes('name_extension') || 
+          error.message?.includes('employee_id') || 
+          error.message?.includes('assigned_class_unique') ||
+          error.message?.includes('profiles_teacher_assigned_class_unique') ||
+          error.message?.includes('does not exist') || 
+          error.message?.includes('schema cache') ||
+          (error.code === '23505' && error.message?.includes('assigned_class'))
+        )) {
+          console.warn("[adminApi] Handling missing column/constraint fallback for profiles table:", error.message);
 
           let cleanedPayload = payload;
           if (typeof payload === "object" && payload !== null) {
@@ -264,6 +287,9 @@ export const adminApi = {
               delete obj.suffix;
               delete obj.name_extension;
               delete obj.employee_id;
+              if (error.message?.includes("assigned_class") || error.code === "23505") {
+                delete obj.assigned_class;
+              }
             };
             if (Array.isArray(cleanedPayload)) {
               cleanedPayload.forEach(cleanObj);
