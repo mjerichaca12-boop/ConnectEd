@@ -4,6 +4,7 @@ import { useAcademic } from "@/app/context/AcademicContext";
 import { X, Calendar, Clock, FileText, Link as LinkIcon, Settings, Target, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { CustomSelect } from "@/app/components/admin/CustomSelect";
+import { broadcastNotificationToClassStudents } from "@/app/lib/teacherHelpers";
 
 export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, onClose, onSuccess }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -226,6 +227,17 @@ export function AssignmentBuilderModal({ lessonId, initialAssignmentId = null, o
         
         const { error: actError } = await supabase.from("lesson_activities").insert(activityPayload);
         if (actError) throw actError;
+
+        // Broadcast notification to students
+        const typeLabel = formData.task_category === "Assessment" ? "Seatwork" : formData.task_category;
+        await broadcastNotificationToClassStudents({
+          lessonId,
+          type: "assignment",
+          title: `New ${typeLabel}: ${formData.title}`,
+          body: formData.description || `New ${typeLabel.toLowerCase()} posted`,
+          relatedId: data.id,
+          relatedType: "assignments"
+        });
 
         toast.success(`${formData.task_category === "Assessment" ? "Seatwork" : formData.task_category} created successfully!`);
       }

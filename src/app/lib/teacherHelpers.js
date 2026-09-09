@@ -757,3 +757,69 @@ export const calculateOverallGrade = (record) => {
   const overallGrade = Math.round(termTotal + componentTotal);
   return overallGrade;
 };
+
+/**
+ * Broadcast notifications to all enrolled students of a class/lesson
+ */
+export const broadcastNotificationToClassStudents = async ({
+  subjectId,
+  lessonId,
+  type = "assignment",
+  title = "New Notification",
+  body = "New activity posted",
+  relatedId,
+  relatedType
+}) => {
+  try {
+    let resolvedSubjectId = subjectId;
+    if (!resolvedSubjectId && lessonId) {
+      const { data: lessonData } = await supabase
+        .from("lessons")
+        .select("subject_id")
+        .eq("id", lessonId)
+        .single();
+      resolvedSubjectId = lessonData?.subject_id;
+    }
+
+    if (!resolvedSubjectId) return;
+
+    // Fetch enrolled students for this subject
+    const { data: enrolledStudents } = await supabase
+      .from("teacher_student_assignments")
+      .select("student_id, status")
+      .eq("subject_id", resolvedSubjectId);
+
+    if (Array.isArray(enrolledStudents) && enrolledStudents.length > 0) {
+      const uniqueStudentIds = [
+        ...new Set(
+          enrolledStudents
+            .filter((s) => {
+              const st = String(s?.status || "").toLowerCase().trim();
+              return st !== "rejected" && st !== "dropped" && st !== "inactive";
+            })
+            .map((s) => s.student_id)
+            .filter(Boolean)
+        )
+      ];
+
+      if (uniqueStudentIds.length === 0) return;
+
+      const notifRows = uniqueStudentIds.map((studentId) => ({
+        user_id: studentId,
+        type,
+        title,
+        body,
+        message: body,
+        related_id: String(relatedId || resolvedSubjectId),
+        related_type: relatedType || type,
+        class_id: resolvedSubjectId,
+        is_read: false,
+        created_at: new Date().toISOString()
+      }));
+
+      await supabase.from("notifications").insert(notifRows).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("[broadcastNotificationToClassStudents] Non-fatal notification error:", err);
+  }
+};

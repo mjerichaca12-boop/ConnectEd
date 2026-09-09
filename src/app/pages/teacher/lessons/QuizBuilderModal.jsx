@@ -3,6 +3,7 @@ import { supabase } from "@/app/lib/supabaseClient";
 import { useAcademic } from "@/app/context/AcademicContext";
 import { X, Plus, Trash2, Settings, ListOrdered, Shuffle, Clock, Award, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
+import { broadcastNotificationToClassStudents } from "@/app/lib/teacherHelpers";
 
 export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSuccess }) {
   const [activeTab, setActiveTab] = useState("questions");
@@ -258,6 +259,16 @@ export function QuizBuilderModal({ lessonId, initialQuizId = null, onClose, onSu
         };
         const { error: actError } = await supabase.from("lesson_activities").insert(activityPayload);
         if (actError) throw actError;
+
+        // Broadcast notification to students
+        await broadcastNotificationToClassStudents({
+          lessonId,
+          type: "quiz",
+          title: `New Quiz: ${quizPayload.title}`,
+          body: quizPayload.description || "New quiz posted",
+          relatedId: finalQuizId,
+          relatedType: "quizzes"
+        });
       }
 
       // Insert Questions

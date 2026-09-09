@@ -4,6 +4,7 @@ import { Upload, FileText, X, File, Image as ImageIcon, Video, Trash2, Download 
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 import { DeleteConfirmationModal } from "@/app/components/ui/DeleteConfirmationModal";
+import { broadcastNotificationToClassStudents } from "@/app/lib/teacherHelpers";
 
 export function LessonMaterialsSubTab({ lesson }) {
   const [materials, setMaterials] = useState([]);
@@ -102,8 +103,23 @@ export function LessonMaterialsSubTab({ lesson }) {
         file_type: file.type || 'unknown'
       };
 
-      const { error: dbError } = await supabase.from("lesson_materials").insert(payload);
+      const { data: insertedMat, error: dbError } = await supabase
+        .from("lesson_materials")
+        .insert(payload)
+        .select()
+        .single();
       if (dbError) throw dbError;
+
+      // Broadcast notification to students
+      await broadcastNotificationToClassStudents({
+        subjectId: lesson?.subject_id,
+        lessonId: lesson?.id,
+        type: "material",
+        title: `New Material: ${file.name}`,
+        body: `${lesson?.title || "Your class"} • New lesson material uploaded`,
+        relatedId: insertedMat?.id || lesson?.id,
+        relatedType: "lesson_materials"
+      });
 
       toast.success(`${file.name} uploaded successfully`, { id: toastId });
       loadMaterials();

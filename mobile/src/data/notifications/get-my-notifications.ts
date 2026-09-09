@@ -123,24 +123,38 @@ export async function getMyNotifications() {
     // 2. Fetch enrolled subjects (for students) and taught subjects (for teachers)
     let enrolledSubjectIds: string[] = [];
     try {
-        const { data: enrollments } = await supabase
+        // Query teacher_student_assignments directly
+        const { data: tsaData, error: tsaErr } = await supabase
+            .from('teacher_student_assignments')
+            .select('subject_id, status')
+            .eq('student_id', user.id);
+
+        if (!tsaErr && Array.isArray(tsaData) && tsaData.length > 0) {
+            const valid = tsaData
+                .filter((r: any) => {
+                    const st = String(r.status || '').toLowerCase().trim();
+                    return st !== 'rejected' && st !== 'dropped' && st !== 'inactive';
+                })
+                .map((r: any) => r.subject_id)
+                .filter(Boolean);
+            enrolledSubjectIds.push(...valid);
+        }
+
+        // Also check enrollments view/table
+        const { data: enrollments, error: enrErr } = await supabase
             .from('enrollments')
-            .select('subject_id')
-            .eq('student_id', user.id)
-            .in('status', ['approved', 'accepted', 'active', 'Active']);
+            .select('subject_id, status')
+            .eq('student_id', user.id);
 
-        enrolledSubjectIds = (enrollments || []).map((e: any) => e.subject_id).filter(Boolean);
-
-        if (enrolledSubjectIds.length === 0) {
-            const { data: tsaData } = await supabase
-                .from('teacher_student_assignments')
-                .select('subject_id')
-                .eq('student_id', user.id)
-                .or('status.eq.Active,status.eq.active,status.eq.accepted,status.eq.approved');
-
-            if (tsaData && tsaData.length > 0) {
-                enrolledSubjectIds = tsaData.map((e: any) => e.subject_id).filter(Boolean);
-            }
+        if (!enrErr && Array.isArray(enrollments) && enrollments.length > 0) {
+            const valid = enrollments
+                .filter((r: any) => {
+                    const st = String(r.status || '').toLowerCase().trim();
+                    return st !== 'rejected' && st !== 'dropped' && st !== 'inactive';
+                })
+                .map((r: any) => r.subject_id)
+                .filter(Boolean);
+            enrolledSubjectIds.push(...valid);
         }
     } catch (e) {
         console.warn('[MobileNotifications] Error fetching enrollments:', e);
@@ -170,16 +184,24 @@ export async function getMyNotifications() {
         });
 
         // Fetch ALL lessons for enrolled subjects so we can map lesson_id -> subject_id
-        const { data: lessonsData } = await supabase
-            .from('lessons')
-            .select('id, subject_id, course_id, title, created_at, status')
-            .or(allCourseIds.map(id => `subject_id.eq.${id}`).join(',') + ',' + allCourseIds.map(id => `course_id.eq.${id}`).join(','));
+        let lessonsData: any[] = [];
+        try {
+            const { data: lData, error: lErr } = await supabase
+                .from('lessons')
+                .select('id, subject_id, title, description, created_at, status')
+                .in('subject_id', allCourseIds);
+            if (!lErr && lData) {
+                lessonsData = lData;
+            }
+        } catch (e) {
+            console.warn('[MobileNotifications] Failed to query lessons:', e);
+        }
 
         const lessonToSubjectMap = new Map<string, string>();
         const allLessonIds: string[] = [];
         (lessonsData || []).forEach((l: any) => {
             if (l && l.id) {
-                const subjectId = l.subject_id || l.course_id;
+                const subjectId = l.subject_id;
                 if (subjectId) lessonToSubjectMap.set(l.id, subjectId);
                 allLessonIds.push(l.id);
             }
@@ -190,7 +212,7 @@ export async function getMyNotifications() {
             seenActivityIds.add(act.id);
 
             const notifId = String(act.id).startsWith('act-') ? act.id : `act-${act.id}`;
-            const rawType = String(act.assessment_type || defaultType).toLowerCase();
+            const rawType = String(act.assessment_type || act.assignment_type || defaultType).toLowerCase();
             const typeLabel = rawType.includes('quiz') ? 'Quiz' : (rawType.includes('activity') ? 'Activity' : 'Assignment');
             // Resolve subject name: use direct course_id/subject_id, or map through lesson_id
             const resolvedSubjectId = subjectId || act.course_id || act.subject_id || (act.lesson_id ? lessonToSubjectMap.get(act.lesson_id) : undefined);
@@ -231,37 +253,42 @@ export async function getMyNotifications() {
             console.warn('[MobileNotifications] Failed to query assignments_activity:', e);
         }
 
-        // Query assignments via lesson_id (assignments table uses lesson_id, NOT course_id)
+        // Query assignments via lesson_id (assignments table uses lesson_id)
         if (allLessonIds.length > 0) {
             try {
                 const { data: asgData } = await supabase
                     .from('assignments')
-                    .select('id, lesson_id, title, description, deadline, due_date, created_at, assessment_type')
+                    .select('id, lesson_id, title, description, due_date, assignment_type, created_at')
                     .in('lesson_id', allLessonIds)
                     .order('created_at', { ascending: false })
                     .limit(20);
 
                 (asgData || []).forEach(a => {
                     const subjectId = a.lesson_id ? lessonToSubjectMap.get(a.lesson_id) : undefined;
-                    processActivityItem(a, 'assignment', subjectId);
+                    processActivityItem(a, a.assignment_type || 'assignment', subjectId);
                 });
             } catch (e) {
                 console.warn('[MobileNotifications] Failed to query assignments:', e);
             }
         }
 
-        // Query quizzes (quizzes table has both course_id and subject_id)
-        try {
-            const { data: quizData } = await supabase
-                .from('quizzes')
-                .select('id, course_id, subject_id, title, description, deadline, due_date, created_at, assessment_type')
-                .or(allCourseIds.map(id => `course_id.eq.${id}`).join(',') + ',' + allCourseIds.map(id => `subject_id.eq.${id}`).join(','))
-                .order('created_at', { ascending: false })
-                .limit(20);
+        // Query quizzes (quizzes table uses lesson_id)
+        if (allLessonIds.length > 0) {
+            try {
+                const { data: quizData } = await supabase
+                    .from('quizzes')
+                    .select('id, lesson_id, title, description, due_date, created_at')
+                    .in('lesson_id', allLessonIds)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
 
-            (quizData || []).forEach(a => processActivityItem(a, 'quiz'));
-        } catch (e) {
-            console.warn('[MobileNotifications] Failed to query quizzes:', e);
+                (quizData || []).forEach(q => {
+                    const subjectId = q.lesson_id ? lessonToSubjectMap.get(q.lesson_id) : undefined;
+                    processActivityItem(q, 'quiz', subjectId);
+                });
+            } catch (e) {
+                console.warn('[MobileNotifications] Failed to query quizzes:', e);
+            }
         }
 
         // Query class_materials (uses subject_id)
@@ -391,11 +418,12 @@ export async function getMyNotifications() {
             );
 
             publishedLessons.forEach((lesson: any) => {
-                if (seenActivityIds.has(lesson.id)) return;
+                if (seenActivityIds.has(lesson.id) || seenActivityIds.has(`lesson-${lesson.id}`)) return;
                 seenActivityIds.add(lesson.id);
+                seenActivityIds.add(`lesson-${lesson.id}`);
 
                 const notifId = `lesson-${lesson.id}`;
-                const subjectId = lesson.subject_id || lesson.course_id;
+                const subjectId = lesson.subject_id;
                 const subjectName = subjectId ? subjectMap.get(subjectId) : undefined;
 
                 activityNotifs.push({

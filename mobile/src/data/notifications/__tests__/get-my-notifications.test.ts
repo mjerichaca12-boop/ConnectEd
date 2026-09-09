@@ -66,12 +66,15 @@ describe('getMyNotifications', () => {
                     }),
                 };
             }
-            if (table === 'enrollments') {
+            if (table === 'enrollments' || table === 'teacher_student_assignments') {
                 return {
                     select: vi.fn().mockReturnThis(),
-                    eq: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockResolvedValue({
+                        data: [{ subject_id: mockSubjectId, status: 'Active' }],
+                        error: null,
+                    }),
                     in: vi.fn().mockResolvedValue({
-                        data: [{ subject_id: mockSubjectId }],
+                        data: [{ subject_id: mockSubjectId, status: 'Active' }],
                         error: null,
                     }),
                 };
@@ -160,6 +163,7 @@ describe('getMyNotifications', () => {
             if (table === 'lessons') {
                 return {
                     select: vi.fn().mockReturnThis(),
+                    in: vi.fn().mockResolvedValue({ data: [], error: null }),
                     or: vi.fn().mockResolvedValue({ data: [], error: null }),
                 };
             }
@@ -295,12 +299,15 @@ describe('getMyNotifications', () => {
                     order: vi.fn().mockResolvedValue({ data: [], error: null }),
                 };
             }
-            if (table === 'enrollments') {
+            if (table === 'enrollments' || table === 'teacher_student_assignments') {
                 return {
                     select: vi.fn().mockReturnThis(),
-                    eq: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockResolvedValue({
+                        data: [{ subject_id: mockSubjectId, status: 'Active' }],
+                        error: null,
+                    }),
                     in: vi.fn().mockResolvedValue({
-                        data: [{ subject_id: mockSubjectId }],
+                        data: [{ subject_id: mockSubjectId, status: 'Active' }],
                         error: null,
                     }),
                 };
@@ -338,6 +345,7 @@ describe('getMyNotifications', () => {
             if (table === 'lessons') {
                 return {
                     select: vi.fn().mockReturnThis(),
+                    in: vi.fn().mockResolvedValue({ data: [], error: null }),
                     or: vi.fn().mockResolvedValue({ data: [], error: null }),
                 };
             }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { isColumnMissingError, isCheckConstraintError } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, isCheckConstraintError, broadcastNotificationToClassStudents } from "@/app/lib/teacherHelpers";
 import { X, Calendar, Clock, Send, ShieldCheck, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useAcademic } from "@/app/context/AcademicContext";
@@ -131,6 +131,18 @@ export function LessonBuilderModal({ subjectId, teacherId, initialLesson, onClos
       }
 
       if (error) throw error;
+
+      if (finalStatus === "Published") {
+        await broadcastNotificationToClassStudents({
+          subjectId,
+          lessonId: initialLesson?.id,
+          type: "lesson",
+          title: `New Lesson: ${payload.title}`,
+          body: `${payload.topic ? `${payload.topic} • ` : ""}New lesson published`,
+          relatedId: initialLesson?.id,
+          relatedType: "lessons"
+        });
+      }
 
       toast.success(
         finalStatus === "Published"

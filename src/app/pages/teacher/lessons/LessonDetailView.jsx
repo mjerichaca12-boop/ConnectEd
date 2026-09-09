@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { isColumnMissingError } from "@/app/lib/teacherHelpers";
+import { isColumnMissingError, broadcastNotificationToClassStudents } from "@/app/lib/teacherHelpers";
 import { ArrowLeft, BookOpen, FileText, CheckCircle, Clock, Eye, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { LessonMaterialsSubTab } from "./LessonMaterialsSubTab";
@@ -35,6 +35,18 @@ export function LessonDetailView({ lesson, onBack, onLessonUpdated, onActivities
       }
         
       if (error) throw error;
+
+      // Broadcast notification to students
+      await broadcastNotificationToClassStudents({
+        subjectId: lesson?.subject_id,
+        lessonId: lesson?.id,
+        type: "lesson",
+        title: `New Lesson: ${lesson.title}`,
+        body: `${lesson.topic ? `${lesson.topic} • ` : ""}New lesson published`,
+        relatedId: lesson.id,
+        relatedType: "lessons"
+      });
+
       toast.success("Lesson published successfully!");
       onLessonUpdated({
         ...lesson,
