@@ -1,7 +1,70 @@
 ﻿-- 20260909000003_add_assignment_and_material_notification_triggers.sql
--- Triggers to automatically notify enrolled students when assignments and materials are created
+-- Create class_materials table if missing & set up notification triggers
 
--- 1. Trigger Function for Assignments / Activities
+-- 1. Ensure class_materials table exists
+CREATE TABLE IF NOT EXISTS public.class_materials (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id uuid,
+  title text,
+  description text,
+  file_type text,
+  file_url text,
+  file_name text,
+  file_path text,
+  subject text,
+  section text,
+  teacher_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Ensure all columns exist on class_materials
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS subject_id uuid;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS title text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS file_type text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS file_url text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS file_name text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS file_path text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS subject text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS section text;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS teacher_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.class_materials ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+
+-- Enable RLS and set policies
+ALTER TABLE public.class_materials ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.class_materials TO anon, authenticated, service_role;
+
+DROP POLICY IF EXISTS "Materials are viewable by everyone" ON public.class_materials;
+CREATE POLICY "Materials are viewable by everyone"
+  ON public.class_materials
+  FOR SELECT
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Teachers can insert class materials" ON public.class_materials;
+CREATE POLICY "Teachers can insert class materials"
+  ON public.class_materials
+  FOR INSERT
+  TO public
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Teachers can update class materials" ON public.class_materials;
+CREATE POLICY "Teachers can update class materials"
+  ON public.class_materials
+  FOR UPDATE
+  TO public
+  USING (true);
+
+DROP POLICY IF EXISTS "Teachers can delete class materials" ON public.class_materials;
+CREATE POLICY "Teachers can delete class materials"
+  ON public.class_materials
+  FOR DELETE
+  TO public
+  USING (true);
+
+-- 2. Trigger Function for Assignments / Activities
 CREATE OR REPLACE FUNCTION public.handle_assignment_created_notification()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -47,7 +110,7 @@ CREATE TRIGGER trg_assignment_activity_created_notification
   AFTER INSERT ON public.assignments_activity
   FOR EACH ROW EXECUTE FUNCTION public.handle_assignment_created_notification();
 
--- 2. Trigger Function for Class Materials
+-- 3. Trigger Function for Class Materials
 CREATE OR REPLACE FUNCTION public.handle_material_created_notification()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -91,5 +154,5 @@ CREATE TRIGGER trg_class_material_created_notification
   AFTER INSERT ON public.class_materials
   FOR EACH ROW EXECUTE FUNCTION public.handle_material_created_notification();
 
--- 3. Refresh PostgREST schema cache
+-- 4. Refresh PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
