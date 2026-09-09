@@ -40,7 +40,7 @@ export function ScheduledReloadManager() {
           supabase.from("lessons").select("id, status, scheduled_publish_at").eq("status", "Scheduled").gt("scheduled_publish_at", nowIso),
           supabase.from("assignments_activity").select("id, status, scheduled_publish_at").eq("status", "Scheduled").gt("scheduled_publish_at", nowIso),
           supabase.from("quizzes").select("id, status, scheduled_publish_at").eq("status", "Scheduled").gt("scheduled_publish_at", nowIso),
-          supabase.from("class_announcements").select("id, status, scheduled_publish_at, priority").or('status.eq.Scheduled,priority.ilike.%"status":"Scheduled"%')
+          supabase.from("class_announcements").select("id, status, scheduled_publish_at, priority").or('status.eq.Scheduled,priority.ilike.%Scheduled%')
         ]);
 
         const upcomingItems = [];
