@@ -31,26 +31,14 @@ const formatTime = (dateString: string) => {
     }
 };
 
-const getNotificationMeta = (item: any) => {
-    switch (item.type) {
-        case 'chat':
-            return { icon: 'chatbubble-ellipses', color: '#0284C7', bg: '#E0F2FE' };
-        case 'activity':
-            return { icon: 'document-text', color: '#16A34A', bg: '#DCFCE7' };
-        case 'announcement':
-            return { icon: 'megaphone', color: '#7C3AED', bg: '#F3E8FF' };
-        case 'event':
-            return { icon: 'calendar', color: '#EA580C', bg: '#FFEDD5' };
-        default:
-            return { icon: 'notifications', color: Colors.light.primary, bg: '#F1F5F9' };
-    }
-};
+import { getNotificationMeta, getNotificationRoute } from "../../utils/notification-navigation";
 
 export default function AppHeader({ title = "ConnectEd", showProfile = true, showBack = false, onBack, hasNotifications = false }: AppHeaderProps) {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<'student' | 'teacher' | 'admin'>('student');
 
     useEffect(() => {
         let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -61,15 +49,17 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
 
             const meta = user.user_metadata || {};
             if (meta.avatar_url) setAvatarUrl(meta.avatar_url);
+            if (meta.role) setUserRole(meta.role);
 
-            // Fetch current avatar from profile row
+            // Fetch current avatar & role from profile row
             supabase
                 .from('profiles')
-                .select('avatar_url')
+                .select('avatar_url, role')
                 .eq('id', user.id)
                 .maybeSingle()
                 .then(({ data: profile }) => {
                     if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
+                    if (profile?.role) setUserRole(profile.role);
                 });
 
             // Subscribe to realtime profile changes (e.g. updated from web)
@@ -85,8 +75,12 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
                     },
                     (payload) => {
                         const newAvatarUrl = (payload?.new as any)?.avatar_url;
+                        const newRole = (payload?.new as any)?.role;
                         if (newAvatarUrl !== undefined) {
                             setAvatarUrl(newAvatarUrl || null);
+                        }
+                        if (newRole) {
+                            setUserRole(newRole);
                         }
                     }
                 )
@@ -118,7 +112,7 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
             if (router.canGoBack()) {
                 router.back();
             } else {
-                router.push("/(tabs)/home" as any);
+                router.push(userRole === 'teacher' ? "/(tabs)/teacher-home" : "/(tabs)/home" as any);
             }
         }
     };
@@ -135,23 +129,14 @@ export default function AppHeader({ title = "ConnectEd", showProfile = true, sho
         }
         setIsNotificationsOpen(false);
 
-        if (item.route) {
-            router.push(item.route as any);
-        } else if (item.type === 'chat') {
-            if (item.data?.partnerId || item.partner_id) {
-                router.push({
-                    pathname: "/conversation/[id]",
-                    params: {
-                        id: item.data?.partnerId || item.partner_id,
-                        name: item.data?.name || item.name || 'Chat',
-                        isRoom: item.data?.isRoom ? String(item.data.isRoom) : 'false'
-                    }
-                });
-            } else {
-                router.push('/(tabs)/messages' as any);
-            }
-        } else if (item.type === 'activity') {
-            router.push('/(tabs)/assignment' as any);
+        const routeResult = getNotificationRoute(item, userRole);
+        if (routeResult.params) {
+            router.push({
+                pathname: routeResult.pathname as any,
+                params: routeResult.params,
+            });
+        } else {
+            router.push(routeResult.pathname as any);
         }
     };
 

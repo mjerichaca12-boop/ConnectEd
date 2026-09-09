@@ -108,10 +108,17 @@ export async function getMyNotifications() {
                 user_id: user.id,
                 title: `New ${typeLabel}: ${act.title || 'Untitled'}`,
                 body: bodyText,
-                type: 'activity',
+                type: rawType.includes('quiz') ? 'quiz' : (rawType.includes('activity') ? 'activity' : 'assignment'),
                 is_read: readIds.has(notifId),
                 created_at: act.created_at || new Date().toISOString(),
-                route: '/(tabs)/assignment'
+                related_id: String(act.id),
+                subject_id: resolvedSubjectId,
+                route: resolvedSubjectId ? `/(tabs)/subjects/${resolvedSubjectId}/assignment` : '/(tabs)/assignment',
+                data: {
+                    id: act.id,
+                    subjectId: resolvedSubjectId,
+                    type: rawType.includes('quiz') ? 'quiz' : (rawType.includes('activity') ? 'activity' : 'assignment')
+                }
             });
         };
 
@@ -186,7 +193,13 @@ export async function getMyNotifications() {
                     type: 'class_announcement',
                     is_read: readIds.has(notifId),
                     created_at: ann.created_at || new Date().toISOString(),
-                    route: '/(tabs)/announcements'
+                    related_id: String(ann.id),
+                    subject_id: ann.class_id,
+                    route: `/(tabs)/announcement/${ann.id}`,
+                    data: {
+                        id: ann.id,
+                        class_id: ann.class_id
+                    }
                 });
             });
         } catch (e) {
@@ -215,7 +228,13 @@ export async function getMyNotifications() {
                     type: 'lesson',
                     is_read: readIds.has(notifId),
                     created_at: lesson.created_at || new Date().toISOString(),
-                    route: '/(tabs)/assignment'
+                    related_id: String(lesson.id),
+                    subject_id: subjectId,
+                    route: subjectId ? `/(tabs)/subjects/${subjectId}/materials` : '/(tabs)/assignment',
+                    data: {
+                        id: lesson.id,
+                        subjectId: subjectId
+                    }
                 });
             });
         } catch (e) {
@@ -248,6 +267,11 @@ export async function getMyNotifications() {
             type: 'announcement',
             is_read: readIds.has(notifId),
             created_at: ann.created_at,
+            related_id: String(ann.id),
+            route: `/(tabs)/announcement/${ann.id}`,
+            data: {
+                id: ann.id
+            }
         };
     });
 
@@ -262,6 +286,12 @@ export async function getMyNotifications() {
             type: 'event',
             is_read: readIds.has(notifId),
             created_at: ev.created_at,
+            related_id: String(ev.id),
+            route: '/(tabs)/calendar',
+            data: {
+                id: ev.id,
+                event_date: ev.event_date
+            }
         };
     });
 

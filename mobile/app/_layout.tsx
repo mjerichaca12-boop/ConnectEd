@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LogBox, View } from "react-native";
 import GlobalMessageNotification from "../src/components/common/GlobalMessageNotification";
 import { initializeDeviceNotifications, subscribeToNotificationResponse } from "../src/utils/device-notifications";
+import { getNotificationRoute } from "../src/utils/notification-navigation";
+import { supabase } from "../src/lib/supabase";
 
 const ignoredWarnings = [
   'AuthApiError: Invalid Refresh Token: Already Used',
@@ -61,19 +63,19 @@ export default function RootLayout() {
     initializeDeviceNotifications();
 
     // Handle user tapping on system notification (in supported builds)
-    const unsubscribe = subscribeToNotificationResponse(data => {
+    const unsubscribe = subscribeToNotificationResponse(async data => {
       try {
-        if (data?.type === 'chat' && data?.partnerId) {
+        if (!data) return;
+        const { data: authData } = await supabase.auth.getUser();
+        const role = authData?.user?.user_metadata?.role || 'student';
+        const routeResult = getNotificationRoute(data, role);
+        if (routeResult.params) {
           router.push({
-            pathname: "/conversation/[id]",
-            params: {
-              id: data.partnerId,
-              name: data.name || "Chat",
-              isRoom: data.isRoom || "false",
-            }
+            pathname: routeResult.pathname as any,
+            params: routeResult.params,
           });
-        } else if (data?.type === 'activity' || data?.type === 'assignment' || data?.type === 'quiz') {
-          router.push("/(tabs)/assignment" as any);
+        } else {
+          router.push(routeResult.pathname as any);
         }
       } catch (e) {
         console.warn('[RootLayout] Error handling notification response:', e);
