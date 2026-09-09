@@ -192,4 +192,97 @@ describe('getMyNotifications', () => {
         expect(results[0].id).toBe('act-999');
         expect(results[1].id).toBe('notif-1');
     });
+
+    it('deduplicates duplicate message notifications and keeps the richer sender-specific title', async () => {
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'notifications') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockReturnThis(),
+                    order: vi.fn().mockResolvedValue({
+                        data: [
+                            // Duplicate pair 1: "hi"
+                            {
+                                id: 'notif-msg-1a',
+                                user_id: mockUserId,
+                                title: 'New Message',
+                                body: 'hi',
+                                type: 'messages',
+                                is_read: false,
+                                created_at: '2026-09-08T12:49:00Z',
+                            },
+                            {
+                                id: 'notif-msg-1b',
+                                user_id: mockUserId,
+                                title: 'New Message from Euri gin Jiao',
+                                body: 'hi',
+                                type: 'messages',
+                                is_read: false,
+                                created_at: '2026-09-08T12:49:00Z',
+                            },
+                            // Duplicate pair 2: "hello"
+                            {
+                                id: 'notif-msg-2a',
+                                user_id: mockUserId,
+                                title: 'New Message',
+                                body: 'hello',
+                                type: 'messages',
+                                is_read: false,
+                                created_at: '2026-09-08T12:49:00Z',
+                            },
+                            {
+                                id: 'notif-msg-2b',
+                                user_id: mockUserId,
+                                title: 'New Message from Euri gin Jiao',
+                                body: 'hello',
+                                type: 'messages',
+                                is_read: false,
+                                created_at: '2026-09-08T12:49:00Z',
+                            },
+                        ],
+                        error: null,
+                    }),
+                };
+            }
+            if (table === 'enrollments') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockReturnThis(),
+                    in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+            }
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+                    in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+            }
+            if (table === 'school_announcements' || table === 'school_calendar_events') {
+                return {
+                    select: vi.fn().mockReturnThis(),
+                    order: vi.fn().mockReturnThis(),
+                    limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+            }
+            return {
+                select: vi.fn().mockReturnThis(),
+                or: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+        });
+
+        const results = await getMyNotifications();
+
+        // 4 raw DB rows must be deduplicated into exactly 2 clean rows
+        expect(results.length).toBe(2);
+
+        // Verify the generic "New Message" was dropped in favor of "New Message from Euri gin Jiao"
+        const hiNotif = results.find(n => n.body === 'hi');
+        expect(hiNotif).toBeDefined();
+        expect(hiNotif?.title).toBe('New Message from Euri gin Jiao');
+
+        const helloNotif = results.find(n => n.body === 'hello');
+        expect(helloNotif).toBeDefined();
+        expect(helloNotif?.title).toBe('New Message from Euri gin Jiao');
+    });
 });

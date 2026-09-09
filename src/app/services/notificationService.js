@@ -192,16 +192,74 @@ export const getNotificationNavigationPath = (notification, role, currentPath = 
 };
 
 /**
- * Deduplicate notification items by ID
+ * Deduplicate notification items by ID, message content, and timestamp
  */
 export const deduplicateNotifications = (items) => {
-  const seen = new Set();
-  return (Array.isArray(items) ? items : []).filter((item) => {
-    const id = String(item?.id || "").trim();
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const sorted = [...items].sort((a, b) =>
+    new Date(b.createdAt || b.created_at || 0).getTime() - new Date(a.createdAt || a.created_at || 0).getTime()
+  );
+
+  const result = [];
+  const seenIds = new Set();
+
+  for (const notif of sorted) {
+    if (!notif) continue;
+    const id = String(notif.id || "").trim();
+    if (id && seenIds.has(id)) continue;
+
+    const notifBody = String(notif.message || notif.body || "").trim().toLowerCase();
+    const notifTitle = String(notif.title || "").trim().toLowerCase();
+    const notifType = String(notif.type || "").toLowerCase();
+    const notifTime = new Date(notif.createdAt || notif.created_at || 0).getTime();
+
+    const existingIndex = result.findIndex((existing) => {
+      const existingBody = String(existing.message || existing.body || "").trim().toLowerCase();
+      const existingTitle = String(existing.title || "").trim().toLowerCase();
+      const existingType = String(existing.type || "").toLowerCase();
+      const existingTime = new Date(existing.createdAt || existing.created_at || 0).getTime();
+
+      if (notif.relatedId && existing.relatedId && notif.relatedId === existing.relatedId) {
+        return true;
+      }
+      if (notif.related_id && existing.related_id && notif.related_id === existing.related_id) {
+        return true;
+      }
+
+      const timeDiffSec = Math.abs(notifTime - existingTime) / 1000;
+
+      const isMsg1 = notifType.includes("message") || notifTitle.includes("new message");
+      const isMsg2 = existingType.includes("message") || existingTitle.includes("new message");
+      if (isMsg1 && isMsg2 && notifBody === existingBody && (isNaN(timeDiffSec) || timeDiffSec <= 120)) {
+        return true;
+      }
+
+      if (notifTitle === existingTitle && notifBody === existingBody && (isNaN(timeDiffSec) || timeDiffSec <= 120)) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (existingIndex !== -1) {
+      const existing = result[existingIndex];
+      const existingTitle = String(existing.title || "").trim().toLowerCase();
+
+      const isCurrentRicher = notifTitle.startsWith("new message from") && existingTitle === "new message";
+      if (isCurrentRicher) {
+        result[existingIndex] = notif;
+      }
+
+      if (id) seenIds.add(id);
+      continue;
+    }
+
+    if (id) seenIds.add(id);
+    result.push(notif);
+  }
+
+  return result;
 };
 
 /**

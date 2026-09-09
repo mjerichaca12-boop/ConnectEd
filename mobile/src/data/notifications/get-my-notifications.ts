@@ -16,6 +16,84 @@ const formatDueDate = (due?: string | null) => {
     }
 };
 
+export function deduplicateNotificationList(items: any[]): any[] {
+    if (!Array.isArray(items) || items.length === 0) return [];
+
+    // Sort descending by created_at first so newest notifications take precedence
+    const sorted = [...items].sort((a, b) =>
+        new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+
+    const result: any[] = [];
+    const seenIds = new Set<string>();
+
+    for (const notif of sorted) {
+        if (!notif) continue;
+        const id = String(notif.id || '');
+        if (id && seenIds.has(id)) continue;
+
+        const notifBody = String(notif.body || notif.message || '').trim().toLowerCase();
+        const notifTitle = String(notif.title || '').trim().toLowerCase();
+        const notifType = String(notif.type || '').toLowerCase();
+        const notifTime = new Date(notif.created_at || 0).getTime();
+        const notifRawId = id.replace(/^(act-|classann-|lesson-|ann-|ev-)/, '');
+
+        // Check if there is already a matching notification in result
+        const existingIndex = result.findIndex(existing => {
+            const existingId = String(existing.id || '');
+            const existingRawId = existingId.replace(/^(act-|classann-|lesson-|ann-|ev-)/, '');
+            const existingBody = String(existing.body || existing.message || '').trim().toLowerCase();
+            const existingTitle = String(existing.title || '').trim().toLowerCase();
+            const existingType = String(existing.type || '').toLowerCase();
+            const existingTime = new Date(existing.created_at || 0).getTime();
+
+            // Match exact related_id or stripped ID (e.g. synthetic vs DB notification)
+            if (notif.related_id && existing.related_id && notif.related_id === existing.related_id) {
+                return true;
+            }
+            if (notifRawId && existingRawId && notifRawId === existingRawId) {
+                return true;
+            }
+
+            const timeDiffSec = Math.abs(notifTime - existingTime) / 1000;
+
+            // Message notifications deduplication:
+            // e.g. "New Message" vs "New Message from Euri gin Jiao" with same body "hi" within 120 seconds
+            const isMsg1 = notifType.includes('message') || notifTitle.includes('new message');
+            const isMsg2 = existingType.includes('message') || existingTitle.includes('new message');
+            if (isMsg1 && isMsg2 && notifBody === existingBody && (isNaN(timeDiffSec) || timeDiffSec <= 120)) {
+                return true;
+            }
+
+            // General duplicate check: same title, same body, within 120 seconds
+            if (notifTitle === existingTitle && notifBody === existingBody && (isNaN(timeDiffSec) || timeDiffSec <= 120)) {
+                return true;
+            }
+
+            return false;
+        });
+
+        if (existingIndex !== -1) {
+            const existing = result[existingIndex];
+            const existingTitle = String(existing.title || '').trim().toLowerCase();
+
+            // If the current item has a richer title (e.g., "New Message from <Name>" vs "New Message"), replace existing generic one
+            const isCurrentRicher = notifTitle.startsWith('new message from') && existingTitle === 'new message';
+            if (isCurrentRicher) {
+                result[existingIndex] = notif;
+            }
+
+            if (id) seenIds.add(id);
+            continue;
+        }
+
+        if (id) seenIds.add(id);
+        result.push(notif);
+    }
+
+    return result;
+}
+
 export async function getMyNotifications() {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError) {
@@ -301,20 +379,10 @@ export async function getMyNotifications() {
         is_read: Boolean(n.is_read || readIds.has(n.id)),
     }));
 
-    // Deduplicate: DB notifications may overlap with synthetic ones
-    // DB notifications take priority for items with matching related_id
-    const dbRelatedIds = new Set<string>();
-    formattedDbNotifs.forEach(n => {
-        if (n.related_id) dbRelatedIds.add(n.related_id);
-    });
+    // Merge all sources
+    const all = [...formattedDbNotifs, ...activityNotifs, ...announcementNotifs, ...eventNotifs];
 
-    // Filter out synthetic notifications that already have a DB notification entry
-    const dedupedActivityNotifs = activityNotifs.filter(a => {
-        const rawId = a.id.replace(/^(act-|classann-|lesson-)/, '');
-        return !dbRelatedIds.has(rawId);
-    });
-
-    // Merge and sort by date descending
-    const all = [...formattedDbNotifs, ...dedupedActivityNotifs, ...announcementNotifs, ...eventNotifs];
-    return all.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // Deduplicate and return sorted notifications
+    return deduplicateNotificationList(all);
 }
+

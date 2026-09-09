@@ -468,29 +468,41 @@ CREATE TRIGGER trg_gradebook_updated
 -- 12. Messages Notification Trigger Function
 CREATE OR REPLACE FUNCTION public.handle_new_message_notification()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_sender_name text;
 BEGIN
-    IF NEW.room_id IS NOT NULL THEN
-        -- Room Notification: Insert for all members except sender
+    SELECT COALESCE(
+        NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(middle_name, '') || ' ' || COALESCE(last_name, '')), ''),
+        NULLIF(TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')), ''),
+        username,
+        email,
+        'User'
+    ) INTO v_sender_name
+    FROM public.profiles
+    WHERE id = NEW.sender_id;
+
+    IF NEW.room_id IS NOT NULL OR NEW.conversation_id IS NOT NULL THEN
+        -- Room / Group Notification: Insert for all members except sender
         INSERT INTO public.notifications (user_id, title, body, message, type, related_id, related_type)
-        SELECT user_id, 
-               'New Group Message', 
+        SELECT profile_id, 
+               'New Group Message from ' || COALESCE(v_sender_name, 'a member'), 
                COALESCE(NEW.content, NEW.message_text, 'Sent an attachment'), 
                COALESCE(NEW.content, NEW.message_text, 'Sent an attachment'), 
                'messages', 
-               NEW.room_id::text, 
+               COALESCE(NEW.conversation_id, NEW.room_id)::text, 
                'messages'
-        FROM public.room_members
-        WHERE room_id = NEW.room_id AND user_id != NEW.sender_id;
-    ELSE
+        FROM public.conversation_participants
+        WHERE conversation_id = COALESCE(NEW.conversation_id, NEW.room_id) AND profile_id != NEW.sender_id;
+    ELSIF NEW.receiver_id IS NOT NULL THEN
         -- Direct Notification
         INSERT INTO public.notifications (user_id, title, body, message, type, related_id, related_type)
         VALUES (
             NEW.receiver_id,
-            'New Message',
+            'New Message from ' || COALESCE(v_sender_name, 'User'),
             COALESCE(NEW.content, NEW.message_text, 'Sent an attachment'),
             COALESCE(NEW.content, NEW.message_text, 'Sent an attachment'),
             'messages',
-            NEW.id::text,
+            NEW.sender_id::text,
             'messages'
         );
     END IF;
