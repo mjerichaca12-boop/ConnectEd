@@ -224,7 +224,7 @@ export default function GradesManagementScreen() {
                                         <Text style={[styles.gradeText, styles.gradeCol]}>{student.overall}</Text>
                                         <View style={styles.remarksCol}>
                                             <View style={[styles.remarksBadge, student.remarks === "Outstanding" || student.remarks === "Very Satisfactory" ? styles.bgGreen : student.remarks === "Failed" ? styles.bgRed : styles.bgBlue]}>
-                                                <Text style={[styles.remarksText, student.remarks === "Outstanding" || student.remarks === "Very Satisfactory" ? styles.textGreen : student.remarks === "Failed" ? styles.textRed : styles.textBlue]}>{student.remarks}</Text>
+                                                <Text style={[styles.remarksText, student.remarks === "Outstanding" || student.remarks === "Very Satisfactory" ? styles.textGreen : student.remarks === "Failed" ? styles.textRed : styles.textBlue]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{student.remarks}</Text>
                                             </View>
                                         </View>
                                     </View>

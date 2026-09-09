@@ -804,20 +804,20 @@ export default function GradesScreen() {
                             <Text style={styles.subCategoryHeading}>Quarterly Grades</Text>
                             <View style={styles.quarterGridRow}>
                                 <View style={[styles.summaryTile, styles.bgGreenLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>1st Quarter</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q1}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>1st Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.q1}</Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgGreenLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>2nd Quarter</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q2}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>2nd Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.q2}</Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgGreenLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>3rd Quarter</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q3}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>3rd Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.q3}</Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgGreenLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]}>4th Quarter</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]}>{summaryRecord.q4}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#166534" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>4th Quarter</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#15803D" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.q4}</Text>
                                 </View>
                             </View>
 
@@ -825,28 +825,30 @@ export default function GradesScreen() {
                             <Text style={styles.subCategoryHeading}>Assessment Breakdown</Text>
                             <View style={styles.assessmentGridRow}>
                                 <View style={[styles.summaryTile, styles.bgVioletLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#6D28D9" }]}>Quiz Avg</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#7C3AED" }]}>{summaryRecord.quiz}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#6D28D9" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Quiz Avg</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#7C3AED" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.quiz}</Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgOrangeLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#C2410C" }]}>Activity</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#C2410C" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Activity</Text>
                                     <Text
                                         style={[
                                             styles.summaryTileValue,
                                             { color: "#EA580C" },
-                                            typeof summaryRecord.activity === "string" && { fontSize: 13, color: "#94A3B8" }
+                                            typeof summaryRecord.activity === "string" && { fontSize: 11, color: "#94A3B8" }
                                         ]}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
                                     >
                                         {summaryRecord.activity}
                                     </Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgSkyLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#0369A1" }]}>Assignment</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#0284C7" }]}>{summaryRecord.assignment}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#0369A1" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Assignment</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#0284C7" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.assignment}</Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgRedLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#B91C1C" }]}>Exam</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#DC2626" }]}>{summaryRecord.exam}</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#B91C1C" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Exam</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#DC2626" }]} numberOfLines={1} adjustsFontSizeToFit>{summaryRecord.exam}</Text>
                                 </View>
                             </View>
 
@@ -854,39 +856,41 @@ export default function GradesScreen() {
                             <Text style={styles.subCategoryHeading}>Overall Performance</Text>
                             <View style={styles.performanceGridRow}>
                                 <View style={[styles.summaryTile, summaryRecord.isPassed ? styles.bgGreenLight : styles.bgRedLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: summaryRecord.isPassed ? "#166534" : "#B91C1C" }]}>
+                                    <Text style={[styles.summaryTileLabel, { color: summaryRecord.isPassed ? "#166534" : "#B91C1C" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                                         Overall Grade
                                     </Text>
-                                    <Text style={[styles.summaryTileValue, { color: summaryRecord.isPassed ? "#15803D" : "#DC2626" }]}>
+                                    <Text style={[styles.summaryTileValue, { color: summaryRecord.isPassed ? "#15803D" : "#DC2626" }]} numberOfLines={1} adjustsFontSizeToFit>
                                         {summaryRecord.overall}%
                                     </Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgNeutralLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]}>Completion</Text>
-                                    <Text style={[styles.summaryTileValue, { color: "#0F172A", fontSize: 16 }]}>
+                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Completion</Text>
+                                    <Text style={[styles.summaryTileValue, { color: "#0F172A", fontSize: 16 }]} numberOfLines={1} adjustsFontSizeToFit>
                                         {summaryRecord.completionPercent}%
                                     </Text>
-                                    <Text style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>
+                                    <Text style={{ fontSize: 9.5, color: "#64748B", marginTop: 2, textAlign: "center" }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                                         ({summaryRecord.submissionCount}/{summaryRecord.totalAssessments} Submitted)
                                     </Text>
                                 </View>
                                 <View style={[styles.summaryTile, styles.bgNeutralLight]}>
-                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]}>Remarks</Text>
+                                    <Text style={[styles.summaryTileLabel, { color: "#334155" }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Remarks</Text>
                                     <View
                                         style={[
-                                            styles.remarksBadge,
+                                            styles.summaryRemarksBadge,
                                             {
                                                 backgroundColor: summaryRecord.isPassed ? "#DCFCE7" : "#FEE2E2",
                                                 borderColor: summaryRecord.isPassed ? "#86EFAC" : "#FCA5A5",
-                                                marginTop: 4
                                             }
                                         ]}
                                     >
                                         <Text
                                             style={[
-                                                styles.remarksText,
+                                                styles.summaryRemarksText,
                                                 { color: summaryRecord.isPassed ? "#15803D" : "#DC2626" }
                                             ]}
+                                            numberOfLines={2}
+                                            adjustsFontSizeToFit
+                                            minimumFontScale={0.75}
                                         >
                                             {summaryRecord.remarks}
                                         </Text>
@@ -1372,22 +1376,40 @@ const styles = StyleSheet.create({
     summaryTile: {
         flex: 1,
         borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 6,
+        paddingVertical: 10,
+        paddingHorizontal: 4,
         alignItems: "center",
         justifyContent: "center",
-        minHeight: 70,
+        minHeight: 74,
     },
     summaryTileLabel: {
-        fontSize: 10,
+        fontSize: 9.5,
         fontWeight: "700",
         marginBottom: 4,
         textAlign: "center",
+        letterSpacing: -0.2,
     },
     summaryTileValue: {
-        fontSize: 18,
+        fontSize: 17,
         fontWeight: "800",
         textAlign: "center",
+    },
+    summaryRemarksBadge: {
+        paddingHorizontal: 6,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        marginTop: 2,
+        width: "92%",
+        minHeight: 28,
+    },
+    summaryRemarksText: {
+        fontSize: 10,
+        fontWeight: "700",
+        textAlign: "center",
+        lineHeight: 13,
     },
     bgGreenLight: {
         backgroundColor: "#F0FDF4",
