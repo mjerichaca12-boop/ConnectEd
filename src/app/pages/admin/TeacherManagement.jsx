@@ -1242,14 +1242,33 @@ function TeacherManagement() {
 
       const tempEmail = `${username}.${Date.now().toString(36)}@temp.local`;
 
+      let resolvedId = null;
+
       const { data: authData, error: authError } = await adminApi.createUser({
         email: tempEmail,
         password: tempPassword,
         email_confirm: true
       });
-      if (authError) throw authError;
 
-      const resolvedId = authData?.user?.id || generateUUID();
+      if (authError) {
+        if (authError.message?.includes("already") || authError.message?.includes("registered") || authError.status === 422) {
+          const { data: retryList } = await adminApi.listUsers();
+          const retryUser = (retryList?.users || []).find((u) => u.email?.toLowerCase() === tempEmail.toLowerCase());
+          if (retryUser?.id) {
+            resolvedId = retryUser.id;
+          } else {
+            throw authError;
+          }
+        } else {
+          throw authError;
+        }
+      } else if (authData?.user?.id) {
+        resolvedId = authData.user.id;
+      }
+
+      if (!resolvedId) {
+        resolvedId = generateUUID();
+      }
 
       const payload = {
         id: resolvedId,
