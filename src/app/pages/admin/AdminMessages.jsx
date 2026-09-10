@@ -1322,51 +1322,51 @@ const removeDismissedConvId = (userId, convId) => {
 
   const applyRecipientFilters = (personList, searchStr) => {
     const searchLower = String(searchStr || "").trim().toLowerCase();
-    return (personList || []).filter((t) => {
-      if (adminId && t.id === adminId) return false;
+    const tokens = searchLower.split(/\s+/).filter(Boolean);
+    return (personList || [])
+      .filter((t) => {
+        if (adminId && t.id === adminId) return false;
 
-      // Role filter
-      if (roleFilter !== "all" && String(t.role || "").toLowerCase() !== roleFilter.toLowerCase()) {
-        return false;
-      }
-
-      // Grade filter
-      if (gradeFilter !== "all") {
-        const yl = String(t.yearLevel || "").toLowerCase();
-        const targetG = gradeFilter.toLowerCase();
-        if (!yl.includes(targetG) && !yl.includes(targetG.replace("grade ", ""))) {
+        // Role filter
+        if (roleFilter !== "all" && String(t.role || "").toLowerCase() !== roleFilter.toLowerCase()) {
           return false;
         }
-      }
 
-      // Text search
-      if (searchLower) {
-        const nameMatch = (t.name || "").toLowerCase().includes(searchLower);
-        const emailMatch = (t.email || "").toLowerCase().includes(searchLower);
-        const roleMatch = (t.role || "").toLowerCase().includes(searchLower);
-        const ylMatch = (t.yearLevel || "").toLowerCase().includes(searchLower);
-        const secMatch = (t.section || "").toLowerCase().includes(searchLower);
-        return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
-      }
+        // Grade filter
+        if (gradeFilter !== "all") {
+          const yl = String(t.yearLevel || "").toLowerCase();
+          const targetG = gradeFilter.toLowerCase();
+          if (!yl.includes(targetG) && !yl.includes(targetG.replace("grade ", ""))) {
+            return false;
+          }
+        }
 
-      return true;
-    });
+        // Tokenized text search (e.g. "Icha Rose Cruz" matches "Icha Cruz")
+        if (tokens.length > 0) {
+          const targetText = `${t.name || ""} ${t.email || ""} ${t.role || ""} ${t.yearLevel || ""} ${t.section || ""}`.toLowerCase();
+          const matchesToken = tokens.some((token) => targetText.includes(token));
+          if (!matchesToken) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   };
 
   const filteredRecipients = applyRecipientFilters(allTeachers, recipientSearch);
-  const filteredGroupRecipients = (allTeachers || []).filter((t) => {
-    if (adminId && t.id === adminId) return false;
-    const searchLower = String(groupSearch || "").trim().toLowerCase();
-    if (searchLower) {
-      const nameMatch = (t.name || "").toLowerCase().includes(searchLower);
-      const emailMatch = (t.email || "").toLowerCase().includes(searchLower);
-      const roleMatch = (t.role || "").toLowerCase().includes(searchLower);
-      const ylMatch = (t.yearLevel || "").toLowerCase().includes(searchLower);
-      const secMatch = (t.section || "").toLowerCase().includes(searchLower);
-      return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
-    }
-    return true;
-  });
+  const filteredGroupRecipients = (allTeachers || [])
+    .filter((t) => {
+      if (adminId && t.id === adminId) return false;
+      const searchLower = String(groupSearch || "").trim().toLowerCase();
+      const tokens = searchLower.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const targetText = `${t.name || ""} ${t.email || ""} ${t.role || ""} ${t.yearLevel || ""} ${t.section || ""}`.toLowerCase();
+        const matchesToken = tokens.some((token) => targetText.includes(token));
+        if (!matchesToken) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   const toggleGroupMember = (recipientId) => {
     setSelectedGroupMemberIds((prev) =>

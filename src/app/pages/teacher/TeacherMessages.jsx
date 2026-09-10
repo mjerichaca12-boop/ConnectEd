@@ -1527,33 +1527,30 @@ function TeacherMessages() {
         }
       }
 
-      // Text search
-      if (searchLower) {
-        const nameMatch = (r.name || "").toLowerCase().includes(searchLower);
-        const emailMatch = (r.email || "").toLowerCase().includes(searchLower);
-        const roleMatch = (r.role || "").toLowerCase().includes(searchLower);
-        const ylMatch = (r.yearLevel || "").toLowerCase().includes(searchLower);
-        const secMatch = (r.section || "").toLowerCase().includes(searchLower);
-        return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+      // Tokenized text search
+      if (tokens.length > 0) {
+        const targetText = `${r.name || ""} ${r.email || ""} ${r.role || ""} ${r.yearLevel || ""} ${r.section || ""}`.toLowerCase();
+        const matchesToken = tokens.some((token) => targetText.includes(token));
+        if (!matchesToken) return false;
       }
 
       return true;
-    });
+    }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   };
 
   const filteredRecipients = applyRecipientFilters(recipientResults, recipientSearch);
-  const filteredGroupRecipients = (recipientResults || []).filter((r) => {
-    const searchLower = String(groupSearch || "").trim().toLowerCase();
-    if (searchLower) {
-      const nameMatch = (r.name || "").toLowerCase().includes(searchLower);
-      const emailMatch = (r.email || "").toLowerCase().includes(searchLower);
-      const roleMatch = (r.role || "").toLowerCase().includes(searchLower);
-      const ylMatch = (r.yearLevel || "").toLowerCase().includes(searchLower);
-      const secMatch = (r.section || "").toLowerCase().includes(searchLower);
-      return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
-    }
-    return true;
-  });
+  const filteredGroupRecipients = (recipientResults || [])
+    .filter((r) => {
+      const searchLower = String(groupSearch || "").trim().toLowerCase();
+      const tokens = searchLower.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const targetText = `${r.name || ""} ${r.email || ""} ${r.role || ""} ${r.yearLevel || ""} ${r.section || ""}`.toLowerCase();
+        const matchesToken = tokens.some((token) => targetText.includes(token));
+        if (!matchesToken) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   const totalUnread = activeConversationsList.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 
