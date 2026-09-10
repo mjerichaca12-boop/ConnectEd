@@ -6,7 +6,7 @@ import Colors from "../../constants/Colors";
 interface SubjectCardProps {
     title: string;
     code: string;
-    teacher: string;
+    teacher?: string;
     schedule: string;
     credits?: number;
     description?: string;
@@ -37,6 +37,15 @@ export const SubjectCard: React.FC<SubjectCardProps> = ({
     const parsedEnrolled = Number(enrolled) || 0;
     const progressPercent = Math.min(100, Math.max(0, (parsedEnrolled / parsedCapacity) * 100));
 
+    const displayTeacher =
+        !teacher ||
+        teacher.trim() === "" ||
+        teacher.trim().toLowerCase() === "faculty" ||
+        teacher.trim().toLowerCase() === "no teacher assigned" ||
+        teacher.trim().toLowerCase() === "unknown teacher"
+            ? "No teacher yet"
+            : teacher.trim();
+
     return (
         <TouchableOpacity style={[styles.card, style]} onPress={onPress} activeOpacity={0.7}>
             {/* Soft Pastel Green Header */}
@@ -57,7 +66,7 @@ export const SubjectCard: React.FC<SubjectCardProps> = ({
                 {/* Teacher Info Row */}
                 <View style={styles.infoRow}>
                     <Ionicons name="person-outline" size={16} color="#64748B" style={styles.icon} />
-                    <Text style={styles.value}>{teacher}</Text>
+                    <Text style={styles.value}>{displayTeacher}</Text>
                 </View>
 
                 {/* Grade Level Info Row */}

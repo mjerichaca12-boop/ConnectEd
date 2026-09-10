@@ -145,8 +145,8 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
     }
 
     const teacherName = teacherId
-        ? (formatTeacherName(teacherProfile) || "Unknown Teacher")
-        : "No teacher assigned";
+        ? (formatTeacherName(teacherProfile) || "No teacher yet")
+        : "No teacher yet";
 
     return {
         id: subjectData.id,

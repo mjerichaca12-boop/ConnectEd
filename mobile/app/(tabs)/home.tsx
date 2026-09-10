@@ -38,7 +38,7 @@ export default function HomeScreen() {
             id: e.subject_id,
             code: e.subjects.code,
             name: e.subjects.name,
-            teacher: formatTeacherName(e.subjects.profiles) || "Faculty",
+            teacher: formatTeacherName(e.subjects.profiles) || "No teacher yet",
             schedule: e.subjects.schedule || "TBA",
             section: e.subjects.section || e.section || "",
         }));

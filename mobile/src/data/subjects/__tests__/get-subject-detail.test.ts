@@ -220,4 +220,57 @@ describe('getSubjectDetail data service', () => {
         const detail = await getSubjectDetail('sub-emerald');
         expect(detail).toBeNull();
     });
+
+    it('should return teacher_name as "No teacher yet" and teacher_email as undefined when teacher_id is null', async () => {
+        const mockSubjectWithoutTeacher = {
+            id: 'sub-noteacher',
+            code: 'FIL8',
+            name: 'Filipino 8',
+            teacher_id: null,
+            grade_level: 'Grade 8',
+            section: 'Sampaguita',
+            profiles: null,
+        };
+
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            single: vi.fn(() => Promise.resolve({ data: mockSubjectWithoutTeacher, error: null }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'profiles') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            maybeSingle: vi.fn(() => Promise.resolve({
+                                data: { id: 'student-123', section: 'Sampaguita', year_level: 'Grade 8', role: 'student' },
+                                error: null
+                            }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'teacher_student_assignments') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            eq: vi.fn(() => ({
+                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
+                            }))
+                        }))
+                    }))
+                };
+            }
+            return {};
+        });
+
+        const detail = await getSubjectDetail('sub-noteacher');
+        expect(detail).not.toBeNull();
+        expect(detail?.teacher_name).toBe('No teacher yet');
+        expect(detail?.teacher_email).toBeUndefined();
+    });
 });

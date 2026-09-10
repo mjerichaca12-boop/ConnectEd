@@ -36,7 +36,7 @@ export default function SubjectsScreen() {
                             id: sub.id ?? "",
                             code: sub.code ?? "",
                             name: sub.name ?? "",
-                            teacher: formatTeacherName(sub.profiles) || "No teacher assigned",
+                            teacher: formatTeacherName(sub.profiles) || "No teacher yet",
                             description: sub.description ?? "",
                             gradeLevel: sub.grade_level ?? "",
                             section: sub.section || enrollment.section || "",

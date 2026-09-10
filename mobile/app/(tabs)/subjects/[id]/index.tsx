@@ -19,6 +19,20 @@ export default function SubjectOverview() {
         );
     }
 
+    const instructorName = subject?.teacher_name || (subject as any)?.instructor_name;
+    const instructorEmail = subject?.teacher_email || (subject as any)?.instructor_email;
+
+    const rawTeacherName = instructorName?.trim();
+    const hasInstructor = Boolean(
+        rawTeacherName &&
+        rawTeacherName !== "" &&
+        rawTeacherName.toLowerCase() !== "no teacher assigned" &&
+        rawTeacherName.toLowerCase() !== "no teacher yet" &&
+        rawTeacherName.toLowerCase() !== "unknown teacher" &&
+        rawTeacherName.toLowerCase() !== "faculty" &&
+        (Boolean(subject?.teacher_id) || Boolean(instructorEmail))
+    );
+
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
             <View style={styles.card}>
@@ -30,15 +44,19 @@ export default function SubjectOverview() {
 
             <View style={styles.infoSection}>
                 <Text style={styles.sectionTitle}>Instructor</Text>
-                <View style={styles.row}>
-                    <View style={styles.avatar} />
-                    <View style={styles.infoCol}>
-                        <Text style={styles.name}>{subject?.teacher_name || "No teacher assigned"}</Text>
-                        {Boolean(subject?.teacher_email) && (
-                            <Text style={styles.email}>{subject.teacher_email}</Text>
-                        )}
+                {hasInstructor ? (
+                    <View style={styles.row}>
+                        <View style={styles.avatar} />
+                        <View style={styles.infoCol}>
+                            <Text style={styles.name}>{instructorName}</Text>
+                            {Boolean(instructorEmail) && (
+                                <Text style={styles.email}>{instructorEmail}</Text>
+                            )}
+                        </View>
                     </View>
-                </View>
+                ) : (
+                    <Text style={styles.text}>No teacher yet</Text>
+                )}
             </View>
 
             {Boolean(subject?.grade_level) && (
