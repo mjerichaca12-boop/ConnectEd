@@ -841,6 +841,34 @@ function GradesManagement() {
       }
     });
 
+    // Also fetch quiz_attempts fallback for quiz scores
+    try {
+      const quizIds = assessments.filter(a => a.type === 'quiz' || a.designation === 'Quiz').map(a => a.id);
+      if (quizIds.length > 0) {
+        const { data: attemptsData } = await supabase
+          .from("quiz_attempts")
+          .select("quiz_id, assignment_id, student_id, user_id, score, status")
+          .in("student_id", studentIds);
+
+        (attemptsData ?? []).forEach((attempt) => {
+          const aid = String(attempt.quiz_id || attempt.assignment_id || "").trim();
+          const sid = String(attempt.student_id || attempt.user_id || "").trim();
+          if (!aid || !sid) return;
+
+          if (!gradesMap[aid]) gradesMap[aid] = {};
+          if ((typeof gradesMap[aid][sid] === "undefined" || gradesMap[aid][sid] === null) && typeof attempt.score === "number") {
+            gradesMap[aid][sid] = attempt.score;
+          }
+          if (!statusMap[aid]) statusMap[aid] = {};
+          if (!statusMap[aid][sid] || statusMap[aid][sid] === "Pending") {
+            statusMap[aid][sid] = attempt.status === "completed" || attempt.status === "Submitted" ? "Graded" : "Submitted";
+          }
+        });
+      }
+    } catch (qErr) {
+      console.warn("Quiz attempts fallback fetch warning:", qErr);
+    }
+
     setAssessmentGradesMap((prev) => mergeNestedMaps(prev, gradesMap));
     setAssessmentStatusMap((prev) => mergeNestedMaps(prev, statusMap));
     setAssessmentFeedbackMap((prev) => mergeNestedMaps(prev, feedbackMapped));
@@ -1505,6 +1533,60 @@ function GradesManagement() {
         const assessment = (assessmentItemsRef.current || []).find((a) => String(a.id) === String(normalized.assessmentId));
         if (!assessment) return;
         setAssessmentSubmissionsMap((prev) => { const next = { ...(prev||{}) }; if (next[normalized.assessmentId]) { delete next[normalized.assessmentId][normalized.studentId]; if (Object.keys(next[normalized.assessmentId]).length===0) delete next[normalized.assessmentId]; } assessmentSubmissionsMapRef.current = next; return next; });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assessment_grades" }, (payload) => {
+        const row = payload.new || payload.old;
+        if (!row) return;
+        if (row.subject_id && String(row.subject_id) !== String(selectedClass)) return;
+        if (row.teacher_id && String(row.teacher_id) !== String(teacherId)) return;
+
+        const aid = String(row.assessment_id || "").trim();
+        const sid = String(row.student_id || "").trim();
+        if (!aid || !sid) return;
+
+        if (payload.eventType === "DELETE") {
+          setAssessmentGradesMap((prev) => {
+            const next = { ...(prev || {}) };
+            if (next[aid]) delete next[aid][sid];
+            return next;
+          });
+        } else {
+          const val = typeof row.grade_value === "number" ? row.grade_value : Number(row.grade_value || 0);
+          setAssessmentGradesMap((prev) => {
+            const next = { ...(prev || {}) };
+            if (!next[aid]) next[aid] = {};
+            next[aid][sid] = val;
+            return next;
+          });
+          setAssessmentStatusMap((prev) => {
+            const next = { ...(prev || {}) };
+            if (!next[aid]) next[aid] = {};
+            next[aid][sid] = String(row.status || "Graded");
+            return next;
+          });
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "quiz_attempts" }, (payload) => {
+        const row = payload.new || payload.old;
+        if (!row) return;
+        const aid = String(row.quiz_id || row.assignment_id || "").trim();
+        const sid = String(row.student_id || row.user_id || "").trim();
+        if (!aid || !sid) return;
+
+        if (payload.eventType !== "DELETE" && typeof row.score === "number") {
+          setAssessmentGradesMap((prev) => {
+            const next = { ...(prev || {}) };
+            if (!next[aid]) next[aid] = {};
+            next[aid][sid] = row.score;
+            return next;
+          });
+          setAssessmentStatusMap((prev) => {
+            const next = { ...(prev || {}) };
+            if (!next[aid]) next[aid] = {};
+            next[aid][sid] = row.status === "completed" || row.status === "Submitted" ? "Graded" : "Submitted";
+            return next;
+          });
+        }
       })
       .subscribe();
 

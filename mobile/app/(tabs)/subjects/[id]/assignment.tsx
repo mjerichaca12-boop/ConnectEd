@@ -355,10 +355,11 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
 
 
 
-            // Fetch teacher_id from subjects table using course_id / subjectId
-            let teacherId = null;
-            const subjectId = assignment.course_id || assignment.subject_id;
-            if (subjectId) {
+            // Fetch teacher_id from subjects table using course_id / subjectId / class_id
+            let teacherId = assignment.teacher_id || assignment.created_by || null;
+            let subjectId = assignment.course_id || assignment.subject_id || assignment.class_id || assignment.subjectId || assignment.classId || null;
+
+            if (subjectId && !teacherId) {
                 const { data: subjectData } = await supabase
                     .from('subjects')
                     .select('teacher_id')
@@ -367,6 +368,19 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                 
                 if (subjectData && subjectData.teacher_id) {
                     teacherId = subjectData.teacher_id;
+                }
+            }
+
+            if (!subjectId && assignment.id) {
+                const { data: asgData } = await supabase
+                    .from('assignments')
+                    .select('teacher_id, course_id, subject_id')
+                    .eq('id', assignment.id)
+                    .maybeSingle();
+
+                if (asgData) {
+                    subjectId = asgData.course_id || asgData.subject_id || null;
+                    teacherId = teacherId || asgData.teacher_id || null;
                 }
             }
 

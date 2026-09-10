@@ -1668,6 +1668,39 @@ export function ClassDetail() {
     };
   }, [teacherProfileId, id, assignmentTable, assignmentColumns, classData]);
 
+  // Realtime subscription for student task & quiz submissions
+  useEffect(() => {
+    if (!supabase || !id) return;
+
+    const channel = supabase
+      .channel(`class-detail-submissions-${id}-${Math.random().toString(36).substring(7)}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assessment_submissions" }, () => {
+        if (teacherProfileId && classData) {
+          fetchClassAssignments(teacherProfileId, classData);
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "submissions" }, () => {
+        if (teacherProfileId && classData) {
+          fetchClassAssignments(teacherProfileId, classData);
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_assessment_grades" }, () => {
+        if (teacherProfileId && classData) {
+          fetchClassAssignments(teacherProfileId, classData);
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "quiz_attempts" }, () => {
+        if (teacherProfileId && classData) {
+          fetchClassAssignments(teacherProfileId, classData);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherProfileId, id, classData]);
+
   useEffect(() => {
     if (!supabase || !teacherProfileId || !announcementTable) return;
 
