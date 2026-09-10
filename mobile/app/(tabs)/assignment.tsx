@@ -17,10 +17,7 @@ import { useDeleteAssignmentMutation } from "../../src/hooks/query/assignments/u
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as Linking from 'expo-linking';
-import { decode } from 'base64-arraybuffer';
-import { readFileAsArrayBuffer } from "../../src/utils/file-reader";
-
+import { autoDownloadFile } from "../../src/utils/file-downloader";
 import { parseQuiz, ParsedQuiz, QuizQuestion } from "../../src/utils/quiz-parser";
 import { AssessmentTypeBadge } from "../../src/components/common/AssessmentTypeBadge";
 
@@ -610,21 +607,16 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
         }
         if (!fileUrl || typeof fileUrl !== 'string') return;
         try {
-            if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-                openFileViewer(fileUrl, assignment.file_name || "Assignment Attachment");
-            } else {
-                let cleanPath = fileUrl;
-                if (cleanPath.startsWith('class-materials/')) {
-                    cleanPath = cleanPath.replace('class-materials/', '');
-                }
-                const { data } = supabase.storage.from('class-materials').getPublicUrl(cleanPath);
-                if (data?.publicUrl) {
-                    openFileViewer(data.publicUrl, assignment.file_name || "Assignment Attachment");
-                }
-            }
+            await autoDownloadFile({
+                url: fileUrl,
+                fileName: assignment.file_name || "Assignment Attachment",
+                defaultBucket: 'assignment-attachments',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch(e) {
             console.error(e);
-            Alert.alert("Error", "Could not open the assignment material.");
+            Alert.alert("Error", "Could not download the assignment material.");
         }
     };
 
@@ -916,11 +908,25 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                                                     <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E293B', flex: 1 }} numberOfLines={1}>
                                                         {item.fileName}
                                                     </Text>
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                                        <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>
-                                                            View Full
-                                                        </Text>
-                                                        <Ionicons name="eye-outline" size={14} color={Colors.light.primary} />
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                                        <TouchableOpacity 
+                                                            onPress={() => autoDownloadFile({ url: item.url, fileName: item.fileName, defaultBucket: 'assignment-attachments' })}
+                                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2, paddingHorizontal: 6 }}
+                                                        >
+                                                            <Ionicons name="download-outline" size={16} color={Colors.light.primary} />
+                                                            <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>
+                                                                Download
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity 
+                                                            onPress={() => openFileViewer(item.url, item.fileName)}
+                                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                                                        >
+                                                            <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>
+                                                                View
+                                                            </Text>
+                                                            <Ionicons name="eye-outline" size={14} color={Colors.light.primary} />
+                                                        </TouchableOpacity>
                                                     </View>
                                                 </View>
                                             </TouchableOpacity>
@@ -947,6 +953,12 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                                                         📄 Tap to Open
                                                     </Text>
                                                 </View>
+                                                <TouchableOpacity 
+                                                    style={{ padding: 8, backgroundColor: '#DBEAFE', borderRadius: 8, marginRight: 8 }}
+                                                    onPress={() => autoDownloadFile({ url: item.url, fileName: item.fileName, defaultBucket: 'assignment-attachments' })}
+                                                >
+                                                    <Ionicons name="download-outline" size={18} color={Colors.light.primary} />
+                                                </TouchableOpacity>
                                                 <Ionicons name="eye-outline" size={22} color={Colors.light.primary} />
                                             </TouchableOpacity>
                                         )}
@@ -1415,15 +1427,32 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                                                 Teacher's Quiz Question Sheet
                                             </Text>
                                         </View>
-                                        <TouchableOpacity 
-                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                                            onPress={() => {
-                                                openFileViewer(publicUrl, assignment.file_name || "Teacher's Quiz Sheet");
-                                            }}
-                                        >
-                                            <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>Open Full</Text>
-                                            <Ionicons name="open-outline" size={14} color={Colors.light.primary} />
-                                        </TouchableOpacity>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                            <TouchableOpacity 
+                                                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                                                onPress={() => {
+                                                    autoDownloadFile({
+                                                        url: publicUrl,
+                                                        fileName: assignment.file_name || "Teacher_Quiz_Sheet",
+                                                        defaultBucket: 'assignment-attachments',
+                                                        showSuccessAlert: true,
+                                                        showErrorAlert: true,
+                                                    });
+                                                }}
+                                            >
+                                                <Ionicons name="download-outline" size={14} color={Colors.light.primary} />
+                                                <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>Download</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity 
+                                                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                                                onPress={() => {
+                                                    openFileViewer(publicUrl, assignment.file_name || "Teacher's Quiz Sheet");
+                                                }}
+                                            >
+                                                <Text style={{ fontSize: 12, color: Colors.light.primary, fontWeight: 'bold' }}>Open Full</Text>
+                                                <Ionicons name="open-outline" size={14} color={Colors.light.primary} />
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
 
                                     {isImg ? (

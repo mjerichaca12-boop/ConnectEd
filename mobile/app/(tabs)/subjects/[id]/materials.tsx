@@ -5,14 +5,12 @@ import Colors from "../../../../src/constants/Colors";
 import Layout from "../../../../src/constants/Layout";
 import AppHeader from "../../../../src/components/common/AppHeader";
 import Button from "../../../../src/components/common/Button";
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
-import * as MediaLibrary from 'expo-media-library/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from '../../../../src/lib/supabase';
 import FileViewerModal from "../../../../src/components/common/FileViewerModal";
+import { autoDownloadFile } from "../../../../src/utils/file-downloader";
 import { useCreateMaterialMutation } from '../../../../src/hooks/query/materials/use-create-material-mutation';
 import { useMaterialsQuery } from "../../../../src/hooks/query/materials/use-materials-query";
 import { useSubjectDetailQuery } from "../../../../src/hooks/query/subjects/use-subject-detail-query";
@@ -204,37 +202,13 @@ const DetailedMaterialView = ({ material, onBack }: any) => {
 
         try {
             setIsDownloading(true);
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            if (!storageDir) {
-                Alert.alert("Error", "Storage directory not available.");
-                return;
-            }
-
-            if (isImage) {
-                try {
-                    const { status } = await MediaLibrary.requestPermissionsAsync();
-                    if (status === 'granted') {
-                        const cleanExt = resolvedUrl.split('?')[0].split('.').pop() || 'jpg';
-                        const fileUri = `${storageDir}/photo_${Date.now()}.${cleanExt}`;
-                        const { uri } = await FileSystem.downloadAsync(resolvedUrl, fileUri);
-                        await MediaLibrary.saveToLibraryAsync(uri);
-                        Alert.alert("Saved", "Photo saved to gallery!");
-                        return;
-                    }
-                } catch (mediaErr) {
-                    console.warn("MediaLibrary save failed, falling back to file sharing:", mediaErr);
-                }
-            }
-
-            const cleanFileName = fileName.replace(/[^\w\d\-_.]/g, '_');
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${cleanFileName}` : `${storageDir}/${cleanFileName}`;
-            const { uri } = await FileSystem.downloadAsync(resolvedUrl, fileUri);
-
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            } else {
-                Alert.alert("Success", "File downloaded successfully.");
-            }
+            await autoDownloadFile({
+                url: resolvedUrl,
+                fileName,
+                defaultBucket: 'class-materials',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error) {
             console.error('Download error:', error);
             Alert.alert("Download Error", "Could not download the file.");

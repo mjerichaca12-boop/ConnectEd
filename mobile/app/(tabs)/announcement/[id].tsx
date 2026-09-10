@@ -6,9 +6,8 @@ import Colors from "@/src/constants/Colors";
 import AppHeader from "@/src/components/common/AppHeader";
 import Button from "@/src/components/common/Button";
 import FileViewerModal from "@/src/components/common/FileViewerModal";
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import * as Linking from 'expo-linking';
+import { autoDownloadFile } from "@/src/utils/file-downloader";
 import { useAnnouncementsQuery } from "@/src/hooks/query/announcements/use-announcements-query";
 import { useDeleteAnnouncementMutation } from "@/src/hooks/query/announcements/use-delete-announcement-mutation";
 import { supabase } from "@/src/lib/supabase";
@@ -94,23 +93,13 @@ export default function AnnouncementDetailScreen() {
 
         try {
             setIsDownloading(true);
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-
-            if (!storageDir) {
-                Linking.openURL(announcement.file_url);
-                return;
-            }
-
-            const fileName = announcement.file_name || `attachment_${Date.now()}`;
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-
-            const { uri } = await FileSystem.downloadAsync(announcement.file_url, fileUri);
-
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            } else {
-                Alert.alert("Success", "File downloaded successfully.");
-            }
+            await autoDownloadFile({
+                url: announcement.file_url,
+                fileName: announcement.file_name || "announcement_file",
+                defaultBucket: 'announcements',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error) {
             console.error('Download error:', error);
             Alert.alert("Download Error", "Failed to download file. Opening in browser instead.");
@@ -125,23 +114,13 @@ export default function AnnouncementDetailScreen() {
 
         try {
             setIsDownloading(true);
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-
-            if (!storageDir) {
-                Linking.openURL(attachment.file_url);
-                return;
-            }
-
-            const fileName = attachment.file_name || `attachment_${Date.now()}`;
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-
-            const { uri } = await FileSystem.downloadAsync(attachment.file_url, fileUri);
-
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            } else {
-                Alert.alert("Success", "File downloaded successfully.");
-            }
+            await autoDownloadFile({
+                url: attachment.file_url,
+                fileName: attachment.file_name || "attachment_file",
+                defaultBucket: 'announcements',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error) {
             console.error('Download error:', error);
             Alert.alert("Download Error", "Failed to download file. Opening in browser instead.");

@@ -4,9 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../../../src/components/common/AppHeader";
 import Colors from "../../../src/constants/Colors";
 import { useMaterialsQuery } from "../../../src/hooks/query/materials/use-materials-query";
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
-import { supabase } from "../../../src/lib/supabase";
+import { autoDownloadFile } from "../../../src/utils/file-downloader";
 
 export default function TeacherMaterialsScreen() {
     // Passing undefined for subjectId to fetch ALL materials for the current teacher (as per my update to getMaterials)
@@ -23,28 +21,13 @@ export default function TeacherMaterialsScreen() {
         }
 
         try {
-            let targetUrl = fileUrl;
-            if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
-                const { data } = supabase.storage.from('class-materials').getPublicUrl(fileUrl);
-                if (data?.publicUrl) {
-                    targetUrl = data.publicUrl;
-                }
-            }
-
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            if (!storageDir) {
-                await Linking.openURL(targetUrl);
-                return;
-            }
-
-            const fileName = `${material.title.replace(/\s+/g, '_')}`;
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-            
-            const { uri } = await FileSystem.downloadAsync(targetUrl, fileUri);
-            
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            }
+            await autoDownloadFile({
+                url: fileUrl,
+                fileName: material.title,
+                defaultBucket: 'class-materials',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error) {
             console.error('Download error:', error);
             if (fileUrl && typeof fileUrl === 'string') {

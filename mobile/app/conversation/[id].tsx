@@ -28,6 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import Colors from "../../src/constants/Colors";
 import AppHeader from "../../src/components/common/AppHeader";
 import FileViewerModal from "../../src/components/common/FileViewerModal";
+import { autoDownloadFile } from "../../src/utils/file-downloader";
 import { useConversationQuery } from "../../src/hooks/query/messages/use-conversation-query";
 import { useSendMessageMutation } from "../../src/hooks/query/messages/use-send-message-mutation";
 import { useMarkReadMutation } from "../../src/hooks/query/messages/use-mark-read-mutation";
@@ -382,56 +383,28 @@ export default function ConversationScreen() {
 
     const handleSaveImage = useCallback(async (url: string) => {
         try {
-            const { status } = await MediaLibrary.requestPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert("Permission Error", "Please allow gallery access to save photos.");
-                return;
-            }
-
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            if (!storageDir) {
-                Linking.openURL(url);
-                return;
-            }
-
-            const cleanUrl = url.split('?')[0];
-            const fileExt = cleanUrl.split('.').pop() || 'jpg';
-            const fileName = `image_${Date.now()}.${fileExt}`;
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${fileName}` : `${storageDir}/${fileName}`;
-            
-            const { uri } = await FileSystem.downloadAsync(url, fileUri);
-            await MediaLibrary.saveToLibraryAsync(uri);
-            Alert.alert("Saved", "Photo saved to your gallery!");
+            await autoDownloadFile({
+                url,
+                defaultBucket: 'chat-attachments',
+                saveToGalleryIfImage: true,
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error: any) {
             console.error('Save image error:', error);
-            try {
-                if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(url);
-                    return;
-                }
-            } catch {}
             Alert.alert("Save Error", error instanceof Error ? error.message : "Failed to save photo");
         }
     }, []);
 
     const handleSaveFile = useCallback(async (url: string, fileName?: string) => {
         try {
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            if (!storageDir) {
-                Linking.openURL(url);
-                return;
-            }
-
-            const cleanFileName = fileName?.trim() || `document_${Date.now()}`;
-            const fileUri = storageDir.endsWith('/') ? `${storageDir}${cleanFileName}` : `${storageDir}/${cleanFileName}`;
-            
-            const { uri } = await FileSystem.downloadAsync(url, fileUri);
-            
-            if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(uri);
-            } else {
-                Linking.openURL(url);
-            }
+            await autoDownloadFile({
+                url,
+                fileName,
+                defaultBucket: 'chat-attachments',
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (error: any) {
             console.error('Save file error:', error);
             Alert.alert("Save Error", error instanceof Error ? error.message : "Failed to download file");

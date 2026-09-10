@@ -19,10 +19,8 @@ if (Platform.OS !== 'web') {
         WebView = require('react-native-webview').WebView;
     } catch {}
 }
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library/legacy';
 import Colors from "../../constants/Colors";
+import { autoDownloadFile } from "../../utils/file-downloader";
 
 interface FileViewerModalProps {
     visible: boolean;
@@ -63,36 +61,12 @@ export const FileViewerModal: React.FC<FileViewerModalProps> = ({
         if (!url) return;
         try {
             setDownloading(true);
-            if (isImage) {
-                try {
-                    const { status } = await MediaLibrary.requestPermissionsAsync();
-                    if (status === 'granted') {
-                        const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-                        if (storageDir) {
-                            const cleanExt = lowerUrl.split('?')[0].split('.').pop() || 'jpg';
-                            const fileUri = `${storageDir}/photo_${Date.now()}.${cleanExt}`;
-                            const { uri } = await FileSystem.downloadAsync(url, fileUri);
-                            await MediaLibrary.saveToLibraryAsync(uri);
-                            Alert.alert("Saved", "Photo saved to gallery!");
-                            return;
-                        }
-                    }
-                } catch (mediaErr) {
-                    console.warn("MediaLibrary unavailable, falling back to file download/sharing:", mediaErr);
-                }
-            }
-
-            const storageDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-            if (storageDir) {
-                const cleanName = fileName || `file_${Date.now()}`;
-                const fileUri = `${storageDir}/${cleanName}`;
-                const { uri } = await FileSystem.downloadAsync(url, fileUri);
-                if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(uri);
-                } else {
-                    Alert.alert("Success", "File downloaded successfully.");
-                }
-            }
+            await autoDownloadFile({
+                url,
+                fileName,
+                showSuccessAlert: true,
+                showErrorAlert: true,
+            });
         } catch (err: any) {
             console.error("Viewer download error:", err);
             Alert.alert("Download Error", err.message || "Failed to download file");
