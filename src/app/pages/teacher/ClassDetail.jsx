@@ -3460,8 +3460,9 @@ export function ClassDetail() {
     }
   };
 
-  const uploadAnnouncementFiles = async (files) => {
-    if (!supabase || !teacherProfileId) return [];
+  const uploadAnnouncementFiles = async (files, overrideTeacherId) => {
+    const tid = overrideTeacherId || teacherProfileId;
+    if (!supabase || !tid) return [];
 
     const selectedFiles = Array.from(files || []);
     if (selectedFiles.length === 0) return [];
@@ -3498,12 +3499,31 @@ export function ClassDetail() {
         // The RLS policy on class-announcements bucket checks split_part(name,'/',1) as the class UUID
         // and verifies the current user is teacher of that class (via TSA or subjects.teacher_id).
         const uploadedPath = classUuid
-          ? `${classUuid}/${teacherProfileId}/${storedFileName}`
-          : `${teacherProfileId}/${storedFileName}`;
+          ? `${classUuid}/${tid}/${storedFileName}`
+          : `${tid}/${storedFileName}`;
 
-        const uploadResult = await supabase.storage
+        let uploadResult = await supabase.storage
           .from(ANNOUNCEMENT_STORAGE_BUCKET)
           .upload(uploadedPath, file, { upsert: false });
+
+        if (uploadResult.error) {
+          console.warn("[ClassDetail] Direct storage upload notice, attempting adminApi fallback:", uploadResult.error?.message || uploadResult.error);
+          try {
+            const fallbackRes = await adminApi.db("storage_upload", {
+              payload: {
+                bucket: ANNOUNCEMENT_STORAGE_BUCKET,
+                path: uploadedPath,
+                file,
+                contentType: file.type || "application/octet-stream"
+              }
+            });
+            if (!fallbackRes.error && fallbackRes.data) {
+              uploadResult = { data: fallbackRes.data, error: null };
+            }
+          } catch (fbErr) {
+            console.error("[ClassDetail] Admin storage upload fallback error:", fbErr);
+          }
+        }
 
         console.log("[ClassDetail] Announcement upload result:", uploadResult);
 
@@ -3656,7 +3676,7 @@ export function ClassDetail() {
       const columns = await getAnnouncementColumns(tableName);
 
       const replacingAttachments = selectedFiles.length > 0;
-      const uploadedAttachments = replacingAttachments ? await uploadAnnouncementFiles(selectedFiles) : [];
+      const uploadedAttachments = replacingAttachments ? await uploadAnnouncementFiles(selectedFiles, effectiveTeacherId) : [];
       const nextAttachments = replacingAttachments ? uploadedAttachments : existingAttachments;
 
       const titleColumn = resolveColumnName(columns, ["title", "subject", "name"]);
@@ -3718,9 +3738,24 @@ export function ClassDetail() {
 
       console.log("[ClassDetail] Announcement payload:", payload);
 
-      const writeResult = isEditingAnnouncement
+      let writeResult = isEditingAnnouncement
         ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
         : await supabase.from(tableName).insert(payload).select("*").single();
+
+      if (writeResult.error) {
+        console.warn("[ClassDetail] Direct announcement DB write notice, attempting adminApi fallback:", writeResult.error?.message || writeResult.error);
+        try {
+          const fallbackRes = isEditingAnnouncement
+            ? await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: editingAnnouncementId }, single: true })
+            : await adminApi.db(tableName, "insert", { payload, single: true });
+
+          if (!fallbackRes.error && fallbackRes.data) {
+            writeResult = { data: fallbackRes.data, error: null };
+          }
+        } catch (fbErr) {
+          console.error("[ClassDetail] Admin announcement DB write fallback error:", fbErr);
+        }
+      }
 
       console.log("[ClassDetail] Announcement write result:", writeResult);
 
