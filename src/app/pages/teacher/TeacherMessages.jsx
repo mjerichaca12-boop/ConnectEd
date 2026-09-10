@@ -513,38 +513,24 @@ function TeacherMessages() {
     try {
       const cleanCurrentId = String(currentTeacherId || "").trim().toLowerCase();
 
-      let staffQuery = supabase
+      let mainQuery = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
-        .in("role", ["teacher", "Teacher", "TEACHER", "admin", "Admin", "ADMIN"]);
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status")
+        .order("created_at", { ascending: false });
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
-        staffQuery = staffQuery.neq("id", currentTeacherId);
+        mainQuery = mainQuery.neq("id", currentTeacherId);
       }
 
-      const { data: staffData } = await staffQuery.order("first_name", { ascending: true }).limit(2000);
+      const { data: allProfiles } = await mainQuery.limit(5000);
 
-      let studentQuery = supabase
-        .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
-        .in("role", ["student", "Student", "STUDENT"]);
-
-      if (currentTeacherId && isUuid(currentTeacherId)) {
-        studentQuery = studentQuery.neq("id", currentTeacherId);
-      }
-
-      const { data: studentData } = await studentQuery.order("first_name", { ascending: true }).limit(5000);
-
-      const combined = [...(staffData || []), ...(studentData || [])];
-
-      const res = combined
+      const res = (allProfiles || [])
         .filter((row) => {
           if (!row || !row.id) return false;
           if (cleanCurrentId && String(row.id).toLowerCase() === cleanCurrentId) return false;
           const statusStr = String(row.status || "").trim().toLowerCase();
           if (statusStr === "disabled" || statusStr === "inactive") return false;
-          const roleStr = String(row.role || "").trim().toLowerCase();
-          return ["student", "teacher", "admin"].includes(roleStr);
+          return true;
         })
         .map((row) => ({
           id: String(row.id),
@@ -585,14 +571,14 @@ function TeacherMessages() {
 
       let req = supabase
         .from("profiles")
-        .select("id, first_name, middle_name, last_name, email, role, year_level, section, status")
-        .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,username.ilike.%${q}%`);
+        .select("id, first_name, middle_name, last_name, name, full_name, display_name, email, role, year_level, section, status")
+        .or(`email.ilike.%${q}%,first_name.ilike.%${q}%,last_name.ilike.%${q}%,middle_name.ilike.%${q}%,name.ilike.%${q}%,full_name.ilike.%${q}%,username.ilike.%${q}%`);
 
       if (currentTeacherId && isUuid(currentTeacherId)) {
         req = req.neq("id", currentTeacherId);
       }
 
-      const { data, error } = await req.limit(100);
+      const { data, error } = await req.limit(500);
       if (error || !data) return [];
 
       return data
@@ -601,8 +587,7 @@ function TeacherMessages() {
           if (cleanCurrentId && String(row.id).toLowerCase() === cleanCurrentId) return false;
           const statusStr = String(row.status || "").trim().toLowerCase();
           if (statusStr === "disabled" || statusStr === "inactive") return false;
-          const roleStr = String(row.role || "").trim().toLowerCase();
-          return ["student", "teacher", "admin"].includes(roleStr);
+          return true;
         })
         .map((row) => ({
           id: String(row.id),

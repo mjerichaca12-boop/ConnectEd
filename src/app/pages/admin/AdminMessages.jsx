@@ -132,8 +132,7 @@ export function AdminMessages() {
           if (!row || !row.id) return false;
           const statusStr = String(row.status || "").trim().toLowerCase();
           if (statusStr === "disabled" || statusStr === "inactive") return false;
-          const roleStr = String(row.role || "").trim().toLowerCase();
-          return ["student", "teacher", "admin"].includes(roleStr);
+          return true;
         })
         .map((row) => {
           const fullName = [row.first_name, row.middle_name, row.last_name]
