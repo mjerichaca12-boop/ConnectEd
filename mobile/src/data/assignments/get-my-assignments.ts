@@ -38,7 +38,10 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     try {
         const studentEnrollments = await getMyEnrollments();
         sectionMatchedSubjectIds = studentEnrollments
-            .filter(e => e.status === 'accepted' || e.status === 'approved' || e.status === 'active')
+            .filter(e => {
+                const st = (e.status || '').toLowerCase();
+                return st === 'accepted' || st === 'approved' || st === 'active' || st === 'enrolled' || st === 'joined';
+            })
             .map(e => e.subject_id)
             .filter(Boolean);
     } catch (e) {
@@ -48,31 +51,47 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     let approvedSubjectIds: string[] = [];
     if (sectionMatchedSubjectIds.length > 0) {
         approvedSubjectIds = [...new Set(sectionMatchedSubjectIds)];
-    } else {
-        // Fallback to enrollments table with section and grade level validation
-        try {
-            const { data: legacyEnrollments } = await supabase
-                .from('enrollments')
-                .select('subject_id, subjects(id, section, grade_level)')
-                .eq('student_id', userId)
-                .in('status', ['approved', 'accepted', 'active']);
+    }
 
-            if (legacyEnrollments) {
-                approvedSubjectIds = legacyEnrollments
-                    .filter((e: any) => {
-                        if (isTeacher) return true;
-                        const subSection = e.subjects?.section;
-                        const subGrade = e.subjects?.grade_level;
-                        if (subSection && !isSectionMatch(studentSection, subSection)) return false;
-                        if (subGrade && !isGradeLevelMatch(studentGrade, subGrade)) return false;
-                        return true;
-                    })
-                    .map((e: any) => e.subject_id)
-                    .filter(Boolean);
-            }
-        } catch (legErr) {
-            console.warn('[assignments] legacyEnrollments fetch fallback:', legErr);
+    // Also fetch directly from teacher_student_assignments
+    try {
+        const { data: tsaEnrollments } = await supabase
+            .from('teacher_student_assignments')
+            .select('subject_id, status')
+            .eq('student_id', userId)
+            .in('status', ['Active', 'active', 'accepted', 'approved', 'enrolled', 'Joined', 'joined', 'Pending', 'pending']);
+        if (tsaEnrollments) {
+            const tsaIds = tsaEnrollments.map((t: any) => t.subject_id).filter(Boolean);
+            approvedSubjectIds = [...new Set([...approvedSubjectIds, ...tsaIds])];
         }
+    } catch (tsaErr) {
+        console.warn('[assignments] direct teacher_student_assignments fallback:', tsaErr);
+    }
+
+    // Fallback to legacy enrollments table with section and grade level validation
+    try {
+        const { data: legacyEnrollments } = await supabase
+            .from('enrollments')
+            .select('subject_id, status, subjects(id, section, grade_level)')
+            .eq('student_id', userId)
+            .in('status', ['approved', 'accepted', 'active', 'enrolled', 'joined', 'Active', 'Accepted']);
+
+        if (legacyEnrollments) {
+            const legIds = legacyEnrollments
+                .filter((e: any) => {
+                    if (isTeacher) return true;
+                    const subSection = e.subjects?.section;
+                    const subGrade = e.subjects?.grade_level;
+                    if (subSection && !isSectionMatch(studentSection, subSection)) return false;
+                    if (subGrade && !isGradeLevelMatch(studentGrade, subGrade)) return false;
+                    return true;
+                })
+                .map((e: any) => e.subject_id)
+                .filter(Boolean);
+            approvedSubjectIds = [...new Set([...approvedSubjectIds, ...legIds])];
+        }
+    } catch (legErr) {
+        console.warn('[assignments] legacyEnrollments fetch fallback:', legErr);
     }
 
     // Also get subjects taught if user is a teacher
@@ -119,13 +138,13 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     const targetCourseIds = isValidId ? [subjectId] : allCourseIds;
 
-    // Helper to verify if a lesson is published
+    // Helper to verify if a lesson is published / accessible to students
     const isLessonPublished = (lesson: any): boolean => {
         if (isTeacher) return true;
         if (!lesson) return true;
         if (lesson.is_published === false || lesson.published === false) return false;
         const lessonStatus = (lesson.status || '').toLowerCase().trim();
-        if (lessonStatus && lessonStatus !== 'published' && lessonStatus !== 'active') {
+        if (lessonStatus === 'draft' || lessonStatus === 'archived' || lessonStatus === 'inactive') {
             return false;
         }
         if (lesson.scheduled_publish_at) {
@@ -137,7 +156,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         return true;
     };
 
-    // Helper to verify if an item is published
+    // Helper to verify if an item is published and available
     const isItemPublished = (row: any, linkedLesson?: any): boolean => {
         if (isTeacher) return true; // Teachers can see drafts/scheduled items
 
@@ -150,23 +169,26 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
 
         // Check scheduled publish date
-        if (rawStatus === 'scheduled') {
+        if (rawStatus === 'scheduled' || row.scheduled_publish_at) {
             if (row.scheduled_publish_at) {
                 const schedDate = new Date(row.scheduled_publish_at);
                 if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
                     return false;
                 }
-            } else {
-                return false;
-            }
-        } else if (row.scheduled_publish_at) {
-            const schedDate = new Date(row.scheduled_publish_at);
-            if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
+            } else if (rawStatus === 'scheduled') {
                 return false;
             }
         }
 
-        // If item is linked to a lesson, the lesson itself must be published!
+        // Check available_from (scheduled quiz availability window)
+        if (row.available_from) {
+            const availDate = new Date(row.available_from);
+            if (!isNaN(availDate.getTime()) && availDate > new Date()) {
+                return false;
+            }
+        }
+
+        // If item is linked to a lesson, check if lesson is published
         if (linkedLesson && !isLessonPublished(linkedLesson)) {
             return false;
         }
@@ -237,10 +259,18 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     });
 
     // 1f. Fetch ALL relevant lessons to accurately map lesson_id -> course_id (subject_id)
-    let lessonsQuery = supabase.from('lessons').select('id, subject_id, teacher_id, title, topic, description, objectives, week_number, start_date, end_date, status, scheduled_publish_at, published_at, created_at');
-    const { data: lessonsData, error: lessonsError } = await lessonsQuery;
-    if (lessonsError) {
-        console.warn('[assignments] lessons query warning:', lessonsError.message);
+    let lessonsData: any[] = [];
+    try {
+        const { data: lData, error: lErr } = await supabase.from('lessons').select('*');
+        if (!lErr && lData) {
+            lessonsData = lData;
+        } else if (lErr) {
+            console.warn('[assignments] lessons query fallback select(*):', lErr.message);
+            const { data: minLData } = await supabase.from('lessons').select('id, subject_id');
+            if (minLData) lessonsData = minLData;
+        }
+    } catch (e) {
+        console.warn('[assignments] lessons query exception:', e);
     }
 
     const lessonToCourseMap = new Map<string, string>();
@@ -253,7 +283,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
     });
 
-    // 1g. Fetch from quizzes table
+    // 1g. Fetch from quizzes table (created by teachers in lessons or courses)
     let quizzesData: any[] = [];
     try {
         let quizzesQuery = supabase.from('quizzes').select('*');
@@ -352,7 +382,6 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
 
         const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
-        if (resolvedLessonId && !linkedLesson && !isTeacher) return;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
 
@@ -395,16 +424,19 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
 
         const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
-        if (resolvedLessonId && !linkedLesson && !isTeacher) return;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
 
         let quizDescription = row.questions || row.quiz_data || row.content || row.description || row.instructions;
         
-        if (!quizDescription || quizDescription.trim().toUpperCase() === "EMPTY" || quizDescription.trim().toUpperCase() === "READ UPLOADED FILES.") {
-            if (linkedLesson) {
-                quizDescription = linkedLesson.content || linkedLesson.description || linkedLesson.topic || quizDescription;
+        if (typeof quizDescription === 'string') {
+            if (!quizDescription || quizDescription.trim().toUpperCase() === "EMPTY" || quizDescription.trim().toUpperCase() === "READ UPLOADED FILES.") {
+                if (linkedLesson) {
+                    quizDescription = linkedLesson.content || linkedLesson.description || linkedLesson.topic || quizDescription;
+                }
             }
+        } else if (Array.isArray(quizDescription)) {
+            quizDescription = JSON.stringify(quizDescription);
         }
 
         const existing = assignmentMap.get(row.id) || {};

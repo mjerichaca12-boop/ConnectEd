@@ -276,6 +276,32 @@ describe('getMyAssignments scoping & ghost task prevention', () => {
         expect(result[0].id).toBe('quiz-sooner');
         expect(result[1].id).toBe('quiz-later');
     });
+
+    it('should respect available_from date and only show quizzes when available_from is in the past or null', async () => {
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'profiles') {
+                return mockBuilder([{ id: 'test-user', section: 'Diamond', year_level: 'Grade 7', role: 'student' }]);
+            }
+            if (table === 'lessons') {
+                return mockBuilder([
+                    { id: 'lesson-1', subject_id: 'sub-1', title: 'Lesson 1', status: 'published' },
+                ]);
+            }
+            if (table === 'quizzes') {
+                return mockBuilder([
+                    { id: 'quiz-available-now', lesson_id: 'lesson-1', title: 'Available Quiz', available_from: '2020-01-01T00:00:00Z', due_date: '2099-10-15', status: 'published' },
+                    { id: 'quiz-future', lesson_id: 'lesson-1', title: 'Future Quiz', available_from: '2099-01-01T00:00:00Z', due_date: '2099-10-15', status: 'published' },
+                ]);
+            }
+            return mockBuilder([]);
+        });
+
+        (supabase as any).rpc = vi.fn(() => mockBuilder([]));
+
+        const result = await getMyAssignments();
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('quiz-available-now');
+    });
 });
 
 
