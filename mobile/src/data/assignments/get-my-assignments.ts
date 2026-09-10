@@ -1,18 +1,32 @@
 import { supabase } from "../../lib/supabase";
 import { Assignment } from "../../types";
 import { classifyAssessment } from "../../utils/assessment-badge";
+import { getMyEnrollments } from "../enrollments/get-my-enrollments";
 
 export async function getMyAssignments(subjectId?: string): Promise<Assignment[]> {
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) throw new Error("Not authenticated");
 
-    const { data: enrollments } = await supabase
+    // 1. Fetch valid section-matched enrollments from teacher_student_assignments
+    let sectionMatchedSubjectIds: string[] = [];
+    try {
+        const studentEnrollments = await getMyEnrollments();
+        sectionMatchedSubjectIds = studentEnrollments
+            .filter(e => e.status === 'accepted' || e.status === 'approved' || e.status === 'active')
+            .map(e => e.subject_id)
+            .filter(Boolean);
+    } catch (e) {
+        console.warn('[assignments] getMyEnrollments fallback:', e);
+    }
+
+    const { data: legacyEnrollments } = await supabase
         .from('enrollments')
         .select('subject_id')
         .eq('student_id', userData.user.id)
         .in('status', ['approved', 'accepted', 'active']);
 
-    const approvedSubjectIds = enrollments?.map(e => e.subject_id).filter(Boolean) || [];
+    const legacySubjectIds = legacyEnrollments?.map(e => e.subject_id).filter(Boolean) || [];
+    const approvedSubjectIds = [...new Set([...sectionMatchedSubjectIds, ...legacySubjectIds])];
 
     const { data: taughtSubjects } = await supabase
         .from('subjects')

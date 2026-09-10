@@ -22,6 +22,8 @@ export default function SubjectsScreen() {
         }, [refetch])
     );
 
+    const currentSection = myEnrollments.find(e => e.section || e.subjects?.section)?.section || myEnrollments.find(e => e.subjects?.section)?.subjects?.section || "";
+
     const enrichedSubjects = Array.from(
         new Map(
             myEnrollments
@@ -37,6 +39,7 @@ export default function SubjectsScreen() {
                             teacher: formatTeacherName(sub.profiles) || "No teacher assigned",
                             description: sub.description ?? "",
                             gradeLevel: sub.grade_level ?? "",
+                            section: sub.section || enrollment.section || "",
                             schedule: sub.schedule ?? "TBA",
                             credits: sub.credits ?? 0,
                             capacity: sub.capacity ?? 40,
@@ -90,7 +93,9 @@ export default function SubjectsScreen() {
 
             <View style={styles.banner}>
                 <Text style={styles.bannerTitle}>Your Subjects</Text>
-                <Text style={styles.bannerSub}>Subjects added by your teacher will appear here</Text>
+                <Text style={styles.bannerSub}>
+                    {currentSection ? `Section: ${currentSection} • ` : ""}Subjects added by your teacher will appear here
+                </Text>
             </View>
 
             <View style={styles.searchContainer}>
@@ -131,6 +136,7 @@ export default function SubjectsScreen() {
                                 schedule={item.schedule}
                                 description={item.description}
                                 gradeLevel={item.gradeLevel}
+                                section={item.section}
                                 credits={item.credits}
                                 capacity={item.capacity}
                                 enrolled={item.enrolled}

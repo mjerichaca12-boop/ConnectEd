@@ -1,6 +1,7 @@
 import { supabase } from "../../lib/supabase";
 import { Announcement } from "../../types";
 import { formatTeacherName } from "../../utils/name-formatter";
+import { getMyEnrollments } from "../enrollments/get-my-enrollments";
 
 export interface GetAnnouncementsArgs {
     limit?: number;
@@ -270,12 +271,24 @@ export async function getAnnouncements(args: GetAnnouncementsArgs = {}): Promise
         // GLOBAL FEED FILTER (Queries both global school announcements and class announcements)
         let approvedSubjectIds: string[] = [];
         if (isStudent) {
-            const { data: enrollments } = await supabase
+            try {
+                const studentEnrollments = await getMyEnrollments();
+                approvedSubjectIds = studentEnrollments
+                    .filter(e => e.status === 'accepted' || e.status === 'approved' || e.status === 'active')
+                    .map(e => e.subject_id)
+                    .filter(Boolean);
+            } catch (e) {
+                console.warn('[announcements] getMyEnrollments fallback:', e);
+            }
+
+            const { data: legacyEnrollments } = await supabase
                 .from('enrollments')
                 .select('subject_id')
                 .eq('student_id', userId)
                 .in('status', ['approved', 'accepted', 'active']);
-            approvedSubjectIds = enrollments?.map(e => e.subject_id).filter(Boolean) || [];
+            
+            const legacyIds = legacyEnrollments?.map(e => e.subject_id).filter(Boolean) || [];
+            approvedSubjectIds = [...new Set([...approvedSubjectIds, ...legacyIds])];
         } else {
             const { data: subjects } = await supabase
                 .from('subjects')

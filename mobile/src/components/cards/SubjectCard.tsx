@@ -11,6 +11,7 @@ interface SubjectCardProps {
     credits?: number;
     description?: string;
     gradeLevel?: string;
+    section?: string;
     capacity?: number | string;
     enrolled?: number | string;
     onPress: () => void;
@@ -25,6 +26,7 @@ export const SubjectCard: React.FC<SubjectCardProps> = ({
     credits,
     description,
     gradeLevel,
+    section,
     capacity,
     enrolled,
     onPress,
@@ -66,13 +68,19 @@ export const SubjectCard: React.FC<SubjectCardProps> = ({
                     </View>
                 ) : null}
 
+                {/* Section Info Row */}
+                {section ? (
+                    <View style={styles.infoRow}>
+                        <Ionicons name="people-outline" size={16} color="#64748B" style={styles.icon} />
+                        <Text style={styles.value}>Section: {section}</Text>
+                    </View>
+                ) : null}
+
                 {/* Schedule Info Row */}
                 <View style={styles.infoRow}>
                     <Ionicons name="time-outline" size={16} color="#64748B" style={styles.icon} />
                     <Text style={styles.value}>{schedule}</Text>
                 </View>
-
-
             </View>
         </TouchableOpacity>
     );

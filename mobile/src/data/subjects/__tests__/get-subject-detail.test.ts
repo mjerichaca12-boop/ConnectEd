@@ -31,6 +31,7 @@ describe('getSubjectDetail data service', () => {
             description: 'Grade 9 English',
             teacher_id: 'teacher-123',
             grade_level: 'Grade 9',
+            section: 'Grade 9 - Section A',
             schedule: 'MWF',
             profiles: {
                 first_name: 'Maria',
@@ -55,6 +56,18 @@ describe('getSubjectDetail data service', () => {
                     select: vi.fn(() => ({
                         eq: vi.fn(() => ({
                             single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'profiles') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            maybeSingle: vi.fn(() => Promise.resolve({
+                                data: { id: 'student-123', section: 'Section A', year_level: 'Grade 9', role: 'student' },
+                                error: null
+                            }))
                         }))
                     }))
                 };
@@ -125,156 +138,12 @@ describe('getSubjectDetail data service', () => {
                     }))
                 };
             }
-            if (table === 'teacher_student_assignments') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            eq: vi.fn(() => ({
-                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
-                            }))
-                        }))
-                    }))
-                };
-            }
-            return {};
-        });
-
-        const detail = await getSubjectDetail('sub-456');
-        expect(detail).not.toBeNull();
-        expect(detail?.section).toBe('Diamond');
-        expect(detail?.grade_level).toBe('Grade 10');
-    });
-
-    it('should fallback to profile section if assignment and subject have no section', async () => {
-        const mockSubject = {
-            id: 'sub-789',
-            code: 'SCI8',
-            name: 'Science',
-            description: 'Grade 8 Science',
-            teacher_id: 'teacher-789',
-            grade_level: 'Grade 8',
-            section: null,
-            profiles: null
-        };
-
-        (supabase.from as any).mockImplementation((table: string) => {
-            if (table === 'subjects') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
-                        }))
-                    }))
-                };
-            }
-            if (table === 'teacher_student_assignments') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            eq: vi.fn(() => ({
-                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
-                            }))
-                        }))
-                    }))
-                };
-            }
-            if (table === 'profiles') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            maybeSingle: vi.fn(() => Promise.resolve({ data: { section: 'Emerald' }, error: null }))
-                        }))
-                    }))
-                };
-            }
-            return {};
-        });
-
-        const detail = await getSubjectDetail('sub-789');
-        expect(detail).not.toBeNull();
-        expect(detail?.section).toBe('Emerald');
-    });
-
-    it('should return "No teacher assigned" when subjects.teacher_id is null even if assignment has teacher_id', async () => {
-        const mockSubject = {
-            id: 'sub-no-teacher',
-            code: 'EGG111',
-            name: 'ENGLISH',
-            description: 'English subject',
-            teacher_id: null,
-            grade_level: 'Grade 7',
-            section: 'Amethyst',
-            profiles: null
-        };
-
-        const mockAssignment = {
-            teacher_id: 'stale-teacher-123',
-            section: 'Amethyst',
-            profiles: {
-                first_name: 'Stale',
-                last_name: 'Teacher',
-                email: 'stale@school.edu'
-            }
-        };
-
-        (supabase.from as any).mockImplementation((table: string) => {
-            if (table === 'subjects') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
-                        }))
-                    }))
-                };
-            }
-            if (table === 'teacher_student_assignments') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            eq: vi.fn(() => ({
-                                maybeSingle: vi.fn(() => Promise.resolve({ data: mockAssignment, error: null }))
-                            }))
-                        }))
-                    }))
-                };
-            }
-            return {};
-        });
-
-        const detail = await getSubjectDetail('sub-no-teacher');
-        expect(detail).not.toBeNull();
-        expect(detail?.teacher_name).toBe('No teacher assigned');
-        expect(detail?.teacher_email).toBeUndefined();
-    });
-
-    it('should fetch teacher profile directly if teacher_id exists on subject but profiles join was null', async () => {
-        const mockSubject = {
-            id: 'sub-with-teacher',
-            code: 'MATH101',
-            name: 'Math',
-            description: 'Math subject',
-            teacher_id: 'real-teacher-uuid',
-            grade_level: 'Grade 7',
-            section: 'Amethyst',
-            profiles: null
-        };
-
-        (supabase.from as any).mockImplementation((table: string) => {
-            if (table === 'subjects') {
-                return {
-                    select: vi.fn(() => ({
-                        eq: vi.fn(() => ({
-                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
-                        }))
-                    }))
-                };
-            }
             if (table === 'profiles') {
                 return {
                     select: vi.fn(() => ({
                         eq: vi.fn(() => ({
                             maybeSingle: vi.fn(() => Promise.resolve({
-                                data: { first_name: 'Euri', last_name: 'Jiao', email: 'euri@school.edu' },
+                                data: { id: 'student-123', section: 'Diamond', year_level: 'Grade 10', role: 'student' },
                                 error: null
                             }))
                         }))
@@ -295,10 +164,60 @@ describe('getSubjectDetail data service', () => {
             return {};
         });
 
-        const detail = await getSubjectDetail('sub-with-teacher');
+        const detail = await getSubjectDetail('sub-456');
         expect(detail).not.toBeNull();
-        expect(detail?.teacher_name).toBe('Euri Jiao');
-        expect(detail?.teacher_email).toBe('euri@school.edu');
+        expect(detail?.section).toBe('Diamond');
+        expect(detail?.grade_level).toBe('Grade 10');
+    });
+
+    it('should block access and return null if student section does not match subject section', async () => {
+        const mockSubject = {
+            id: 'sub-emerald',
+            code: 'SCI7',
+            name: 'Science Emerald',
+            teacher_id: 't-1',
+            grade_level: 'Grade 7',
+            section: 'Emerald',
+            profiles: { first_name: 'Teacher', last_name: 'One' }
+        };
+
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'subjects') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            single: vi.fn(() => Promise.resolve({ data: mockSubject, error: null }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'profiles') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            maybeSingle: vi.fn(() => Promise.resolve({
+                                data: { id: 'student-123', section: 'Diamond', year_level: 'Grade 7', role: 'student' },
+                                error: null
+                            }))
+                        }))
+                    }))
+                };
+            }
+            if (table === 'teacher_student_assignments') {
+                return {
+                    select: vi.fn(() => ({
+                        eq: vi.fn(() => ({
+                            eq: vi.fn(() => ({
+                                maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
+                            }))
+                        }))
+                    }))
+                };
+            }
+            return {};
+        });
+
+        const detail = await getSubjectDetail('sub-emerald');
+        expect(detail).toBeNull();
     });
 });
-

@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { formatTeacherName } from "../../utils/name-formatter";
+import { isSectionMatch, isGradeLevelMatch } from "../../utils/section-matcher";
 
 export interface SubjectDetail {
     id: string;
@@ -80,8 +81,22 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
         }
     }
 
-    // 2. Fetch enrollment/assignment for the active student to get the section
+    // 2. Fetch user profile and enrollment/assignment for section verification
     if (userId) {
+        let profileData: any = null;
+        try {
+            const { data } = await supabase
+                .from('profiles')
+                .select('id, role, section, year_level')
+                .eq('id', userId)
+                .maybeSingle();
+            profileData = data;
+        } catch (e) {
+            console.warn('[getSubjectDetail] profile fetch warning:', e);
+        }
+
+        const isStudent = !profileData?.role || profileData.role === 'student';
+
         const { data: assignmentData } = await supabase
             .from('teacher_student_assignments')
             .select('teacher_id, section')
@@ -105,17 +120,27 @@ export async function getSubjectDetail(id: string): Promise<SubjectDetail | null
             }
         }
 
-        // Fallback to user profile section if still not found
-        if (!section) {
-            const { data: profileData } = await supabase
-                .from('profiles')
-                .select('section')
-                .eq('id', userId)
-                .maybeSingle();
+        // Enforce Section & Grade Level Parity for students
+        if (isStudent && profileData) {
+            const studentSection = profileData.section || "";
+            const studentGrade = profileData.year_level || "";
+            const resolvedSubjectSection = subjectData.section || assignmentData?.section;
+            const resolvedSubjectGrade = subjectData.grade_level;
 
-            if (profileData?.section) {
-                section = profileData.section;
+            if (!isSectionMatch(studentSection, resolvedSubjectSection)) {
+                console.log(`[getSubjectDetail] Blocked access: student section '${studentSection}' does not match subject section '${resolvedSubjectSection}'`);
+                return null;
             }
+
+            if (!isGradeLevelMatch(studentGrade, resolvedSubjectGrade)) {
+                console.log(`[getSubjectDetail] Blocked access: student grade '${studentGrade}' does not match subject grade '${resolvedSubjectGrade}'`);
+                return null;
+            }
+        }
+
+        // Fallback to user profile section if still not set
+        if (!section && profileData?.section) {
+            section = profileData.section;
         }
     }
 

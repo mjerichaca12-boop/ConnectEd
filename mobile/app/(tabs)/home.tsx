@@ -40,6 +40,7 @@ export default function HomeScreen() {
             name: e.subjects.name,
             teacher: formatTeacherName(e.subjects.profiles) || "Faculty",
             schedule: e.subjects.schedule || "TBA",
+            section: e.subjects.section || e.section || "",
         }));
 
     const enrolledSubjectIds = enrolledSubjects.map(s => s.id);
@@ -205,6 +206,12 @@ export default function HomeScreen() {
                                         <Ionicons name="person-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
                                         <Text style={styles.subjectTeacherMini} numberOfLines={1}>{subject.teacher}</Text>
                                     </View>
+                                    {Boolean(subject.section) && (
+                                        <View style={styles.subjectTeacherRow}>
+                                            <Ionicons name="people-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
+                                            <Text style={styles.subjectTeacherMini} numberOfLines={1}>{subject.section}</Text>
+                                        </View>
+                                    )}
                                     <View style={styles.subjectScheduleRow}>
                                         <Ionicons name="time-outline" size={12} color="#64748B" style={{ marginRight: 4 }} />
                                         <Text style={styles.subjectScheduleMini} numberOfLines={1}>{subject.schedule}</Text>
