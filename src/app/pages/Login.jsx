@@ -322,20 +322,25 @@ function Login() {
         candidateEmails.push(safeInput);
       }
 
-      if (!resolvedProfile) {
-        const baseUser = userPrefix;
-        if (baseUser) {
-          const domainCandidates = [
-            `${baseUser}@students.connected`,
-            `${baseUser}@teachers.connected`,
-            `${baseUser}@connected.local`,
-            `${baseUser}@connectedlms.online`,
-            `${baseUser}@temp.local`
-          ];
-          for (const dEmail of domainCandidates) {
-            if (isValidEmailFormat(dEmail) && !candidateEmails.includes(dEmail)) {
-              candidateEmails.push(dEmail);
-            }
+      // Collect candidate usernames/identifiers for domain resolution
+      const baseUsernames = new Set();
+      if (userPrefix) baseUsernames.add(userPrefix);
+      if (resolvedProfile?.username) baseUsernames.add(String(resolvedProfile.username).trim().toLowerCase());
+      if (resolvedProfile?.lrn) baseUsernames.add(String(resolvedProfile.lrn).trim().toLowerCase());
+      if (resolvedProfile?.employee_id) baseUsernames.add(String(resolvedProfile.employee_id).trim().toLowerCase());
+
+      for (const baseUser of baseUsernames) {
+        if (!baseUser) continue;
+        const domainCandidates = [
+          `${baseUser}@temp.local`,
+          `${baseUser}@teachers.connected`,
+          `${baseUser}@students.connected`,
+          `${baseUser}@connected.local`,
+          `${baseUser}@connectedlms.online`
+        ];
+        for (const dEmail of domainCandidates) {
+          if (isValidEmailFormat(dEmail) && !candidateEmails.includes(dEmail)) {
+            candidateEmails.push(dEmail);
           }
         }
       }
@@ -357,9 +362,6 @@ function Login() {
         } else {
           authError = sErr;
           authMessage = String(sErr?.message || "").toLowerCase();
-          if (resolvedProfile && candidateEmail === resolvedEmail) {
-            break;
-          }
         }
       }
 
