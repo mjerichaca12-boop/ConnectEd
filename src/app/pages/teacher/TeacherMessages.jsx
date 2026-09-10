@@ -522,7 +522,7 @@ function TeacherMessages() {
         staffQuery = staffQuery.neq("id", currentTeacherId);
       }
 
-      const { data: staffData } = await staffQuery.order("first_name", { ascending: true }).limit(100);
+      const { data: staffData } = await staffQuery.order("first_name", { ascending: true }).limit(2000);
 
       let studentQuery = supabase
         .from("profiles")
@@ -533,7 +533,7 @@ function TeacherMessages() {
         studentQuery = studentQuery.neq("id", currentTeacherId);
       }
 
-      const { data: studentData } = await studentQuery.order("first_name", { ascending: true }).limit(200);
+      const { data: studentData } = await studentQuery.order("first_name", { ascending: true }).limit(5000);
 
       const combined = [...(staffData || []), ...(studentData || [])];
 
@@ -987,7 +987,8 @@ function TeacherMessages() {
         return;
       }
       if (isMounted) setRecipientLoading(true);
-      const term = String(recipientSearch || "").trim();
+      const activeSearch = showGroupModal ? groupSearch : recipientSearch;
+      const term = String(activeSearch || "").trim();
       const results = term
         ? await fetchRecipientsByQuery(teacherId, term)
         : await fetchAllRecipients(teacherId);
@@ -997,7 +998,7 @@ function TeacherMessages() {
     };
     runSearch();
     return () => { isMounted = false; };
-  }, [showNewModal, showGroupModal, recipientSearch, teacherId, fetchRecipientsByQuery, fetchAllRecipients]);
+  }, [showNewModal, showGroupModal, recipientSearch, groupSearch, teacherId, fetchRecipientsByQuery, fetchAllRecipients]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -1556,7 +1557,18 @@ function TeacherMessages() {
   };
 
   const filteredRecipients = applyRecipientFilters(recipientResults, recipientSearch);
-  const filteredGroupRecipients = applyRecipientFilters(recipientResults, groupSearch);
+  const filteredGroupRecipients = (recipientResults || []).filter((r) => {
+    const searchLower = String(groupSearch || "").trim().toLowerCase();
+    if (searchLower) {
+      const nameMatch = (r.name || "").toLowerCase().includes(searchLower);
+      const emailMatch = (r.email || "").toLowerCase().includes(searchLower);
+      const roleMatch = (r.role || "").toLowerCase().includes(searchLower);
+      const ylMatch = (r.yearLevel || "").toLowerCase().includes(searchLower);
+      const secMatch = (r.section || "").toLowerCase().includes(searchLower);
+      return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+    }
+    return true;
+  });
 
   const totalUnread = activeConversationsList.reduce((sum, c) => sum + (getUnreadCount(c) || 0), 0);
 

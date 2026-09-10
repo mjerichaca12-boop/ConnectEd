@@ -1355,7 +1355,19 @@ const removeDismissedConvId = (userId, convId) => {
   };
 
   const filteredRecipients = applyRecipientFilters(allTeachers, recipientSearch);
-  const filteredGroupRecipients = applyRecipientFilters(allTeachers, groupSearch);
+  const filteredGroupRecipients = (allTeachers || []).filter((t) => {
+    if (adminId && t.id === adminId) return false;
+    const searchLower = String(groupSearch || "").trim().toLowerCase();
+    if (searchLower) {
+      const nameMatch = (t.name || "").toLowerCase().includes(searchLower);
+      const emailMatch = (t.email || "").toLowerCase().includes(searchLower);
+      const roleMatch = (t.role || "").toLowerCase().includes(searchLower);
+      const ylMatch = (t.yearLevel || "").toLowerCase().includes(searchLower);
+      const secMatch = (t.section || "").toLowerCase().includes(searchLower);
+      return nameMatch || emailMatch || roleMatch || ylMatch || secMatch;
+    }
+    return true;
+  });
 
   const toggleGroupMember = (recipientId) => {
     setSelectedGroupMemberIds((prev) =>
