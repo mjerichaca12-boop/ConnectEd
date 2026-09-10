@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { Assignment } from "../../types";
+import { classifyAssessment } from "../../utils/assessment-badge";
 
 export async function getMyAssignments(subjectId?: string): Promise<Assignment[]> {
     const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -168,7 +169,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
                 file_url: row.file_url || row.attachment_url || existing.file_url || existing.attachment_url,
                 file_name: row.file_name || row.attachment_name || existing.file_name || existing.attachment_name,
                 file_path: row.file_path || existing.file_path,
-                assessment_type: row.assessment_type || row.type || existing.assessment_type || existing.type,
+                assessment_type: classifyAssessment(row) || existing.assessment_type,
             });
         }
     });
@@ -206,7 +207,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
                 file_url: row.file_url || row.attachment_url || (linkedLesson ? (linkedLesson.file_url || linkedLesson.attachment_url) : null) || existing.file_url || existing.attachment_url,
                 file_name: row.file_name || row.attachment_name || (linkedLesson ? (linkedLesson.file_name || linkedLesson.title) : null) || existing.file_name || existing.attachment_name,
                 file_path: row.file_path || existing.file_path,
-                assessment_type: row.assessment_type || 'assignment',
+                assessment_type: classifyAssessment(row),
             });
         }
     });
@@ -466,10 +467,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ? myResult.grade_value
             : (myQuizAttempt?.score !== undefined && myQuizAttempt?.score !== null ? myQuizAttempt.score : null);
 
-            const rawType = String(row.assessment_type || row.type || row.assignment_type || "assignment").trim().toLowerCase();
-            const normalizedAssessmentType: Assignment['assessment_type'] = rawType.includes('quiz')
-                ? 'quiz'
-                : (rawType.includes('activity') ? 'activity' : 'assignment');
+            const normalizedAssessmentType: Assignment['assessment_type'] = classifyAssessment(row);
 
             return {
                 id: row.id,

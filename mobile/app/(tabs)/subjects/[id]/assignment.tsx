@@ -682,11 +682,16 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
 
                 <View style={styles.instructionsContainer}>
                     <Text style={styles.sectionTitle}>
-                        {assignment.assessment_type === 'quiz' ? 'Quiz Questions' : 
-                         assignment.assessment_type === 'activity' ? 'Activity Instructions' : 'Instructions'}
+                        {assignment.assessment_type === 'quiz' ? 'Quiz Questions / Instructions' : 
+                         (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity') ? 'Seatwork Instructions' : 
+                         'Assignment Instructions'}
                     </Text>
                     <Text style={styles.instructionsText}>
-                        {parsedQuiz ? (parsedQuiz.instructionsHeader || "Please answer the multiple-choice questions below.") : (instructionsStr || "Please complete the attached assignment and upload your work here. Ensure all requirements are met before submitting.")}
+                        {parsedQuiz ? (parsedQuiz.instructionsHeader || "Please answer the questions below.") : (instructionsStr || (
+                            (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity')
+                                ? "Please complete the attached seatwork and submit your work here."
+                                : "Please complete the attached assignment and upload your work here. Ensure all requirements are met before submitting."
+                        ))}
                     </Text>
 
                     {(() => {
@@ -969,7 +974,9 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                 {(assignment.status === "pending" || assignment.status === "late") && !hasAttemptedQuiz ? (
                     <View style={styles.submissionSection}>
                         <Text style={styles.sectionTitle}>
-                            {assignment.assessment_type === 'quiz' ? 'Quiz Assessment' : 'Your Submission'}
+                            {assignment.assessment_type === 'quiz' ? 'Quiz Assessment' : 
+                             (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity') ? 'Seatwork Submission' : 
+                             'Assignment Submission'}
                         </Text>
                         
                         {(assignment.assessment_type === 'quiz') && !isQuizStarted ? (
@@ -1089,11 +1096,17 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                                 ) : (
                                     <View style={styles.responseBox}>
                                         <Text style={styles.inputLabel}>
-                                            {assignment.assessment_type === 'quiz' ? 'Write your answers here:' : 'Answer / Response Text:'}
+                                            {assignment.assessment_type === 'quiz' ? 'Write your answers here:' : 
+                                             (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity') ? 'Seatwork Response / Work:' :
+                                             'Answer / Response Text:'}
                                         </Text>
                                         <TextInput
                                             style={styles.textInputResponse}
-                                            placeholder={assignment.assessment_type === 'quiz' ? "Enter your quiz answers here..." : "Type your answer or response here..."}
+                                            placeholder={
+                                                assignment.assessment_type === 'quiz' ? "Enter your quiz answers here..." : 
+                                                (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity') ? "Type your seatwork response or work here..." :
+                                                "Type your answer or response here..."
+                                            }
                                             placeholderTextColor="#94A3B8"
                                             multiline
                                             numberOfLines={6}
@@ -1130,7 +1143,12 @@ const DetailedAssignmentView = ({ assignment, onBack, allAssignments }: any) => 
                         )}
 
                         <Button 
-                            title={isSubmitting ? "Submitting..." : "Submit"} 
+                            title={
+                                isSubmitting ? "Submitting..." : 
+                                (assignment.assessment_type === 'quiz' ? "Submit Quiz" : 
+                                 (assignment.assessment_type === 'seatwork' || assignment.assessment_type === 'activity') ? "Submit Seatwork" : 
+                                 "Submit Assignment")
+                            } 
                             onPress={handleSubmit}
                             disabled={isSubmitDisabled}
                             loading={isSubmitting}
@@ -1723,6 +1741,7 @@ export default function SubjectAssignments() {
         return undefined;
     })();
     const [activeTab, setActiveTab] = useState("upcoming");
+    const [selectedCategory, setSelectedCategory] = useState<string>("all");
     const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
 
     const { data: assignments = [], isLoading, error, refetch, isRefetching } = useMyAssignmentsQuery({ subjectId });
@@ -1741,14 +1760,31 @@ export default function SubjectAssignments() {
         );
     }
 
-    // Map tabs to statuses in data
-    const filteredAssignments = assignments.filter((a) => {
-        if (activeTab === "upcoming") return a.status === "pending" || a.status === "late";
+    // Filter by status tab first
+    const statusFilteredAssignments = assignments.filter((a) => {
+        if (activeTab === "upcoming") return a.status === "pending";
         if (activeTab === "submitted") return ["submitted", "graded", "returned"].includes(a.status);
         return a.status === activeTab;
     });
 
-    console.log(`[assignment UI] subjectId: ${subjectId}, Total: ${assignments.length}, Filtered (${activeTab}): ${filteredAssignments.length}`);
+    // Compute category counts for current active tab
+    const categoryCounts = {
+        all: statusFilteredAssignments.length,
+        quiz: statusFilteredAssignments.filter(a => a.assessment_type === 'quiz').length,
+        seatwork: statusFilteredAssignments.filter(a => a.assessment_type === 'seatwork' || a.assessment_type === 'activity').length,
+        assignment: statusFilteredAssignments.filter(a => a.assessment_type === 'assignment').length,
+    };
+
+    // Filter by selected category
+    const filteredAssignments = statusFilteredAssignments.filter((a) => {
+        if (selectedCategory === "all") return true;
+        if (selectedCategory === "seatwork") {
+            return a.assessment_type === "seatwork" || a.assessment_type === "activity";
+        }
+        return a.assessment_type === selectedCategory;
+    });
+
+    console.log(`[assignment UI] subjectId: ${subjectId}, Total: ${assignments.length}, Status (${activeTab}): ${statusFilteredAssignments.length}, Filtered (${selectedCategory}): ${filteredAssignments.length}`);
 
     if (selectedAssignment) {
         return (
@@ -1785,6 +1821,47 @@ export default function SubjectAssignments() {
                 })}
             </View>
 
+            {/* Assessment Type Filter Pills */}
+            <View style={styles.categoryFilterContainer}>
+                <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    contentContainerStyle={styles.categoryScrollContent}
+                >
+                    {[
+                        { id: "all", label: "All Tasks", icon: "apps-outline", count: categoryCounts.all },
+                        { id: "quiz", label: "Quizzes", icon: "help-circle-outline", count: categoryCounts.quiz },
+                        { id: "seatwork", label: "Seatworks", icon: "create-outline", count: categoryCounts.seatwork },
+                        { id: "assignment", label: "Assignments", icon: "document-text-outline", count: categoryCounts.assignment },
+                    ].map((cat) => {
+                        const isSelected = selectedCategory === cat.id;
+                        return (
+                            <TouchableOpacity
+                                key={cat.id}
+                                style={[styles.categoryPill, isSelected && styles.categoryPillActive]}
+                                onPress={() => setSelectedCategory(cat.id)}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons 
+                                    name={cat.icon as any} 
+                                    size={14} 
+                                    color={isSelected ? "#FFFFFF" : "#64748B"} 
+                                    style={{ marginRight: 5 }} 
+                                />
+                                <Text style={[styles.categoryPillText, isSelected && styles.categoryPillTextActive]}>
+                                    {cat.label}
+                                </Text>
+                                <View style={[styles.categoryCountBadge, isSelected && styles.categoryCountBadgeActive]}>
+                                    <Text style={[styles.categoryCountText, isSelected && styles.categoryCountTextActive]}>
+                                        {cat.count}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            </View>
+
             <FlatList
                 data={filteredAssignments}
                 keyExtractor={(item) => item.id}
@@ -1809,7 +1886,12 @@ export default function SubjectAssignments() {
                 }
                 ListEmptyComponent={() => (
                      <View style={styles.emptyContainer}>
-                         <Text style={styles.emptyText}>No {activeTab} assignments found for this subject.</Text>
+                         <Ionicons name="file-tray-outline" size={44} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                         <Text style={styles.emptyText}>
+                             {selectedCategory === "all" 
+                                 ? `No ${activeTab} tasks found for this subject.` 
+                                 : `No ${selectedCategory === "seatwork" ? "seatworks" : selectedCategory === "quiz" ? "quizzes" : "assignments"} in ${activeTab}.`}
+                         </Text>
                      </View>
                 )}
             />
@@ -2290,5 +2372,60 @@ const styles = StyleSheet.create({
         color: "#DC2626",
         fontWeight: "600",
         fontSize: 14,
+    },
+    categoryFilterContainer: {
+        marginTop: 10,
+        marginBottom: 4,
+    },
+    categoryScrollContent: {
+        paddingHorizontal: Layout.spacing.m,
+        gap: 8,
+        flexDirection: "row",
+        alignItems: "center",
+    },
+    categoryPill: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#FFFFFF",
+        paddingVertical: 7,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    categoryPillActive: {
+        backgroundColor: Colors.light.primary,
+        borderColor: Colors.light.primary,
+    },
+    categoryPillText: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: "#64748B",
+    },
+    categoryPillTextActive: {
+        color: "#FFFFFF",
+    },
+    categoryCountBadge: {
+        backgroundColor: "#F1F5F9",
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 10,
+        marginLeft: 6,
+    },
+    categoryCountBadgeActive: {
+        backgroundColor: "rgba(255, 255, 255, 0.25)",
+    },
+    categoryCountText: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#64748B",
+    },
+    categoryCountTextActive: {
+        color: "#FFFFFF",
     },
 });

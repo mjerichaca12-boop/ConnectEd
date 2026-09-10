@@ -40,7 +40,7 @@ export interface Assignment {
     instructions?: string;
     file_url?: string;
     file_name?: string;
-    assessment_type?: "assignment" | "activity" | "quiz";
+    assessment_type?: "assignment" | "seatwork" | "activity" | "quiz";
     submission?: {
         id: string;
         file_url?: string | null;
