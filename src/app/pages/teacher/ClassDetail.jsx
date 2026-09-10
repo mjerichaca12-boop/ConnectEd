@@ -3722,24 +3722,26 @@ export function ClassDetail() {
 
       console.log("[ClassDetail] Announcement payload:", payload);
 
-      let writeResult = isEditingAnnouncement
-        ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
-        : await supabase.from(tableName).insert(payload).select("*").single();
+      let writeResult;
+      try {
+        const fallbackRes = isEditingAnnouncement
+          ? await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: editingAnnouncementId }, single: true })
+          : await adminApi.db(tableName, "insert", { payload, single: true });
 
-      if (writeResult.error) {
-        console.warn("[ClassDetail] Direct announcement DB write notice, attempting adminApi fallback:", writeResult.error?.message || writeResult.error);
-        try {
-          const fallbackRes = isEditingAnnouncement
-            ? await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: editingAnnouncementId }, single: true })
-            : await adminApi.db(tableName, "insert", { payload, single: true });
-
-          if (!fallbackRes.error && (fallbackRes.data || Array.isArray(fallbackRes.data))) {
-            const resultItem = Array.isArray(fallbackRes.data) ? fallbackRes.data[0] : fallbackRes.data;
-            writeResult = { data: resultItem, error: null };
-          }
-        } catch (fbErr) {
-          console.error("[ClassDetail] Admin announcement DB write fallback error:", fbErr);
+        if (!fallbackRes.error && (fallbackRes.data || Array.isArray(fallbackRes.data))) {
+          const resultItem = Array.isArray(fallbackRes.data) ? fallbackRes.data[0] : fallbackRes.data;
+          writeResult = { data: resultItem, error: null };
+        } else {
+          console.warn("[ClassDetail] Admin DB write returned notice, attempting direct Supabase fallback:", fallbackRes.error);
+          writeResult = isEditingAnnouncement
+            ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
+            : await supabase.from(tableName).insert(payload).select("*").single();
         }
+      } catch (fbErr) {
+        console.warn("[ClassDetail] Admin DB write exception, attempting direct Supabase fallback:", fbErr);
+        writeResult = isEditingAnnouncement
+          ? await supabase.from(tableName).update(payload).eq("id", editingAnnouncementId).select("*").single()
+          : await supabase.from(tableName).insert(payload).select("*").single();
       }
 
       console.log("[ClassDetail] Announcement write result:", writeResult);
