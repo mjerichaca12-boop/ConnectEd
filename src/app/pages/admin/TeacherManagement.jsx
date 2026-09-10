@@ -1116,67 +1116,18 @@ function TeacherManagement() {
     try {
       const idsToDelete = Array.from(selectedTeacherIds);
       
-      const results = await Promise.allSettled(
-        idsToDelete.map(async (id) => {
-          // Find the teacher object to get their subjects
-          const teacher = teachers.find(t => t.id === id);
-          if (teacher) {
-            const subjectIdsToRelease = normalizeSubjects(teacher.subjects);
-            if (subjectIdsToRelease.length > 0) {
-              await adminApi.db("subjects", "update", { payload: { teacher_id: null }, in: { column: "id", value: subjectIdsToRelease } });
-              await adminApi.db("teacher_student_assignments", "update", { payload: { teacher_id: null }, in: { column: "subject_id", value: subjectIdsToRelease } }).catch(() => {});
-            }
-          }
-
-          const cleanupTables = [
-            { name: "notifications", col: "user_id" },
-            { name: "password_reset_logs", col: "user_id" },
-            { name: "conversation_participants", col: "profile_id" },
-            { name: "conversation_reads", col: "user_id" },
-            { name: "messages", col: "sender_id" },
-            { name: "teacher_student_grades", col: "teacher_id" },
-            { name: "teacher_assessment_submissions", col: "teacher_id" },
-            { name: "teacher_assessment_grades", col: "teacher_id" },
-            { name: "lessons", col: "teacher_id" }
-          ];
-
-          for (const table of cleanupTables) {
-            await adminApi.db(table.name, "delete", { eq: { column: table.col, value: id } });
-          }
-
-          const { error: profileError } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: id } });
-          if (profileError) throw profileError;
-
-          try {
-             await adminApi.deleteUser(id);
-          } catch (e) {
-             console.warn("Non-fatal: Failed to delete auth user", e);
-          }
-        })
-      );
-
-      let successCount = 0;
-      results.forEach(result => {
-        if (result.status === "fulfilled") successCount++;
-        else console.error("Failed to delete a teacher:", result.reason);
-      });
+      const { error } = await adminApi.bulkDeleteTeachers(idsToDelete);
+      if (error) throw error;
 
       setShowBulkDeleteConfirm(false);
       setSelectedTeacherIds(new Set());
       await fetchTeachers();
       await fetchSubjects();
 
-      if (successCount === idsToDelete.length) {
-        toast.success(`Successfully deleted ${successCount} teacher(s).`);
-      } else if (successCount > 0) {
-        toast.warning(`Deleted ${successCount} out of ${idsToDelete.length} teachers.`);
-      } else {
-        toast.error("Failed to delete any teachers.");
-      }
-
+      toast.success(`Successfully deleted ${idsToDelete.length} teacher(s).`);
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred during bulk deletion.");
+      toast.error("An error occurred during bulk deletion: " + (err.message || "Unknown error"));
     } finally {
       setIsBulkDeleting(false);
     }
@@ -1570,24 +1521,8 @@ function TeacherManagement() {
 
     try {
       const subjectIdsToRelease = normalizeSubjects(teacherToDelete.subjects);
-      if (subjectIdsToRelease.length > 0) {
-        const { error: subjectError } = await adminApi.db("subjects", "update", {
-            payload: { teacher_id: null },
-            in: { column: "id", value: subjectIdsToRelease }
-          });
 
-        if (subjectError) {
-          throw subjectError;
-        }
-
-        await adminApi.db("teacher_student_assignments", "update", {
-          payload: { teacher_id: null },
-          in: { column: "subject_id", value: subjectIdsToRelease }
-        }).catch(() => {});
-      }
-
-      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: teacherId } });
-
+      const { error } = await adminApi.bulkDeleteTeachers([teacherId]);
       if (error) {
         throw error;
       }

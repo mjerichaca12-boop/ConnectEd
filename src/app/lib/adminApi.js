@@ -133,6 +133,61 @@ export const adminApi = {
     }
   },
 
+  async bulkDeleteTeachers(teacherIds) {
+    if (!Array.isArray(teacherIds) || teacherIds.length === 0) {
+      return { data: { success: true, count: 0 }, error: null };
+    }
+    const res = await this.fetchWithToken("/api/admin/bulk-delete-teachers", {
+      method: "POST",
+      body: JSON.stringify({ teacher_ids: teacherIds }),
+    });
+
+    if (!res.error) {
+      return res;
+    }
+
+    console.warn("[adminApi] /api/admin/bulk-delete-teachers failed or unavailable, executing Supabase batch fallback:", res.error?.message || res.error);
+
+    try {
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < teacherIds.length; i += BATCH_SIZE) {
+        const chunk = teacherIds.slice(i, i + BATCH_SIZE);
+
+        await Promise.allSettled([
+          supabase.from("subjects").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabase.from("teacher_student_assignments").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabase.from("lessons").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabase.from("class_materials").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabase.from("class_announcements").update({ teacher_id: null }).in("teacher_id", chunk),
+        ]);
+
+        const tablesToClean = [
+          { table: "teacher_student_grades", col: "teacher_id" },
+          { table: "teacher_assessment_submissions", col: "teacher_id" },
+          { table: "teacher_assessment_grades", col: "teacher_id" },
+          { table: "notifications", col: "user_id" },
+          { table: "password_reset_logs", col: "user_id" },
+          { table: "conversation_participants", col: "profile_id" },
+          { table: "conversation_reads", col: "user_id" },
+        ];
+
+        await Promise.allSettled(tablesToClean.map(item => supabase.from(item.table).delete().in(item.col, chunk)));
+        
+        for (const tId of chunk) {
+          try {
+            await supabase.from("messages").delete().or(`sender_id.eq.${tId},receiver_id.eq.${tId}`);
+          } catch (_) {}
+        }
+
+        await supabase.from("profiles").delete().in("id", chunk).eq("role", "teacher");
+      }
+
+      return { data: { success: true, count: teacherIds.length }, error: null };
+    } catch (fallbackError) {
+      return { data: null, error: fallbackError };
+    }
+  },
+
   async db(table, action, options = {}) {
     const res = await this.fetchWithToken("/api/admin/db", {
       method: "POST",
