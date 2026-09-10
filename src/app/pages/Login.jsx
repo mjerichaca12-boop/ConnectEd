@@ -263,41 +263,54 @@ function Login() {
         console.warn("LOGIN signOut cleanup warning:", signOutError);
       }
 
-      // 2. Resolve email from username or direct input
+      // 2. Resolve email from username, email, lrn, or employee_id
       let resolvedEmail = null;
       let resolvedProfile = null;
 
-      if (normalizedUsername.includes("@")) {
-        resolvedEmail = normalizedUsername;
-      } else {
-        // Try RPC lookup first
+      const safeInput = String(normalizedUsername || "").replace(/[(),"]/g, "").trim();
+      const userPrefix = safeInput.includes("@") ? safeInput.split("@")[0] : safeInput;
+
+      if (!safeInput.includes("@")) {
         try {
-          const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: normalizedUsername });
+          const { data: rpcEmail } = await supabase.rpc('get_email_by_username', { p_username: safeInput });
           if (rpcEmail) {
             resolvedEmail = String(rpcEmail).trim().toLowerCase();
           }
         } catch (rpcErr) {
-          console.warn("RPC get_email_by_username error (fallback to profiles table):", rpcErr);
+          console.warn("RPC get_email_by_username warning:", rpcErr);
+        }
+      }
+
+      try {
+        const orConditions = [
+          `email.ilike.${safeInput}`,
+          `username.ilike.${safeInput}`,
+          `lrn.ilike.${safeInput}`,
+          `employee_id.ilike.${safeInput}`
+        ];
+        if (userPrefix && userPrefix !== safeInput) {
+          orConditions.push(`username.ilike.${userPrefix}`);
         }
 
-        // Direct table query lookup if RPC didn't return
-        if (!resolvedEmail) {
-          try {
-            const safeUsername = String(normalizedUsername || "").replace(/[(),"]/g, "").trim();
-            const { data: profData } = await supabase
-              .from("profiles")
-              .select("*")
-              .or(`username.ilike.${safeUsername},email.ilike.${safeUsername}`)
-              .maybeSingle();
+        const { data: profRows } = await supabase
+          .from("profiles")
+          .select("*")
+          .or(orConditions.join(","))
+          .limit(1);
 
-            if (profData?.email) {
-              resolvedEmail = String(profData.email).trim().toLowerCase();
-              resolvedProfile = profData;
-            }
-          } catch (profSelectErr) {
-            console.warn("Profiles lookup error:", profSelectErr);
+        if (profRows && profRows.length > 0) {
+          const profData = profRows[0];
+          resolvedProfile = profData;
+          if (profData.email) {
+            resolvedEmail = String(profData.email).trim().toLowerCase();
           }
         }
+      } catch (profSelectErr) {
+        console.warn("Profiles lookup warning:", profSelectErr);
+      }
+
+      if (!resolvedEmail && safeInput.includes("@") && isValidEmailFormat(safeInput)) {
+        resolvedEmail = safeInput;
       }
 
       // 3. Build candidate login emails
@@ -305,17 +318,25 @@ function Login() {
       if (resolvedEmail && isValidEmailFormat(resolvedEmail)) {
         candidateEmails.push(resolvedEmail);
       }
-      if (normalizedUsername.includes("@") && isValidEmailFormat(normalizedUsername) && !candidateEmails.includes(normalizedUsername)) {
-        candidateEmails.push(normalizedUsername);
+      if (safeInput.includes("@") && isValidEmailFormat(safeInput) && !candidateEmails.includes(safeInput)) {
+        candidateEmails.push(safeInput);
       }
-      if (!normalizedUsername.includes("@")) {
-        const domainEmail = `${normalizedUsername}@connectedlms.online`;
-        const tempEmail = `${normalizedUsername}@temp.local`;
-        if (isValidEmailFormat(domainEmail) && !candidateEmails.includes(domainEmail)) {
-          candidateEmails.push(domainEmail);
-        }
-        if (isValidEmailFormat(tempEmail) && !candidateEmails.includes(tempEmail)) {
-          candidateEmails.push(tempEmail);
+
+      if (!resolvedProfile) {
+        const baseUser = userPrefix;
+        if (baseUser) {
+          const domainCandidates = [
+            `${baseUser}@students.connected`,
+            `${baseUser}@teachers.connected`,
+            `${baseUser}@connected.local`,
+            `${baseUser}@connectedlms.online`,
+            `${baseUser}@temp.local`
+          ];
+          for (const dEmail of domainCandidates) {
+            if (isValidEmailFormat(dEmail) && !candidateEmails.includes(dEmail)) {
+              candidateEmails.push(dEmail);
+            }
+          }
         }
       }
 
@@ -336,6 +357,9 @@ function Login() {
         } else {
           authError = sErr;
           authMessage = String(sErr?.message || "").toLowerCase();
+          if (resolvedProfile && candidateEmail === resolvedEmail) {
+            break;
+          }
         }
       }
 
@@ -369,8 +393,8 @@ function Login() {
           .from("profiles")
           .select("*")
           .eq("id", userId)
-          .maybeSingle();
-        if (pById) profile = pById;
+          .limit(1);
+        if (pById && pById.length > 0) profile = pById[0];
       }
 
       if (!profile && resolvedEmail) {
@@ -378,8 +402,8 @@ function Login() {
           .from("profiles")
           .select("*")
           .ilike("email", resolvedEmail)
-          .maybeSingle();
-        if (pByEmail) profile = pByEmail;
+          .limit(1);
+        if (pByEmail && pByEmail.length > 0) profile = pByEmail[0];
       }
 
       if (!profile) {
