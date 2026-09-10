@@ -3502,28 +3502,12 @@ export function ClassDetail() {
           ? `${classUuid}/${tid}/${storedFileName}`
           : `${tid}/${storedFileName}`;
 
-        let uploadResult = await supabase.storage
-          .from(ANNOUNCEMENT_STORAGE_BUCKET)
-          .upload(uploadedPath, file, { upsert: false });
-
-        if (uploadResult.error) {
-          console.warn("[ClassDetail] Direct storage upload notice, attempting adminApi fallback:", uploadResult.error?.message || uploadResult.error);
-          try {
-            const fallbackRes = await adminApi.db("storage_upload", {
-              payload: {
-                bucket: ANNOUNCEMENT_STORAGE_BUCKET,
-                path: uploadedPath,
-                file,
-                contentType: file.type || "application/octet-stream"
-              }
-            });
-            if (!fallbackRes.error && fallbackRes.data) {
-              uploadResult = { data: fallbackRes.data, error: null };
-            }
-          } catch (fbErr) {
-            console.error("[ClassDetail] Admin storage upload fallback error:", fbErr);
-          }
-        }
+        let uploadResult = await adminApi.uploadStorageFile(
+          ANNOUNCEMENT_STORAGE_BUCKET,
+          uploadedPath,
+          file,
+          file.type || "application/octet-stream"
+        );
 
         console.log("[ClassDetail] Announcement upload result:", uploadResult);
 
@@ -3888,8 +3872,20 @@ export function ClassDetail() {
         await removeAnnouncementFilesFromStorage(uniqueTargetPaths);
       }
 
-      const { error } = await supabase.from(tableName).delete().eq("id", announcementId);
-      if (error) {
+      let deleteResult = await supabase.from(tableName).delete().eq("id", announcementId);
+      if (deleteResult.error) {
+        console.warn("[ClassDetail] Direct announcement delete notice, attempting adminApi fallback:", deleteResult.error?.message || deleteResult.error);
+        try {
+          const fallbackRes = await adminApi.db(tableName, "delete", { eq: { column: "id", value: announcementId } });
+          if (!fallbackRes.error) {
+            deleteResult = { error: null };
+          }
+        } catch (fbErr) {
+          console.error("[ClassDetail] Admin announcement DB delete fallback error:", fbErr);
+        }
+      }
+
+      if (deleteResult.error) {
         if (backups.length > 0) {
           for (const backup of backups) {
             const restoreResult = await supabase.storage.from(backup.bucket).upload(backup.filePath, backup.blob, {
@@ -3901,7 +3897,7 @@ export function ClassDetail() {
             }
           }
         }
-        throw new Error(error.message || "Failed to delete announcement.");
+        throw new Error(deleteResult.error.message || "Failed to delete announcement.");
       }
 
       await fetchClassAnnouncements(teacherProfileId, classData);
