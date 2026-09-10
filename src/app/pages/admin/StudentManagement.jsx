@@ -948,7 +948,7 @@ function StudentManagement() {
   };
 
   const downloadCsvTemplate = () => {
-    const csvContent = "lrn,first_name,last_name,year_level,section\n120000000001,Juan,Dela Cruz,11,Emerald\n120000000002,Maria,Santos,11,Diamond";
+    const csvContent = "lrn,first_name,last_name,year_level,section\n120000000001,Juan,Dela Cruz,10,Emerald\n120000000002,Maria,Santos,10,Diamond";
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
@@ -1730,11 +1730,16 @@ function StudentManagement() {
   const [courseFilter, setCourseFilter] = useState("all");
 
   const availableYearLevels = useMemo(() => {
-    return Array.from(new Set([...students, ...masterlist].map(s => s.year_level).filter(Boolean))).sort((a, b) => {
-      const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
-      const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
-      return numA - numB || String(a).localeCompare(String(b));
-    });
+    return Array.from(new Set([...students, ...masterlist].map(s => s.year_level).filter(Boolean)))
+      .filter(yl => {
+        const clean = String(yl).trim().toLowerCase();
+        return clean !== "11" && clean !== "grade 11" && clean !== "grade11" && clean !== "year 11" && clean !== "year11";
+      })
+      .sort((a, b) => {
+        const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+        return numA - numB || String(a).localeCompare(String(b));
+      });
   }, [students, masterlist]);
 
   const availableSections = useMemo(() => {
