@@ -11,7 +11,8 @@ import {
   buildSupabaseErrorMessage,
   getSupabaseHost,
   resolveColumnName,
-  resolveTeacherIdByEmail
+  resolveTeacherIdByEmail,
+  broadcastNotificationToClassStudents
 } from "@/app/lib/teacherHelpers";
 import { fetchClassMaterialsForTeacher } from "@/app/services/classMaterialsService";
 import {
@@ -74,6 +75,7 @@ function ClassMaterials() {
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
   const [materialColumns, setMaterialColumns] = useState([]);
+  const [teacherSubjectRecords, setTeacherSubjectRecords] = useState([]);
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [sectionOptions, setSectionOptions] = useState([]);
 
@@ -158,6 +160,7 @@ function ClassMaterials() {
 
     const candidates = [
       "id",
+      "subject_id",
       "title",
       "description",
       "file_type",
@@ -180,11 +183,11 @@ function ClassMaterials() {
       
       if (tableCheckError && (tableCheckError.code === 'PGRST116' || tableCheckError.status === 400)) {
         console.warn("class_materials table not accessible, using default columns:", tableCheckError);
-        return ["id", "title", "description", "file_type", "file_url", "created_at"];
+        return ["id", "subject_id", "title", "description", "file_type", "file_url", "created_at"];
       }
     } catch (err) {
       console.warn("Error checking class_materials table:", err);
-      return ["id", "title", "description", "file_type", "file_url", "created_at"];
+      return ["id", "subject_id", "title", "description", "file_type", "file_url", "created_at"];
     }
 
     for (const columnName of candidates) {
@@ -204,6 +207,7 @@ function ClassMaterials() {
 
   const fetchTeacherSubjects = async (resolvedTeacherId) => {
     if (!supabase || !resolvedTeacherId) {
+      setTeacherSubjectRecords([]);
       setSubjectOptions([]);
       setSectionOptions([]);
       return;
@@ -211,7 +215,7 @@ function ClassMaterials() {
 
     const { data, error } = await supabase
       .from("subjects")
-      .select("code, name, section, grade_level")
+      .select("id, code, name, section, grade_level")
       .eq("teacher_id", resolvedTeacherId)
       .order("code", { ascending: true });
 
@@ -219,6 +223,8 @@ function ClassMaterials() {
       console.error("Failed to fetch subject options:", error);
       return;
     }
+
+    setTeacherSubjectRecords(data || []);
 
     const subjectSet = new Set();
     const subjects = [];
@@ -457,6 +463,17 @@ function ClassMaterials() {
         payload.section = materialForm.section.trim() || null;
       }
 
+      if (columns.includes("subject_id") && materialForm.subject) {
+        const matchingSub = (teacherSubjectRecords || []).find(s => {
+          const label = [String(s.code || "").trim(), String(s.name || "").trim()].filter(Boolean).join(" - ");
+          return (label === materialForm.subject.trim() || s.name === materialForm.subject.trim() || s.code === materialForm.subject.trim()) &&
+            (!materialForm.section || !s.section || s.section.trim().toLowerCase() === materialForm.section.trim().toLowerCase());
+        });
+        if (matchingSub?.id) {
+          payload.subject_id = matchingSub.id;
+        }
+      }
+
       if (columns.includes("school_year")) {
         payload.school_year = activeSchoolYear;
       }
@@ -537,6 +554,17 @@ function ClassMaterials() {
 
       if (insertedRow) {
         setMaterials((prev) => [normalizeMaterialRow(insertedRow), ...prev]);
+        const resolvedSubId = insertedRow.subject_id || payload.subject_id;
+        if (resolvedSubId) {
+          await broadcastNotificationToClassStudents({
+            subjectId: resolvedSubId,
+            type: "material",
+            title: `New Material: ${title}`,
+            body: `${materialForm.subject || "Your class"} • ${materialForm.description?.trim() || "New learning material uploaded"}`,
+            relatedId: insertedRow.id,
+            relatedType: "class_materials"
+          });
+        }
       }
       await fetchMaterials(teacherId);
       setMaterialSuccess(`Material uploaded successfully to ${connectedSupabaseHost}.`);

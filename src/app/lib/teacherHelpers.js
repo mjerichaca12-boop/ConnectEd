@@ -783,42 +783,77 @@ export const broadcastNotificationToClassStudents = async ({
 
     if (!resolvedSubjectId) return;
 
-    // Fetch enrolled students for this subject
-    const { data: enrolledStudents } = await supabase
+    // Fetch enrolled students for this subject from multiple sources
+    const studentIds = new Set();
+
+    // 1. teacher_student_assignments
+    const { data: tsaStudents } = await supabase
       .from("teacher_student_assignments")
       .select("student_id, status")
       .eq("subject_id", resolvedSubjectId);
 
-    if (Array.isArray(enrolledStudents) && enrolledStudents.length > 0) {
-      const uniqueStudentIds = [
-        ...new Set(
-          enrolledStudents
-            .filter((s) => {
-              const st = String(s?.status || "").toLowerCase().trim();
-              return st !== "rejected" && st !== "dropped" && st !== "inactive";
-            })
-            .map((s) => s.student_id)
-            .filter(Boolean)
-        )
-      ];
-
-      if (uniqueStudentIds.length === 0) return;
-
-      const notifRows = uniqueStudentIds.map((studentId) => ({
-        user_id: studentId,
-        type,
-        title,
-        body,
-        message: body,
-        related_id: String(relatedId || resolvedSubjectId),
-        related_type: relatedType || type,
-        class_id: resolvedSubjectId,
-        is_read: false,
-        created_at: new Date().toISOString()
-      }));
-
-      await supabase.from("notifications").insert(notifRows).catch(() => {});
+    if (Array.isArray(tsaStudents)) {
+      tsaStudents.forEach((s) => {
+        const st = String(s?.status || "").toLowerCase().trim();
+        if (st !== "rejected" && st !== "dropped" && st !== "inactive" && s.student_id) {
+          studentIds.add(s.student_id);
+        }
+      });
     }
+
+    // 2. enrollments view
+    const { data: enrStudents } = await supabase
+      .from("enrollments")
+      .select("student_id, status")
+      .eq("subject_id", resolvedSubjectId);
+
+    if (Array.isArray(enrStudents)) {
+      enrStudents.forEach((s) => {
+        const st = String(s?.status || "").toLowerCase().trim();
+        if (st !== "rejected" && st !== "dropped" && st !== "inactive" && s.student_id) {
+          studentIds.add(s.student_id);
+        }
+      });
+    }
+
+    // 3. Section matching via subject
+    const { data: subjectData } = await supabase
+      .from("subjects")
+      .select("section")
+      .eq("id", resolvedSubjectId)
+      .maybeSingle();
+
+    if (subjectData?.section) {
+      const { data: sectionProfiles } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "student")
+        .ilike("section", subjectData.section.trim());
+
+      if (Array.isArray(sectionProfiles)) {
+        sectionProfiles.forEach((p) => {
+          if (p?.id) studentIds.add(p.id);
+        });
+      }
+    }
+
+    const uniqueStudentIds = Array.from(studentIds);
+    if (uniqueStudentIds.length === 0) return;
+
+    const notifRows = uniqueStudentIds.map((studentId) => ({
+      user_id: studentId,
+      type,
+      title,
+      body,
+      message: body,
+      related_id: String(relatedId || resolvedSubjectId),
+      related_type: relatedType || type,
+      class_id: resolvedSubjectId,
+      is_read: false,
+      created_at: new Date().toISOString()
+    }));
+
+    await supabase.from("notifications").insert(notifRows).catch(() => {});
   } catch (err) {
     console.warn("[broadcastNotificationToClassStudents] Non-fatal notification error:", err);
   }

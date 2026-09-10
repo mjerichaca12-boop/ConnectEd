@@ -223,7 +223,7 @@ export function getNotificationRoute(item: any, userRole: string = 'student'): N
         item.related_type === 'quizzes'
     ) {
         if (isTeacher) {
-            const classId = item.subject_id || item.data?.course_id || item.data?.subjectId || item.course_id;
+            const classId = item.class_id || item.subject_id || item.data?.course_id || item.data?.subjectId || item.data?.class_id || item.course_id;
             if (classId) {
                 return {
                     pathname: '/(tabs)/teacher/class/[id]',
@@ -233,7 +233,7 @@ export function getNotificationRoute(item: any, userRole: string = 'student'): N
             return { pathname: '/(tabs)/teacher/materials' };
         }
 
-        const subjectId = item.subject_id || item.data?.course_id || item.data?.subjectId || item.course_id;
+        const subjectId = item.class_id || item.subject_id || item.data?.course_id || item.data?.subjectId || item.data?.class_id || item.course_id;
         if (subjectId) {
             return {
                 pathname: '/(tabs)/subjects/[id]/assignment',
@@ -252,13 +252,15 @@ export function getNotificationRoute(item: any, userRole: string = 'student'): N
         rawType === 'lessons' ||
         rawType === 'material' ||
         rawType === 'materials' ||
-        item.related_type === 'lessons'
+        item.related_type === 'lessons' ||
+        item.related_type === 'class_materials' ||
+        item.related_type === 'lesson_materials'
     ) {
         if (isTeacher) {
             return { pathname: '/(tabs)/teacher/materials' };
         }
 
-        const subjectId = item.subject_id || item.data?.subjectId || item.course_id;
+        const subjectId = item.class_id || item.subject_id || item.data?.subjectId || item.data?.class_id || item.course_id;
         if (subjectId) {
             return {
                 pathname: '/(tabs)/subjects/[id]/materials',

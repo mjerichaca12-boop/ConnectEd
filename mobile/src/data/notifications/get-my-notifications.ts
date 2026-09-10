@@ -156,6 +156,26 @@ export async function getMyNotifications() {
                 .filter(Boolean);
             enrolledSubjectIds.push(...valid);
         }
+
+        // Also check subjects matching student's section from profiles
+        const { data: profileData } = await supabase
+            .from('profiles')
+            .select('section')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (profileData?.section) {
+            const { data: sectionSubjects } = await supabase
+                .from('subjects')
+                .select('id')
+                .ilike('section', profileData.section.trim());
+
+            if (Array.isArray(sectionSubjects)) {
+                sectionSubjects.forEach((s: any) => {
+                    if (s && s.id) enrolledSubjectIds.push(s.id);
+                });
+            }
+        }
     } catch (e) {
         console.warn('[MobileNotifications] Error fetching enrollments:', e);
     }
