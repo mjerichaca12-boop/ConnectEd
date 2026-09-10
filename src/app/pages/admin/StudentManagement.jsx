@@ -253,6 +253,36 @@ function StudentManagement() {
   }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal, showBulkAssignSectionModal]);
 
   useEffect(() => {
+    if (students && students.length >= 0) {
+      const validIds = new Set(students.map(s => s.id));
+      setSelectedStudentIds(prev => {
+        let changed = false;
+        const next = new Set();
+        for (const id of prev) {
+          if (validIds.has(id)) next.add(id);
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [students]);
+
+  useEffect(() => {
+    if (masterlist && masterlist.length >= 0) {
+      const validIds = new Set(masterlist.map(m => m.id));
+      setSelectedMasterlistIds(prev => {
+        let changed = false;
+        const next = new Set();
+        for (const id of prev) {
+          if (validIds.has(id)) next.add(id);
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [masterlist]);
+
+  useEffect(() => {
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
       navigate("/login");
@@ -1481,6 +1511,16 @@ function StudentManagement() {
 
     setErrorMessage("");
     setStudents((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
+      return next;
+    });
+    setSelectedMasterlistIds((prev) => {
+      const next = new Set(prev);
+      next.delete(studentId);
+      return next;
+    });
 
     if (selectedStudent?.id === studentId) {
       setSelectedStudent(null);

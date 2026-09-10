@@ -415,6 +415,21 @@ function SubjectManagement() {
   const { data: cachedSubjectsData, loading: isCachedSubjectsLoading } = useCachedFetch("admin_subjects_data", fetchSubjectsData);
 
   useEffect(() => {
+    if (subjects && subjects.length >= 0) {
+      const validIds = new Set(subjects.map(s => s.id));
+      setSelectedSubjectIds(prev => {
+        let changed = false;
+        const next = new Set();
+        for (const id of prev) {
+          if (validIds.has(id)) next.add(id);
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [subjects]);
+
+  useEffect(() => {
     let isMounted = true;
     const userData = localStorage.getItem("currentUser");
     if (!userData) {
@@ -1026,8 +1041,8 @@ function SubjectManagement() {
       });
 
       setShowBulkDeleteConfirm(false);
+      setSubjects((current) => current.filter((item) => !idsSet.has(item.id)));
       setSelectedSubjectIds(new Set());
-      setSubjects((current) => current.filter((item) => !selectedSubjectIds.has(item.id)));
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
 
       if (successCount === idsToDelete.length) {
@@ -1236,6 +1251,11 @@ function SubjectManagement() {
       setShowDeleteConfirm(false);
       setSubjectToDelete(null);
       setSubjects((current) => current.filter((item) => item.id !== deletingSubject.id));
+      setSelectedSubjectIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deletingSubject.id);
+        return next;
+      });
 
       await refreshTeacherSubjectsFromDatabase([deletingSubject.teacher_id]);
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);

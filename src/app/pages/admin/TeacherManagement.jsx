@@ -936,6 +936,21 @@ function TeacherManagement() {
   }, [cachedTeachersData, isCachedLoading]);
 
   useEffect(() => {
+    if (teachers && teachers.length >= 0) {
+      const validIds = new Set(teachers.map(t => t.id));
+      setSelectedTeacherIds(prev => {
+        let changed = false;
+        const next = new Set();
+        for (const id of prev) {
+          if (validIds.has(id)) next.add(id);
+          else changed = true;
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [teachers]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const userData = localStorage.getItem("currentUser");
@@ -1543,6 +1558,11 @@ function TeacherManagement() {
     const previousTeachers = teachers;
 
     setTeachers((current) => current.filter((teacher) => teacher.id !== teacherId));
+    setSelectedTeacherIds((prev) => {
+      const next = new Set(prev);
+      next.delete(teacherId);
+      return next;
+    });
     setSelectedTeacher((current) => (current?.id === teacherId ? null : current));
     setShowViewModal(false);
     setShowEditModal(false);
