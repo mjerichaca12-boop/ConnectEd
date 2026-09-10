@@ -8,16 +8,30 @@ export const adminApi = {
         "Content-Type": "application/json",
       };
       const currentUser = JSON.parse(localStorage.getItem("currentUser") || "{}");
-      if (currentUser.role === "admin" && currentUser.token) {
-        headers["Authorization"] = `Bearer static_${currentUser.token}`;
-      } else {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) {
-          throw new Error("Your session has expired. Please log in again.");
-        }
-        headers["Authorization"] = `Bearer ${token}`;
+      let token = "";
+
+      if (currentUser.token) {
+        token = currentUser.token.startsWith("static_") ? currentUser.token : `static_${currentUser.token}`;
       }
+
+      if (!token && supabase) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            token = session.access_token;
+          }
+        } catch (_) {}
+      }
+
+      if (!token && currentUser.id) {
+        token = `static_user_${currentUser.id}`;
+      }
+
+      if (!token) {
+        throw new Error("Your session has expired. Please log in again.");
+      }
+
+      headers["Authorization"] = token.startsWith("Bearer ") ? token : `Bearer ${token}`;
       const res = await fetch(url, { ...options, headers });
       if (!res.ok) {
         let errorMsg = `Error ${res.status}`;

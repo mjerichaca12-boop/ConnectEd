@@ -3733,8 +3733,9 @@ export function ClassDetail() {
             ? await adminApi.db(tableName, "update", { payload, eq: { column: "id", value: editingAnnouncementId }, single: true })
             : await adminApi.db(tableName, "insert", { payload, single: true });
 
-          if (!fallbackRes.error && fallbackRes.data) {
-            writeResult = { data: fallbackRes.data, error: null };
+          if (!fallbackRes.error && (fallbackRes.data || Array.isArray(fallbackRes.data))) {
+            const resultItem = Array.isArray(fallbackRes.data) ? fallbackRes.data[0] : fallbackRes.data;
+            writeResult = { data: resultItem, error: null };
           }
         } catch (fbErr) {
           console.error("[ClassDetail] Admin announcement DB write fallback error:", fbErr);
