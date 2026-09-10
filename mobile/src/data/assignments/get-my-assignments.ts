@@ -119,6 +119,24 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     const targetCourseIds = isValidId ? [subjectId] : allCourseIds;
 
+    // Helper to verify if a lesson is published
+    const isLessonPublished = (lesson: any): boolean => {
+        if (isTeacher) return true;
+        if (!lesson) return true;
+        if (lesson.is_published === false || lesson.published === false) return false;
+        const lessonStatus = (lesson.status || '').toLowerCase().trim();
+        if (lessonStatus && lessonStatus !== 'published' && lessonStatus !== 'active') {
+            return false;
+        }
+        if (lesson.scheduled_publish_at) {
+            const schedDate = new Date(lesson.scheduled_publish_at);
+            if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
+                return false;
+            }
+        }
+        return true;
+    };
+
     // Helper to verify if an item is published
     const isItemPublished = (row: any, linkedLesson?: any): boolean => {
         if (isTeacher) return true; // Teachers can see drafts/scheduled items
@@ -127,12 +145,21 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         if (row.is_published === false || row.published === false) return false;
         
         const rawStatus = (row.status || '').toLowerCase().trim();
-        if (rawStatus === 'draft' || rawStatus === 'scheduled' || rawStatus === 'archived' || rawStatus === 'inactive') {
+        if (rawStatus === 'draft' || rawStatus === 'archived' || rawStatus === 'inactive') {
             return false;
         }
 
         // Check scheduled publish date
-        if (row.scheduled_publish_at) {
+        if (rawStatus === 'scheduled') {
+            if (row.scheduled_publish_at) {
+                const schedDate = new Date(row.scheduled_publish_at);
+                if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else if (row.scheduled_publish_at) {
             const schedDate = new Date(row.scheduled_publish_at);
             if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
                 return false;
@@ -140,18 +167,8 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         }
 
         // If item is linked to a lesson, the lesson itself must be published!
-        if (linkedLesson) {
-            if (linkedLesson.is_published === false || linkedLesson.published === false) return false;
-            const lessonStatus = (linkedLesson.status || '').toLowerCase().trim();
-            if (lessonStatus && lessonStatus !== 'published' && lessonStatus !== 'active') {
-                return false;
-            }
-            if (linkedLesson.scheduled_publish_at) {
-                const schedDate = new Date(linkedLesson.scheduled_publish_at);
-                if (!isNaN(schedDate.getTime()) && schedDate > new Date()) {
-                    return false;
-                }
-            }
+        if (linkedLesson && !isLessonPublished(linkedLesson)) {
+            return false;
         }
 
         return true;
@@ -204,21 +221,39 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
     let materialsQuery = supabase.from('class_materials').select('*');
     const { data: materialsData } = await materialsQuery;
 
-    // 1e. Fetch ALL relevant lessons to accurately map lesson_id -> course_id (subject_id)
-    let lessonsQuery = supabase.from('lessons').select('id, subject_id, course_id, title, description, content, week_number, status, is_published, scheduled_publish_at');
-    const { data: lessonsData } = await lessonsQuery;
+    // 1e. Fetch lesson_activities junction mappings
+    let lessonActivitiesQuery = supabase.from('lesson_activities').select('id, lesson_id, activity_type, activity_id, created_at');
+    const { data: lessonActivitiesData } = await lessonActivitiesQuery;
+
+    const activityToLessonMap = new Map<string, string>();
+    const activityTypeMap = new Map<string, string>();
+    (lessonActivitiesData || []).forEach((la: any) => {
+        if (la && la.activity_id && la.lesson_id) {
+            activityToLessonMap.set(la.activity_id, la.lesson_id);
+            if (la.activity_type) {
+                activityTypeMap.set(la.activity_id, la.activity_type);
+            }
+        }
+    });
+
+    // 1f. Fetch ALL relevant lessons to accurately map lesson_id -> course_id (subject_id)
+    let lessonsQuery = supabase.from('lessons').select('id, subject_id, teacher_id, title, topic, description, objectives, week_number, start_date, end_date, status, scheduled_publish_at, published_at, created_at');
+    const { data: lessonsData, error: lessonsError } = await lessonsQuery;
+    if (lessonsError) {
+        console.warn('[assignments] lessons query warning:', lessonsError.message);
+    }
 
     const lessonToCourseMap = new Map<string, string>();
     const lessonDetailsMap = new Map<string, any>();
     (lessonsData || []).forEach((l: any) => {
         if (l && l.id) {
             lessonDetailsMap.set(l.id, l);
-            const courseId = l.subject_id || l.course_id;
+            const courseId = l.subject_id;
             if (courseId) lessonToCourseMap.set(l.id, courseId);
         }
     });
 
-    // 1f. Fetch from quizzes table
+    // 1g. Fetch from quizzes table
     let quizzesData: any[] = [];
     try {
         let quizzesQuery = supabase.from('quizzes').select('*');
@@ -232,7 +267,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         console.warn('[assignments] quizzes table query exception:', e);
     }
 
-    // 1g. Fetch directly from assignments table (created by teachers in lessons)
+    // 1h. Fetch directly from assignments table (created by teachers in lessons)
     let directAssignmentsData: any[] = [];
     try {
         let asgQuery = supabase.from('assignments').select('*');
@@ -251,30 +286,34 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
 
     (rpcData || []).forEach((row: any) => {
         if (!row || !row.id) return;
-        const rowCourseId = row.course_id || row.subject_id;
+        const resolvedLessonId = row.lesson_id || activityToLessonMap.get(row.id);
+        const rowCourseId = row.course_id || row.subject_id || (resolvedLessonId ? lessonToCourseMap.get(resolvedLessonId) : null);
         if (!rowCourseId) return;
         if (isValidId && String(rowCourseId).toLowerCase() !== String(subjectId).toLowerCase()) return;
         if (!isValidId && !targetCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) return;
 
-        const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
+        const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
 
         assignmentMap.set(row.id, {
             ...row,
             course_id: rowCourseId,
-            assessment_type: classifyAssessment(row)
+            lesson_id: resolvedLessonId,
+            assessment_type: classifyAssessment(row),
+            created_at: row.created_at || new Date().toISOString(),
         });
     });
 
     [...(directData || []), ...(classAsgData || [])].forEach((row: any) => {
         if (!row || !row.id) return;
-        const rowCourseId = row.course_id || row.subject_id;
+        const resolvedLessonId = row.lesson_id || activityToLessonMap.get(row.id);
+        const rowCourseId = row.course_id || row.subject_id || (resolvedLessonId ? lessonToCourseMap.get(resolvedLessonId) : null);
         if (!rowCourseId) return;
         if (isValidId && String(rowCourseId).toLowerCase() !== String(subjectId).toLowerCase()) return;
         if (!isValidId && !targetCourseIds.some(cid => String(cid).toLowerCase() === String(rowCourseId).toLowerCase())) return;
 
-        const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
+        const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
 
@@ -283,6 +322,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ...existing,
             ...row,
             course_id: rowCourseId,
+            lesson_id: resolvedLessonId,
             title: row.title || existing.title,
             description: row.description || existing.description,
             deadline: row.deadline || row.due_date || existing.deadline || existing.due_date,
@@ -290,13 +330,15 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             file_name: row.file_name || row.attachment_name || existing.file_name || existing.attachment_name,
             file_path: row.file_path || existing.file_path,
             assessment_type: classifyAssessment(row) || existing.assessment_type,
+            created_at: row.created_at || existing.created_at || new Date().toISOString(),
         });
     });
 
     // Process and merge rows from direct assignments table strictly mapped to their subject
     (directAssignmentsData || []).forEach((row: any) => {
         if (!row || !row.id) return;
-        const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null);
+        const resolvedLessonId = row.lesson_id || activityToLessonMap.get(row.id);
+        const mappedCourseId = row.course_id || row.subject_id || (resolvedLessonId ? lessonToCourseMap.get(resolvedLessonId) : null);
         
         // STRICT FILTERING: Do NOT attach if it doesn't belong to this subject!
         if (!mappedCourseId) return;
@@ -309,10 +351,13 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             return;
         }
 
-        const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
-        if (row.lesson_id && !linkedLesson && !isTeacher) return;
+        const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
+        if (resolvedLessonId && !linkedLesson && !isTeacher) return;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
+
+        const activityType = activityTypeMap.get(row.id);
+        const classifiedType = classifyAssessment({ ...row, activity_type: activityType || row.assignment_type });
 
         const existing = assignmentMap.get(row.id) || {};
         assignmentMap.set(row.id, {
@@ -320,20 +365,23 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ...row,
             course_id: mappedCourseId,
             subject_id: mappedCourseId,
+            lesson_id: resolvedLessonId,
             title: row.title || (linkedLesson ? linkedLesson.title : null) || "Assignment",
             description: row.description || (linkedLesson ? (linkedLesson.content || linkedLesson.description) : null) || existing.description || "Please complete this assignment.",
             deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
             file_url: row.file_url || row.attachment_url || (linkedLesson ? (linkedLesson.file_url || linkedLesson.attachment_url) : null) || existing.file_url || existing.attachment_url,
             file_name: row.file_name || row.attachment_name || (linkedLesson ? (linkedLesson.file_name || linkedLesson.title) : null) || existing.file_name || existing.attachment_name,
             file_path: row.file_path || existing.file_path,
-            assessment_type: classifyAssessment(row),
+            assessment_type: classifiedType,
+            created_at: row.created_at || existing.created_at || new Date().toISOString(),
         });
     });
 
     // Process and merge rows from quizzes table strictly mapped to their subject
     (quizzesData || []).forEach((row: any) => {
         if (!row || !row.id) return;
-        const mappedCourseId = row.course_id || row.subject_id || (row.lesson_id ? lessonToCourseMap.get(row.lesson_id) : null);
+        const resolvedLessonId = row.lesson_id || activityToLessonMap.get(row.id);
+        const mappedCourseId = row.course_id || row.subject_id || (resolvedLessonId ? lessonToCourseMap.get(resolvedLessonId) : null);
         
         // STRICT FILTERING: Do NOT attach if it doesn't belong to this subject!
         if (!mappedCourseId) return;
@@ -346,8 +394,8 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             return;
         }
 
-        const linkedLesson = row.lesson_id ? lessonDetailsMap.get(row.lesson_id) : null;
-        if (row.lesson_id && !linkedLesson && !isTeacher) return;
+        const linkedLesson = resolvedLessonId ? lessonDetailsMap.get(resolvedLessonId) : null;
+        if (resolvedLessonId && !linkedLesson && !isTeacher) return;
         if (!isItemPublished(row, linkedLesson)) return;
         if (!doesItemMatchSection(row)) return;
 
@@ -355,7 +403,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
         
         if (!quizDescription || quizDescription.trim().toUpperCase() === "EMPTY" || quizDescription.trim().toUpperCase() === "READ UPLOADED FILES.") {
             if (linkedLesson) {
-                quizDescription = linkedLesson.content || linkedLesson.description || quizDescription;
+                quizDescription = linkedLesson.content || linkedLesson.description || linkedLesson.topic || quizDescription;
             }
         }
 
@@ -365,6 +413,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             ...row,
             course_id: mappedCourseId,
             subject_id: mappedCourseId,
+            lesson_id: resolvedLessonId,
             title: row.title || (linkedLesson ? linkedLesson.title : null) || "Quiz",
             description: quizDescription || existing.description || "Please complete this quiz.",
             deadline: row.deadline || row.due_date || row.dueDate || existing.deadline || existing.due_date,
@@ -372,6 +421,7 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             file_name: row.file_name || row.attachment_name || (linkedLesson ? (linkedLesson.file_name || linkedLesson.title) : null) || existing.file_name || existing.attachment_name,
             file_path: row.file_path || existing.file_path,
             assessment_type: 'quiz',
+            created_at: row.created_at || existing.created_at || new Date().toISOString(),
         });
     });
 
@@ -579,6 +629,8 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
             subject: subjectsMap.get(row.course_id) || "Subject", 
             title: row.title || "Assignment",
             dueDate: dueDate ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "TBA",
+            rawDueDate: dueDate,
+            created_at: row.created_at,
             status: status as Assignment['status'],
             instructions: (typeof row.description === 'string' ? row.description : null) || "Please see subject details for more information.",
             file_url: fileUrl,
@@ -593,6 +645,30 @@ export async function getMyAssignments(subjectId?: string): Promise<Assignment[]
                 response_text: myAssessmentSub?.response_text || null,
             } : null,
         };
+    });
+
+    // Chronological sorting:
+    // - Pending / Upcoming: nearest due date first, or newest created first
+    // - Submitted / Graded / Late: most recent first
+    mappedAssignments.sort((a: any, b: any) => {
+        if (a.status === 'pending' && b.status !== 'pending') return -1;
+        if (a.status !== 'pending' && b.status === 'pending') return 1;
+
+        if (a.status === 'pending' && b.status === 'pending') {
+            if (a.rawDueDate && b.rawDueDate) {
+                const diff = new Date(a.rawDueDate).getTime() - new Date(b.rawDueDate).getTime();
+                if (diff !== 0) return diff;
+            } else if (a.rawDueDate && !b.rawDueDate) {
+                return -1;
+            } else if (!a.rawDueDate && b.rawDueDate) {
+                return 1;
+            }
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
+
+        const dateA = new Date(a.rawDueDate || a.created_at || 0).getTime();
+        const dateB = new Date(b.rawDueDate || b.created_at || 0).getTime();
+        return dateB - dateA;
     });
 
     if (isValidId) {

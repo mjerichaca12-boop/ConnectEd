@@ -217,5 +217,65 @@ describe('getMyAssignments scoping & ghost task prevention', () => {
         expect(result.map(a => a.id)).not.toContain('asg-draft');
         expect(result.map(a => a.id)).not.toContain('quiz-draft');
     });
+
+    it('should resolve quizzes linked through lesson_activities and classify them as quiz type', async () => {
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'profiles') {
+                return mockBuilder([{ id: 'test-user', section: 'Diamond', year_level: 'Grade 7', role: 'student' }]);
+            }
+            if (table === 'lessons') {
+                return mockBuilder([
+                    { id: 'lesson-1', subject_id: 'sub-1', title: 'Week 1 Lesson', status: 'published' },
+                ]);
+            }
+            if (table === 'lesson_activities') {
+                return mockBuilder([
+                    { id: 'la-1', lesson_id: 'lesson-1', activity_type: 'Quiz', activity_id: 'quiz-act-1' }
+                ]);
+            }
+            if (table === 'quizzes') {
+                return mockBuilder([
+                    { id: 'quiz-act-1', lesson_id: null, title: 'Periodic Quiz', status: 'published', total_points: 20 }
+                ]);
+            }
+            return mockBuilder([]);
+        });
+
+        (supabase as any).rpc = vi.fn(() => mockBuilder([]));
+
+        const result = await getMyAssignments();
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('quiz-act-1');
+        expect(result[0].assessment_type).toBe('quiz');
+        expect(result[0].subjectId).toBe('sub-1');
+    });
+
+    it('should sort pending tasks by soonest deadline first', async () => {
+        (supabase.from as any).mockImplementation((table: string) => {
+            if (table === 'profiles') {
+                return mockBuilder([{ id: 'test-user', section: 'Diamond', year_level: 'Grade 7', role: 'student' }]);
+            }
+            if (table === 'lessons') {
+                return mockBuilder([
+                    { id: 'lesson-1', subject_id: 'sub-1', title: 'Lesson 1', status: 'published' },
+                ]);
+            }
+            if (table === 'quizzes') {
+                return mockBuilder([
+                    { id: 'quiz-later', lesson_id: 'lesson-1', title: 'Quiz Later', due_date: '2099-10-15', status: 'published' },
+                    { id: 'quiz-sooner', lesson_id: 'lesson-1', title: 'Quiz Sooner', due_date: '2099-09-20', status: 'published' },
+                ]);
+            }
+            return mockBuilder([]);
+        });
+
+        (supabase as any).rpc = vi.fn(() => mockBuilder([]));
+
+        const result = await getMyAssignments();
+        expect(result).toHaveLength(2);
+        expect(result[0].id).toBe('quiz-sooner');
+        expect(result[1].id).toBe('quiz-later');
+    });
 });
+
 

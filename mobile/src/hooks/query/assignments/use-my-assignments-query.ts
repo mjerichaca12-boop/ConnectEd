@@ -13,6 +13,7 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
         const invalidate = () => {
             queryClient.invalidateQueries({ queryKey: ['my-assignments'] });
             queryClient.invalidateQueries({ queryKey: ['task-summary'] });
+            queryClient.invalidateQueries({ queryKey: ['materials'] });
         };
 
         const channel = supabase
@@ -29,6 +30,12 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
                 { event: '*', schema: 'public', table: 'quizzes' },
                 invalidate
             )
+            // Listen for changes on quiz questions
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'quiz_questions' },
+                invalidate
+            )
             // Listen for changes/deletes on lesson_activities table
             .on(
                 'postgres_changes',
@@ -41,10 +48,10 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
                 { event: '*', schema: 'public', table: 'lessons' },
                 invalidate
             )
-            // Listen for changes/deletes on teacher_assessments table
+            // Listen for changes on lesson materials
             .on(
                 'postgres_changes',
-                { event: '*', schema: 'public', table: 'teacher_assessments' },
+                { event: '*', schema: 'public', table: 'lesson_materials' },
                 invalidate
             )
             // Listen for changes/deletes on class_assignments table
@@ -69,6 +76,12 @@ export function useMyAssignmentsQuery(filters?: { subjectId?: string }) {
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'teacher_assessment_submissions' },
+                invalidate
+            )
+            // Listen for teacher feedback comments
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'submission_feedback' },
                 invalidate
             )
             // Listen for direct submission changes
