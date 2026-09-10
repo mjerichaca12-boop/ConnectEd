@@ -8,7 +8,8 @@ import {
     ActivityIndicator,
     StatusBar,
     Image,
-    RefreshControl
+    RefreshControl,
+    Modal
 } from "react-native";
 import Colors from "../../src/constants/Colors";
 import AppHeader from "../../src/components/common/AppHeader";
@@ -16,6 +17,15 @@ import { supabase } from "../../src/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { getMyEnrollments } from "../../src/data/enrollments/get-my-enrollments";
 import { useFocusEffect } from "expo-router/react-navigation";
+import {
+    computeDepEdStudentComputation,
+    normalizeSubjectCategory,
+    getDepedCategorySettings,
+    transmuteDepEdQuarterGrade,
+    getGradeRemarks,
+    roundTwo,
+    DepedStudentComputation,
+} from "../../src/lib/deped-grading";
 
 interface StudentProfile {
     id: string;
@@ -30,7 +40,7 @@ interface SubjectGradeRecord {
     code: string;
     title: string;
     section?: string;
-    category?: string;
+    category: string;
     units: number;
     q1: number;
     q2: number;
@@ -47,6 +57,7 @@ interface SubjectGradeRecord {
     lastActivity: string;
     remarks: string;
     isPassed: boolean;
+    computation: DepedStudentComputation | null;
 }
 
 type QuarterFilter = "all" | "term1" | "term2" | "term3" | "term4";
@@ -59,14 +70,7 @@ export default function GradesScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    const getGradeRemarks = (grade: number) => {
-        if (grade >= 90) return "Outstanding";
-        if (grade >= 85) return "Very Satisfactory";
-        if (grade >= 80) return "Satisfactory";
-        if (grade >= 75) return "Passed";
-        return "Needs Improvement";
-    };
+    const [isBreakdownModalVisible, setIsBreakdownModalVisible] = useState(false);
 
     const fetchGrades = useCallback(async () => {
         try {
@@ -153,7 +157,7 @@ export default function GradesScreen() {
                 submissionsBySubject.set(sId, existing);
             });
 
-            // 6. Fetch lesson assessments count per subject
+            // 6. Fetch assessments count per subject
             let assessmentsCountBySubject = new Map<string, number>();
             try {
                 const { data: lessonsData } = await supabase
@@ -183,6 +187,8 @@ export default function GradesScreen() {
             // 7. Map each subject enrollment to full grade record matching teacher table
             const mapped: SubjectGradeRecord[] = activeEnrollments.map((enrollment) => {
                 const sId = enrollment.subjects?.id ?? "";
+                const subjectName = enrollment.subjects?.name ?? "Unknown Subject";
+                const subjectCode = enrollment.subjects?.code ?? "N/A";
                 const dbGrade = sId ? dbGradesMap.get(sId) : null;
                 const agList = sId ? assessmentGradesBySubject.get(sId) || [] : [];
                 const subs = sId ? submissionsBySubject.get(sId) || [] : [];
@@ -205,6 +211,11 @@ export default function GradesScreen() {
                     ? Math.round((subs.length / totalAssessments) * 100)
                     : (subs.length > 0 ? 100 : 0);
 
+                const resolvedCategory = normalizeSubjectCategory(
+                    (enrollment.subjects as any)?.subject_category || dbGrade?.subject_category,
+                    subjectName || subjectCode
+                );
+
                 // Compute per-category assessment totals directly from teacher_assessment_grades
                 const totals = {
                     quiz: { score: 0, max: 0, count: 0 },
@@ -214,15 +225,15 @@ export default function GradesScreen() {
                     all: { score: 0, max: 0, count: 0 },
                 };
 
-                let computedPerformanceTasksScore = 0;
-                let computedPerformanceTasksMax = 0;
-                let computedWrittenWorksScore = 0;
-                let computedWrittenWorksMax = 0;
+                // Prepare assessmentItems list for DepEd computation engine
+                const assessmentItemsList: any[] = [];
+                const assessmentGradesMap: Record<string, any> = {};
 
                 agList.forEach((item) => {
                     const gradeVal = Number(item.grade_value || 0);
                     const maxPts = Math.max(1, Number(item.max_points || 100));
                     const rawType = String(item.assessment_type || item.assessment_title || "").toLowerCase();
+                    const itemId = String(item.assessment_id || item.id || `ag-${Math.random()}`);
 
                     let category: "quiz" | "activity" | "assignment" | "exam" = "activity";
                     if (rawType.includes("quiz")) category = "quiz";
@@ -238,13 +249,18 @@ export default function GradesScreen() {
                     totals.all.max += maxPts;
                     totals.all.count += 1;
 
-                    if (category === "quiz" || category === "assignment" || category === "exam") {
-                        computedWrittenWorksScore += gradeVal;
-                        computedWrittenWorksMax += maxPts;
-                    } else {
-                        computedPerformanceTasksScore += gradeVal;
-                        computedPerformanceTasksMax += maxPts;
-                    }
+                    assessmentItemsList.push({
+                        id: itemId,
+                        title: item.assessment_title || `${category.toUpperCase()} Assessment`,
+                        type: category,
+                        term: item.grading_term || "1st Quarter",
+                        maxPoints: maxPts,
+                        gradingComponent: item.grading_component || (category === "activity" ? "performanceTasks" : "writtenWorks"),
+                    });
+
+                    assessmentGradesMap[itemId] = {
+                        [userId]: gradeVal,
+                    };
                 });
 
                 const calcPercent = (score: number, max: number) => {
@@ -257,46 +273,40 @@ export default function GradesScreen() {
                 const computedAssignment = calcPercent(totals.assignment.score, totals.assignment.max);
                 const computedExam = calcPercent(totals.exam.score, totals.exam.max);
 
-                // DepEd Transmutation formula: 37.5 + (initialGrade * 0.625)
-                const perfPercent = calcPercent(computedPerformanceTasksScore, computedPerformanceTasksMax);
-                const writtenPercent = calcPercent(computedWrittenWorksScore, computedWrittenWorksMax);
-
-                let initialGrade = 0;
-                if (computedPerformanceTasksMax > 0 && computedWrittenWorksMax > 0) {
-                    initialGrade = Math.round((writtenPercent * 0.4) + (perfPercent * 0.6));
-                } else if (computedPerformanceTasksMax > 0) {
-                    initialGrade = Math.round(perfPercent * 0.6);
-                } else if (computedWrittenWorksMax > 0) {
-                    initialGrade = Math.round(writtenPercent * 0.4);
-                } else if (totals.all.max > 0) {
-                    initialGrade = Math.round(calcPercent(totals.all.score, totals.all.max) * 0.6);
+                // Run DepEd Computation Engine
+                let computation: DepedStudentComputation | null = null;
+                try {
+                    computation = computeDepEdStudentComputation({
+                        assessmentItems: assessmentItemsList,
+                        assessmentGradesMap,
+                        studentId: userId,
+                        subjectCategory: resolvedCategory,
+                    });
+                } catch (e) {
+                    console.warn("[Grades] Failed running computeDepEdStudentComputation:", e);
                 }
 
-                const computedTransmutedGrade = initialGrade > 0
-                    ? Math.max(0, Math.min(100, Math.round(37.5 + (initialGrade * 0.625))))
-                    : 0;
-
-                let computation: any = null;
-                try {
-                    computation = dbGrade?.grade_computation
-                        ? typeof dbGrade.grade_computation === "string"
+                // If teacher stored serialized computation in DB, use it as fallback
+                if (!computation && dbGrade?.grade_computation) {
+                    try {
+                        computation = typeof dbGrade.grade_computation === "string"
                             ? JSON.parse(dbGrade.grade_computation)
-                            : dbGrade.grade_computation
-                        : null;
-                } catch {
-                    computation = null;
+                            : dbGrade.grade_computation;
+                    } catch {
+                        computation = null;
+                    }
                 }
 
                 const quarterOne = computation?.quarters?.quarter1 || null;
-                const fallbackWrittenWorks = quarterOne?.writtenWorks?.percentageScore ?? computedWrittenWorksScore;
-                const fallbackPerformanceTasks = quarterOne?.performanceTasks?.percentageScore ?? perfPercent;
-                const fallbackInitialGrade = quarterOne?.initialGrade ?? initialGrade;
-                const fallbackQuarterlyGrade = quarterOne?.quarterlyGrade ?? computedTransmutedGrade;
+                const fallbackWrittenWorks = quarterOne?.writtenWorks?.percentageScore ?? computedQuiz;
+                const fallbackPerformanceTasks = quarterOne?.performanceTasks?.percentageScore ?? computedActivity;
+                const fallbackInitialGrade = quarterOne?.initialGrade ?? 0;
+                const fallbackQuarterlyGrade = quarterOne?.quarterlyGrade ?? (fallbackInitialGrade > 0 ? transmuteDepEdQuarterGrade(fallbackInitialGrade) : 0);
 
-                const q1 = Number(dbGrade?.quarter1_grade || fallbackQuarterlyGrade || computedTransmutedGrade);
-                const q2 = Number(dbGrade?.quarter2_grade || 0);
-                const q3 = Number(dbGrade?.quarter3_grade || 0);
-                const q4 = Number(dbGrade?.quarter4_grade || 0);
+                const q1 = Number(dbGrade?.quarter1_grade || fallbackQuarterlyGrade || 0);
+                const q2 = Number(dbGrade?.quarter2_grade || computation?.quarters?.quarter2?.quarterlyGrade || 0);
+                const q3 = Number(dbGrade?.quarter3_grade || computation?.quarters?.quarter3?.quarterlyGrade || 0);
+                const q4 = Number(dbGrade?.quarter4_grade || computation?.quarters?.quarter4?.quarterlyGrade || 0);
 
                 const quiz = Number(dbGrade?.quiz_average || (computedQuiz > 0 ? computedQuiz : fallbackWrittenWorks));
 
@@ -315,17 +325,23 @@ export default function GradesScreen() {
 
                 const exam = Number(dbGrade?.exam_grade || computedExam || 0);
 
-                const overall = Number(dbGrade?.overall_grade || q1 || computedTransmutedGrade || 0);
+                // DepEd final grade calculation: average of non-zero quarters
+                const gradedQuarters = [q1, q2, q3, q4].filter((q) => q > 0);
+                const computedOverall = gradedQuarters.length > 0
+                    ? Math.round(gradedQuarters.reduce((sum, val) => sum + val, 0) / gradedQuarters.length)
+                    : (computation?.finalGrade || 0);
+
+                const overall = Number(dbGrade?.overall_grade || computedOverall || 0);
                 const isPassed = overall >= 75;
                 const remarks = overall > 0 ? getGradeRemarks(overall) : "Needs Improvement";
 
                 return {
                     enrollmentId: String(enrollment.id),
                     subjectId: sId,
-                    code: enrollment.subjects?.code ?? "N/A",
-                    title: enrollment.subjects?.name ?? "Unknown Subject",
+                    code: subjectCode,
+                    title: subjectName,
                     section: (enrollment.subjects as any)?.section ?? "Amethyst",
-                    category: (enrollment.subjects as any)?.subject_category ?? "General",
+                    category: resolvedCategory,
                     units: 3,
                     q1,
                     q2,
@@ -342,6 +358,7 @@ export default function GradesScreen() {
                     lastActivity,
                     remarks,
                     isPassed,
+                    computation,
                 };
             });
 
@@ -897,12 +914,164 @@ export default function GradesScreen() {
                                     </View>
                                 </View>
                             </View>
+
+                            {/* View DepEd Breakdown Button */}
+                            <TouchableOpacity
+                                style={styles.depedBreakdownBtn}
+                                activeOpacity={0.8}
+                                onPress={() => setIsBreakdownModalVisible(true)}
+                            >
+                                <Ionicons name="calculator-outline" size={18} color="#059669" />
+                                <Text style={styles.depedBreakdownBtnText}>View DepEd Grading Breakdown</Text>
+                                <Ionicons name="chevron-forward" size={16} color="#059669" />
+                            </TouchableOpacity>
                         </View>
                     )}
 
                     <View style={{ height: 32 }} />
                 </ScrollView>
             )}
+
+            {/* DepEd Grade Computation Modal */}
+            <Modal
+                visible={isBreakdownModalVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsBreakdownModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.breakdownModalContent}>
+                        <View style={styles.modalHeader}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.modalTitle}>DepEd Grade Breakdown</Text>
+                                <Text style={styles.modalSubtitle} numberOfLines={1}>
+                                    {summaryRecord?.code} - {summaryRecord?.title} ({summaryRecord?.category})
+                                </Text>
+                            </View>
+                            <TouchableOpacity onPress={() => setIsBreakdownModalVisible(false)}>
+                                <Ionicons name="close" size={24} color="#64748B" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+                            {/* Summary Badge Cards */}
+                            <View style={styles.modalSummaryRow}>
+                                <View style={[styles.modalSummaryTile, styles.bgGreenLight]}>
+                                    <Text style={styles.modalTileLabel}>Final Grade</Text>
+                                    <Text style={[styles.modalTileValue, { color: "#15803D" }]}>
+                                        {summaryRecord?.overall}%
+                                    </Text>
+                                </View>
+                                <View style={[styles.modalSummaryTile, styles.bgGreenLight]}>
+                                    <Text style={styles.modalTileLabel}>Remarks</Text>
+                                    <Text
+                                        style={[
+                                            styles.modalTileValue,
+                                            { color: summaryRecord?.isPassed ? "#15803D" : "#DC2626", fontSize: 14 }
+                                        ]}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
+                                    >
+                                        {summaryRecord?.remarks}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Category Weights Notice */}
+                            {summaryRecord && (
+                                <View style={styles.categoryWeightsCard}>
+                                    <Text style={styles.categoryWeightsTitle}>
+                                        Subject Category: {summaryRecord.category}
+                                    </Text>
+                                    <View style={styles.weightsPillsRow}>
+                                        <View style={styles.weightPill}>
+                                            <Text style={styles.weightPillLabel}>Written Works</Text>
+                                            <Text style={styles.weightPillVal}>
+                                                {getDepedCategorySettings(summaryRecord.category).writtenWorksWeight}%
+                                            </Text>
+                                        </View>
+                                        <View style={styles.weightPill}>
+                                            <Text style={styles.weightPillLabel}>Performance Tasks</Text>
+                                            <Text style={styles.weightPillVal}>
+                                                {getDepedCategorySettings(summaryRecord.category).performanceTasksWeight}%
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+                            )}
+
+                            {/* Step-by-Step Quarters Breakdown */}
+                            <Text style={styles.modalSectionTitle}>Quarterly Step-by-Step Breakdown</Text>
+                            {[1, 2, 3, 4].map((qNum) => {
+                                const qKey = `quarter${qNum}` as "quarter1" | "quarter2" | "quarter3" | "quarter4";
+                                const qSummary = summaryRecord?.computation?.quarters?.[qKey];
+                                const quarterlyGrade = qNum === 1
+                                    ? summaryRecord?.q1
+                                    : qNum === 2
+                                    ? summaryRecord?.q2
+                                    : qNum === 3
+                                    ? summaryRecord?.q3
+                                    : summaryRecord?.q4;
+
+                                const ww = qSummary?.writtenWorks;
+                                const pt = qSummary?.performanceTasks;
+                                const initGrade = qSummary?.initialGrade || 0;
+
+                                return (
+                                    <View key={qNum} style={styles.quarterBreakdownCard}>
+                                        <View style={styles.quarterBreakdownHeader}>
+                                            <Text style={styles.quarterBreakdownTitle}>Quarter {qNum}</Text>
+                                            <View style={[styles.quarterBadge, (quarterlyGrade || 0) >= 75 ? styles.bgGreenLight : styles.bgRedLight]}>
+                                                <Text style={[styles.quarterBadgeText, { color: (quarterlyGrade || 0) >= 75 ? "#15803D" : "#DC2626" }]}>
+                                                    Quarterly Grade: {quarterlyGrade || 0}
+                                                </Text>
+                                            </View>
+                                        </View>
+
+                                        {/* Component Rows */}
+                                        <View style={styles.compRow}>
+                                            <Text style={styles.compLabel}>Written Works (WW):</Text>
+                                            <Text style={styles.compValue}>
+                                                Raw: {ww?.rawScore || 0} / {ww?.highestScore || 0} ({ww?.percentageScore || 0}%) • WS: {ww?.weightedScore || 0}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.compRow}>
+                                            <Text style={styles.compLabel}>Performance Tasks (PT):</Text>
+                                            <Text style={styles.compValue}>
+                                                Raw: {pt?.rawScore || 0} / {pt?.highestScore || 0} ({pt?.percentageScore || 0}%) • WS: {pt?.weightedScore || 0}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.compRowHighlight}>
+                                            <Text style={styles.compLabelHighlight}>Initial Grade (WW WS + PT WS):</Text>
+                                            <Text style={styles.compValueHighlight}>{initGrade}</Text>
+                                        </View>
+                                        <View style={styles.compRowHighlight}>
+                                            <Text style={styles.compLabelHighlight}>Transmuted Grade (37.5 + Initial × 0.625):</Text>
+                                            <Text style={[styles.compValueHighlight, { color: "#15803D" }]}>{quarterlyGrade || 0}</Text>
+                                        </View>
+                                    </View>
+                                );
+                            })}
+
+                            {/* Official DepEd Process Note */}
+                            <View style={styles.depedInfoCard}>
+                                <View style={styles.depedInfoRow}>
+                                    <Ionicons name="information-circle-outline" size={18} color="#059669" />
+                                    <Text style={styles.depedInfoTitle}>DepEd K-12 Grading Process</Text>
+                                </View>
+                                <Text style={styles.depedInfoDesc}>
+                                    1. Step 1: Sum raw scores for Written Works and Performance Tasks.{"\n"}
+                                    2. Step 2: Percentage Score (PS) = (Raw Score / Highest Score) × 100%.{"\n"}
+                                    3. Step 3: Weighted Score (WS) = PS × Component Weight.{"\n"}
+                                    4. Step 4: Initial Grade = Written Works WS + Performance Tasks WS.{"\n"}
+                                    5. Step 5: Quarterly Grade = Transmuted Initial Grade (Min Passing = 75).{"\n"}
+                                    6. Step 6: Final Grade = Average of quarterly grades across graded quarters.
+                                </Text>
+                            </View>
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -1440,5 +1609,200 @@ const styles = StyleSheet.create({
         backgroundColor: "#F8FAFC",
         borderWidth: 1,
         borderColor: "#E2E8F0",
+    },
+    depedBreakdownBtn: {
+        marginTop: 14,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        backgroundColor: "#ECFDF5",
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#A7F3D0",
+    },
+    depedBreakdownBtnText: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#047857",
+        flex: 1,
+        marginLeft: 8,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        justifyContent: "flex-end",
+    },
+    breakdownModalContent: {
+        backgroundColor: "#FFFFFF",
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 20,
+        maxHeight: "85%",
+    },
+    modalHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 16,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: "800",
+        color: "#0F172A",
+    },
+    modalSubtitle: {
+        fontSize: 12,
+        fontWeight: "600",
+        color: "#059669",
+        marginTop: 2,
+    },
+    modalSummaryRow: {
+        flexDirection: "row",
+        gap: 10,
+        marginBottom: 14,
+    },
+    modalSummaryTile: {
+        flex: 1,
+        borderRadius: 12,
+        padding: 12,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    categoryWeightsCard: {
+        backgroundColor: "#F8FAFC",
+        borderRadius: 12,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 14,
+    },
+    categoryWeightsTitle: {
+        fontSize: 12,
+        fontWeight: "800",
+        color: "#334155",
+        marginBottom: 8,
+    },
+    weightsPillsRow: {
+        flexDirection: "row",
+        gap: 8,
+    },
+    weightPill: {
+        flex: 1,
+        backgroundColor: "#FFFFFF",
+        borderRadius: 8,
+        padding: 8,
+        borderWidth: 1,
+        borderColor: "#CBD5E1",
+        alignItems: "center",
+    },
+    weightPillLabel: {
+        fontSize: 10,
+        fontWeight: "700",
+        color: "#64748B",
+    },
+    weightPillVal: {
+        fontSize: 14,
+        fontWeight: "800",
+        color: "#0F172A",
+        marginTop: 2,
+    },
+    modalSectionTitle: {
+        fontSize: 13,
+        fontWeight: "800",
+        color: "#1E293B",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        marginBottom: 10,
+    },
+    quarterBreakdownCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+        marginBottom: 12,
+    },
+    quarterBreakdownHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F1F5F9",
+        paddingBottom: 8,
+    },
+    quarterBreakdownTitle: {
+        fontSize: 14,
+        fontWeight: "800",
+        color: "#0F172A",
+    },
+    quarterBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    quarterBadgeText: {
+        fontSize: 11,
+        fontWeight: "800",
+    },
+    compRow: {
+        marginBottom: 6,
+    },
+    compLabel: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#475569",
+    },
+    compValue: {
+        fontSize: 11,
+        color: "#64748B",
+        marginTop: 1,
+    },
+    compRowHighlight: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        backgroundColor: "#F8FAFC",
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 6,
+        marginTop: 4,
+    },
+    compLabelHighlight: {
+        fontSize: 11,
+        fontWeight: "700",
+        color: "#334155",
+    },
+    compValueHighlight: {
+        fontSize: 12,
+        fontWeight: "800",
+        color: "#0F172A",
+    },
+    depedInfoCard: {
+        backgroundColor: "#F0FDF4",
+        borderRadius: 12,
+        padding: 14,
+        borderWidth: 1,
+        borderColor: "#BBF7D0",
+        marginTop: 4,
+    },
+    depedInfoRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        marginBottom: 6,
+    },
+    depedInfoTitle: {
+        fontSize: 12,
+        fontWeight: "800",
+        color: "#065F46",
+    },
+    depedInfoDesc: {
+        fontSize: 11,
+        color: "#047857",
+        lineHeight: 18,
+        fontWeight: "500",
     },
 });

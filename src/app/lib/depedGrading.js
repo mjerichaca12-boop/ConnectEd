@@ -34,15 +34,15 @@ export const normalizeSubjectCategory = (value, subjectName = "") => {
   }
 
   const name = normalizeText(subjectName);
-  if (/^(english|filipino|araling panlipunan|esp|values|hsp|reading|language)/i.test(name)) {
+  if (/\b(english|filipino|araling\s*panlipunan|ap\b|esp\b|values|hsp|reading|language|literature|komunikasyon)\b/i.test(name) || /^(english|filipino|araling|esp|values|hsp|reading|language)/i.test(name)) {
     return "Languages / AP / EsP";
   }
 
-  if (/^(science|mathematics|math)/i.test(name)) {
+  if (/\b(science|mathematics|math|biology|physics|chemistry|calculus|algebra|geometry|statistics)\b/i.test(name) || /^(science|mathematics|math)/i.test(name)) {
     return "Science / Mathematics";
   }
 
-  if (/^(mapeh|music|arts|pe|physical education|health|epp|tle)/i.test(name)) {
+  if (/\b(mapeh|music|arts|pe\b|physical\s*education|health|epp|tle|ict|livelihood)\b/i.test(name) || /^(mapeh|music|arts|pe|physical|health|epp|tle)/i.test(name)) {
     return "MAPEH / EPP / TLE";
   }
 
