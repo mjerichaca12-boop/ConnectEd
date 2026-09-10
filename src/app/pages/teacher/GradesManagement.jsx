@@ -790,8 +790,6 @@ function GradesManagement() {
     let gradeResult = await supabase
       .from("teacher_assessment_grades")
       .select("assessment_id, student_id, grade_value, status, feedback, grading_component, grading_term")
-      .eq("teacher_id", currentTeacherId)
-      .eq("subject_id", classId)
       .in("assessment_id", assessmentIds)
       .in("student_id", studentIds);
 
@@ -799,8 +797,6 @@ function GradesManagement() {
       gradeResult = await supabase
         .from("teacher_assessment_grades")
         .select("assessment_id, student_id, grade_value, status")
-        .eq("teacher_id", currentTeacherId)
-        .eq("subject_id", classId)
         .in("assessment_id", assessmentIds)
         .in("student_id", studentIds);
     }
@@ -885,8 +881,6 @@ function GradesManagement() {
     const { data, error } = await supabase
       .from("teacher_assessment_submissions")
       .select("id, assessment_id, student_id, response_text, file_url, file_name, file_path, submitted_at, updated_at, created_at")
-      .eq("teacher_id", currentTeacherId)
-      .eq("subject_id", classId)
       .in("assessment_id", assessmentIds);
 
     if (error) {
@@ -1377,12 +1371,13 @@ function GradesManagement() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
         const newRow = payload.new;
         if (!newRow) return;
-        // ensure it's for the current class and teacher
-        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
-        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
 
         const normalized = normalizeSubmission(newRow);
         if (!normalized.assessmentId || !normalized.studentId) return;
+
+        const belongsToClass = (assessmentItemsRef.current || []).some((a) => String(a.id) === String(normalized.assessmentId)) ||
+          (newRow.subject_id && String(newRow.subject_id) === String(selectedClass));
+        if (!belongsToClass) return;
 
         // Merge into submissions map
         setAssessmentSubmissionsMap((prev) => {
@@ -1449,11 +1444,13 @@ function GradesManagement() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "teacher_assessment_submissions" }, async (payload) => {
         const newRow = payload.new;
         if (!newRow) return;
-        if (String(newRow.subject_id || "") !== String(selectedClass)) return;
-        if (String(newRow.teacher_id || "") !== String(teacherId)) return;
 
         const normalized = normalizeSubmission(newRow);
         if (!normalized.assessmentId || !normalized.studentId) return;
+
+        const belongsToClass = (assessmentItemsRef.current || []).some((a) => String(a.id) === String(normalized.assessmentId)) ||
+          (newRow.subject_id && String(newRow.subject_id) === String(selectedClass));
+        if (!belongsToClass) return;
 
         setAssessmentSubmissionsMap((prev) => {
           const next = { ...(prev || {}) };
@@ -1466,11 +1463,13 @@ function GradesManagement() {
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "teacher_assessment_submissions" }, (payload) => {
         const oldRow = payload.old;
         if (!oldRow) return;
-        if (String(oldRow.subject_id || "") !== String(selectedClass)) return;
-        if (String(oldRow.teacher_id || "") !== String(teacherId)) return;
 
         const normalized = normalizeSubmission(oldRow);
         if (!normalized.assessmentId || !normalized.studentId) return;
+
+        const belongsToClass = (assessmentItemsRef.current || []).some((a) => String(a.id) === String(normalized.assessmentId)) ||
+          (oldRow.subject_id && String(oldRow.subject_id) === String(selectedClass));
+        if (!belongsToClass) return;
 
         setAssessmentSubmissionsMap((prev) => {
           const next = { ...(prev || {}) };

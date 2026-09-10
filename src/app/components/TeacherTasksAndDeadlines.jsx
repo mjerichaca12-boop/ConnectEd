@@ -68,7 +68,6 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
         const { data: subsData, error: subsError } = await supabase
           .from('teacher_assessment_submissions')
           .select('id, assessment_id, student_id, status, submitted_at')
-          .eq('teacher_id', teacherId)
           .in('assessment_id', assessmentIds);
 
         if (subsError) {
@@ -81,7 +80,6 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
         const { data: gradesData, error: gradesError } = await supabase
           .from('teacher_assessment_grades')
           .select('id, assessment_id, student_id, status, grade_value')
-          .eq('teacher_id', teacherId)
           .in('assessment_id', assessmentIds);
 
         if (gradesError) {
@@ -126,10 +124,13 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, () => {
         if (isMounted) fetchData();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_assessment_submissions', filter: `teacher_id=eq.${teacherId}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_assessment_submissions' }, () => {
         if (isMounted) fetchData();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_assessment_grades', filter: `teacher_id=eq.${teacherId}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teacher_assessment_grades' }, () => {
+        if (isMounted) fetchData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_attempts' }, () => {
         if (isMounted) fetchData();
       })
       .subscribe();
