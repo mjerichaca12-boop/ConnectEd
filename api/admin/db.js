@@ -414,6 +414,7 @@ export default async function handler(req, res) {
         created_user_id: userId,
         username,
         emailSent,
+        email_sent: emailSent,
         emailNotice,
         resendDiagnostics: safeDiagnostics
       });
@@ -561,7 +562,7 @@ export default async function handler(req, res) {
         };
       }
 
-      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, emailNotice, resendDiagnostics: safeDiagnostics });
+      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, email_sent: emailSent, emailNotice, resendDiagnostics: safeDiagnostics });
     }
 
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {

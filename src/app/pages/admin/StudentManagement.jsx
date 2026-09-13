@@ -1878,10 +1878,14 @@ function StudentManagement() {
         throw new Error(res.error.message || res.error || "Failed to approve registration request.");
       }
 
-      if (res.emailSent) {
-        toast.success(`Registration request approved for ${selectedRequest.first_name} ${selectedRequest.last_name}. Account created & credentials emailed!`);
+      const isEmailSent = Boolean(res.emailSent || res.email_sent || res.data?.emailSent || res.data?.email_sent);
+      const emailNotice = res.emailNotice || res.data?.emailNotice;
+      const studentFullName = `${selectedRequest.first_name || ""} ${selectedRequest.last_name || ""}`.trim();
+
+      if (isEmailSent) {
+        toast.success(`Registration request approved for ${studentFullName}. Account created & credentials emailed!`);
       } else {
-        toast.warning(`Account created for ${selectedRequest.first_name} ${selectedRequest.last_name}, but email failed: ${res.emailNotice || "Check Resend domain setup."}`);
+        toast.warning(`Account created for ${studentFullName}, but email failed: ${emailNotice || "Check Resend domain setup."}`);
       }
       setShowApproveRequestModal(false);
       setShowViewRequestModal(false);
@@ -1915,10 +1919,14 @@ function StudentManagement() {
         throw new Error(res.error.message || res.error || "Failed to reject registration request.");
       }
 
-      if (res.emailSent) {
-        toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}. Student notified by email.`);
+      const isEmailSent = Boolean(res.emailSent || res.email_sent || res.data?.emailSent || res.data?.email_sent);
+      const emailNotice = res.emailNotice || res.data?.emailNotice;
+      const studentFullName = `${selectedRequest.first_name || ""} ${selectedRequest.last_name || ""}`.trim();
+
+      if (isEmailSent) {
+        toast.success(`Registration request rejected for ${studentFullName}. Student notified by email.`);
       } else {
-        toast.warning(`Request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}, but email failed: ${res.emailNotice || "Check Resend domain setup."}`);
+        toast.warning(`Request rejected for ${studentFullName}, but email failed: ${emailNotice || "Check Resend domain setup."}`);
       }
       setShowRejectRequestModal(false);
       setShowViewRequestModal(false);
