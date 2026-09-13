@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildConnectEdEmailHtml } from "../admin/emailTemplates.js";
 
 const DEFAULT_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5ZWNreHFhb3d1c3hjbWV1b2xrIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzY1MzQ0MiwiZXhwIjoyMDg5MjI5NDQyfQ.cDPqfbnsriANJ1pGSnkdmsw5BWUuHxQP5_Fxv2Sdrbg";
 
@@ -154,6 +155,16 @@ export default async function handler(req, res) {
 
         if (!linkError && linkData?.properties?.action_link) {
           const actionLink = linkData.properties.action_link;
+          const resetEmailHtml = buildConnectEdEmailHtml({
+            badgeType: "info",
+            title: "Reset Your Password",
+            subtitle: "You requested a password reset for your <strong>ConnectEd LMS</strong> account. Click the button below to set a new password. This link expires in <strong>1 hour</strong>.",
+            showButton: true,
+            buttonText: "Change Password",
+            loginUrl: actionLink,
+            footerText: "If you didn't request a password reset, you can safely ignore this email. Your password will not be changed."
+          });
+
           const resendRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -164,25 +175,7 @@ export default async function handler(req, res) {
               from: emailFrom,
               to: [realEmail],
               subject: "Reset Your ConnectEd LMS Password",
-              html: `
-                <div style="font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; text-align: center;">
-                  <h2 style="color: #111827; margin-bottom: 16px; font-size: 24px; font-weight: 700;">Reset Your Password</h2>
-                  <p style="color: #4b5563; font-size: 16px; line-height: 1.5; margin-bottom: 32px;">
-                    We received a request to reset your password for your <strong>ConnectEd LMS</strong> account. Click the button below to set a new password. This link will expire in 1 hour.
-                  </p>
-                  <a href="${actionLink}" style="display: inline-block; background-color: #10b981; color: #ffffff; font-weight: 600; font-size: 16px; text-decoration: none; padding: 14px 32px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                    Change Password
-                  </a>
-                  <p style="color: #6b7280; font-size: 13px; line-height: 1.4; margin-top: 24px;">
-                    If the button above doesn't work, copy and paste this link into your browser:<br/>
-                    <a href="${actionLink}" style="color: #10b981; word-break: break-all;">${actionLink}</a>
-                  </p>
-                  <hr style="border: none; border-top: 1px solid #f3f4f6; margin: 32px 0 20px 0;" />
-                  <p style="color: #9ca3af; font-size: 13px; margin: 0;">
-                    If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
-                  </p>
-                </div>
-              `
+              html: resetEmailHtml
             })
           });
 

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { buildConnectEdEmailHtml } from "./emailTemplates.js";
 
 export const config = {
   api: {
@@ -303,6 +304,24 @@ export default async function handler(req, res) {
           const loginUrl = process.env.VITE_APP_URL || "https://getconnectedlms.online/login";
           const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
+          const studentEmailHtml = buildConnectEdEmailHtml({
+            badgeType: "success",
+            title: "Student Account Approved",
+            subtitle: `Hello <strong>${studentFullName}</strong>! We are pleased to inform you that your student registration request for <strong>ConnectEd LMS</strong> has been approved.`,
+            credentials: {
+              fullName: studentFullName,
+              username: username,
+              tempPassword: tempPassword,
+              lrn: cleanLrn,
+              gradeSection: `Grade ${studentGrade} ${section ? '• ' + section : ''}`
+            },
+            showButton: true,
+            buttonText: "Log In to ConnectEd",
+            loginUrl: loginUrl,
+            securityNotice: "You will be required to change your temporary password upon your first login for security purposes.",
+            footerText: "If you didn't request a student account or have questions, please contact your school administrator."
+          });
+
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -313,23 +332,7 @@ export default async function handler(req, res) {
               from: emailFrom,
               to: [normalizedEmail],
               subject: "Your ConnectEd Student Account Has Been Approved",
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                  <h2 style="color: #16a34a; text-align: center;">Welcome to ConnectEd!</h2>
-                  <p>Dear <strong>${studentFullName}</strong>,</p>
-                  <p>We are pleased to inform you that your student registration request for ConnectEd has been <strong>APPROVED</strong>.</p>
-                  <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                    <p style="margin: 5px 0;"><strong>Username:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${username}</code></p>
-                    <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${tempPassword}</code></p>
-                    <p style="margin: 5px 0;"><strong>LRN:</strong> ${cleanLrn}</p>
-                    <p style="margin: 5px 0;"><strong>Grade & Section:</strong> ${studentGrade} - ${section}</p>
-                  </div>
-                  <p>Please log in using your credentials at: <a href="${loginUrl}" style="color: #16a34a; text-decoration: underline;">ConnectEd Web Portal / Mobile App</a></p>
-                  <p style="color: #dc2626; font-weight: bold;">Important: You will be required to change your temporary password upon your first login for security purposes.</p>
-                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                  <p style="font-size: 12px; color: #6b7280; text-align: center;">This is an automated notification from ConnectEd LMS.</p>
-                </div>
-              `
+              html: studentEmailHtml
             })
           });
 
@@ -478,6 +481,15 @@ export default async function handler(req, res) {
           const normalizedEmail = request.email.trim().toLowerCase();
           const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
+          const studentRejectHtml = buildConnectEdEmailHtml({
+            badgeType: "rejection",
+            title: "Student Registration Notice",
+            subtitle: `Hello <strong>${studentFullName}</strong>, thank you for submitting your registration request for <strong>ConnectEd LMS</strong>. After reviewing your registration, we were unable to approve your student account at this time.`,
+            rejectionReason: rejection_reason ? rejection_reason.trim() : null,
+            showButton: false,
+            footerText: "If you believe this decision was made in error or need to correct your submitted information, please contact your school administrator."
+          });
+
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -488,23 +500,7 @@ export default async function handler(req, res) {
               from: emailFrom,
               to: [normalizedEmail],
               subject: "Your ConnectEd Student Registration Update",
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                  <h2 style="color: #dc2626; text-align: center;">ConnectEd Registration Notice</h2>
-                  <p>Hello <strong>${studentFullName}</strong>,</p>
-                  <p>Thank you for submitting your registration request for ConnectEd.</p>
-                  <p>After reviewing your registration, we were unable to approve your account at this time.</p>
-                  ${rejection_reason ? `
-                    <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; border-radius: 4px; margin: 20px 0;">
-                      <p style="margin: 0; color: #991b1b;"><strong>Reason for Rejection:</strong></p>
-                      <p style="margin: 5px 0 0 0; color: #7f1d1d;">${rejection_reason}</p>
-                    </div>
-                  ` : ''}
-                  <p>If you believe this was made in error or you need to correct your submitted information, please contact your school administrator.</p>
-                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                  <p style="font-size: 12px; color: #6b7280; text-align: center;">Regards,<br/><strong>ConnectEd Administration</strong></p>
-                </div>
-              `
+              html: studentRejectHtml
             })
           });
 
@@ -691,6 +687,22 @@ export default async function handler(req, res) {
           const loginUrl = process.env.VITE_APP_URL || "https://getconnectedlms.online/login";
           const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
+          const teacherEmailHtml = buildConnectEdEmailHtml({
+            badgeType: "success",
+            title: "Teacher Account Approved",
+            subtitle: `Hello <strong>${teacherFullName}</strong>! We are pleased to inform you that your teacher registration request for <strong>ConnectEd LMS</strong> has been approved.`,
+            credentials: {
+              fullName: teacherFullName,
+              username: username,
+              tempPassword: tempPassword
+            },
+            showButton: true,
+            buttonText: "Log In to ConnectEd Portal",
+            loginUrl: loginUrl,
+            securityNotice: "You will be required to change your temporary password upon your first login for security purposes.",
+            footerText: "If you didn't request a teacher account or have questions, please contact your school administrator."
+          });
+
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -701,21 +713,7 @@ export default async function handler(req, res) {
               from: emailFrom,
               to: [normalizedEmail],
               subject: "Your ConnectEd Teacher Account Has Been Approved",
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                  <h2 style="color: #16a34a; text-align: center;">Welcome to ConnectEd!</h2>
-                  <p>Dear <strong>${teacherFullName}</strong>,</p>
-                  <p>We are pleased to inform you that your teacher registration request for ConnectEd has been <strong>APPROVED</strong>.</p>
-                  <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                    <p style="margin: 5px 0;"><strong>Username:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${username}</code></p>
-                    <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${tempPassword}</code></p>
-                  </div>
-                  <p>Please log in using your credentials at: <a href="${loginUrl}" style="color: #16a34a; text-decoration: underline;">ConnectEd Web Portal / Mobile App</a></p>
-                  <p style="color: #dc2626; font-weight: bold;">Important: You will be required to change your temporary password upon your first login for security purposes.</p>
-                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                  <p style="font-size: 12px; color: #6b7280; text-align: center;">This is an automated notification from ConnectEd LMS.</p>
-                </div>
-              `
+              html: teacherEmailHtml
             })
           });
 
@@ -862,6 +860,15 @@ export default async function handler(req, res) {
           const normalizedEmail = request.email.trim().toLowerCase();
           const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
+          const teacherRejectHtml = buildConnectEdEmailHtml({
+            badgeType: "rejection",
+            title: "Teacher Registration Notice",
+            subtitle: `Hello <strong>${teacherFullName}</strong>, thank you for submitting your teacher registration request for <strong>ConnectEd LMS</strong>. After reviewing your registration, we were unable to approve your teacher account at this time.`,
+            rejectionReason: rejection_reason ? rejection_reason.trim() : null,
+            showButton: false,
+            footerText: "If you believe this decision was made in error or need to correct your submitted information, please contact your school administrator."
+          });
+
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -872,23 +879,7 @@ export default async function handler(req, res) {
               from: emailFrom,
               to: [normalizedEmail],
               subject: "Your ConnectEd Teacher Registration Update",
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                  <h2 style="color: #dc2626; text-align: center;">ConnectEd Registration Notice</h2>
-                  <p>Hello <strong>${teacherFullName}</strong>,</p>
-                  <p>Thank you for submitting your teacher registration request for ConnectEd.</p>
-                  <p>After reviewing your registration, we were unable to approve your account at this time.</p>
-                  ${rejection_reason ? `
-                    <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; border-radius: 4px; margin: 20px 0;">
-                      <p style="margin: 0; color: #991b1b;"><strong>Reason for Rejection:</strong></p>
-                      <p style="margin: 5px 0 0 0; color: #7f1d1d;">${rejection_reason}</p>
-                    </div>
-                  ` : ''}
-                  <p>If you believe this was made in error or you need to correct your submitted information, please contact your school administrator.</p>
-                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-                  <p style="font-size: 12px; color: #6b7280; text-align: center;">Regards,<br/><strong>ConnectEd Administration</strong></p>
-                </div>
-              `
+              html: teacherRejectHtml
             })
           });
 
