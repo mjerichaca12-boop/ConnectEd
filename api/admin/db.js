@@ -1182,12 +1182,13 @@ export default async function handler(req, res) {
 
     let { data, error, count } = await query;
 
-    if (error && (table === "profiles" || table === "pending_account_requests") && (
+    if (error && (table === "profiles" || table === "pending_account_requests" || table === "student_masterlist") && (
       error.message?.includes("suffix") || 
       error.message?.includes("name_extension") || 
       error.message?.includes("employee_id") || 
       error.message?.includes("phone") || 
       error.message?.includes("subjects") || 
+      error.message?.includes("email") ||
       error.message?.includes("assigned_class_unique") ||
       error.message?.includes("profiles_teacher_assigned_class_unique") ||
       error.message?.includes("does not exist") || 
@@ -1215,6 +1216,9 @@ export default async function handler(req, res) {
           delete obj.employee_id;
           delete obj.phone;
           delete obj.subjects;
+          if (table === "student_masterlist" || error.message?.includes("email")) {
+            delete obj.email;
+          }
           if (error.message?.includes("assigned_class") || error.code === "23505") {
             delete obj.assigned_class;
           }
@@ -1225,7 +1229,7 @@ export default async function handler(req, res) {
           cleanObj(cleanedPayload);
         }
       } else if (typeof payload === "string" && payload !== "*") {
-        cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects").join(", ");
+        cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects" && c !== "email").join(", ");
       }
 
       let cleanedSelect = select;

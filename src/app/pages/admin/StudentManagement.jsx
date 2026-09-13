@@ -1409,7 +1409,7 @@ function StudentManagement() {
       }
 
       // 2. Insert valid student masterlist records
-      const recordsToInsert = importPreviewSummary.valid.map(({ rowNum, email, ...record }) => record);
+      const recordsToInsert = importPreviewSummary.valid.map(({ rowNum, email, fullName, ...record }) => record);
 
       const { error } = await db.from("student_masterlist").insert(recordsToInsert);
       if (error) throw error;
