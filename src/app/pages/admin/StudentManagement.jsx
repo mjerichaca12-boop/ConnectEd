@@ -99,7 +99,15 @@ function StudentManagement() {
 
   // New state variables for Masterlist
   const [masterlist, setMasterlist] = useState([]);
-  const [activeTab, setActiveTab] = useState("Profiles"); // "Profiles" or "Masterlist"
+  const [activeTab, setActiveTab] = useState("Profiles"); // "Profiles", "Masterlist", or "RegistrationRequests"
+  const [registrationRequests, setRegistrationRequests] = useState([]);
+  const [registrationSubTab, setRegistrationSubTab] = useState("pending"); // "pending", "approved", "rejected"
+  const [showViewRequestModal, setShowViewRequestModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [showApproveRequestModal, setShowApproveRequestModal] = useState(false);
+  const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState("");
+  const [isProcessingRequest, setIsProcessingRequest] = useState(false);
   const [selectedMasterlistIds, setSelectedMasterlistIds] = useState(new Set());
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
@@ -242,7 +250,7 @@ function StudentManagement() {
   }, [showBulkAssignSectionModal, targetBulkSection, selectedStudentIds, selectedMasterlistIds, activeTab, students, masterlist]);
 
   useEffect(() => {
-    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal) {
+    if (showAddModal || showEditModal || showViewModal || showDeleteConfirm || showImportPreviewModal || showGenerationProgressModal || showGenerationResultsModal || showBulkAssignSectionModal || showViewRequestModal || showApproveRequestModal || showRejectRequestModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -250,7 +258,7 @@ function StudentManagement() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal, showBulkAssignSectionModal]);
+  }, [showAddModal, showEditModal, showViewModal, showDeleteConfirm, showImportPreviewModal, showGenerationProgressModal, showGenerationResultsModal, showBulkAssignSectionModal, showViewRequestModal, showApproveRequestModal, showRejectRequestModal]);
 
   useEffect(() => {
     if (students && students.length >= 0) {
@@ -298,6 +306,25 @@ function StudentManagement() {
     setAdminName(user.name);
   }, [navigate]);
 
+  const fetchRegistrationRequests = useCallback(async () => {
+    if (!db) return [];
+    try {
+      const { data, error } = await db
+        .from("pending_account_requests")
+        .select("*")
+        .eq("request_type", "student")
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.error("Error fetching registration requests:", error);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.error("Fetch registration requests exception:", err);
+      return [];
+    }
+  }, []);
+
   const fetchStudentsData = useCallback(async () => {
     if (!db) return null;
     let profilesRes = await adminApi.db("profiles", "select", {
@@ -306,10 +333,13 @@ function StudentManagement() {
       order: { column: "created_at", options: { ascending: false } }
     });
 
-    const masterlistRes = await adminApi.db("student_masterlist", "select", {
-      payload: "*",
-      order: { column: "created_at", options: { ascending: false } }
-    });
+    const [masterlistRes, requestsData] = await Promise.all([
+      adminApi.db("student_masterlist", "select", {
+        payload: "*",
+        order: { column: "created_at", options: { ascending: false } }
+      }),
+      fetchRegistrationRequests()
+    ]);
 
     if (profilesRes.error) {
       throw new Error(profilesRes.error.message);
@@ -317,9 +347,10 @@ function StudentManagement() {
 
     return {
       students: profilesRes.data ?? [],
-      masterlist: masterlistRes.data ?? []
+      masterlist: masterlistRes.data ?? [],
+      registrationRequests: requestsData ?? []
     };
-  }, []);
+  }, [fetchRegistrationRequests]);
 
   const { data: cachedStudentsData, loading: isCachedLoading } = useCachedFetch("admin_students_data", fetchStudentsData);
 
@@ -327,6 +358,7 @@ function StudentManagement() {
     if (cachedStudentsData) {
       setStudents(cachedStudentsData.students || []);
       setMasterlist(cachedStudentsData.masterlist || []);
+      setRegistrationRequests(cachedStudentsData.registrationRequests || []);
       setLoading(false);
     } else {
       setLoading(isCachedLoading);
@@ -347,12 +379,13 @@ function StudentManagement() {
       order: { column: "created_at", options: { ascending: false } }
     });
 
-    const [masterlistRes, gradeSectionsRes] = await Promise.all([
+    const [masterlistRes, gradeSectionsRes, requestsData] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
         payload: "*",
         order: { column: "created_at", options: { ascending: false } }
       }),
-      adminApi.db("grade_sections", "select", { payload: "*" })
+      adminApi.db("grade_sections", "select", { payload: "*" }),
+      fetchRegistrationRequests()
     ]);
 
     if (profilesRes.error) {
@@ -361,6 +394,7 @@ function StudentManagement() {
 
     const fetchedProfiles = profilesRes.data ?? [];
     setStudents(fetchedProfiles);
+    setRegistrationRequests(requestsData ?? []);
 
     // Auto-backfill missing usernames for existing student profiles efficiently
     const missingUsernameStudents = fetchedProfiles.filter(s => !s.username);
@@ -1788,6 +1822,96 @@ function StudentManagement() {
     });
   }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
+  const filteredRegistrationRequests = useMemo(() => {
+    return registrationRequests.filter((req) => {
+      if (req.status !== registrationSubTab) return false;
+
+      if (yearLevelFilter !== "all") {
+        const normReqGrade = normalizeYearLevel(req.year_level);
+        const normFilterGrade = normalizeYearLevel(yearLevelFilter);
+        if (normReqGrade !== normFilterGrade) return false;
+      }
+
+      if (sectionFilter !== "all") {
+        const cleanReqSec = formatSectionName(req.section);
+        const cleanFilterSec = formatSectionName(sectionFilter);
+        if ((cleanReqSec || "").toLowerCase() !== (cleanFilterSec || "").toLowerCase()) return false;
+      }
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const fullName = `${req.first_name || ""} ${req.middle_name || ""} ${req.last_name || ""} ${req.suffix || ""}`.toLowerCase();
+        const email = (req.email || "").toLowerCase();
+        const lrn = (req.lrn || "").toLowerCase();
+        return fullName.includes(q) || email.includes(q) || lrn.includes(q);
+      }
+
+      return true;
+    });
+  }, [registrationRequests, registrationSubTab, yearLevelFilter, sectionFilter, searchQuery]);
+
+  const handleApproveRegistrationRequest = async () => {
+    if (!selectedRequest) return;
+    setIsProcessingRequest(true);
+    try {
+      const userData = localStorage.getItem("currentUser");
+      const adminUser = userData ? JSON.parse(userData) : null;
+      const adminId = adminUser?.id;
+
+      const res = await adminApi.approveStudentRegistration({
+        requestId: selectedRequest.id,
+        adminId
+      });
+
+      if (res.error) {
+        throw new Error(res.error.message || "Failed to approve registration request.");
+      }
+
+      toast.success(`Registration request approved for ${selectedRequest.first_name} ${selectedRequest.last_name}. Account created!`);
+      setShowApproveRequestModal(false);
+      setShowViewRequestModal(false);
+      setSelectedRequest(null);
+      await refreshStudents();
+    } catch (err) {
+      console.error("Approve registration error:", err);
+      toast.error(err.message || "Failed to approve student registration.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
+
+  const handleRejectRegistrationRequest = async () => {
+    if (!selectedRequest) return;
+    setIsProcessingRequest(true);
+    try {
+      const userData = localStorage.getItem("currentUser");
+      const adminUser = userData ? JSON.parse(userData) : null;
+      const adminId = adminUser?.id;
+
+      const res = await adminApi.rejectStudentRegistration({
+        requestId: selectedRequest.id,
+        adminId,
+        rejectionReason: rejectionReasonInput.trim()
+      });
+
+      if (res.error) {
+        throw new Error(res.error.message || "Failed to reject registration request.");
+      }
+
+      toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}.`);
+      setShowRejectRequestModal(false);
+      setShowViewRequestModal(false);
+      setSelectedRequest(null);
+      setRejectionReasonInput("");
+      await refreshStudents();
+    } catch (err) {
+      console.error("Reject registration error:", err);
+      toast.error(err.message || "Failed to reject student registration.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
+
   const handleExportToCSV = () => {
     const yearContext = yearFilter !== "All" ? `Grade${yearFilter}` : "AllGrades";
     const sectionContext = sectionFilter !== "All" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
@@ -1927,6 +2051,21 @@ function StudentManagement() {
             >
               Masterlist
             </button>
+            <button
+              onClick={() => setActiveTab("RegistrationRequests")}
+              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+                activeTab === "RegistrationRequests"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Registration Requests
+              {registrationRequests.filter(r => r.status === "pending").length > 0 && (
+                <span className="px-2 py-0.5 text-xs bg-amber-500 text-white rounded-full font-bold">
+                  {registrationRequests.filter(r => r.status === "pending").length}
+                </span>
+              )}
+            </button>
           </div>
 
           <div data-tour="students-filters" className="bg-white rounded-xl p-4 border border-gray-200">
@@ -1945,6 +2084,28 @@ function StudentManagement() {
                         }`}
                       >
                         {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {activeTab === "RegistrationRequests" && (
+                  <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
+                    {["pending", "approved", "rejected"].map((subStatus) => (
+                      <button
+                        key={subStatus}
+                        onClick={() => setRegistrationSubTab(subStatus)}
+                        className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          registrationSubTab === subStatus
+                            ? "bg-white text-green-600 shadow-sm font-bold"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {subStatus.charAt(0).toUpperCase() + subStatus.slice(1)}
+                        {subStatus === "pending" && registrationRequests.filter(r => r.status === "pending").length > 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800 rounded-full">
+                            {registrationRequests.filter(r => r.status === "pending").length}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -2070,7 +2231,7 @@ function StudentManagement() {
 
           <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              {activeTab === "Profiles" ? (
+              {activeTab === "Profiles" && (
               <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -2201,7 +2362,9 @@ function StudentManagement() {
                   })()}
                 </tbody>
               </table>
-              ) : (
+              )}
+
+              {activeTab === "Masterlist" && (
               <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -2317,6 +2480,88 @@ function StudentManagement() {
                 </tbody>
               </table>
               )}
+
+              {activeTab === "RegistrationRequests" && (
+              <table className="w-full text-left border-collapse min-w-[1000px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student Name</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">LRN</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade & Section</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredRegistrationRequests.map((req) => (
+                    <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-5 align-middle">
+                        <p className="font-semibold text-gray-900 truncate">
+                          {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
+                        </p>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                        <span className="truncate">{req.email || "-"}</span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                        <span className="truncate">{req.lrn || "-"}</span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                        <span className="truncate">
+                          Grade {req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
+                        {formatDate(req.created_at)}
+                      </td>
+                      <td className="px-6 py-5 align-middle">
+                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                          req.status === "approved"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : req.status === "rejected"
+                            ? "bg-red-50 text-red-700 border-red-200"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-right align-middle">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { setSelectedRequest(req); setShowViewRequestModal(true); }}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 flex items-center gap-1 text-xs font-medium border border-gray-200 cursor-pointer"
+                            title="View Request Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </button>
+                          {req.status === "pending" && (
+                            <>
+                              <button
+                                onClick={() => { setSelectedRequest(req); setShowApproveRequestModal(true); }}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => { setSelectedRequest(req); setRejectionReasonInput(""); setShowRejectRequestModal(true); }}
+                                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                Reject
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              )}
             </div>
             {activeTab === "Profiles" && filteredStudents.length === 0 && (
               <div className="p-16 text-center">
@@ -2328,6 +2573,13 @@ function StudentManagement() {
               <div className="p-16 text-center">
                 <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-600">No masterlist records found. Import a CSV to get started.</p>
+              </div>
+            )}
+            {activeTab === "RegistrationRequests" && filteredRegistrationRequests.length === 0 && (
+              <div className="p-16 text-center">
+                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">No student registration requests found.</p>
+                <p className="text-gray-400 text-sm mt-1">Requests submitted via the student registration Google Form will appear here.</p>
               </div>
             )}
           </div>
@@ -3293,6 +3545,181 @@ function StudentManagement() {
           </div>
         );
       })()}
+
+      {showViewRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden relative">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-white">
+              <h3 className="text-xl font-semibold text-gray-900">Registration Request Details</h3>
+              <button onClick={() => { setShowViewRequestModal(false); setSelectedRequest(null); }} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div>
+                  <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Status</span>
+                  <p className="text-lg font-bold capitalize mt-0.5 text-gray-900">{selectedRequest.status}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                  selectedRequest.status === "approved" ? "bg-green-100 text-green-800" :
+                  selectedRequest.status === "rejected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                }`}>
+                  {selectedRequest.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500 font-medium">First Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.first_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Middle Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.middle_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Last Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.last_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Suffix</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.suffix || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Email Address</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.email || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">LRN</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.lrn || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Grade Level & Section</span>
+                  <p className="font-semibold text-gray-900">Grade {selectedRequest.year_level || "-"} {selectedRequest.section ? `• ${selectedRequest.section}` : ""}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Submitted Date</span>
+                  <p className="font-semibold text-gray-900">{formatDate(selectedRequest.created_at)}</p>
+                </div>
+                {selectedRequest.rejection_reason && (
+                  <div className="col-span-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
+                    <span className="font-semibold block text-xs uppercase tracking-wider text-red-600">Rejection Reason</span>
+                    <p className="mt-1 text-sm">{selectedRequest.rejection_reason}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button
+                  onClick={() => { setShowViewRequestModal(false); setSelectedRequest(null); }}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                {selectedRequest.status === "pending" && (
+                  <>
+                    <button
+                      onClick={() => { setShowRejectRequestModal(true); setRejectionReasonInput(""); }}
+                      className="px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all cursor-pointer"
+                    >
+                      Reject Request
+                    </button>
+                    <button
+                      onClick={() => { setShowApproveRequestModal(true); }}
+                      className="px-4 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all cursor-pointer"
+                    >
+                      Approve Student
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApproveRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Approve Student Registration?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will create a new login account and profile for <span className="font-bold text-gray-900">{selectedRequest.first_name} {selectedRequest.last_name}</span>. An email with temporary login credentials will automatically be sent to <span className="font-semibold text-green-700">{selectedRequest.email}</span>.
+            </p>
+            
+            <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 mb-6 text-xs space-y-1 text-gray-700">
+              <div><span className="font-semibold">LRN:</span> {selectedRequest.lrn}</div>
+              <div><span className="font-semibold">Grade & Section:</span> Grade {selectedRequest.year_level} - {selectedRequest.section}</div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowApproveRequestModal(false)}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApproveRegistrationRequest}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isProcessingRequest ? "Approving..." : "Confirm Approval"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRejectRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Reject Registration Request?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to reject the registration request for <span className="font-bold text-gray-900">{selectedRequest.first_name} {selectedRequest.last_name}</span>?
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Rejection Reason (Optional)
+              </label>
+              <textarea
+                rows={3}
+                value={rejectionReasonInput}
+                onChange={(e) => setRejectionReasonInput(e.target.value)}
+                placeholder="Provide a reason for rejection..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRejectRequestModal(false)}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectRegistrationRequest}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isProcessingRequest ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

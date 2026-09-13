@@ -146,6 +146,252 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, count: teacher_ids.length });
     }
 
+    if (action === "approve_student_registration") {
+      const { request_id, reviewer_id } = body;
+      if (!request_id) {
+        return res.status(400).json({ error: "Missing request_id" });
+      }
+
+      // 1. Fetch latest request from pending_account_requests
+      const { data: request, error: fetchErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .select("*")
+        .eq("id", request_id)
+        .maybeSingle();
+
+      if (fetchErr || !request) {
+        return res.status(404).json({ error: "Registration request not found." });
+      }
+
+      // Verify request_type and status
+      if (request.request_type !== "student") {
+        return res.status(400).json({ error: "Invalid request type. Only student requests can be approved here." });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(409).json({ error: "This registration request has already been processed." });
+      }
+
+      // Verify required fields
+      const { first_name, last_name, email, lrn, grade_level, section } = request;
+      if (!first_name || !last_name || !email || !lrn || !grade_level || !section) {
+        return res.status(400).json({ error: "Cannot approve request: missing required student information (first name, last name, email, LRN, grade level, or section)." });
+      }
+
+      const cleanLrn = String(lrn).replace(/\D/g, "");
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      // 2. Duplicate Check in profiles table
+      const [{ data: existingLrnProfile }, { data: existingEmailProfile }] = await Promise.all([
+        supabaseAdmin.from("profiles").select("id, lrn").eq("lrn", cleanLrn).maybeSingle(),
+        supabaseAdmin.from("profiles").select("id, email").ilike("email", normalizedEmail).maybeSingle()
+      ]);
+
+      if (existingLrnProfile) {
+        return res.status(400).json({ error: `Cannot approve this request because LRN ${cleanLrn} is already registered.` });
+      }
+
+      if (existingEmailProfile) {
+        return res.status(400).json({ error: `Cannot approve this request because email ${normalizedEmail} already has a ConnectEd account.` });
+      }
+
+      // 3. Generate Unique Username
+      const firstInitial = (first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+      const lastNameClean = (last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+      const baseUsername = (firstInitial + lastNameClean) || "student";
+
+      const { data: allUsernamesData } = await supabaseAdmin
+        .from("profiles")
+        .select("username")
+        .not("username", "is", null);
+
+      const usedUsernames = new Set((allUsernamesData || []).map(u => u.username));
+      let suffix = 1;
+      let username = `${baseUsername}01`;
+      while (usedUsernames.has(username)) {
+        suffix++;
+        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+      }
+
+      // 4. Generate Temporary Password
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+      const tempPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+
+      // 5. Create Supabase Auth user
+      let userId = null;
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: tempPassword,
+        email_confirm: true
+      });
+
+      if (authError) {
+        if (authError.message?.includes("already exists") || authError.status === 422) {
+          const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+          const existingUser = (listData?.users || []).find(u => u.email?.toLowerCase() === normalizedEmail);
+          if (existingUser) {
+            userId = existingUser.id;
+          } else {
+            return res.status(400).json({ error: `Auth account creation failed: ${authError.message}` });
+          }
+        } else {
+          return res.status(400).json({ error: `Auth account creation failed: ${authError.message}` });
+        }
+      } else if (authData?.user) {
+        userId = authData.user.id;
+      }
+
+      if (!userId) {
+        return res.status(500).json({ error: "Failed to resolve Auth User ID for student account." });
+      }
+
+      // 6. Create Student Profile
+      const studentProfilePayload = {
+        id: userId,
+        role: "student",
+        username,
+        first_name,
+        middle_name: request.middle_name || null,
+        last_name,
+        email: normalizedEmail,
+        lrn: cleanLrn,
+        year_level: grade_level,
+        section,
+        status: "Active",
+        must_change_password: true,
+        is_verified: true,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: profileErr } = await supabaseAdmin
+        .from("profiles")
+        .upsert(studentProfilePayload, { onConflict: "id" });
+
+      if (profileErr) {
+        console.error("[approve_student_registration] Profile error:", profileErr);
+        return res.status(500).json({ error: `Failed to create student profile: ${profileErr.message}` });
+      }
+
+      // 7. Send Credentials Email via Resend API if configured
+      const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
+      const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
+      let emailSent = false;
+
+      if (resendApiKey) {
+        try {
+          const studentFullName = [first_name, request.middle_name, last_name].filter(Boolean).join(" ");
+          const loginUrl = process.env.VITE_APP_URL || "https://connected.com/login";
+
+          const emailRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${resendApiKey}`
+            },
+            body: JSON.stringify({
+              from: emailFrom,
+              to: [normalizedEmail],
+              subject: "Your ConnectEd Student Account Has Been Approved",
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                  <h2 style="color: #16a34a; text-align: center;">Welcome to ConnectEd!</h2>
+                  <p>Dear <strong>${studentFullName}</strong>,</p>
+                  <p>We are pleased to inform you that your student registration request for ConnectEd has been <strong>APPROVED</strong>.</p>
+                  <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                    <p style="margin: 5px 0;"><strong>Username:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${username}</code></p>
+                    <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${tempPassword}</code></p>
+                    <p style="margin: 5px 0;"><strong>LRN:</strong> ${cleanLrn}</p>
+                    <p style="margin: 5px 0;"><strong>Grade & Section:</strong> ${grade_level} - ${section}</p>
+                  </div>
+                  <p>Please log in using your credentials at: <a href="${loginUrl}" style="color: #16a34a; text-decoration: underline;">ConnectEd Web Portal / Mobile App</a></p>
+                  <p style="color: #dc2626; font-weight: bold;">Important: You will be required to change your temporary password upon your first login for security purposes.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #6b7280; text-align: center;">This is an automated notification from ConnectEd LMS.</p>
+                </div>
+              `
+            })
+          });
+
+          if (emailRes.ok) {
+            emailSent = true;
+          } else {
+            const errText = await emailRes.text();
+            console.warn("[approve_student_registration] Resend API notice:", errText);
+          }
+        } catch (e) {
+          console.warn("[approve_student_registration] Resend API exception:", e?.message);
+        }
+      }
+
+      // 8. Update pending_account_requests conditionally
+      const nowIso = new Date().toISOString();
+      const { error: updateErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .update({
+          status: "approved",
+          reviewed_at: nowIso,
+          reviewed_by: reviewer_id || null,
+          created_user_id: userId,
+          updated_at: nowIso
+        })
+        .eq("id", request_id)
+        .eq("request_type", "student")
+        .eq("status", "pending");
+
+      if (updateErr) {
+        console.error("[approve_student_registration] Update pending_account_requests error:", updateErr);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Student account created successfully. Login credentials were sent to the student's email.",
+        created_user_id: userId,
+        username,
+        emailSent
+      });
+    }
+
+    if (action === "reject_student_registration") {
+      const { request_id, reviewer_id, rejection_reason } = body;
+      if (!request_id) {
+        return res.status(400).json({ error: "Missing request_id" });
+      }
+
+      const { data: request, error: fetchErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .select("id, status, request_type")
+        .eq("id", request_id)
+        .maybeSingle();
+
+      if (fetchErr || !request) {
+        return res.status(404).json({ error: "Registration request not found." });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(409).json({ error: "This registration request has already been processed." });
+      }
+
+      const nowIso = new Date().toISOString();
+      const { error: updateErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .update({
+          status: "rejected",
+          reviewed_at: nowIso,
+          reviewed_by: reviewer_id || null,
+          rejection_reason: rejection_reason || null,
+          updated_at: nowIso
+        })
+        .eq("id", request_id)
+        .eq("request_type", "student")
+        .eq("status", "pending");
+
+      if (updateErr) {
+        return res.status(500).json({ error: updateErr.message });
+      }
+
+      return res.status(200).json({ success: true, message: "Registration request rejected." });
+    }
+
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }

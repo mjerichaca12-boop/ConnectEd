@@ -124,9 +124,7 @@ export const adminApi = {
       for (let i = 0; i < studentIds.length; i += BATCH_SIZE) {
         const chunk = studentIds.slice(i, i + BATCH_SIZE);
         await Promise.allSettled(tablesToClean.map(item => supabase.from(item.table).delete().in(item.col, chunk)));
-        await supabase.from("profiles").delete().in("id", chunk).eq("role", "student");
       }
-
       return { data: { success: true, count: studentIds.length }, error: null };
     } catch (fallbackError) {
       return { data: null, error: fallbackError };
@@ -725,5 +723,28 @@ export const adminApi = {
     } catch (err) {
       return { data: null, error: err };
     }
+  },
+
+  async approveStudentRegistration({ requestId, adminId }) {
+    return this.fetchWithToken("/api/admin/db", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "approve_student_registration",
+        requestId,
+        adminId
+      })
+    });
+  },
+
+  async rejectStudentRegistration({ requestId, adminId, rejectionReason }) {
+    return this.fetchWithToken("/api/admin/db", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "reject_student_registration",
+        requestId,
+        adminId,
+        rejectionReason
+      })
+    });
   }
 };
