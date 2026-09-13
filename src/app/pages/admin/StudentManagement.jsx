@@ -95,6 +95,7 @@ function StudentManagement() {
   const [editFormErrors, setEditFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [fetchError, setFetchError] = useState(null);
   const [gradeSectionsMap, setGradeSectionsMap] = useState({});
 
   // New state variables for Masterlist
@@ -364,7 +365,6 @@ function StudentManagement() {
     }
   }, [cachedStudentsData, isCachedLoading]);
 
-  // Fetch live registration requests whenever the Registration Requests tab is selected
   useEffect(() => {
     if (activeTab === "RegistrationRequests") {
       fetchRegistrationRequests().then((reqs) => {
@@ -374,6 +374,47 @@ function StudentManagement() {
       });
     }
   }, [activeTab, fetchRegistrationRequests]);
+
+  // Realtime subscription for student data, registrations, and masterlist
+  useEffect(() => {
+    if (!db) return;
+
+    const channel = db
+      .channel("admin-students-realtime-v1")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pending_account_requests" },
+        (payload) => {
+          if (payload.eventType === "INSERT" && payload.new?.request_type === "student") {
+            toast.info("New student registration received");
+          }
+          fetchRegistrationRequests().then((reqs) => {
+            if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        (payload) => {
+          if (payload.new?.role === "student" || payload.old?.role === "student") {
+            refreshStudents();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "student_masterlist" },
+        () => {
+          refreshStudents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      db.removeChannel(channel);
+    };
+  }, [fetchRegistrationRequests]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -2042,12 +2083,18 @@ function StudentManagement() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Total Students</p>
-              <p className="text-3xl font-bold text-gray-900">{students.length}</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {loading ? <Loader2 className="w-6 h-6 animate-spin text-green-600 inline-block" /> : students.length}
+              </p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <p className="text-gray-500 text-sm mb-1">Newest Registration</p>
-              <p className="text-lg font-semibold text-green-600">{students[0] ? getFullName(students[0]) : "No students yet"}</p>
-              <p className="text-sm text-gray-500 mt-1">{students[0] ? formatDate(students[0].created_at) : "Add the first student to get started"}</p>
+              <p className="text-lg font-semibold text-green-600">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin text-green-600 inline-block" /> : (students[0] ? getFullName(students[0]) : "No students yet")}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                {loading ? "Loading..." : (students[0] ? formatDate(students[0].created_at) : "Add the first student to get started")}
+              </p>
             </div>
           </div>
 
@@ -2264,357 +2311,385 @@ function StudentManagement() {
 
 
           <div data-tour="students-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              {activeTab === "Profiles" && (
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-5 text-left w-12">
-                      <button
-                        onClick={() => toggleAllStudents(filteredStudents.map(s => s.id))}
-                        className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
-                      >
-                        {selectedStudentIds.size > 0 && selectedStudentIds.size === filteredStudents.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                      </button>
-                    </th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Username</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">LRN</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
-                    <th data-tour="students-actions" className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(() => {
-                    const grouped = {};
-                    filteredStudents.forEach(student => {
-                      const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
-                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
-                      const section = rawSec;
-                      if (!grouped[year]) grouped[year] = {};
-                      if (!grouped[year][section]) grouped[year][section] = [];
-                      grouped[year][section].push(student);
-                    });
-                    const rows = [];
-                    let firstStudentRowFound = false;
-                    Object.keys(grouped).sort((a, b) => {
-                      const numA = parseInt(a.replace(/\D/g, '')) || 0;
-                      const numB = parseInt(b.replace(/\D/g, '')) || 0;
-                      return numA - numB || a.localeCompare(b);
-                    }).forEach(year => {
-                      Object.keys(grouped[year]).sort().forEach(section => {
-                        const groupStudents = grouped[year][section];
-                        rows.push(
-                          <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
-                            <td colSpan="100%" className="px-6 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-gray-800">{year}</span>
-                                <span className="text-gray-400">•</span>
-                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
-                                <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
-                                  {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                        groupStudents.forEach((student) => {
-                          const isFirstRow = !firstStudentRowFound;
-                          if (isFirstRow) firstStudentRowFound = true;
-                          rows.push(
-                            <tr
-                              key={student.id}
-                              data-tour={isFirstRow ? "students-row" : undefined}
-                              className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}
+            {loading ? (
+              <div className="p-16 text-center">
+                <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">
+                  {activeTab === "Profiles"
+                    ? "Loading enrolled students..."
+                    : activeTab === "Masterlist"
+                    ? "Loading masterlist records..."
+                    : "Loading registration requests..."}
+                </p>
+              </div>
+            ) : fetchError ? (
+              <div className="p-16 text-center">
+                <AlertTriangle className="w-10 h-10 text-red-500 mx-auto mb-4" />
+                <p className="text-gray-800 font-semibold mb-1">Unable to load student data</p>
+                <p className="text-gray-500 text-sm mb-4">{fetchError}</p>
+                <button
+                  onClick={() => { setLoading(true); setFetchError(null); refreshStudents(); }}
+                  className="px-4 py-2 bg-green-600 text-white font-semibold rounded-xl hover:bg-green-700 transition-colors shadow-sm cursor-pointer"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  {activeTab === "Profiles" && filteredStudents.length > 0 && (
+                    <table className="w-full text-left border-collapse min-w-[1000px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-5 text-left w-12">
+                            <button
+                              onClick={() => toggleAllStudents(filteredStudents.map(s => s.id))}
+                              className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
                             >
-                              <td className="px-6 py-5 text-left align-middle">
-                                <button
-                                  onClick={() => toggleStudentSelection(student.id)}
-                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
-                                >
-                                  {selectedStudentIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                                </button>
-                              </td>
-                              <td className="px-6 py-5 align-middle">
-                                <p className="font-semibold text-gray-900 truncate">{getFullName(student)}</p>
-                              </td>
-                              <td className="px-6 py-5 align-middle">
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <div className="truncate max-w-[200px]">{getDisplayUsername(student)}</div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                <div className="flex items-center gap-2">
-                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <span className="truncate">{student.lrn || "-"}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-5 align-middle">
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                  <span className="truncate">{student.year_level || "-"}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-5 align-middle">
-                                <span
-                                  data-tour={isFirstRow ? "students-status-badge" : undefined}
-                                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
-                                    student.status === "Disabled"
-                                      ? "bg-red-50 text-red-500 border-red-200"
-                                      : "bg-green-50 text-green-600 border-green-200"
-                                  }`}
-                                >
-                                  {student.status || "Active"}
-                                </span>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">{formatDate(student.created_at)}</td>
-                              <td
-                                data-tour={isFirstRow ? "students-actions" : undefined}
-                                className="px-6 py-5 text-right align-middle"
-                              >
-                                <div className="flex items-center justify-end gap-1.5 transition-opacity">
-                                  <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
-                                    <Eye className="w-4 h-4 text-gray-600" />
-                                  </button>
-                                  <button onClick={() => handleEditStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
-                                    <Edit className="w-4 h-4 text-blue-500" />
-                                  </button>
-                                  <button onClick={() => handlePromptDeleteStudent(student)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                                    <Trash2 className="w-4 h-4 text-red-500" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      });
-                    });
-                    return rows;
-                  })()}
-                </tbody>
-              </table>
-              )}
+                              {selectedStudentIds.size > 0 && selectedStudentIds.size === filteredStudents.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                            </button>
+                          </th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Username</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">LRN</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
+                          <th data-tour="students-actions" className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(() => {
+                          const grouped = {};
+                          filteredStudents.forEach(student => {
+                            const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                            const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                            const section = rawSec;
+                            if (!grouped[year]) grouped[year] = {};
+                            if (!grouped[year][section]) grouped[year][section] = [];
+                            grouped[year][section].push(student);
+                          });
+                          const rows = [];
+                          let firstStudentRowFound = false;
+                          Object.keys(grouped).sort((a, b) => {
+                            const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                            const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                            return numA - numB || a.localeCompare(b);
+                          }).forEach(year => {
+                            Object.keys(grouped[year]).sort().forEach(section => {
+                              const groupStudents = grouped[year][section];
+                              rows.push(
+                                <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
+                                  <td colSpan="100%" className="px-6 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-gray-800">{year}</span>
+                                      <span className="text-gray-400">•</span>
+                                      <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
+                                      <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
+                                        {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                              groupStudents.forEach((student) => {
+                                const isFirstRow = !firstStudentRowFound;
+                                if (isFirstRow) firstStudentRowFound = true;
+                                rows.push(
+                                  <tr
+                                    key={student.id}
+                                    data-tour={isFirstRow ? "students-row" : undefined}
+                                    className={`hover:bg-gray-50 transition-colors group ${selectedStudentIds.has(student.id) ? "bg-blue-50/50" : ""}`}
+                                  >
+                                    <td className="px-6 py-5 text-left align-middle">
+                                      <button
+                                        onClick={() => toggleStudentSelection(student.id)}
+                                        className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                      >
+                                        {selectedStudentIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                      </button>
+                                    </td>
+                                    <td className="px-6 py-5 align-middle">
+                                      <p className="font-semibold text-gray-900 truncate">{getFullName(student)}</p>
+                                    </td>
+                                    <td className="px-6 py-5 align-middle">
+                                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <User className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                        <div className="truncate max-w-[200px]">{getDisplayUsername(student)}</div>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                      <div className="flex items-center gap-2">
+                                        <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                        <span className="truncate">{student.lrn || "-"}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-5 align-middle">
+                                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                        <span className="truncate">{student.year_level || "-"}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-5 align-middle">
+                                      <span
+                                        data-tour={isFirstRow ? "students-status-badge" : undefined}
+                                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                          student.status === "Disabled"
+                                            ? "bg-red-50 text-red-500 border-red-200"
+                                            : "bg-green-50 text-green-600 border-green-200"
+                                        }`}
+                                      >
+                                        {student.status || "Active"}
+                                      </span>
+                                    </td>
+                                    <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">{formatDate(student.created_at)}</td>
+                                    <td
+                                      data-tour={isFirstRow ? "students-actions" : undefined}
+                                      className="px-6 py-5 text-right align-middle"
+                                    >
+                                      <div className="flex items-center justify-end gap-1.5 transition-opacity">
+                                        <button onClick={() => handleViewStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
+                                          <Eye className="w-4 h-4 text-gray-600" />
+                                        </button>
+                                        <button onClick={() => handleEditStudent(student)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
+                                          <Edit className="w-4 h-4 text-blue-500" />
+                                        </button>
+                                        <button onClick={() => handlePromptDeleteStudent(student)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                          <Trash2 className="w-4 h-4 text-red-500" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            });
+                          });
+                          return rows;
+                        })()}
+                      </tbody>
+                    </table>
+                  )}
 
-              {activeTab === "Masterlist" && (
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
-                      <button 
-                        onClick={() => {
-                          if (selectedMasterlistIds.size === filteredMasterlist.length) {
-                            setSelectedMasterlistIds(new Set());
-                          } else {
-                            setSelectedMasterlistIds(new Set(filteredMasterlist.map(m => m.id)));
-                          }
-                        }}
-                        className="text-gray-500 hover:text-blue-600 transition-colors"
-                      >
-                        {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
-                      </button>
-                    </th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">LRN</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Section</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Account Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(() => {
-                    const grouped = {};
-                    filteredMasterlist.forEach(student => {
-                      const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
-                      const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
-                      const section = rawSec;
-                      if (!grouped[year]) grouped[year] = {};
-                      if (!grouped[year][section]) grouped[year][section] = [];
-                      grouped[year][section].push(student);
-                    });
-                    const rows = [];
-                    Object.keys(grouped).sort((a, b) => {
-                      const numA = parseInt(a.replace(/\D/g, '')) || 0;
-                      const numB = parseInt(b.replace(/\D/g, '')) || 0;
-                      return numA - numB || a.localeCompare(b);
-                    }).forEach(year => {
-                      Object.keys(grouped[year]).sort().forEach(section => {
-                        const groupStudents = grouped[year][section];
-                        rows.push(
-                          <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
-                            <td colSpan="100%" className="px-6 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-gray-800">{year}</span>
-                                <span className="text-gray-400">•</span>
-                                <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
-                                <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
-                                  {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
-                                </span>
+                  {activeTab === "Masterlist" && filteredMasterlist.length > 0 && (
+                    <table className="w-full text-left border-collapse min-w-[1000px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12">
+                            <button 
+                              onClick={() => {
+                                if (selectedMasterlistIds.size === filteredMasterlist.length) {
+                                  setSelectedMasterlistIds(new Set());
+                                } else {
+                                  setSelectedMasterlistIds(new Set(filteredMasterlist.map(m => m.id)));
+                                }
+                              }}
+                              className="text-gray-500 hover:text-blue-600 transition-colors"
+                            >
+                              {selectedMasterlistIds.size > 0 && selectedMasterlistIds.size === filteredMasterlist.length ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5" />}
+                            </button>
+                          </th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">Full Name</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">LRN</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Year Level</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/6">Section</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Account Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {(() => {
+                          const grouped = {};
+                          filteredMasterlist.forEach(student => {
+                            const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                            const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
+                            const section = rawSec;
+                            if (!grouped[year]) grouped[year] = {};
+                            if (!grouped[year][section]) grouped[year][section] = [];
+                            grouped[year][section].push(student);
+                          });
+                          const rows = [];
+                          Object.keys(grouped).sort((a, b) => {
+                            const numA = parseInt(a.replace(/\D/g, '')) || 0;
+                            const numB = parseInt(b.replace(/\D/g, '')) || 0;
+                            return numA - numB || a.localeCompare(b);
+                          }).forEach(year => {
+                            Object.keys(grouped[year]).sort().forEach(section => {
+                              const groupStudents = grouped[year][section];
+                              rows.push(
+                                <tr key={`group-${year}-${section}`} className="bg-gray-50/80 border-y border-gray-200">
+                                  <td colSpan="100%" className="px-6 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-gray-800">{year}</span>
+                                      <span className="text-gray-400">•</span>
+                                      <span className="font-semibold text-gray-700">{section === "Unassigned" ? "Unassigned" : (section.toLowerCase().includes('section') ? section : `Section ${section}`)}</span>
+                                      <span className="text-xs bg-white border border-gray-200 px-2.5 py-0.5 rounded-full text-gray-500 ml-2 shadow-sm">
+                                        {groupStudents.length} student{groupStudents.length !== 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                              groupStudents.forEach((student) => {
+                                rows.push(
+                                  <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedMasterlistIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
+                                    <td className="px-6 py-5 align-middle">
+                                      <button
+                                        onClick={() => {
+                                          const newSet = new Set(selectedMasterlistIds);
+                                          if (newSet.has(student.id)) newSet.delete(student.id);
+                                          else newSet.add(student.id);
+                                          setSelectedMasterlistIds(newSet);
+                                        }}
+                                        className="text-gray-500 hover:text-blue-600 transition-colors"
+                                      >
+                                        {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                      </button>
+                                    </td>
+                                    <td className="px-6 py-5 align-middle">
+                                      <p className="font-semibold text-gray-900 truncate">{[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ")}</p>
+                                    </td>
+                                    <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                      <span className="truncate">{student.lrn || "-"}</span>
+                                    </td>
+                                    <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                      <span className="truncate">{student.year_level || "-"}</span>
+                                    </td>
+                                    <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                                      <span className="truncate">{student.section || "Unassigned"}</span>
+                                    </td>
+                                    <td className="px-6 py-5 text-right align-middle">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                          student.account_created
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                            : "bg-amber-50 text-amber-700 border-amber-200"
+                                        }`}>
+                                          {student.account_created ? "Account Generated" : "Pending Account"}
+                                        </span>
+                                        {!student.account_created && (
+                                          <button
+                                            onClick={() => handleGenerateAccounts([student.id])}
+                                            disabled={isGenerating}
+                                            className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
+                                          >
+                                            Generate
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            });
+                          });
+                          return rows;
+                        })()}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {activeTab === "RegistrationRequests" && filteredRegistrationRequests.length > 0 && (
+                    <table className="w-full text-left border-collapse min-w-[1000px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student Name</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">LRN</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade & Section</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filteredRegistrationRequests.map((req) => (
+                          <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-5 align-middle">
+                              <p className="font-semibold text-gray-900 truncate">
+                                {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
+                              </p>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                              <span className="truncate">{req.email || "-"}</span>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                              <span className="truncate">{req.lrn || "-"}</span>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                              <span className="truncate">
+                                Grade {req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
+                              {formatDate(req.created_at)}
+                            </td>
+                            <td className="px-6 py-5 align-middle">
+                              <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                                req.status === "approved"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : req.status === "rejected"
+                                  ? "bg-red-50 text-red-700 border-red-200"
+                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                              }`}>
+                                {req.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5 text-right align-middle">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => { setSelectedRequest(req); setShowViewRequestModal(true); }}
+                                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 flex items-center gap-1 text-xs font-medium border border-gray-200 cursor-pointer"
+                                  title="View Request Details"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                  View
+                                </button>
+                                {req.status === "pending" && (
+                                  <>
+                                    <button
+                                      onClick={() => { setSelectedRequest(req); setShowApproveRequestModal(true); }}
+                                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => { setSelectedRequest(req); setRejectionReasonInput(""); setShowRejectRequestModal(true); }}
+                                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
-                        );
-                        groupStudents.forEach((student) => {
-                          rows.push(
-                            <tr key={student.id} className={`hover:bg-gray-50 transition-colors group ${selectedMasterlistIds.has(student.id) ? "bg-blue-50/50" : ""}`}>
-                              <td className="px-6 py-5 align-middle">
-                                <button
-                                  onClick={() => {
-                                    const newSet = new Set(selectedMasterlistIds);
-                                    if (newSet.has(student.id)) newSet.delete(student.id);
-                                    else newSet.add(student.id);
-                                    setSelectedMasterlistIds(newSet);
-                                  }}
-                                  className="text-gray-500 hover:text-blue-600 transition-colors"
-                                >
-                                  {selectedMasterlistIds.has(student.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
-                                </button>
-                              </td>
-                              <td className="px-6 py-5 align-middle">
-                                <p className="font-semibold text-gray-900 truncate">{[student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ")}</p>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                <span className="truncate">{student.lrn || "-"}</span>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                <span className="truncate">{student.year_level || "-"}</span>
-                              </td>
-                              <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                <span className="truncate">{student.section || "Unassigned"}</span>
-                              </td>
-                              <td className="px-6 py-5 text-right align-middle">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
-                                    student.account_created
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : "bg-amber-50 text-amber-700 border-amber-200"
-                                  }`}>
-                                    {student.account_created ? "Account Generated" : "Pending Account"}
-                                  </span>
-                                  {!student.account_created && (
-                                    <button
-                                      onClick={() => handleGenerateAccounts([student.id])}
-                                      disabled={isGenerating}
-                                      className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-                                    >
-                                      Generate
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      });
-                    });
-                    return rows;
-                  })()}
-                </tbody>
-              </table>
-              )}
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
 
-              {activeTab === "RegistrationRequests" && (
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student Name</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">LRN</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade & Section</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredRegistrationRequests.map((req) => (
-                    <tr key={req.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-5 align-middle">
-                        <p className="font-semibold text-gray-900 truncate">
-                          {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
-                        </p>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                        <span className="truncate">{req.email || "-"}</span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                        <span className="truncate">{req.lrn || "-"}</span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                        <span className="truncate">
-                          Grade {req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
-                        {formatDate(req.created_at)}
-                      </td>
-                      <td className="px-6 py-5 align-middle">
-                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
-                          req.status === "approved"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : req.status === "rejected"
-                            ? "bg-red-50 text-red-700 border-red-200"
-                            : "bg-amber-50 text-amber-700 border-amber-200"
-                        }`}>
-                          {req.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-right align-middle">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => { setSelectedRequest(req); setShowViewRequestModal(true); }}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 flex items-center gap-1 text-xs font-medium border border-gray-200 cursor-pointer"
-                            title="View Request Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                            View
-                          </button>
-                          {req.status === "pending" && (
-                            <>
-                              <button
-                                onClick={() => { setSelectedRequest(req); setShowApproveRequestModal(true); }}
-                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => { setSelectedRequest(req); setRejectionReasonInput(""); setShowRejectRequestModal(true); }}
-                                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                Reject
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              )}
-            </div>
-            {activeTab === "Profiles" && filteredStudents.length === 0 && (
-              <div className="p-16 text-center">
-                <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-600">No students found.</p>
-              </div>
-            )}
-            {activeTab === "Masterlist" && filteredMasterlist.length === 0 && (
-              <div className="p-16 text-center">
-                <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-600">No masterlist records found. Import a CSV to get started.</p>
-              </div>
-            )}
-            {activeTab === "RegistrationRequests" && filteredRegistrationRequests.length === 0 && (
-              <div className="p-16 text-center">
-                <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 font-medium">No student registration requests found.</p>
-                <p className="text-gray-400 text-sm mt-1">Requests submitted via the student registration Google Form will appear here.</p>
-              </div>
+                {activeTab === "Profiles" && filteredStudents.length === 0 && (
+                  <div className="p-16 text-center">
+                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">No students found.</p>
+                  </div>
+                )}
+                {activeTab === "Masterlist" && filteredMasterlist.length === 0 && (
+                  <div className="p-16 text-center">
+                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">No masterlist records found. Import a CSV to get started.</p>
+                  </div>
+                )}
+                {activeTab === "RegistrationRequests" && filteredRegistrationRequests.length === 0 && (
+                  <div className="p-16 text-center">
+                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">No student registration requests found.</p>
+                    <p className="text-gray-400 text-sm mt-1">Requests submitted via the student registration Google Form will appear here.</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
