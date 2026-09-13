@@ -132,29 +132,51 @@ function StudentManagement() {
   const handleConfirmGoogleSheetsImport = async ({ validRecords }) => {
     if (!db) throw new Error("Supabase client not configured");
 
-    const recordsToInsert = validRecords.map((r) => ({
+    const pendingRequestsToInsert = validRecords.map((r) => ({
+      request_type: "student",
       first_name: r.first_name,
       middle_name: r.middle_name || null,
       last_name: r.last_name,
       suffix: r.suffix || null,
       email: r.email,
       lrn: r.lrn,
-      year_level: r.year_level || null,
+      grade_level: r.year_level || r.grade_level || "7",
+      section: r.section || null,
+      status: "pending",
+      source: "masterlist",
+      external_request_id: `gsheet-student-${r.lrn || Date.now()}`
+    }));
+
+    // 1. Create registration requests in pending_account_requests (which supports email column)
+    const { error: reqError } = await adminApi.db("pending_account_requests", "insert", {
+      payload: pendingRequestsToInsert
+    });
+    if (reqError) throw reqError;
+
+    // 2. Safely stage records in student_masterlist (destructuring out email column since student_masterlist has no email column)
+    const masterlistToInsert = validRecords.map(({ email, rowNum, fullName, ...r }) => ({
+      first_name: r.first_name,
+      middle_name: r.middle_name || null,
+      last_name: r.last_name,
+      suffix: r.suffix || null,
+      lrn: r.lrn,
+      year_level: r.year_level || r.grade_level || "7",
       section: r.section || null,
       account_created: false
     }));
 
-    const { error } = await adminApi.db("student_masterlist", "insert", {
-      payload: recordsToInsert
-    });
-    if (error) throw error;
+    try {
+      await db.from("student_masterlist").insert(masterlistToInsert);
+    } catch (mErr) {
+      console.warn("[handleConfirmGoogleSheetsImport] Masterlist insert warning:", mErr);
+    }
 
-    toast.success(`Successfully imported ${recordsToInsert.length} student record(s) from Google Sheets to Masterlist!`, { duration: 6000 });
+    toast.success(`Successfully created ${pendingRequestsToInsert.length} student registration request(s)!`, { duration: 6000 });
 
-    const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
-    if (data) setMasterlist(data);
-
-    setActiveTab("Masterlist");
+    setShowGoogleSheetsModal(false);
+    setActiveTab("RegistrationRequests");
+    setRegistrationSubTab("pending");
+    await fetchRegistrationRequests();
     await refreshStudents();
   };
 
