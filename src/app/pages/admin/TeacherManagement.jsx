@@ -8,6 +8,7 @@ import { NotificationDropdown } from "../../components/NotificationDropdown";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
+import { GoogleSheetsImportModal } from "@/app/components/admin/GoogleSheetsImportModal";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
@@ -161,6 +162,7 @@ function TeacherManagement() {
   // Teacher CSV / File Import States
   const teacherFileInputRef = useRef(null);
   const [showTeacherImportModal, setShowTeacherImportModal] = useState(false);
+  const [showTeacherGoogleSheetsModal, setShowTeacherGoogleSheetsModal] = useState(false);
   const [teacherImportSummary, setTeacherImportSummary] = useState({
     total: 0,
     valid: [],
@@ -171,6 +173,35 @@ function TeacherManagement() {
   const [teacherImportTab, setTeacherImportTab] = useState("valid");
   const [isSavingTeacherImport, setIsSavingTeacherImport] = useState(false);
   const [isImportingTeachers, setIsImportingTeachers] = useState(false);
+
+  const handleConfirmTeacherGoogleSheetsImport = async ({ validRecords, spreadsheetId, sheetName }) => {
+    if (!db) throw new Error("Supabase client not configured");
+
+    const recordsToInsert = validRecords.map(r => ({
+      request_type: "teacher",
+      first_name: r.first_name,
+      middle_name: r.middle_name || null,
+      last_name: r.last_name,
+      suffix: r.suffix || null,
+      email: r.email,
+      employee_id: r.employee_id || null,
+      lrn: r.employee_id || null,
+      status: "pending",
+      source: "masterlist",
+      source_type: "google_sheet",
+      spreadsheet_id: spreadsheetId,
+      sheet_name: sheetName || null
+    }));
+
+    const { error } = await db.from("pending_account_requests").insert(recordsToInsert);
+    if (error) throw error;
+
+    toast.success(`Successfully imported ${recordsToInsert.length} teacher registration request(s) from Google Sheets!`, { duration: 5000 });
+
+    await fetchRegistrationRequests();
+    setActiveTab("RegistrationRequests");
+    setRegistrationSubTab("pending");
+  };
 
   const handleDownloadTeacherSampleCsv = () => {
     const headers = ["First Name", "Middle Name", "Last Name", "Suffix", "Email Address", "Employee ID"];
@@ -2598,7 +2629,7 @@ function TeacherManagement() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => teacherFileInputRef.current?.click()}
+                  onClick={() => setShowTeacherGoogleSheetsModal(true)}
                   disabled={isImportingTeachers}
                   className="flex items-center gap-2 px-5 py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors font-semibold shadow-sm cursor-pointer text-sm disabled:opacity-50"
                 >
@@ -2732,13 +2763,13 @@ function TeacherManagement() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => teacherFileInputRef.current?.click()}
+                      onClick={() => setShowTeacherGoogleSheetsModal(true)}
                       disabled={isImportingTeachers}
                       className="px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors shadow-sm whitespace-nowrap disabled:opacity-50"
-                      title="Import Teachers CSV"
+                      title="Import Teachers Masterlist / Google Sheets"
                     >
                       {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-emerald-600" />}
-                      <span>Import CSV</span>
+                      <span>Import CSV / Link</span>
                     </button>
                   </div>
                 </>
@@ -4277,6 +4308,17 @@ function TeacherManagement() {
           </div>
         </div>
       )}
+
+      {/* TEACHER GOOGLE SHEETS IMPORT MODAL */}
+      <GoogleSheetsImportModal
+        isOpen={showTeacherGoogleSheetsModal}
+        onClose={() => setShowTeacherGoogleSheetsModal(false)}
+        type="teacher"
+        onConfirmImport={handleConfirmTeacherGoogleSheetsImport}
+        onTriggerFileUpload={() => teacherFileInputRef.current?.click()}
+        existingDbRecords={teachers}
+        existingPendingRequests={registrationRequests}
+      />
     </div>
   );
 }

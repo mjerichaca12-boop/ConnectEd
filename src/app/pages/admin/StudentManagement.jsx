@@ -8,6 +8,7 @@ import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { toast } from "sonner";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
+import { GoogleSheetsImportModal } from "@/app/components/admin/GoogleSheetsImportModal";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
@@ -126,6 +127,37 @@ function StudentManagement() {
   });
   const [previewTab, setPreviewTab] = useState("valid");
   const [isSavingImport, setIsSavingImport] = useState(false);
+  const [showGoogleSheetsModal, setShowGoogleSheetsModal] = useState(false);
+
+  const handleConfirmGoogleSheetsImport = async ({ validRecords, spreadsheetId, sheetName }) => {
+    if (!db) throw new Error("Supabase client not configured");
+
+    const recordsToInsert = validRecords.map((r) => ({
+      first_name: r.first_name,
+      middle_name: r.middle_name || null,
+      last_name: r.last_name,
+      suffix: r.suffix || null,
+      email: r.email,
+      lrn: r.lrn,
+      year_level: r.year_level || null,
+      section: r.section || null,
+      account_created: false,
+      source_type: "google_sheet",
+      spreadsheet_id: spreadsheetId,
+      sheet_name: sheetName || null
+    }));
+
+    const { error } = await db.from("student_masterlist").insert(recordsToInsert);
+    if (error) throw error;
+
+    toast.success(`Successfully imported ${recordsToInsert.length} student record(s) from Google Sheets to Masterlist!`, { duration: 6000 });
+
+    const { data } = await db.from("student_masterlist").select("*").order("created_at", { ascending: false });
+    if (data) setMasterlist(data);
+
+    setActiveTab("Masterlist");
+    await refreshStudents();
+  };
 
   // Registration Requests Bulk Import States
   const [showRegistrationBulkImportModal, setShowRegistrationBulkImportModal] = useState(false);
@@ -2584,9 +2616,9 @@ function StudentManagement() {
               </div>
               <div className="flex items-center gap-3">
                 <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                <button data-tour="students-import-btn" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 border border-green-200 rounded-xl hover:bg-green-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
+                <button data-tour="students-import-btn" onClick={() => setShowGoogleSheetsModal(true)} disabled={isImporting} className="flex items-center gap-2 px-6 py-3 bg-white text-green-600 border border-green-200 rounded-xl hover:bg-green-50 transition-colors font-semibold shadow-sm cursor-pointer disabled:opacity-50">
                   {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
-                  {isImporting ? "Importing..." : "Import Masterlist"}
+                  {isImporting ? "Importing..." : "Import Masterlists"}
                 </button>
                 <button onClick={downloadCsvTemplate} type="button" className="flex items-center gap-2 px-4 py-3 bg-white text-gray-700 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer" title="Download CSV Template">
                   <Download className="w-4 h-4 text-gray-500" />
@@ -4844,6 +4876,16 @@ function StudentManagement() {
           </div>
         </div>
       )}
+
+      <GoogleSheetsImportModal
+        isOpen={showGoogleSheetsModal}
+        onClose={() => setShowGoogleSheetsModal(false)}
+        type="student"
+        onConfirmImport={handleConfirmGoogleSheetsImport}
+        onTriggerFileUpload={() => fileInputRef.current?.click()}
+        existingDbRecords={masterlist}
+        existingPendingRequests={registrationRequests}
+      />
     </div>
   );
 }
