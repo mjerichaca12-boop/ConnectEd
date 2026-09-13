@@ -1079,7 +1079,7 @@ function TeacherManagement() {
         const q = searchQuery.toLowerCase().trim();
         const fullName = `${req.first_name || ""} ${req.middle_name || ""} ${req.last_name || ""} ${req.suffix || ""}`.toLowerCase();
         const email = (req.email || "").toLowerCase();
-        const empId = (req.employee_id || "").toLowerCase();
+        const empId = (req.employee_id || req.lrn || "").toLowerCase();
         return fullName.includes(q) || email.includes(q) || empId.includes(q);
       }
 
@@ -1437,7 +1437,7 @@ function TeacherManagement() {
         grade_level: teacherFormData.grade_level?.trim() || null,
         section: addFormattedClass || null,
         subjects: selectedSubjectIds.length > 0 ? selectedSubjectIds : null,
-        lrn: null,
+        lrn: teacherFormData.employee_id.trim() || null,
         status: "pending",
         source: "admin",
         external_request_id: externalRequestId
@@ -2441,7 +2441,7 @@ function TeacherManagement() {
                               </span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                              <span className="truncate">{req.employee_id || "-"}</span>
+                              <span className="truncate">{req.employee_id || req.lrn || "-"}</span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
                               {formatDate(req.created_at)}
@@ -3100,7 +3100,7 @@ function TeacherManagement() {
                 </div>
                 <div className="col-span-2">
                   <span className="text-gray-500 font-medium">Employee ID / Identification</span>
-                  <p className="font-semibold text-gray-900">{selectedRequest.employee_id || "-"}</p>
+                  <p className="font-semibold text-gray-900">{selectedRequest.employee_id || selectedRequest.lrn || "-"}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-gray-500 font-medium">Source</span>

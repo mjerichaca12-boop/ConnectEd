@@ -244,18 +244,20 @@ export const adminApi = {
       if (single) {
         let { data, error } = await query.maybeSingle();
 
-        if (error && table === "profiles" && (
+        if (error && (table === "profiles" || table === "pending_account_requests") && (
           error.code === '42703' || 
           error.message?.includes('suffix') || 
           error.message?.includes('name_extension') || 
           error.message?.includes('employee_id') || 
+          error.message?.includes('phone') ||
+          error.message?.includes('subjects') ||
           error.message?.includes('assigned_class_unique') ||
           error.message?.includes('profiles_teacher_assigned_class_unique') ||
           error.message?.includes('does not exist') || 
           error.message?.includes('schema cache') ||
           (error.code === '23505' && error.message?.includes('assigned_class'))
         )) {
-          console.warn("[adminApi] Handling missing column/constraint fallback for profiles table:", error.message);
+          console.warn(`[adminApi] Handling missing column/constraint fallback for ${table} table:`, error.message);
 
           let cleanedPayload = payload;
           if (typeof payload === "object" && payload !== null) {
@@ -273,6 +275,8 @@ export const adminApi = {
               delete obj.suffix;
               delete obj.name_extension;
               delete obj.employee_id;
+              delete obj.phone;
+              delete obj.subjects;
               if (error.message?.includes("assigned_class") || error.code === "23505") {
                 delete obj.assigned_class;
               }
@@ -283,12 +287,12 @@ export const adminApi = {
               cleanObj(cleanedPayload);
             }
           } else if (typeof payload === "string" && payload !== "*") {
-            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects").join(", ");
           }
 
           let cleanedSelect = select;
           if (typeof select === "string" && select !== "*") {
-            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects").join(", ");
           }
 
           let retryQuery = supabase.from(table);
@@ -322,18 +326,20 @@ export const adminApi = {
       } else {
         let { data, error } = await query;
 
-        if (error && table === "profiles" && (
+        if (error && (table === "profiles" || table === "pending_account_requests") && (
           error.code === '42703' || 
           error.message?.includes('suffix') || 
           error.message?.includes('name_extension') || 
           error.message?.includes('employee_id') || 
+          error.message?.includes('phone') ||
+          error.message?.includes('subjects') ||
           error.message?.includes('assigned_class_unique') ||
           error.message?.includes('profiles_teacher_assigned_class_unique') ||
           error.message?.includes('does not exist') || 
           error.message?.includes('schema cache') ||
           (error.code === '23505' && error.message?.includes('assigned_class'))
         )) {
-          console.warn("[adminApi] Handling missing column/constraint fallback for profiles table:", error.message);
+          console.warn(`[adminApi] Handling missing column/constraint fallback for ${table} table:`, error.message);
 
           let cleanedPayload = payload;
           if (typeof payload === "object" && payload !== null) {
@@ -351,6 +357,8 @@ export const adminApi = {
               delete obj.suffix;
               delete obj.name_extension;
               delete obj.employee_id;
+              delete obj.phone;
+              delete obj.subjects;
               if (error.message?.includes("assigned_class") || error.code === "23505") {
                 delete obj.assigned_class;
               }
@@ -361,12 +369,12 @@ export const adminApi = {
               cleanObj(cleanedPayload);
             }
           } else if (typeof payload === "string" && payload !== "*") {
-            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+            cleanedPayload = payload.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects").join(", ");
           }
 
           let cleanedSelect = select;
           if (typeof select === "string" && select !== "*") {
-            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id").join(", ");
+            cleanedSelect = select.split(",").map(c => c.trim()).filter(c => c !== "suffix" && c !== "name_extension" && c !== "employee_id" && c !== "phone" && c !== "subjects").join(", ");
           }
 
           let retryQuery = supabase.from(table);
