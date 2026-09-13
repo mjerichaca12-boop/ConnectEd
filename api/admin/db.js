@@ -147,7 +147,9 @@ export default async function handler(req, res) {
     }
 
     if (action === "approve_student_registration") {
-      const { request_id, reviewer_id } = body;
+      const request_id = body.request_id || body.requestId || body.id;
+      const reviewer_id = body.reviewer_id || body.reviewerId || body.adminId;
+
       if (!request_id) {
         return res.status(400).json({ error: "Missing request_id" });
       }
@@ -173,8 +175,10 @@ export default async function handler(req, res) {
       }
 
       // Verify required fields
-      const { first_name, last_name, email, lrn, grade_level, section } = request;
-      if (!first_name || !last_name || !email || !lrn || !grade_level || !section) {
+      const { first_name, last_name, email, lrn, grade_level, year_level, section } = request;
+      const studentGrade = grade_level || year_level;
+
+      if (!first_name || !last_name || !email || !lrn || !studentGrade || !section) {
         return res.status(400).json({ error: "Cannot approve request: missing required student information (first name, last name, email, LRN, grade level, or section)." });
       }
 
@@ -217,7 +221,7 @@ export default async function handler(req, res) {
       const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
       const tempPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 
-      // 5. Create Supabase Auth user
+      // 5. Create Supabase Auth user (retry safe)
       let userId = null;
       const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email: normalizedEmail,
@@ -255,7 +259,7 @@ export default async function handler(req, res) {
         last_name,
         email: normalizedEmail,
         lrn: cleanLrn,
-        year_level: grade_level,
+        year_level: studentGrade,
         section,
         status: "Active",
         must_change_password: true,
@@ -301,7 +305,7 @@ export default async function handler(req, res) {
                     <p style="margin: 5px 0;"><strong>Username:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${username}</code></p>
                     <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${tempPassword}</code></p>
                     <p style="margin: 5px 0;"><strong>LRN:</strong> ${cleanLrn}</p>
-                    <p style="margin: 5px 0;"><strong>Grade & Section:</strong> ${grade_level} - ${section}</p>
+                    <p style="margin: 5px 0;"><strong>Grade & Section:</strong> ${studentGrade} - ${section}</p>
                   </div>
                   <p>Please log in using your credentials at: <a href="${loginUrl}" style="color: #16a34a; text-decoration: underline;">ConnectEd Web Portal / Mobile App</a></p>
                   <p style="color: #dc2626; font-weight: bold;">Important: You will be required to change your temporary password upon your first login for security purposes.</p>
@@ -352,19 +356,26 @@ export default async function handler(req, res) {
     }
 
     if (action === "reject_student_registration") {
-      const { request_id, reviewer_id, rejection_reason } = body;
+      const request_id = body.request_id || body.requestId || body.id;
+      const reviewer_id = body.reviewer_id || body.reviewerId || body.adminId;
+      const rejection_reason = body.rejection_reason || body.rejectionReason || "";
+
       if (!request_id) {
         return res.status(400).json({ error: "Missing request_id" });
       }
 
       const { data: request, error: fetchErr } = await supabaseAdmin
         .from("pending_account_requests")
-        .select("id, status, request_type")
+        .select("*")
         .eq("id", request_id)
         .maybeSingle();
 
       if (fetchErr || !request) {
         return res.status(404).json({ error: "Registration request not found." });
+      }
+
+      if (request.request_type !== "student") {
+        return res.status(400).json({ error: "Invalid request type. Only student requests can be rejected here." });
       }
 
       if (request.status !== "pending") {
@@ -389,7 +400,58 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: updateErr.message });
       }
 
-      return res.status(200).json({ success: true, message: "Registration request rejected." });
+      // Send Rejection Email via Resend API if configured
+      const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
+      const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
+      let emailSent = false;
+
+      if (resendApiKey && request.email) {
+        try {
+          const studentFullName = [request.first_name, request.middle_name, request.last_name].filter(Boolean).join(" ");
+          const normalizedEmail = request.email.trim().toLowerCase();
+
+          const emailRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${resendApiKey}`
+            },
+            body: JSON.stringify({
+              from: emailFrom,
+              to: [normalizedEmail],
+              subject: "Your ConnectEd Student Registration Update",
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                  <h2 style="color: #dc2626; text-align: center;">ConnectEd Registration Notice</h2>
+                  <p>Hello <strong>${studentFullName}</strong>,</p>
+                  <p>Thank you for submitting your registration request for ConnectEd.</p>
+                  <p>After reviewing your registration, we were unable to approve your account at this time.</p>
+                  ${rejection_reason ? `
+                    <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; border-radius: 4px; margin: 20px 0;">
+                      <p style="margin: 0; color: #991b1b;"><strong>Reason for Rejection:</strong></p>
+                      <p style="margin: 5px 0 0 0; color: #7f1d1d;">${rejection_reason}</p>
+                    </div>
+                  ` : ''}
+                  <p>If you believe this was made in error or you need to correct your submitted information, please contact your school administrator.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #6b7280; text-align: center;">Regards,<br/><strong>ConnectEd Administration</strong></p>
+                </div>
+              `
+            })
+          });
+
+          if (emailRes.ok) {
+            emailSent = true;
+          } else {
+            const errText = await emailRes.text();
+            console.warn("[reject_student_registration] Resend API notice:", errText);
+          }
+        } catch (e) {
+          console.warn("[reject_student_registration] Resend API exception:", e?.message);
+        }
+      }
+
+      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent });
     }
 
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {

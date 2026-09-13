@@ -725,25 +725,37 @@ export const adminApi = {
     }
   },
 
-  async approveStudentRegistration({ requestId, adminId }) {
+  async approveStudentRegistration(params) {
+    const request_id = params?.request_id || params?.requestId || params?.id;
+    const reviewer_id = params?.reviewer_id || params?.reviewerId || params?.adminId;
+
     return this.fetchWithToken("/api/admin/db", {
       method: "POST",
       body: JSON.stringify({
         action: "approve_student_registration",
-        requestId,
-        adminId
+        request_id,
+        requestId: request_id,
+        reviewer_id,
+        adminId: reviewer_id
       })
     });
   },
 
-  async rejectStudentRegistration({ requestId, adminId, rejectionReason }) {
+  async rejectStudentRegistration(params) {
+    const request_id = params?.request_id || params?.requestId || params?.id;
+    const reviewer_id = params?.reviewer_id || params?.reviewerId || params?.adminId;
+    const rejection_reason = params?.rejection_reason || params?.rejectionReason || "";
+
     return this.fetchWithToken("/api/admin/db", {
       method: "POST",
       body: JSON.stringify({
         action: "reject_student_registration",
-        requestId,
-        adminId,
-        rejectionReason
+        request_id,
+        requestId: request_id,
+        reviewer_id,
+        adminId: reviewer_id,
+        rejection_reason,
+        rejectionReason: rejection_reason
       })
     });
   }

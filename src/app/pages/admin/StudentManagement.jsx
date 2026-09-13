@@ -1858,12 +1858,13 @@ function StudentManagement() {
       const adminId = adminUser?.id;
 
       const res = await adminApi.approveStudentRegistration({
+        request_id: selectedRequest.id,
         requestId: selectedRequest.id,
         adminId
       });
 
       if (res.error) {
-        throw new Error(res.error.message || "Failed to approve registration request.");
+        throw new Error(res.error.message || res.error || "Failed to approve registration request.");
       }
 
       toast.success(`Registration request approved for ${selectedRequest.first_name} ${selectedRequest.last_name}. Account created!`);
@@ -1888,16 +1889,18 @@ function StudentManagement() {
       const adminId = adminUser?.id;
 
       const res = await adminApi.rejectStudentRegistration({
+        request_id: selectedRequest.id,
         requestId: selectedRequest.id,
         adminId,
+        rejection_reason: rejectionReasonInput.trim(),
         rejectionReason: rejectionReasonInput.trim()
       });
 
       if (res.error) {
-        throw new Error(res.error.message || "Failed to reject registration request.");
+        throw new Error(res.error.message || res.error || "Failed to reject registration request.");
       }
 
-      toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}.`);
+      toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}. Student was notified by email.`);
       setShowRejectRequestModal(false);
       setShowViewRequestModal(false);
       setSelectedRequest(null);
