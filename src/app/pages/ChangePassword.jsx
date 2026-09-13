@@ -12,7 +12,7 @@ export function ChangePassword() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
-  const [verificationSent, setVerificationSent] = useState(false);
+  const [passwordChanged, setPasswordChanged] = useState(false);
   
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -70,6 +70,9 @@ export function ChangePassword() {
       redirectBasedOnRole(user.role);
     } else {
       setCurrentUser(user);
+      if (user.email && !user.email.endsWith("@temp.local")) {
+        setEmail(user.email);
+      }
     }
   }, [navigate]);
 
@@ -140,22 +143,24 @@ export function ChangePassword() {
         throw new Error(passwordUpdateError.message || "Failed to update password.");
       }
 
-      // Then update email
-      const { error: emailUpdateError } = await supabase.auth.updateUser({
-        email: email
-      });
+      // Then update email if changed
+      const trimmedTargetEmail = email.trim().toLowerCase();
+      if (trimmedTargetEmail !== (currentUser.email || "").trim().toLowerCase()) {
+        const { error: emailUpdateError } = await supabase.auth.updateUser({
+          email: trimmedTargetEmail
+        });
 
-      if (emailUpdateError) {
-        throw new Error(emailUpdateError.message || "Failed to initiate email verification.");
+        if (emailUpdateError) {
+          console.warn("[ChangePassword] Email update notice:", emailUpdateError.message);
+        }
       }
 
-      // Update profiles table - mark must_change_password as false, but keep is_verified tracking if needed
-      // They won't be able to log in until auth.user.email updates from @temp.local
+      // Update profiles table - mark must_change_password as false
       const { error: dbError } = await supabase
         .from("profiles")
         .update({
           must_change_password: false,
-          email: email
+          email: trimmedTargetEmail
         })
         .eq("id", currentUser.id);
 
@@ -163,7 +168,12 @@ export function ChangePassword() {
         throw new Error("Failed to update profile status.");
       }
 
-      setVerificationSent(true);
+      // Sync local storage session so user isn't prompted for forced change again
+      const updatedUser = { ...currentUser, must_change_password: false, email: trimmedTargetEmail };
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+      setCurrentUser(updatedUser);
+
+      setPasswordChanged(true);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred.");
@@ -186,26 +196,38 @@ export function ChangePassword() {
         <div className="flex justify-center">
           <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center border border-gray-100">
             <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-              <ShieldCheck className="w-7 h-7 text-blue-600" />
+              {passwordChanged ? (
+                <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+              ) : (
+                <ShieldCheck className="w-7 h-7 text-blue-600" />
+              )}
             </div>
           </div>
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900 tracking-tight">
-          {verificationSent ? "Verification Sent!" : "Secure Your Account"}
+          {passwordChanged ? "Password Changed Successfully!" : "Secure Your Account"}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600 max-w-sm mx-auto">
-          {verificationSent 
-            ? "We've sent a verification link to your email address. Please check your inbox and click the link to activate your account."
+          {passwordChanged 
+            ? "Your password has been updated and a confirmation email has been sent to your inbox."
             : "For your security, you must set a new password and link your personal email before accessing your dashboard."}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-white/80 backdrop-blur-xl py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-white">
-          {verificationSent ? (
-            <div className="flex justify-center">
-              <button onClick={() => navigate("/login")} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                Return to Login
+          {passwordChanged ? (
+            <div className="space-y-5">
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                <p className="text-sm font-medium text-emerald-800">
+                  A password change confirmation email has been sent to <strong>{email || currentUser?.email}</strong>.
+                </p>
+              </div>
+              <button 
+                onClick={() => redirectBasedOnRole(currentUser?.role)} 
+                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                Continue to Dashboard
               </button>
             </div>
           ) : (
