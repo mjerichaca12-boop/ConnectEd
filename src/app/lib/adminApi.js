@@ -778,5 +778,60 @@ export const adminApi = {
       emailSent: payload.emailSent ?? payload.email_sent ?? false,
       email_sent: payload.email_sent ?? payload.emailSent ?? false
     };
+  },
+
+  async approveTeacherRegistration(params) {
+    const request_id = params?.request_id || params?.requestId || params?.id;
+    const reviewer_id = params?.reviewer_id || params?.reviewerId || params?.adminId;
+
+    const res = await this.fetchWithToken("/api/admin/db", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "approve_teacher_registration",
+        request_id,
+        requestId: request_id,
+        reviewer_id,
+        adminId: reviewer_id
+      })
+    });
+
+    if (res.error) return res;
+    const payload = res.data || {};
+    return {
+      ...payload,
+      data: payload,
+      error: null,
+      emailSent: payload.emailSent ?? payload.email_sent ?? false,
+      email_sent: payload.email_sent ?? payload.emailSent ?? false
+    };
+  },
+
+  async rejectTeacherRegistration(params) {
+    const request_id = params?.request_id || params?.requestId || params?.id;
+    const reviewer_id = params?.reviewer_id || params?.reviewerId || params?.adminId;
+    const rejection_reason = params?.rejection_reason || params?.rejectionReason || "";
+
+    const res = await this.fetchWithToken("/api/admin/db", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "reject_teacher_registration",
+        request_id,
+        requestId: request_id,
+        reviewer_id,
+        adminId: reviewer_id,
+        rejection_reason,
+        rejectionReason: rejection_reason
+      })
+    });
+
+    if (res.error) return res;
+    const payload = res.data || {};
+    return {
+      ...payload,
+      data: payload,
+      error: null,
+      emailSent: payload.emailSent ?? payload.email_sent ?? false,
+      email_sent: payload.email_sent ?? payload.emailSent ?? false
+    };
   }
 };

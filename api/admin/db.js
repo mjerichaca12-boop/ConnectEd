@@ -565,6 +565,390 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, email_sent: emailSent, emailNotice, resendDiagnostics: safeDiagnostics });
     }
 
+    if (action === "approve_teacher_registration") {
+      const request_id = body.request_id || body.requestId || body.id;
+      const reviewer_id = body.reviewer_id || body.reviewerId || body.adminId;
+
+      if (!request_id) {
+        return res.status(400).json({ error: "Missing request_id" });
+      }
+
+      const { data: request, error: fetchErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .select("*")
+        .eq("id", request_id)
+        .maybeSingle();
+
+      if (fetchErr || !request) {
+        return res.status(404).json({ error: "Registration request not found." });
+      }
+
+      if (request.request_type !== "teacher") {
+        return res.status(400).json({ error: "Invalid request type. Only teacher requests can be approved here." });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(409).json({ error: "This registration request has already been processed." });
+      }
+
+      const { first_name, last_name, email } = request;
+
+      if (!first_name || !last_name || !email) {
+        return res.status(400).json({ error: "Cannot approve request: missing required teacher information (first name, last name, or email)." });
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      const { data: existingEmailProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("id, email")
+        .ilike("email", normalizedEmail)
+        .maybeSingle();
+
+      if (existingEmailProfile) {
+        return res.status(400).json({ error: `Cannot approve this request because email ${normalizedEmail} already has a ConnectEd account.` });
+      }
+
+      const firstInitial = (first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
+      const lastNameClean = (last_name || "").trim().toLowerCase().replace(/[^a-z]/g, "");
+      const baseUsername = (firstInitial + lastNameClean) || "teacher";
+
+      const { data: allUsernamesData } = await supabaseAdmin
+        .from("profiles")
+        .select("username")
+        .not("username", "is", null);
+
+      const usedUsernames = new Set((allUsernamesData || []).map(u => u.username));
+      let suffix = 1;
+      let username = `${baseUsername}01`;
+      while (usedUsernames.has(username)) {
+        suffix++;
+        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
+      }
+
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+      const tempPassword = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+
+      let userId = null;
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: tempPassword,
+        email_confirm: true
+      });
+
+      if (authError) {
+        if (authError.message?.includes("already exists") || authError.status === 422) {
+          const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+          const existingUser = (listData?.users || []).find(u => u.email?.toLowerCase() === normalizedEmail);
+          if (existingUser) {
+            userId = existingUser.id;
+          } else {
+            return res.status(400).json({ error: `Auth account creation failed: ${authError.message}` });
+          }
+        } else {
+          return res.status(400).json({ error: `Auth account creation failed: ${authError.message}` });
+        }
+      } else if (authData?.user) {
+        userId = authData.user.id;
+      }
+
+      if (!userId) {
+        return res.status(500).json({ error: "Failed to resolve Auth User ID for teacher account." });
+      }
+
+      const teacherProfilePayload = {
+        id: userId,
+        role: "teacher",
+        username,
+        first_name,
+        middle_name: request.middle_name || null,
+        last_name,
+        email: normalizedEmail,
+        status: "Active",
+        must_change_password: true,
+        is_verified: true,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: profileErr } = await supabaseAdmin
+        .from("profiles")
+        .upsert(teacherProfilePayload, { onConflict: "id" });
+
+      if (profileErr) {
+        console.error("[approve_teacher_registration] Profile error:", profileErr);
+        return res.status(500).json({ error: `Failed to create teacher profile: ${profileErr.message}` });
+      }
+
+      const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
+      const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
+      let emailSent = false;
+      let emailNotice = null;
+      let safeDiagnostics = null;
+
+      if (resendApiKey) {
+        try {
+          const teacherFullName = [first_name, request.middle_name, last_name].filter(Boolean).join(" ");
+          const loginUrl = process.env.VITE_APP_URL || "https://getconnectedlms.online/login";
+          const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
+
+          const emailRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${resendApiKey}`
+            },
+            body: JSON.stringify({
+              from: emailFrom,
+              to: [normalizedEmail],
+              subject: "Your ConnectEd Teacher Account Has Been Approved",
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                  <h2 style="color: #16a34a; text-align: center;">Welcome to ConnectEd!</h2>
+                  <p>Dear <strong>${teacherFullName}</strong>,</p>
+                  <p>We are pleased to inform you that your teacher registration request for ConnectEd has been <strong>APPROVED</strong>.</p>
+                  <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                    <p style="margin: 5px 0;"><strong>Username:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${username}</code></p>
+                    <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <code style="background: #e5e7eb; padding: 2px 6px; border-radius: 4px;">${tempPassword}</code></p>
+                  </div>
+                  <p>Please log in using your credentials at: <a href="${loginUrl}" style="color: #16a34a; text-decoration: underline;">ConnectEd Web Portal / Mobile App</a></p>
+                  <p style="color: #dc2626; font-weight: bold;">Important: You will be required to change your temporary password upon your first login for security purposes.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #6b7280; text-align: center;">This is an automated notification from ConnectEd LMS.</p>
+                </div>
+              `
+            })
+          });
+
+          const rawText = await emailRes.text();
+          let resendErrorName = null;
+          let resendErrorMessage = null;
+          try {
+            const parsed = JSON.parse(rawText);
+            resendErrorName = parsed.name || parsed.error || null;
+            resendErrorMessage = parsed.message || rawText;
+          } catch (_) {
+            resendErrorMessage = rawText;
+          }
+
+          safeDiagnostics = {
+            resendStatus: emailRes.status,
+            resendErrorName,
+            resendErrorMessage,
+            fromEmail: emailFrom,
+            recipientDomain,
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+
+          console.log("[approve_teacher_registration] Resend Safe Diagnostics:", safeDiagnostics);
+
+          if (emailRes.ok) {
+            emailSent = true;
+          } else {
+            emailNotice = resendErrorMessage;
+          }
+        } catch (e) {
+          emailNotice = e?.message || "Failed to reach Resend API";
+          safeDiagnostics = {
+            resendStatus: 500,
+            resendErrorName: "NetworkError",
+            resendErrorMessage: emailNotice,
+            fromEmail: emailFrom,
+            recipientDomain: normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown",
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+          console.warn("[approve_teacher_registration] Resend API exception:", safeDiagnostics);
+        }
+      } else {
+        emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
+        safeDiagnostics = {
+          resendStatus: null,
+          resendErrorName: "MissingApiKey",
+          resendErrorMessage: emailNotice,
+          fromEmail: emailFrom,
+          recipientDomain: normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown",
+          hasResendApiKeyEnv: false,
+          hasEmailFromEnv: !!process.env.EMAIL_FROM
+        };
+      }
+
+      const nowIso = new Date().toISOString();
+      const { error: updateErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .update({
+          status: "approved",
+          reviewed_at: nowIso,
+          reviewed_by: reviewer_id || null,
+          created_user_id: userId,
+          updated_at: nowIso
+        })
+        .eq("id", request_id)
+        .eq("request_type", "teacher")
+        .eq("status", "pending");
+
+      if (updateErr) {
+        console.error("[approve_teacher_registration] Update pending_account_requests error:", updateErr);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: emailSent
+          ? "Teacher account created successfully. Login credentials were sent to the teacher's email."
+          : "Teacher account created successfully, but approval email could not be sent.",
+        created_user_id: userId,
+        username,
+        emailSent,
+        email_sent: emailSent,
+        emailNotice,
+        resendDiagnostics: safeDiagnostics
+      });
+    }
+
+    if (action === "reject_teacher_registration") {
+      const request_id = body.request_id || body.requestId || body.id;
+      const reviewer_id = body.reviewer_id || body.reviewerId || body.adminId;
+      const rejection_reason = body.rejection_reason || body.rejectionReason || "";
+
+      if (!request_id) {
+        return res.status(400).json({ error: "Missing request_id" });
+      }
+
+      const { data: request, error: fetchErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .select("*")
+        .eq("id", request_id)
+        .maybeSingle();
+
+      if (fetchErr || !request) {
+        return res.status(404).json({ error: "Registration request not found." });
+      }
+
+      if (request.request_type !== "teacher") {
+        return res.status(400).json({ error: "Invalid request type. Only teacher requests can be rejected here." });
+      }
+
+      if (request.status !== "pending") {
+        return res.status(409).json({ error: "This registration request has already been processed." });
+      }
+
+      const nowIso = new Date().toISOString();
+      const { error: updateErr } = await supabaseAdmin
+        .from("pending_account_requests")
+        .update({
+          status: "rejected",
+          reviewed_at: nowIso,
+          reviewed_by: reviewer_id || null,
+          rejection_reason: rejection_reason || null,
+          updated_at: nowIso
+        })
+        .eq("id", request_id)
+        .eq("request_type", "teacher")
+        .eq("status", "pending");
+
+      if (updateErr) {
+        return res.status(500).json({ error: updateErr.message });
+      }
+
+      const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
+      const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
+      let emailSent = false;
+      let emailNotice = null;
+      let safeDiagnostics = null;
+
+      if (resendApiKey && request.email) {
+        try {
+          const teacherFullName = [request.first_name, request.middle_name, request.last_name].filter(Boolean).join(" ");
+          const normalizedEmail = request.email.trim().toLowerCase();
+          const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
+
+          const emailRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${resendApiKey}`
+            },
+            body: JSON.stringify({
+              from: emailFrom,
+              to: [normalizedEmail],
+              subject: "Your ConnectEd Teacher Registration Update",
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                  <h2 style="color: #dc2626; text-align: center;">ConnectEd Registration Notice</h2>
+                  <p>Hello <strong>${teacherFullName}</strong>,</p>
+                  <p>Thank you for submitting your teacher registration request for ConnectEd.</p>
+                  <p>After reviewing your registration, we were unable to approve your account at this time.</p>
+                  ${rejection_reason ? `
+                    <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #ef4444; border-radius: 4px; margin: 20px 0;">
+                      <p style="margin: 0; color: #991b1b;"><strong>Reason for Rejection:</strong></p>
+                      <p style="margin: 5px 0 0 0; color: #7f1d1d;">${rejection_reason}</p>
+                    </div>
+                  ` : ''}
+                  <p>If you believe this was made in error or you need to correct your submitted information, please contact your school administrator.</p>
+                  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
+                  <p style="font-size: 12px; color: #6b7280; text-align: center;">Regards,<br/><strong>ConnectEd Administration</strong></p>
+                </div>
+              `
+            })
+          });
+
+          const rawText = await emailRes.text();
+          let resendErrorName = null;
+          let resendErrorMessage = null;
+          try {
+            const parsed = JSON.parse(rawText);
+            resendErrorName = parsed.name || parsed.error || null;
+            resendErrorMessage = parsed.message || rawText;
+          } catch (_) {
+            resendErrorMessage = rawText;
+          }
+
+          safeDiagnostics = {
+            resendStatus: emailRes.status,
+            resendErrorName,
+            resendErrorMessage,
+            fromEmail: emailFrom,
+            recipientDomain,
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+
+          console.log("[reject_teacher_registration] Resend Safe Diagnostics:", safeDiagnostics);
+
+          if (emailRes.ok) {
+            emailSent = true;
+          } else {
+            emailNotice = resendErrorMessage;
+          }
+        } catch (e) {
+          emailNotice = e?.message || "Failed to reach Resend API";
+          safeDiagnostics = {
+            resendStatus: 500,
+            resendErrorName: "NetworkError",
+            resendErrorMessage: emailNotice,
+            fromEmail: emailFrom,
+            recipientDomain: request.email?.includes("@") ? "@" + request.email.split("@")[1] : "unknown",
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+          console.warn("[reject_teacher_registration] Resend API exception:", safeDiagnostics);
+        }
+      } else {
+        emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
+        safeDiagnostics = {
+          resendStatus: null,
+          resendErrorName: "MissingApiKey",
+          resendErrorMessage: emailNotice,
+          fromEmail: emailFrom,
+          recipientDomain: request?.email?.includes("@") ? "@" + request.email.split("@")[1] : "unknown",
+          hasResendApiKeyEnv: false,
+          hasEmailFromEnv: !!process.env.EMAIL_FROM
+        };
+      }
+
+      return res.status(200).json({ success: true, message: "Teacher registration request rejected.", emailSent, email_sent: emailSent, emailNotice, resendDiagnostics: safeDiagnostics });
+    }
+
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }

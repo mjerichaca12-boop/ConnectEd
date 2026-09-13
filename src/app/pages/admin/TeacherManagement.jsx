@@ -32,7 +32,8 @@ import {
   Key,
   CheckSquare,
   MinusSquare,
-  Square
+  Square,
+  CheckCircle2
 } from "lucide-react";
 
 const db = supabase;
@@ -123,8 +124,18 @@ function TeacherManagement() {
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState(null);
 
+  const [activeTab, setActiveTab] = useState("Roster");
+  const [registrationSubTab, setRegistrationSubTab] = useState("pending");
+  const [registrationRequests, setRegistrationRequests] = useState([]);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [showViewRequestModal, setShowViewRequestModal] = useState(false);
+  const [showApproveRequestModal, setShowApproveRequestModal] = useState(false);
+  const [showRejectRequestModal, setShowRejectRequestModal] = useState(false);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState("");
+  const [isProcessingRequest, setIsProcessingRequest] = useState(false);
+
   useEffect(() => {
-    if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm || showResetPasswordModal) {
+    if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm || showResetPasswordModal || showViewRequestModal || showApproveRequestModal || showRejectRequestModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -132,7 +143,7 @@ function TeacherManagement() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm, showResetPasswordModal]);
+  }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm, showResetPasswordModal, showViewRequestModal, showApproveRequestModal, showRejectRequestModal]);
 
   const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
@@ -890,11 +901,32 @@ function TeacherManagement() {
     return errors;
   };
 
+  const fetchRegistrationRequests = useCallback(async () => {
+    try {
+      const res = await adminApi.db("pending_account_requests", "select", {
+        payload: "*",
+        eq: { column: "request_type", value: "teacher" },
+        order: { column: "created_at", options: { ascending: false } }
+      });
+      if (res.error) {
+        console.error("Error fetching teacher registration requests via adminApi:", res.error);
+        return [];
+      }
+      return res.data || [];
+    } catch (err) {
+      console.error("Fetch teacher registration requests exception:", err);
+      return [];
+    }
+  }, []);
+
   const fetchTeachersData = useCallback(async () => {
     if (!db) return null;
     let teachersRes = await db.from("profiles").select("*").eq("role", "teacher").order("created_at", { ascending: false });
 
-    const subjectsRes = await db.from("subjects").select("*").order("code", { ascending: true });
+    const [subjectsRes, requestsData] = await Promise.all([
+      db.from("subjects").select("*").order("code", { ascending: true }),
+      fetchRegistrationRequests()
+    ]);
     const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
 
     if (teachersRes.error) throw new Error(teachersRes.error.message);
@@ -919,9 +951,10 @@ function TeacherManagement() {
 
     return {
       teachers: formattedTeachers,
-      subjects: allSubjects
+      subjects: allSubjects,
+      registrationRequests: requestsData ?? []
     };
-  }, []);
+  }, [fetchRegistrationRequests]);
 
   const { data: cachedTeachersData, loading: isCachedLoading } = useCachedFetch("admin_teachers_data", fetchTeachersData);
 
@@ -929,11 +962,153 @@ function TeacherManagement() {
     if (cachedTeachersData) {
       setTeachers(cachedTeachersData.teachers || []);
       setAvailableSubjects(cachedTeachersData.subjects || []);
+      setRegistrationRequests(cachedTeachersData.registrationRequests || []);
       setLoading(false);
     } else {
       setLoading(isCachedLoading);
     }
   }, [cachedTeachersData, isCachedLoading]);
+
+  useEffect(() => {
+    if (activeTab === "RegistrationRequests") {
+      fetchRegistrationRequests().then((reqs) => {
+        if (Array.isArray(reqs)) {
+          setRegistrationRequests(reqs);
+        }
+      });
+    }
+  }, [activeTab, fetchRegistrationRequests]);
+
+  const refreshTeachers = async () => {
+    if (!db) return;
+    try {
+      const [teachersRes, subjectsRes, requestsData] = await Promise.all([
+        db.from("profiles").select("*").eq("role", "teacher").order("created_at", { ascending: false }),
+        db.from("subjects").select("*").order("code", { ascending: true }),
+        fetchRegistrationRequests()
+      ]);
+      const data = teachersRes.data ?? [];
+      const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
+      setAvailableSubjects(allSubjects);
+      setRegistrationRequests(requestsData ?? []);
+      const formattedTeachers = data.map((teacher) => {
+        const dbTeacherSubjs = allSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id));
+        const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
+        const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
+        const mergedSubjects = [...new Set([...normalizeSubjects(teacher.subjects), ...dbSubjIds])];
+        const mergedClass = teacher.assigned_class || dbSections || "";
+        const mergedGrade = teacher.grade_level || teacher.year_level || dbTeacherSubjs[0]?.grade_level || "";
+        return {
+          ...teacher,
+          display_name: formatTeacherFullName(teacher),
+          status: normalizeTeacherStatus(teacher.status),
+          subjects: mergedSubjects,
+          assigned_class: mergedClass,
+          grade_level: mergedGrade
+        };
+      });
+      setTeachers(formattedTeachers);
+    } catch (err) {
+      console.error("refreshTeachers error:", err);
+    }
+  };
+
+  const filteredRegistrationRequests = useMemo(() => {
+    return registrationRequests.filter((req) => {
+      if (req.status !== registrationSubTab) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const fullName = `${req.first_name || ""} ${req.middle_name || ""} ${req.last_name || ""} ${req.suffix || ""}`.toLowerCase();
+        const email = (req.email || "").toLowerCase();
+        const empId = (req.employee_id || "").toLowerCase();
+        return fullName.includes(q) || email.includes(q) || empId.includes(q);
+      }
+
+      return true;
+    });
+  }, [registrationRequests, registrationSubTab, searchQuery]);
+
+  const handleApproveRegistrationRequest = async () => {
+    if (!selectedRequest) return;
+    setIsProcessingRequest(true);
+    try {
+      const userData = localStorage.getItem("currentUser");
+      const adminUser = userData ? JSON.parse(userData) : null;
+      const adminId = adminUser?.id;
+
+      const res = await adminApi.approveTeacherRegistration({
+        request_id: selectedRequest.id,
+        requestId: selectedRequest.id,
+        adminId
+      });
+
+      if (res.error) {
+        throw new Error(res.error.message || res.error || "Failed to approve registration request.");
+      }
+
+      const isEmailSent = Boolean(res.emailSent || res.email_sent || res.data?.emailSent || res.data?.email_sent);
+      const emailNotice = res.emailNotice || res.data?.emailNotice;
+      const teacherFullName = `${selectedRequest.first_name || ""} ${selectedRequest.last_name || ""}`.trim();
+
+      if (isEmailSent) {
+        toast.success(`Teacher registration approved for ${teacherFullName}. Account created & credentials emailed!`);
+      } else {
+        toast.warning(`Teacher registration approved for ${teacherFullName}, but email failed: ${emailNotice || "Check Resend domain setup."}`);
+      }
+      setShowApproveRequestModal(false);
+      setShowViewRequestModal(false);
+      setSelectedRequest(null);
+      await refreshTeachers();
+    } catch (err) {
+      console.error("Approve registration error:", err);
+      toast.error(err.message || "Failed to approve teacher registration.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
+
+  const handleRejectRegistrationRequest = async () => {
+    if (!selectedRequest) return;
+    setIsProcessingRequest(true);
+    try {
+      const userData = localStorage.getItem("currentUser");
+      const adminUser = userData ? JSON.parse(userData) : null;
+      const adminId = adminUser?.id;
+
+      const res = await adminApi.rejectTeacherRegistration({
+        request_id: selectedRequest.id,
+        requestId: selectedRequest.id,
+        adminId,
+        rejection_reason: rejectionReasonInput.trim(),
+        rejectionReason: rejectionReasonInput.trim()
+      });
+
+      if (res.error) {
+        throw new Error(res.error.message || res.error || "Failed to reject registration request.");
+      }
+
+      const isEmailSent = Boolean(res.emailSent || res.email_sent || res.data?.emailSent || res.data?.email_sent);
+      const emailNotice = res.emailNotice || res.data?.emailNotice;
+      const teacherFullName = `${selectedRequest.first_name || ""} ${selectedRequest.last_name || ""}`.trim();
+
+      if (isEmailSent) {
+        toast.success(`Teacher registration rejected for ${teacherFullName}. Teacher notified by email.`);
+      } else {
+        toast.warning(`Teacher registration rejected for ${teacherFullName}, but email failed: ${emailNotice || "Check Resend domain setup."}`);
+      }
+      setShowRejectRequestModal(false);
+      setShowViewRequestModal(false);
+      setSelectedRequest(null);
+      setRejectionReasonInput("");
+      await refreshTeachers();
+    } catch (err) {
+      console.error("Reject registration error:", err);
+      toast.error(err.message || "Failed to reject teacher registration.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
 
   useEffect(() => {
     if (teachers && teachers.length >= 0) {
@@ -1956,33 +2131,108 @@ function TeacherManagement() {
             </div>
           )}
 
+          {/* Navigation Tabs */}
+          <div className="flex border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab("Roster")}
+              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 cursor-pointer ${
+                activeTab === "Roster"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Teacher Roster
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("RegistrationRequests");
+                fetchRegistrationRequests().then((reqs) => {
+                  if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+                });
+              }}
+              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 cursor-pointer ${
+                activeTab === "RegistrationRequests"
+                  ? "border-green-600 text-green-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Registration Requests
+              {registrationRequests.filter(r => r.status === "pending").length > 0 && (
+                <span className="px-2 py-0.5 text-xs bg-amber-500 text-white rounded-full font-bold">
+                  {registrationRequests.filter(r => r.status === "pending").length}
+                </span>
+              )}
+            </button>
+          </div>
+
           <div className="bg-white rounded-xl p-4 border border-gray-200">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div data-tour="teachers-search" className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
-                <input
-                  type="text"
-                  placeholder="Search by teacher, subject, or class/section..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-600 text-sm">Status</span>
-                <CustomSelect
-                  value={filterStatus}
-                  onChange={setFilterStatus}
-                  options={[
-                    { value: "all", label: "All Status" },
-                    { value: "active", label: "Active" },
-                    { value: "inactive", label: "Inactive" }
-                  ]}
-                  icon={<User className="w-5 h-5" />}
-                  className="min-w-[160px]"
-                />
-              </div>
-              {selectedTeacherIds.size > 0 && (
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              {activeTab === "Roster" && (
+                <div data-tour="teachers-search" className="flex-1 relative w-full">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                  <input
+                    type="text"
+                    placeholder="Search by teacher, subject, or class/section..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
+                  />
+                </div>
+              )}
+
+              {activeTab === "RegistrationRequests" && (
+                <>
+                  <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto">
+                    {["pending", "approved", "rejected"].map((subStatus) => (
+                      <button
+                        key={subStatus}
+                        onClick={() => setRegistrationSubTab(subStatus)}
+                        className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                          registrationSubTab === subStatus
+                            ? "bg-white text-green-600 shadow-sm font-bold"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        {subStatus.charAt(0).toUpperCase() + subStatus.slice(1)}
+                        {subStatus === "pending" && registrationRequests.filter(r => r.status === "pending").length > 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800 rounded-full">
+                            {registrationRequests.filter(r => r.status === "pending").length}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex-1 relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                    <input
+                      type="text"
+                      placeholder="Search registration requests by name, email, or employee ID..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
+                    />
+                  </div>
+                </>
+              )}
+
+              {activeTab === "Roster" && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-600 text-sm">Status</span>
+                  <CustomSelect
+                    value={filterStatus}
+                    onChange={setFilterStatus}
+                    options={[
+                      { value: "all", label: "All Status" },
+                      { value: "active", label: "Active" },
+                      { value: "inactive", label: "Inactive" }
+                    ]}
+                    icon={<User className="w-5 h-5" />}
+                    className="min-w-[160px]"
+                  />
+                </div>
+              )}
+              {activeTab === "Roster" && selectedTeacherIds.size > 0 && (
                 <button
                   onClick={() => setShowBulkDeleteConfirm(true)}
                   disabled={isBulkDeleting}
@@ -1992,168 +2242,250 @@ function TeacherManagement() {
                   {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedTeacherIds.size})`}
                 </button>
               )}
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200">
-                <Download className="w-4 h-4" />
-                Export CSV
-              </button>
+              {activeTab === "Roster" && (
+                <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 cursor-pointer">
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Teacher Table */}
+          {/* Teacher Table Container */}
           <div data-tour="teachers-table" className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[1000px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr className="border-b border-gray-200">
-                    <th className="px-6 py-5 text-left w-1/4">
-                      <div className="flex items-center gap-2">
-                        {(() => {
-                          const allFilteredSelected = filteredTeachers.length > 0 && filteredTeachers.every((t) => selectedTeacherIds.has(t.id));
-                          const someFilteredSelected = filteredTeachers.some((t) => selectedTeacherIds.has(t.id)) && !allFilteredSelected;
-                          return (
-                            <button
-                              type="button"
-                              onClick={handleSelectAllTeachers}
-                              className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
-                              title="Select All Teachers"
-                            >
-                              {allFilteredSelected ? (
-                                <CheckSquare className="w-5 h-5 text-blue-600" />
-                              ) : someFilteredSelected ? (
-                                <MinusSquare className="w-5 h-5 text-blue-600" />
-                              ) : (
-                                <Square className="w-5 h-5 text-gray-400" />
-                              )}
-                            </button>
-                          );
-                        })()}
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">FULL NAME</span>
-                      </div>
-                    </th>
-                    <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Contact Details</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Subjects</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Grade Level</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
-                    <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredTeachers.map((teacher) => {
-                    const assignments = getTeacherAssignments(teacher);
-                    
-                    // Helper to render badges with +More functionality
-                    const renderBadges = (items, type) => {
-                      if (!items || items.length === 0) {
-                        return <span className="text-gray-400 text-sm italic">None</span>;
-                      }
-                      
-                      const isSubject = type === 'subject';
-                      // Use a Set to extract unique labels for Grade Levels, but map for Subjects
-                      let uniqueLabels = [];
-                      if (isSubject) {
-                        uniqueLabels = items.map(item => item.subjectLabel);
-                      } else {
-                        uniqueLabels = [...new Set(items.map(item => item.classLabel))];
-                      }
-                      
-                      // Filter out empty labels and deduplicate
-                      const finalLabels = [...new Set(uniqueLabels.filter(Boolean))];
-                      
-                      if (finalLabels.length === 0) return <span className="text-gray-400 text-sm italic">None</span>;
-
-                      const limit = 2;
-                      const bgClass = isSubject ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' : 'bg-indigo-50 text-indigo-700 border-indigo-200/60';
-                      
-                      // Using a details/summary approach for an inline expand/collapse without complex state
-                      const displayedLabels = finalLabels.slice(0, limit);
-                      const hiddenLabels = finalLabels.slice(limit);
-                      const hiddenCount = hiddenLabels.length;
-                      
-                      return (
-                        <div className="flex flex-wrap gap-2 items-center">
-                          {displayedLabels.map((label, idx) => (
-                            <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border shadow-sm ${bgClass}`}>
-                              {label}
-                            </span>
-                          ))}
-                          {hiddenCount > 0 && (
-                            <details className="relative group/badge">
-                              <summary className="list-none px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 text-gray-600 shadow-sm">
-                                +{hiddenCount} More
-                              </summary>
-                              <div className="absolute z-10 left-0 mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-xl flex flex-col gap-1.5 min-w-[120px] max-w-[200px] max-h-[200px] overflow-y-auto">
-                                <div className="text-xs font-bold text-gray-500 uppercase mb-1 px-1">{isSubject ? 'All Subjects' : 'All Classes'}</div>
-                                {finalLabels.map((label, idx) => (
-                                  <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border ${bgClass}`}>
-                                    {label}
-                                  </span>
-                                ))}
-                              </div>
-                            </details>
-                          )}
-                        </div>
-                      );
-                    };
-
-                    return (
-                      <tr key={teacher.id} className="hover:bg-gray-50 transition-colors group">
-                        <td className="px-6 py-5 whitespace-nowrap align-middle">
-                            <div className="flex items-center gap-4">
+              {activeTab === "Roster" && (
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr className="border-b border-gray-200">
+                      <th className="px-6 py-5 text-left w-1/4">
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const allFilteredSelected = filteredTeachers.length > 0 && filteredTeachers.every((t) => selectedTeacherIds.has(t.id));
+                            const someFilteredSelected = filteredTeachers.some((t) => selectedTeacherIds.has(t.id)) && !allFilteredSelected;
+                            return (
                               <button
-                                onClick={() => handleToggleTeacherSelection(teacher.id)}
+                                type="button"
+                                onClick={handleSelectAllTeachers}
                                 className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                title="Select All Teachers"
                               >
-                                {selectedTeacherIds.has(teacher.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                {allFilteredSelected ? (
+                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                ) : someFilteredSelected ? (
+                                  <MinusSquare className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                  <Square className="w-5 h-5 text-gray-400" />
+                                )}
                               </button>
-                              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shadow-sm shrink-0">
-                                {getTeacherName(teacher).charAt(0)}
+                            );
+                          })()}
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">FULL NAME</span>
+                        </div>
+                      </th>
+                      <th className="px-6 py-5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Contact Details</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Subjects</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Assigned Grade Level</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredTeachers.map((teacher) => {
+                      const assignments = getTeacherAssignments(teacher);
+                      
+                      const renderBadges = (items, type) => {
+                        if (!items || items.length === 0) {
+                          return <span className="text-gray-400 text-sm italic">None</span>;
+                        }
+                        
+                        const isSubject = type === 'subject';
+                        let uniqueLabels = [];
+                        if (isSubject) {
+                          uniqueLabels = items.map(item => item.subjectLabel);
+                        } else {
+                          uniqueLabels = [...new Set(items.map(item => item.classLabel))];
+                        }
+                        
+                        const finalLabels = [...new Set(uniqueLabels.filter(Boolean))];
+                        
+                        if (finalLabels.length === 0) return <span className="text-gray-400 text-sm italic">None</span>;
+
+                        const limit = 2;
+                        const bgClass = isSubject ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' : 'bg-indigo-50 text-indigo-700 border-indigo-200/60';
+                        
+                        const displayedLabels = finalLabels.slice(0, limit);
+                        const hiddenLabels = finalLabels.slice(limit);
+                        const hiddenCount = hiddenLabels.length;
+                        
+                        return (
+                          <div className="flex flex-wrap gap-2 items-center">
+                            {displayedLabels.map((label, idx) => (
+                              <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border shadow-sm ${bgClass}`}>
+                                {label}
+                              </span>
+                            ))}
+                            {hiddenCount > 0 && (
+                              <details className="relative group/badge">
+                                <summary className="list-none px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 text-gray-600 shadow-sm">
+                                  +{hiddenCount} More
+                                </summary>
+                                <div className="absolute z-10 left-0 mt-2 p-2 bg-white rounded-lg border border-gray-200 shadow-xl flex flex-col gap-1.5 min-w-[120px] max-w-[200px] max-h-[200px] overflow-y-auto">
+                                  <div className="text-xs font-bold text-gray-500 uppercase mb-1 px-1">{isSubject ? 'All Subjects' : 'All Classes'}</div>
+                                  {finalLabels.map((label, idx) => (
+                                    <span key={idx} className={`px-2.5 py-1 rounded-md text-xs font-medium border ${bgClass}`}>
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <tr key={teacher.id} className="hover:bg-gray-50 transition-colors group">
+                          <td className="px-6 py-5 whitespace-nowrap align-middle">
+                              <div className="flex items-center gap-4">
+                                <button
+                                  onClick={() => handleToggleTeacherSelection(teacher.id)}
+                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                  {selectedTeacherIds.has(teacher.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold shadow-sm shrink-0">
+                                  {getTeacherName(teacher).charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-gray-900 truncate">{getTeacherName(teacher)}</div>
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <div className="font-semibold text-gray-900 truncate">{getTeacherName(teacher)}</div>
-                              </div>
+                          </td>
+                          <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                            <div className="truncate max-w-[200px]">{teacher.email || "-"}</div>
+                          </td>
+                          <td className="px-6 py-5 align-middle">
+                            {renderBadges(assignments, 'subject')}
+                          </td>
+                          <td className="px-6 py-5 align-middle">
+                            {renderBadges(assignments, 'class')}
+                          </td>
+                          <td className="px-6 py-5 align-middle">
+                            <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${isTeacherActive(teacher.status) ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-500 border-red-200"}`}>
+                              {normalizeTeacherStatus(teacher.status)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
+                            {formatDate(teacher.created_at)}
+                          </td>
+                          <td data-tour="teachers-actions" className="px-6 py-5 text-right align-middle">
+                            <div className="flex items-center justify-end gap-1.5 transition-opacity">
+                              <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="View">
+                                <Eye className="w-4 h-4 text-gray-600" />
+                              </button>
+                              <button data-tour="teachers-assignments-btn" onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="Edit">
+                                <Edit className="w-4 h-4 text-blue-500" />
+                              </button>
+                              <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors cursor-pointer" title="Delete">
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </button>
                             </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+
+              {activeTab === "RegistrationRequests" && (
+                <table className="w-full text-left border-collapse min-w-[1000px]">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher Name</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee ID</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredRegistrationRequests.map((req) => (
+                      <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-5 align-middle">
+                          <p className="font-semibold text-gray-900 truncate">
+                            {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
+                          </p>
                         </td>
                         <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                          <div className="truncate max-w-[200px]">{teacher.email || "-"}</div>
+                          <span className="truncate">{req.email || "-"}</span>
                         </td>
-                        <td className="px-6 py-5 align-middle">
-                          {renderBadges(assignments, 'subject')}
-                        </td>
-                        <td className="px-6 py-5 align-middle">
-                          {renderBadges(assignments, 'class')}
-                        </td>
-                        <td className="px-6 py-5 align-middle">
-                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${isTeacherActive(teacher.status) ? "bg-green-50 text-green-600 border-green-200" : "bg-red-50 text-red-500 border-red-200"}`}>
-                            {normalizeTeacherStatus(teacher.status)}
-                          </span>
+                        <td className="px-6 py-5 text-sm text-gray-600 align-middle">
+                          <span className="truncate">{req.employee_id || "-"}</span>
                         </td>
                         <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
-                          {formatDate(teacher.created_at)}
+                          {formatDate(req.created_at)}
                         </td>
-                        <td data-tour="teachers-actions" className="px-6 py-5 text-right align-middle">
-                          <div className="flex items-center justify-end gap-1.5 transition-opacity">
-                            <button onClick={() => handleViewTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="View">
-                              <Eye className="w-4 h-4 text-gray-600" />
+                        <td className="px-6 py-5 align-middle">
+                          <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
+                            req.status === "approved"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : req.status === "rejected"
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 text-right align-middle">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => { setSelectedRequest(req); setShowViewRequestModal(true); }}
+                              className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600 flex items-center gap-1 text-xs font-medium border border-gray-200 cursor-pointer"
+                              title="View Request Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                              View
                             </button>
-                            <button data-tour="teachers-assignments-btn" onClick={() => handleEditTeacher(teacher)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Edit">
-                              <Edit className="w-4 h-4 text-blue-500" />
-                            </button>
-                            <button onClick={() => handlePromptDeleteTeacher(teacher)} className="p-2 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
-                              <Trash2 className="w-4 h-4 text-red-500" />
-                            </button>
+                            {req.status === "pending" && (
+                              <>
+                                <button
+                                  onClick={() => { setSelectedRequest(req); setShowApproveRequestModal(true); }}
+                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => { setSelectedRequest(req); setRejectionReasonInput(""); setShowRejectRequestModal(true); }}
+                                  className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  Reject
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            {filteredTeachers.length === 0 && (
+            {activeTab === "Roster" && filteredTeachers.length === 0 && (
               <div className="p-16 text-center">
                 <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                 <p className="text-gray-600">No teachers found.</p>
+              </div>
+            )}
+            {activeTab === "RegistrationRequests" && filteredRegistrationRequests.length === 0 && (
+              <div className="p-16 text-center">
+                <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+                <p className="text-gray-600">No registration requests found under "{registrationSubTab}".</p>
               </div>
             )}
           </div>
@@ -2683,6 +3015,180 @@ function TeacherManagement() {
                 className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showViewRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden relative">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h3 className="text-xl font-bold text-gray-900">Registration Request Details</h3>
+              <button
+                onClick={() => { setShowViewRequestModal(false); setSelectedRequest(null); }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div>
+                  <span className="text-xs text-gray-500 font-medium uppercase tracking-wider block">Request Status</span>
+                  <span className="font-bold text-gray-900 text-lg uppercase">{selectedRequest.status}</span>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                  selectedRequest.status === "approved" ? "bg-emerald-100 text-emerald-800" :
+                  selectedRequest.status === "rejected" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+                }`}>
+                  {selectedRequest.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500 font-medium">First Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.first_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Middle Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.middle_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Last Name</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.last_name || "-"}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500 font-medium">Suffix</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.suffix || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Email Address</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.email || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Employee ID / Identification</span>
+                  <p className="font-semibold text-gray-900">{selectedRequest.employee_id || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Submitted Date</span>
+                  <p className="font-semibold text-gray-900">{formatDate(selectedRequest.created_at)}</p>
+                </div>
+                {selectedRequest.rejection_reason && (
+                  <div className="col-span-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
+                    <span className="font-semibold block text-xs uppercase tracking-wider text-red-600">Rejection Reason</span>
+                    <p className="mt-1 text-sm">{selectedRequest.rejection_reason}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button
+                  onClick={() => { setShowViewRequestModal(false); setSelectedRequest(null); }}
+                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Close
+                </button>
+                {selectedRequest.status === "pending" && (
+                  <>
+                    <button
+                      onClick={() => { setShowRejectRequestModal(true); setRejectionReasonInput(""); }}
+                      className="px-4 py-2.5 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all cursor-pointer"
+                    >
+                      Reject Request
+                    </button>
+                    <button
+                      onClick={() => { setShowApproveRequestModal(true); }}
+                      className="px-4 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all cursor-pointer"
+                    >
+                      Approve Teacher
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showApproveRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Approve Teacher Registration?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will create a new login account and profile for <span className="font-bold text-gray-900">{selectedRequest.first_name} {selectedRequest.last_name}</span>. An email with temporary login credentials will automatically be sent to <span className="font-semibold text-green-700">{selectedRequest.email}</span>.
+            </p>
+
+            <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 mb-6 text-xs space-y-1 text-gray-700">
+              <div><span className="font-semibold">Email:</span> {selectedRequest.email}</div>
+              <div><span className="font-semibold">Employee ID:</span> {selectedRequest.employee_id || "N/A"}</div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowApproveRequestModal(false)}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApproveRegistrationRequest}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isProcessingRequest ? "Approving..." : "Confirm Approval"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRejectRequestModal && selectedRequest && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Reject Registration Request?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to reject the registration request for <span className="font-bold text-gray-900">{selectedRequest.first_name} {selectedRequest.last_name}</span>?
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                Rejection Reason (Optional)
+              </label>
+              <textarea
+                rows={3}
+                value={rejectionReasonInput}
+                onChange={(e) => setRejectionReasonInput(e.target.value)}
+                placeholder="Provide a reason for rejection..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowRejectRequestModal(false)}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectRegistrationRequest}
+                disabled={isProcessingRequest}
+                className="px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isProcessingRequest ? "Rejecting..." : "Confirm Rejection"}
               </button>
             </div>
           </div>
