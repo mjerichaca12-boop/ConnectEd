@@ -77,8 +77,7 @@ function StudentManagement() {
     lrn: "",
     year_level: "",
     section: "",
-    status: "Active",
-    password: ""
+    status: "Active"
   });
   const [editFormData, setEditFormData] = useState({
     first_name: "",
@@ -98,7 +97,7 @@ function StudentManagement() {
   const [fetchError, setFetchError] = useState(null);
   const [gradeSectionsMap, setGradeSectionsMap] = useState({});
 
-  // New state variables for Masterlist
+  // New state variables for Masterlist & Registration Requests
   const [masterlist, setMasterlist] = useState([]);
   const [activeTab, setActiveTab] = useState("Profiles"); // "Profiles", "Masterlist", or "RegistrationRequests"
   const [registrationRequests, setRegistrationRequests] = useState([]);
@@ -111,6 +110,7 @@ function StudentManagement() {
   const [isProcessingRequest, setIsProcessingRequest] = useState(false);
   const [selectedMasterlistIds, setSelectedMasterlistIds] = useState(new Set());
   const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [selectedPendingRequestIds, setSelectedPendingRequestIds] = useState(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showClearMasterlistConfirm, setShowClearMasterlistConfirm] = useState(false);
   const [isClearingMasterlist, setIsClearingMasterlist] = useState(false);
@@ -126,6 +126,35 @@ function StudentManagement() {
   });
   const [previewTab, setPreviewTab] = useState("valid");
   const [isSavingImport, setIsSavingImport] = useState(false);
+
+  // Registration Requests Bulk Import States
+  const [showRegistrationBulkImportModal, setShowRegistrationBulkImportModal] = useState(false);
+  const [registrationImportText, setRegistrationImportText] = useState("");
+  const [registrationImportSummary, setRegistrationImportSummary] = useState({
+    total: 0,
+    valid: [],
+    invalid: [],
+    duplicates: []
+  });
+  const [registrationImportTab, setRegistrationImportTab] = useState("valid");
+  const [isSavingRegistrationImport, setIsSavingRegistrationImport] = useState(false);
+
+  // Bulk Approval States
+  const [showBulkApproveConfirmModal, setShowBulkApproveConfirmModal] = useState(false);
+  const [showBulkApproveProgressModal, setShowBulkApproveProgressModal] = useState(false);
+  const [bulkApproveProgress, setBulkApproveProgress] = useState({
+    total: 0,
+    current: 0,
+    currentStudentName: ""
+  });
+  const [showBulkApproveResultsModal, setShowBulkApproveResultsModal] = useState(false);
+  const [bulkApproveResultsSummary, setBulkApproveResultsSummary] = useState({
+    total: 0,
+    successCount: 0,
+    emailSentCount: 0,
+    emailFailedCount: 0,
+    failures: []
+  });
 
   // Batch account generation progress & results states
   const [showGenerationProgressModal, setShowGenerationProgressModal] = useState(false);
@@ -630,9 +659,6 @@ function StudentManagement() {
       if (field === "year_level") {
         nextFormData.section = ""; // Automatically clear the selected Section if the Grade Level changes.
       }
-      if (field === "lrn") {
-        nextFormData.email = `${nextValue.toLowerCase()}@students.connected`;
-      }
       const fieldError = validateAddField(field, nextValue, nextFormData);
 
       setFormErrors((currentErrors) => {
@@ -642,15 +668,6 @@ function StudentManagement() {
           nextErrors[field] = fieldError;
         } else {
           delete nextErrors[field];
-        }
-
-        if (field === "lrn") {
-          const emailError = validateAddField("email", nextFormData.email, nextFormData);
-          if (emailError) {
-            nextErrors.email = emailError;
-          } else {
-            delete nextErrors.email;
-          }
         }
 
         return nextErrors;
@@ -706,7 +723,7 @@ function StudentManagement() {
   const validateStudentForm = async (formData, excludeId = null) => {
     const errors = {};
 
-    const fieldNames = ["first_name", "last_name", "lrn", "year_level", "section", "status"];
+    const fieldNames = ["first_name", "last_name", "email", "lrn", "year_level", "status"];
 
     fieldNames.forEach((field) => {
       const fieldError = validateAddField(field, formData[field], formData);
@@ -722,24 +739,41 @@ function StudentManagement() {
       return errors;
     }
 
-    let lrnQuery = db
-      .from("profiles")
-      .select("id")
-      .eq("lrn", formData.lrn);
+    const trimmedLrn = normalizeLrn(formData.lrn);
+    const trimmedEmail = (formData.email || "").trim().toLowerCase();
 
-    if (excludeId) {
-      lrnQuery = lrnQuery.neq("id", excludeId);
-    }
-
+    // 1. Check profiles table for duplicate LRN or Email
+    let lrnQuery = db.from("profiles").select("id").eq("lrn", trimmedLrn);
+    if (excludeId) lrnQuery = lrnQuery.neq("id", excludeId);
     const lrnResult = await lrnQuery;
 
-    if (lrnResult.error) {
-      errors.form = lrnResult.error.message;
+    if (lrnResult.data && lrnResult.data.length > 0) {
+      errors.lrn = "LRN is already registered to a student account";
       return errors;
     }
 
-    if ((lrnResult.data ?? []).length > 0) {
-      errors.lrn = "LRN already exists";
+    let emailQuery = db.from("profiles").select("id").ilike("email", trimmedEmail);
+    if (excludeId) emailQuery = emailQuery.neq("id", excludeId);
+    const emailResult = await emailQuery;
+
+    if (emailResult.data && emailResult.data.length > 0) {
+      errors.email = "Email address is already registered to an account";
+      return errors;
+    }
+
+    // 2. Check pending_account_requests table for duplicate LRN or Email
+    if (!excludeId) {
+      const pendingLrnRes = await db.from("pending_account_requests").select("id").eq("lrn", trimmedLrn).eq("status", "pending").limit(1);
+      if (pendingLrnRes.data && pendingLrnRes.data.length > 0) {
+        errors.lrn = "A pending registration request already exists for this LRN";
+        return errors;
+      }
+
+      const pendingEmailRes = await db.from("pending_account_requests").select("id").ilike("email", trimmedEmail).eq("status", "pending").limit(1);
+      if (pendingEmailRes.data && pendingEmailRes.data.length > 0) {
+        errors.email = "A pending registration request already exists for this email address";
+        return errors;
+      }
     }
 
     if (formData.section && formData.year_level) {
@@ -800,94 +834,81 @@ function StudentManagement() {
     setIsSubmitting(true);
 
     try {
-      const firstInitial = studentFormData.first_name.charAt(0).toLowerCase().replace(/[^a-z]/g, "");
-      const lastNameLow = studentFormData.last_name.trim().toLowerCase().replace(/[^a-z]/g, "");
-      let baseUsername = (firstInitial + lastNameLow) || "student";
-      let username = `${baseUsername}01`;
-      let suffix = 1;
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      const externalRequestId = `admin-student-${timestamp}-${randomStr}`;
 
-      while (true) {
-        const { data: existing } = await adminApi.db("profiles", "select", { eq: { column: "username", value: username }, single: true });
-        if (!existing || existing.error) break;
-        suffix++;
-        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
-      }
+      const requestPayload = {
+        request_type: "student",
+        first_name: studentFormData.first_name.trim(),
+        middle_name: studentFormData.middle_name.trim() || null,
+        last_name: studentFormData.last_name.trim(),
+        suffix: studentFormData.suffix.trim() || null,
+        email: studentFormData.email.trim().toLowerCase(),
+        lrn: normalizeLrn(studentFormData.lrn),
+        grade_level: normalizeYearLevel(studentFormData.year_level),
+        section: formatSectionName(studentFormData.section) || null,
+        status: "pending",
+        source: "admin",
+        external_request_id: externalRequestId
+      };
 
-      const tempEmail = `${username}@temp.local`;
-      const tempPassword = studentFormData.password || generateUUID().slice(0, 8);
-      
-      let userId = generateUUID();
-      
-      const { data: authData, error: authError } = await adminApi.createUser({
-        email: tempEmail,
-        password: tempPassword,
-        email_confirm: true
-      });
-      
-      if (authError) {
-         if (authError.message?.includes("already exists") || authError.status === 422) {
-            const { data: retryList } = await adminApi.listUsers();
-            const retryUser = retryList?.users?.find(u => u.email === tempEmail);
-            if (!retryUser) throw new Error("Email exists but user not found in fallback query.");
-            userId = retryUser.id;
-         } else {
-            throw authError;
-         }
-      } else if (authData?.user) {
-         userId = authData.user.id;
-      }
-
-      const { data, error } = await adminApi.db("profiles", "insert", {
-        payload: { id: userId, username: username, email: tempEmail, ...buildPayload(studentFormData) },
-        select: "id, first_name, middle_name, last_name, username, lrn, year_level, section, status, role, created_at",
+      const { data, error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: requestPayload,
         single: true
       });
 
       if (error) {
-        throw error;
+        throw new Error(error.message || "Failed to create student registration request.");
       }
 
-      const savedPassword = studentFormData.password;
-      if (data) {
-        setStudents((current) => [data, ...current.filter((student) => student.id !== data.id)]);
-        const studentName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
-        logActivity({
-          actionType: "added",
-          entityType: "student",
-          entityId: data.id,
-          entityName: studentName,
-          details: { username: username, lrn: data.lrn, section: data.section },
-          timestamp: data.created_at
-        });
-        notifyAdmin({
-          type: "account",
-          title: "Student Account Created",
-          message: `New student account created for ${studentName}`,
-          relatedId: data.id,
-          relatedType: "profiles",
-          path: "/admin/students"
-        });
-      }
+      const studentName = [studentFormData.first_name, studentFormData.middle_name, studentFormData.last_name, studentFormData.suffix].filter(Boolean).join(" ");
+      logActivity({
+        actionType: "submitted_registration_request",
+        entityType: "student",
+        entityId: externalRequestId,
+        entityName: studentName,
+        details: { email: studentFormData.email, source: "admin" },
+        timestamp: new Date().toISOString()
+      });
+
+      notifyAdmin({
+        type: "account",
+        title: "New Student Registration Request",
+        message: `Admin added a new student registration request for ${studentName}`,
+        relatedId: data?.id || externalRequestId,
+        relatedType: "pending_account_requests",
+        path: "/admin/students"
+      });
 
       setStudentFormData({
         first_name: "",
         middle_name: "",
         last_name: "",
+        suffix: "",
+        email: "",
         lrn: "",
         year_level: "",
-
         section: "",
-        status: "Active",
-        password: ""
+        status: "Active"
       });
       setFormErrors({});
       setShowAddModal(false);
-      const tempMsg = savedPassword ? ` Temporary password: ${savedPassword}` : "";
-      toast.success(`Student account added successfully.${tempMsg}`, { duration: 6000 });
+      setActiveTab("RegistrationRequests");
+      setRegistrationSubTab("pending");
+
+      toast.success("Student registration request submitted! The student has been queued for admin approval.", { duration: 5000 });
+
+      const reqs = await fetchRegistrationRequests();
+      if (Array.isArray(reqs)) setRegistrationRequests(reqs);
     } catch (error) {
-      console.error("Add student error:", error);
-      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to add student.");
+      console.error("Add student registration request error:", error);
+      const errMsg = error?.message || (typeof error === "string" ? error : "Unable to submit student registration request.");
       toast.error(errMsg);
+      setFormErrors((current) => ({
+        ...current,
+        form: errMsg
+      }));
     } finally {
       setIsSubmitting(false);
     }
@@ -1982,6 +2003,346 @@ function StudentManagement() {
     }
   };
 
+  // ==========================================
+  // BULK REGISTRATION REQUESTS IMPORT LOGIC
+  // ==========================================
+  const processRegistrationImportText = async (rawText) => {
+    if (!rawText || !rawText.trim()) {
+      toast.error("No import data provided.");
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const rows = parseCsvText(rawText);
+      if (rows.length < 2) {
+        toast.error("Import data is empty or missing header row.");
+        setIsImporting(false);
+        return;
+      }
+
+      const rawHeaders = rows[0];
+      const headerMap = {};
+      rawHeaders.forEach((h, idx) => {
+        const field = matchHeaderField(h);
+        if (field) headerMap[field] = idx;
+      });
+
+      const hasLrn = headerMap.lrn !== undefined;
+      const hasNames = (headerMap.first_name !== undefined && headerMap.last_name !== undefined) || headerMap.full_name !== undefined;
+      const hasEmail = headerMap.email !== undefined;
+
+      if (!hasLrn || !hasNames || !hasEmail) {
+        const missing = [];
+        if (!hasLrn) missing.push("LRN");
+        if (!hasNames) missing.push("First Name & Last Name (or Full Name)");
+        if (!hasEmail) missing.push("Email Address");
+        toast.error(`Invalid import format: Missing required column(s): ${missing.join(", ")}.`, { duration: 7000 });
+        setIsImporting(false);
+        return;
+      }
+
+      const [{ data: existingProfiles }, { data: existingPending }] = await Promise.all([
+        adminApi.db("profiles", "select", { payload: "id, lrn, email", eq: { column: "role", value: "student" } }),
+        adminApi.db("pending_account_requests", "select", { payload: "id, lrn, email, external_request_id" })
+      ]);
+
+      const existingProfilesData = existingProfiles || [];
+      const existingPendingData = existingPending || [];
+
+      const dbLrnSet = new Set([
+        ...existingProfilesData.map(p => p.lrn),
+        ...existingPendingData.map(r => r.lrn)
+      ].filter(Boolean));
+
+      const dbEmailSet = new Set([
+        ...existingProfilesData.map(p => p.email?.toLowerCase()),
+        ...existingPendingData.map(r => r.email?.toLowerCase())
+      ].filter(Boolean));
+
+      const validRecords = [];
+      const duplicateRecords = [];
+      const invalidRecords = [];
+      const fileLrnSet = new Set();
+      const fileEmailSet = new Set();
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0 || row.every(cell => !cell || !cell.trim())) continue;
+
+        const rowNum = i + 1;
+        const lrnVal = headerMap.lrn !== undefined ? (row[headerMap.lrn] || "").trim() : "";
+        const cleanLrn = lrnVal.replace(/\D/g, "");
+
+        let firstName = "";
+        let lastName = "";
+        let middleName = headerMap.middle_name !== undefined ? (row[headerMap.middle_name] || "").trim() : "";
+        let suffix = headerMap.suffix !== undefined ? (row[headerMap.suffix] || "").trim() : "";
+
+        if (headerMap.first_name !== undefined && headerMap.last_name !== undefined) {
+          firstName = (row[headerMap.first_name] || "").trim();
+          lastName = (row[headerMap.last_name] || "").trim();
+        } else if (headerMap.full_name !== undefined) {
+          const split = splitFullName(row[headerMap.full_name]);
+          firstName = split.first_name;
+          lastName = split.last_name;
+        }
+
+        const email = headerMap.email !== undefined ? (row[headerMap.email] || "").trim().toLowerCase() : "";
+        const rawGrade = headerMap.year_level !== undefined ? (row[headerMap.year_level] || "").trim() : "";
+        const gradeLevel = normalizeYearLevel(rawGrade);
+        const section = headerMap.section !== undefined ? formatSectionName(row[headerMap.section]) : null;
+
+        const fullNameDisplay = [firstName, middleName, lastName, suffix].filter(Boolean).join(" ") || `Row ${rowNum}`;
+
+        if (!cleanLrn || cleanLrn.length !== 12) {
+          invalidRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: lrnVal,
+            reason: `Row ${rowNum}: LRN must be exactly 12 digits (got '${lrnVal}').`
+          });
+          continue;
+        }
+
+        if (!firstName || !lastName) {
+          invalidRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: First name and last name are required.`
+          });
+          continue;
+        }
+
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          invalidRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: Valid email address is required (got '${email}').`
+          });
+          continue;
+        }
+
+        if (fileLrnSet.has(cleanLrn)) {
+          duplicateRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: Duplicate LRN in import file (${cleanLrn}).`
+          });
+          continue;
+        }
+        fileLrnSet.add(cleanLrn);
+
+        if (fileEmailSet.has(email)) {
+          duplicateRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: Duplicate Email in import file (${email}).`
+          });
+          continue;
+        }
+        fileEmailSet.add(email);
+
+        if (dbLrnSet.has(cleanLrn)) {
+          duplicateRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: LRN ${cleanLrn} already exists in database or pending requests.`
+          });
+          continue;
+        }
+
+        if (dbEmailSet.has(email)) {
+          duplicateRecords.push({
+            rowNum,
+            name: fullNameDisplay,
+            email,
+            lrn: cleanLrn,
+            reason: `Row ${rowNum}: Email ${email} already exists in database or pending requests.`
+          });
+          continue;
+        }
+
+        validRecords.push({
+          request_type: "student",
+          first_name: firstName,
+          middle_name: middleName || null,
+          last_name: lastName,
+          suffix: suffix || null,
+          email,
+          lrn: cleanLrn,
+          grade_level: gradeLevel || "7",
+          section: section || null,
+          status: "pending",
+          source: "bulk_import",
+          external_request_id: `bulk-student-${cleanLrn}`
+        });
+      }
+
+      const totalRows = validRecords.length + duplicateRecords.length + invalidRecords.length;
+
+      if (totalRows === 0) {
+        toast.error("No valid data rows found.");
+        setIsImporting(false);
+        return;
+      }
+
+      setRegistrationImportSummary({
+        total: totalRows,
+        valid: validRecords,
+        duplicates: duplicateRecords,
+        invalid: invalidRecords
+      });
+      setRegistrationImportTab(validRecords.length > 0 ? "valid" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"));
+      setShowRegistrationBulkImportModal(true);
+    } catch (err) {
+      toast.error(err.message || "Failed to process import data.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleConfirmRegistrationImport = async () => {
+    if (registrationImportSummary.valid.length === 0) {
+      toast.error("No valid records to import.");
+      return;
+    }
+
+    setIsSavingRegistrationImport(true);
+    try {
+      const recordsToInsert = registrationImportSummary.valid;
+      const { error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: recordsToInsert
+      });
+
+      if (error) throw error;
+
+      toast.success(`Successfully imported ${recordsToInsert.length} student registration request(s) into pending list!`, { duration: 6000 });
+      setShowRegistrationBulkImportModal(false);
+      setRegistrationImportText("");
+
+      setActiveTab("RegistrationRequests");
+      setRegistrationSubTab("pending");
+      const reqs = await fetchRegistrationRequests();
+      if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+    } catch (err) {
+      toast.error(err.message || "Failed to import registration requests.");
+    } finally {
+      setIsSavingRegistrationImport(false);
+    }
+  };
+
+  // ==========================================
+  // BULK APPROVAL LOGIC (CONTROLLED CONCURRENCY)
+  // ==========================================
+  const handleConfirmBulkApproval = async () => {
+    setShowBulkApproveConfirmModal(false);
+    const pendingReqs = registrationRequests.filter(r => r.status === "pending" && selectedPendingRequestIds.has(r.id));
+    
+    if (pendingReqs.length === 0) {
+      toast.error("No pending registration requests selected for approval.");
+      return;
+    }
+
+    const userData = localStorage.getItem("currentUser");
+    const adminUser = userData ? JSON.parse(userData) : null;
+    const adminId = adminUser?.id;
+
+    setShowBulkApproveProgressModal(true);
+    setBulkApproveProgress({
+      total: pendingReqs.length,
+      current: 0,
+      currentStudentName: ""
+    });
+
+    const summary = {
+      total: pendingReqs.length,
+      successCount: 0,
+      emailSentCount: 0,
+      emailFailedCount: 0,
+      failures: []
+    };
+
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < pendingReqs.length; i += BATCH_SIZE) {
+      const batch = pendingReqs.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (req, bIdx) => {
+          const currentIdx = i + bIdx + 1;
+          const studentName = [req.first_name, req.middle_name, req.last_name].filter(Boolean).join(" ");
+          
+          setBulkApproveProgress({
+            total: pendingReqs.length,
+            current: currentIdx,
+            currentStudentName: studentName
+          });
+
+          try {
+            const res = await adminApi.approveStudentRegistration({
+              request_id: req.id,
+              reviewer_id: adminId
+            });
+
+            if (res.error) {
+              summary.failures.push({
+                id: req.id,
+                name: studentName,
+                email: req.email,
+                error: res.error.message || "Failed to approve registration"
+              });
+            } else {
+              summary.successCount++;
+              if (res.emailSent || res.email_sent) {
+                summary.emailSentCount++;
+              } else {
+                summary.emailFailedCount++;
+                summary.failures.push({
+                  id: req.id,
+                  name: studentName,
+                  email: req.email,
+                  error: res.emailNotice || res.notice || "Account created, but credentials email failed to send."
+                });
+              }
+            }
+          } catch (err) {
+            summary.failures.push({
+              id: req.id,
+              name: studentName,
+              email: req.email,
+              error: err.message || "Unexpected exception during approval"
+            });
+          }
+        })
+      );
+    }
+
+    setShowBulkApproveProgressModal(false);
+    setBulkApproveResultsSummary(summary);
+    setShowBulkApproveResultsModal(true);
+    setSelectedPendingRequestIds(new Set());
+
+    fetchRegistrationRequests().then(reqs => {
+      if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+    });
+    fetchStudentsData().then(data => {
+      if (data) {
+        setStudents(data.students || []);
+        setMasterlist(data.masterlist || []);
+      }
+    });
+  };
+
   const handleExportToCSV = () => {
     const yearContext = yearFilter !== "All" ? `Grade${yearFilter}` : "AllGrades";
     const sectionContext = sectionFilter !== "All" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
@@ -2304,6 +2665,33 @@ function StudentManagement() {
                   </>
                 );
               })()}
+
+              {activeTab === "RegistrationRequests" && (
+                <>
+                  {registrationSubTab === "pending" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setRegistrationImportText(""); setShowRegistrationBulkImportModal(true); }}
+                        className="flex items-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Import Students
+                      </button>
+                      {selectedPendingRequestIds.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowBulkApproveConfirmModal(true)}
+                          className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Approve Selected ({selectedPendingRequestIds.size})
+                        </button>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2591,10 +2979,32 @@ function StudentManagement() {
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
+                          {registrationSubTab === "pending" && (
+                            <th className="px-6 py-5 text-left w-12">
+                              <button
+                                onClick={() => {
+                                  const pendingReqs = filteredRegistrationRequests.filter(r => r.status === "pending");
+                                  if (selectedPendingRequestIds.size === pendingReqs.length && pendingReqs.length > 0) {
+                                    setSelectedPendingRequestIds(new Set());
+                                  } else {
+                                    setSelectedPendingRequestIds(new Set(pendingReqs.map(r => r.id)));
+                                  }
+                                }}
+                                className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                              >
+                                {selectedPendingRequestIds.size > 0 && selectedPendingRequestIds.size === filteredRegistrationRequests.filter(r => r.status === "pending").length ? (
+                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                  <Square className="w-5 h-5 text-gray-400" />
+                                )}
+                              </button>
+                            </th>
+                          )}
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student Name</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">LRN</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Grade & Section</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
@@ -2602,7 +3012,22 @@ function StudentManagement() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {filteredRegistrationRequests.map((req) => (
-                          <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={req.id} className={`hover:bg-gray-50 transition-colors ${selectedPendingRequestIds.has(req.id) ? "bg-blue-50/50" : ""}`}>
+                            {registrationSubTab === "pending" && (
+                              <td className="px-6 py-5 text-left align-middle">
+                                <button
+                                  onClick={() => {
+                                    const newSet = new Set(selectedPendingRequestIds);
+                                    if (newSet.has(req.id)) newSet.delete(req.id);
+                                    else newSet.add(req.id);
+                                    setSelectedPendingRequestIds(newSet);
+                                  }}
+                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                  {selectedPendingRequestIds.has(req.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                              </td>
+                            )}
                             <td className="px-6 py-5 align-middle">
                               <p className="font-semibold text-gray-900 truncate">
                                 {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
@@ -2616,11 +3041,22 @@ function StudentManagement() {
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                               <span className="truncate">
-                                Grade {req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
+                                Grade {req.grade_level || req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
+                              </span>
+                            </td>
+                            <td className="px-6 py-5 text-sm align-middle whitespace-nowrap">
+                              <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${
+                                req.source === "admin"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : req.source === "bulk_import"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              }`}>
+                                {req.source === "admin" ? "Admin Added" : req.source === "bulk_import" ? "Bulk Import" : "Google Form"}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
-                              {formatDate(req.created_at)}
+                              {formatDate(req.created_at || req.submitted_at)}
                             </td>
                             <td className="px-6 py-5 align-middle">
                               <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
@@ -2725,14 +3161,19 @@ function StudentManagement() {
                     <label className="block text-sm font-medium text-gray-700">Name Extension / Suffix</label>
                     <input type="text" value={studentFormData.suffix} onChange={(e) => handleAddStudentFieldChange("suffix", e.target.value)} placeholder="e.g. Jr., Sr., II, III" className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Email Address <span className="text-red-500">*</span></label>
+                    <input type="email" value={studentFormData.email} onChange={(e) => handleAddStudentFieldChange("email", e.target.value)} placeholder="student@example.com" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
+                    {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
+                  </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">LRN</label>
+                    <label className="block text-sm font-medium text-gray-700">LRN <span className="text-red-500">*</span></label>
                     <input type="text" value={studentFormData.lrn} onChange={(e) => handleAddStudentFieldChange("lrn", e.target.value)} inputMode="numeric" maxLength={12} placeholder="12-digit LRN" className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.lrn ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`} />
                     {formErrors.lrn && <p className="text-red-500 text-sm mt-1">{formErrors.lrn}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Year Level</label>
+                    <label className="block text-sm font-medium text-gray-700">Year Level <span className="text-red-500">*</span></label>
                     <CustomSelect
                       value={studentFormData.year_level}
                       onChange={(value) => handleAddStudentFieldChange("year_level", value)}
@@ -2770,14 +3211,6 @@ function StudentManagement() {
                       className="w-full"
                     />
                     {formErrors.status && <p className="text-red-500 text-sm mt-1">{formErrors.status}</p>}
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">Temporary Password</label>
-                    <div className="flex gap-2">
-                      <input type="text" value={studentFormData.password} onChange={(e) => handleAddStudentFieldChange("password", e.target.value)} placeholder="Auto-generated temporary password" className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono" />
-                      <button type="button" onClick={() => handleAddStudentFieldChange("password", generateTempPassword())} className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 text-sm text-gray-700 transition-colors">Regenerate</button>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Student uses this password to log in. Share it securely.</p>
                   </div>
                 </div>
                 {formErrors.form && (
@@ -3824,6 +4257,290 @@ function StudentManagement() {
               >
                 {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
                 {isProcessingRequest ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK REGISTRATION REQUESTS IMPORT MODAL */}
+      {showRegistrationBulkImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between bg-white sticky top-0 z-10">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Import Student Registration Requests</h3>
+                <p className="text-xs text-gray-500 mt-1">Upload CSV or paste student data. Rows will be queued into pending registration requests.</p>
+              </div>
+              <button onClick={() => setShowRegistrationBulkImportModal(false)} type="button" className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Paste Spreadsheet Data (CSV / Tab-Delimited)</label>
+                <textarea
+                  rows={4}
+                  value={registrationImportText}
+                  onChange={(e) => setRegistrationImportText(e.target.value)}
+                  placeholder="Paste rows with headers: First Name, Middle Name, Last Name, Email, LRN, Grade Level, Section..."
+                  className="w-full p-3 border border-gray-300 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-xs text-gray-500">Or choose a CSV file:</span>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          const text = evt.target.result;
+                          setRegistrationImportText(text);
+                          processRegistrationImportText(text);
+                        };
+                        reader.readAsText(file);
+                      }
+                    }}
+                    className="text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer"
+                  />
+                </div>
+                {registrationImportText.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => processRegistrationImportText(registrationImportText)}
+                    disabled={isImporting}
+                    className="mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isImporting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Analyze & Preview Data
+                  </button>
+                )}
+              </div>
+
+              {registrationImportSummary.total > 0 && (
+                <div className="space-y-4 pt-4 border-t border-gray-100">
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                      <p className="text-xs text-gray-500 font-semibold uppercase">Total Rows</p>
+                      <p className="text-lg font-bold text-gray-900 mt-0.5">{registrationImportSummary.total}</p>
+                    </div>
+                    <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                      <p className="text-xs text-emerald-700 font-semibold uppercase">Valid Requests</p>
+                      <p className="text-lg font-bold text-emerald-800 mt-0.5">{registrationImportSummary.valid.length}</p>
+                    </div>
+                    <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                      <p className="text-xs text-amber-700 font-semibold uppercase">Duplicates Skipped</p>
+                      <p className="text-lg font-bold text-amber-800 mt-0.5">{registrationImportSummary.duplicates.length}</p>
+                    </div>
+                    <div className="bg-red-50 p-3 rounded-xl border border-red-200">
+                      <p className="text-xs text-red-700 font-semibold uppercase">Invalid Rows</p>
+                      <p className="text-lg font-bold text-red-800 mt-0.5">{registrationImportSummary.invalid.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex border-b border-gray-200 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRegistrationImportTab("valid")}
+                      className={`px-3 py-2 text-xs font-semibold border-b-2 ${registrationImportTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}
+                    >
+                      Valid ({registrationImportSummary.valid.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegistrationImportTab("duplicates")}
+                      className={`px-3 py-2 text-xs font-semibold border-b-2 ${registrationImportTab === "duplicates" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500"}`}
+                    >
+                      Duplicates ({registrationImportSummary.duplicates.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRegistrationImportTab("invalid")}
+                      className={`px-3 py-2 text-xs font-semibold border-b-2 ${registrationImportTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500"}`}
+                    >
+                      Invalid ({registrationImportSummary.invalid.length})
+                    </button>
+                  </div>
+
+                  {registrationImportTab === "valid" && (
+                    <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs">
+                      {registrationImportSummary.valid.map((r, idx) => (
+                        <div key={idx} className="p-2.5 flex justify-between items-center hover:bg-gray-50">
+                          <div>
+                            <span className="font-bold text-gray-900">{r.first_name} {r.last_name}</span>
+                            <span className="text-gray-500 ml-2">• Grade {r.grade_level} {r.section ? `(${r.section})` : ""}</span>
+                          </div>
+                          <div className="text-right font-mono text-gray-600">
+                            <span>{r.lrn}</span> | <span>{r.email}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {registrationImportTab === "duplicates" && (
+                    <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-amber-800 bg-amber-50/50">
+                      {registrationImportSummary.duplicates.map((d, idx) => (
+                        <div key={idx} className="p-2.5 flex justify-between items-center">
+                          <span className="font-semibold">{d.name} ({d.lrn || d.email})</span>
+                          <span className="text-amber-700 text-[11px]">{d.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {registrationImportTab === "invalid" && (
+                    <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-red-800 bg-red-50/50">
+                      {registrationImportSummary.invalid.map((inv, idx) => (
+                        <div key={idx} className="p-2.5 flex justify-between items-center">
+                          <span className="font-semibold">{inv.name} ({inv.email || inv.lrn})</span>
+                          <span className="text-red-700 text-[11px]">{inv.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowRegistrationBulkImportModal(false)}
+                disabled={isSavingRegistrationImport}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRegistrationImport}
+                disabled={isSavingRegistrationImport || registrationImportSummary.valid.length === 0}
+                className="px-5 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm cursor-pointer"
+              >
+                {isSavingRegistrationImport && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isSavingRegistrationImport ? "Importing..." : `Import ${registrationImportSummary.valid.length} Pending Request(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL CONFIRMATION MODAL */}
+      {showBulkApproveConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Approve Selected Registration Requests?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              You are about to approve <span className="font-bold text-gray-900">{selectedPendingRequestIds.size}</span> pending student registration request(s).
+            </p>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1 mb-6">
+              <p>• Accounts will be created in Supabase Auth & profiles table.</p>
+              <p>• Unique secure temporary passwords will be generated server-side.</p>
+              <p>• Individual credential emails will be sent via Resend API.</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBulkApproveConfirmModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkApproval}
+                className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Confirm Bulk Approval
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL PROGRESS MODAL */}
+      {showBulkApproveProgressModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 text-center">
+            <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Creating Accounts & Sending Emails</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Processing request <span className="font-semibold text-gray-900">{bulkApproveProgress.current}</span> of <span className="font-semibold text-gray-900">{bulkApproveProgress.total}</span>
+            </p>
+            {bulkApproveProgress.currentStudentName && (
+              <p className="text-xs font-mono text-emerald-700 bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100 inline-block truncate max-w-full">
+                Processing: {bulkApproveProgress.currentStudentName}
+              </p>
+            )}
+            <div className="w-full bg-gray-100 rounded-full h-2 mt-4 overflow-hidden">
+              <div
+                className="bg-emerald-600 h-2 transition-all duration-300"
+                style={{ width: `${Math.round((bulkApproveProgress.current / (bulkApproveProgress.total || 1)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL RESULTS MODAL */}
+      {showBulkApproveResultsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Bulk Approval Summary</h3>
+              <button onClick={() => setShowBulkApproveResultsModal(false)} type="button" className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 text-center mb-6">
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Processed</p>
+                <p className="text-lg font-bold text-gray-900 mt-0.5">{bulkApproveResultsSummary.total}</p>
+              </div>
+              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                <p className="text-[10px] text-emerald-700 font-bold uppercase">Accounts</p>
+                <p className="text-lg font-bold text-emerald-800 mt-0.5">{bulkApproveResultsSummary.successCount}</p>
+              </div>
+              <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                <p className="text-[10px] text-blue-700 font-bold uppercase">Emails Sent</p>
+                <p className="text-lg font-bold text-blue-800 mt-0.5">{bulkApproveResultsSummary.emailSentCount}</p>
+              </div>
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                <p className="text-[10px] text-amber-700 font-bold uppercase">Email Failures</p>
+                <p className="text-lg font-bold text-amber-800 mt-0.5">{bulkApproveResultsSummary.emailFailedCount}</p>
+              </div>
+            </div>
+
+            {bulkApproveResultsSummary.failures.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2">Notice / Failures ({bulkApproveResultsSummary.failures.length})</p>
+                <div className="max-h-48 overflow-y-auto border border-red-200 rounded-xl divide-y text-xs bg-red-50/40">
+                  {bulkApproveResultsSummary.failures.map((f, idx) => (
+                    <div key={idx} className="p-3">
+                      <p className="font-semibold text-gray-900">{f.name} <span className="text-gray-500 font-normal">({f.email})</span></p>
+                      <p className="text-red-700 text-[11px] mt-0.5">{f.error}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkApproveResultsModal(false)}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>

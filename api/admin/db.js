@@ -317,11 +317,12 @@ export default async function handler(req, res) {
       }
 
       // Verify required fields
-      const { first_name, last_name, email, lrn, grade_level, year_level, section } = request;
+      const { first_name, last_name, email, lrn, grade_level, year_level } = request;
+      const section = request.section || "Unassigned";
       const studentGrade = grade_level || year_level;
 
-      if (!first_name || !last_name || !email || !lrn || !studentGrade || !section) {
-        return res.status(400).json({ error: "Cannot approve request: missing required student information (first name, last name, email, LRN, grade level, or section)." });
+      if (!first_name || !last_name || !email || !lrn || !studentGrade) {
+        return res.status(400).json({ error: "Cannot approve request: missing required student information (first name, last name, email, LRN, or grade level)." });
       }
 
       const cleanLrn = String(lrn).replace(/\D/g, "");
@@ -399,6 +400,7 @@ export default async function handler(req, res) {
         first_name,
         middle_name: request.middle_name || null,
         last_name,
+        suffix: request.suffix || null,
         email: normalizedEmail,
         lrn: cleanLrn,
         year_level: studentGrade,
