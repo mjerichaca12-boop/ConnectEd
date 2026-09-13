@@ -3683,227 +3683,248 @@ function StudentManagement() {
 
       {showImportPreviewModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-100 rounded-xl text-blue-600">
-                  <Upload className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">CSV Import Summary & Preview</h3>
-                  <p className="text-sm text-gray-500">Review parsed rows before importing into masterlist</p>
-                </div>
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Import Student Masterlist</h3>
+                <p className="text-xs text-gray-500 mt-1">Review parsed student records before creating registration requests</p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowImportPreviewModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors"
                 disabled={isSavingImport}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-6 overflow-y-auto flex-1">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Total Rows</p>
-                  <p className="text-xl font-bold text-gray-900 mt-0.5">{importPreviewSummary.total}</p>
+            <div className="space-y-5">
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">TOTAL PARSED</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{importPreviewSummary.total}</p>
                 </div>
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Valid (New)</p>
-                  <p className="text-xl font-bold text-emerald-700 mt-0.5">{importPreviewSummary.valid.length}</p>
+                <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-300">
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">READY</p>
+                  <p className="text-2xl font-bold text-emerald-600 mt-1">{importPreviewSummary.valid.length}</p>
                 </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-purple-600 font-semibold uppercase tracking-wider">Already Exists</p>
-                  <p className="text-xl font-bold text-purple-700 mt-0.5">{importPreviewSummary.alreadyExisting?.length || 0}</p>
+                <div className="bg-amber-50/40 p-4 rounded-2xl border border-amber-300">
+                  <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">MISSING EMAIL</p>
+                  <p className="text-2xl font-bold text-amber-700 mt-1">{importPreviewSummary.missingEmail?.length || 0}</p>
                 </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
-                  <p className="text-[10px] text-amber-600 font-semibold uppercase tracking-wider">CSV Duplicates</p>
-                  <p className="text-xl font-bold text-amber-700 mt-0.5">{importPreviewSummary.duplicates.length}</p>
-                </div>
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center col-span-2 sm:col-span-1">
-                  <p className="text-[10px] text-red-600 font-semibold uppercase tracking-wider">Invalid Rows</p>
-                  <p className="text-xl font-bold text-red-700 mt-0.5">{importPreviewSummary.invalid.length}</p>
+                <div className="bg-blue-50/40 p-4 rounded-2xl border border-blue-300">
+                  <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">DUPLICATES</p>
+                  <p className="text-2xl font-bold text-blue-600 mt-1">{(importPreviewSummary.duplicates?.length || 0) + (importPreviewSummary.alreadyExisting?.length || 0)}</p>
                 </div>
               </div>
 
               {importPreviewSummary.sectionBreakdown && Object.keys(importPreviewSummary.sectionBreakdown).length > 0 && (
-                <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-blue-900 font-semibold text-sm">
+                <div className="bg-blue-50/40 border border-blue-200 rounded-2xl p-3.5 space-y-2">
+                  <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
                     <BookOpen className="w-4 h-4 text-blue-600" />
                     <span>Detected Grade Level & Section Breakdown</span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {Object.entries(importPreviewSummary.sectionBreakdown)
                       .sort(([a], [b]) => (parseInt(a, 10) || 0) - (parseInt(b, 10) || 0))
                       .map(([grade, secs]) => (
-                        <div key={grade} className="bg-white border border-blue-100 rounded-lg p-3 shadow-xs">
-                          <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">
+                        <div key={grade} className="bg-white border border-blue-100 rounded-xl p-2.5 shadow-xs text-xs">
+                          <p className="font-bold text-blue-800 uppercase tracking-wide text-[11px]">
                             {grade.toLowerCase().includes("grade") || grade === "Unassigned" ? grade : `Grade ${grade}`}
                           </p>
-                          <ul className="mt-1 space-y-1">
+                          <ul className="mt-1 space-y-0.5">
                             {Object.entries(secs).map(([secName, count]) => (
-                              <li key={secName} className="text-xs text-gray-600 flex justify-between">
+                              <li key={secName} className="text-[11px] text-slate-600 flex justify-between">
                                 <span>{secName}</span>
-                                <span className="font-semibold text-gray-900">{count} student{count !== 1 ? 's' : ''}</span>
+                                <span className="font-bold text-slate-900">{count} student{count !== 1 ? 's' : ''}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
                       ))}
                   </div>
-                  {importPreviewSummary.newGradeSectionsToCreate?.length > 0 && (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>
-                        <strong>Notice:</strong> {importPreviewSummary.newGradeSectionsToCreate.length} new section(s) will be automatically registered in Academic Settings (
-                        {importPreviewSummary.newGradeSectionsToCreate.map(gs => `Grade ${gs.grade_level} - ${gs.section_name}`).join(", ")}).
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
 
-              <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
+              <div className="flex border-b border-gray-200 gap-6 px-1">
                 <button
                   type="button"
                   onClick={() => setPreviewTab("valid")}
-                  className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-                    previewTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                  className={`pb-2.5 text-xs font-bold transition-all relative ${
+                    previewTab === "valid" ? "text-emerald-700" : "text-slate-500 hover:text-slate-700 font-medium"
                   }`}
                 >
-                  Valid Records ({importPreviewSummary.valid.length})
+                  Ready ({importPreviewSummary.valid.length})
+                  {previewTab === "valid" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600 rounded-full" />
+                  )}
                 </button>
-                {importPreviewSummary.alreadyExisting?.length > 0 && (
+                {importPreviewSummary.missingEmail?.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setPreviewTab("alreadyExisting")}
-                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-                      previewTab === "alreadyExisting" ? "border-purple-600 text-purple-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    onClick={() => setPreviewTab("missingEmail")}
+                    className={`pb-2.5 text-xs font-bold transition-all relative ${
+                      previewTab === "missingEmail" ? "text-amber-700" : "text-slate-500 hover:text-slate-700 font-medium"
                     }`}
                   >
-                    Already Existing ({importPreviewSummary.alreadyExisting.length})
+                    Missing Email ({importPreviewSummary.missingEmail.length})
+                    {previewTab === "missingEmail" && (
+                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full" />
+                    )}
                   </button>
                 )}
-                {importPreviewSummary.duplicates.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewTab("duplicates")}
-                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-                      previewTab === "duplicates" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Duplicates ({importPreviewSummary.duplicates.length})
-                  </button>
-                )}
-                {importPreviewSummary.invalid.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab("duplicates")}
+                  className={`pb-2.5 text-xs font-bold transition-all relative ${
+                    previewTab === "duplicates" ? "text-blue-700" : "text-slate-500 hover:text-slate-700 font-medium"
+                  }`}
+                >
+                  Duplicates ({(importPreviewSummary.duplicates?.length || 0) + (importPreviewSummary.alreadyExisting?.length || 0)})
+                  {previewTab === "duplicates" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                  )}
+                </button>
+                {importPreviewSummary.invalid?.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setPreviewTab("invalid")}
-                    className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
-                      previewTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500 hover:text-gray-700"
+                    className={`pb-2.5 text-xs font-bold transition-all relative ${
+                      previewTab === "invalid" ? "text-red-700" : "text-slate-500 hover:text-slate-700 font-medium"
                     }`}
                   >
-                    Invalid Rows ({importPreviewSummary.invalid.length})
+                    Invalid ({importPreviewSummary.invalid.length})
+                    {previewTab === "invalid" && (
+                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-full" />
+                    )}
                   </button>
                 )}
               </div>
 
               {previewTab === "valid" && (
-                <div>
+                <div className="max-h-56 overflow-y-auto border border-emerald-300 rounded-2xl divide-y divide-emerald-100 bg-white">
                   {importPreviewSummary.valid.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic py-4 text-center">No valid new records to import.</p>
+                    <p className="p-6 text-slate-500 text-center text-xs">No ready records found.</p>
                   ) : (
-                    <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
-                      <table className="w-full text-left text-sm text-gray-600">
-                        <thead className="bg-gray-50 text-xs uppercase font-semibold text-gray-500 sticky top-0">
-                          <tr>
-                            <th className="px-4 py-3">Row</th>
-                            <th className="px-4 py-3">LRN</th>
-                            <th className="px-4 py-3">Name</th>
-                            <th className="px-4 py-3">Year Level</th>
-                            <th className="px-4 py-3">Section</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {importPreviewSummary.valid.map((r, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50/50">
-                              <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">#{r.rowNum}</td>
-                              <td className="px-4 py-2.5 font-mono text-gray-900">{r.lrn}</td>
-                              <td className="px-4 py-2.5 font-medium text-gray-900">{[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(" ")}</td>
-                              <td className="px-4 py-2.5">{r.year_level || "-"}</td>
-                              <td className="px-4 py-2.5">{r.section || "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    importPreviewSummary.valid.map((r, idx) => (
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-emerald-50/30 transition-colors">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">
+                            {[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(" ")}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                            {r.email || "No Email"} • LRN: {r.lrn} {r.year_level ? `• Grade ${r.year_level}` : ""} {r.section ? `(${r.section})` : ""}
+                          </p>
+                        </div>
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-md font-semibold text-xs shrink-0">
+                          Ready
+                        </span>
+                      </div>
+                    ))
                   )}
                 </div>
               )}
 
-              {previewTab === "alreadyExisting" && (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {importPreviewSummary.alreadyExisting?.map((ae, idx) => (
-                    <div key={idx} className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-900 flex items-start gap-2">
-                      <Users className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold">{ae.name} (LRN: {ae.lrn}):</span> {ae.reason}
+              {previewTab === "missingEmail" && (
+                <div className="max-h-56 overflow-y-auto border border-amber-300 rounded-2xl divide-y divide-amber-100 bg-white">
+                  {(!importPreviewSummary.missingEmail || importPreviewSummary.missingEmail.length === 0) ? (
+                    <p className="p-6 text-slate-500 text-center text-xs">No missing email records.</p>
+                  ) : (
+                    importPreviewSummary.missingEmail.map((r, idx) => (
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-amber-50/30 transition-colors">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">{r.fullName || `${r.first_name} ${r.last_name}`}</p>
+                          <p className="text-xs text-amber-700 mt-0.5 font-normal">{r.reason || "Missing email address"}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-amber-100 text-amber-800 font-semibold rounded-md text-xs shrink-0">
+                          Missing Email
+                        </span>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
 
               {previewTab === "duplicates" && (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {importPreviewSummary.duplicates.map((d, idx) => (
-                    <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold">{d.reason}</span>
+                <div className="max-h-56 overflow-y-auto border border-blue-300 rounded-2xl divide-y divide-blue-100 bg-white">
+                  {[...(importPreviewSummary.duplicates || []), ...(importPreviewSummary.alreadyExisting || [])].length === 0 ? (
+                    <p className="p-6 text-slate-500 text-center text-xs">No duplicate records.</p>
+                  ) : (
+                    [...(importPreviewSummary.duplicates || []), ...(importPreviewSummary.alreadyExisting || [])].map((d, idx) => (
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-blue-50/30 transition-colors">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">{d.name || d.fullName || `${d.first_name || ''} ${d.last_name || ''}`.trim() || 'Student'}</p>
+                          <p className="text-xs text-blue-700 mt-0.5 font-normal">{d.reason || "Duplicate record"}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 font-semibold rounded-md text-xs shrink-0">
+                          Duplicate
+                        </span>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
 
               {previewTab === "invalid" && (
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {importPreviewSummary.invalid.map((inv, idx) => (
-                    <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold">{inv.reason}</span>
+                <div className="max-h-56 overflow-y-auto border border-red-300 rounded-2xl divide-y divide-red-100 bg-white">
+                  {(!importPreviewSummary.invalid || importPreviewSummary.invalid.length === 0) ? (
+                    <p className="p-6 text-slate-500 text-center text-xs">No invalid records.</p>
+                  ) : (
+                    importPreviewSummary.invalid.map((inv, idx) => (
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-red-50/30 transition-colors">
+                        <div>
+                          <p className="font-bold text-slate-900 text-sm">{inv.name || inv.fullName || `${inv.first_name || ''} ${inv.last_name || ''}`.trim() || 'Student'}</p>
+                          <p className="text-xs text-red-700 mt-0.5 font-normal">{inv.reason || "Invalid format"}</p>
+                        </div>
+                        <span className="px-3 py-1 bg-red-100 text-red-800 font-semibold rounded-md text-xs shrink-0">
+                          Invalid
+                        </span>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
-            </div>
 
-            <div className="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
-              <p className="text-xs text-gray-500">
-                Only <strong className="text-emerald-700">{importPreviewSummary.valid.length} valid record(s)</strong> will be inserted into Supabase.
-              </p>
-              <div className="flex gap-3">
+              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setShowImportPreviewModal(false)}
-                  className="px-4 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors"
-                  disabled={isSavingImport}
+                  onClick={() => {
+                    const csvContent = "First Name,Middle Name,Last Name,Suffix,Email,LRN,Grade Level,Section\nJuan,D,Dela Cruz,,juan.delacruz@student.edu.ph,123456789012,7,Rizal\nMaria,S,Santos,,maria.santos@student.edu.ph,123456789013,7,Bonifacio";
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", "student_masterlist_template.csv");
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  Cancel
+                  <Download className="w-4 h-4" />
+                  Download Sample CSV
                 </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmImport}
-                  disabled={isSavingImport || importPreviewSummary.valid.length === 0}
-                  className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
-                >
-                  {isSavingImport && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {isSavingImport ? "Importing..." : `Confirm Import (${importPreviewSummary.valid.length})`}
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowImportPreviewModal(false)}
+                    disabled={isSavingImport}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmImport}
+                    disabled={isSavingImport || importPreviewSummary.valid.length === 0}
+                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {isSavingImport && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {isSavingImport ? "Importing..." : `Confirm & Create ${importPreviewSummary.valid.length} Registration Request(s)`}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
