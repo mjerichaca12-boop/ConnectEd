@@ -2622,7 +2622,7 @@ function TeacherManagement() {
                 <button
                   type="button"
                   onClick={handleDownloadTeacherSampleCsv}
-                  className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer text-sm"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-800 rounded-2xl hover:bg-gray-50 transition-all font-semibold shadow-sm cursor-pointer text-sm"
                   title="Download Sample CSV Template"
                 >
                   <Download className="w-4 h-4 text-gray-500" />
@@ -2632,13 +2632,13 @@ function TeacherManagement() {
                   type="button"
                   onClick={() => setShowTeacherGoogleSheetsModal(true)}
                   disabled={isImportingTeachers}
-                  className="flex items-center gap-2 px-5 py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors font-semibold shadow-sm cursor-pointer text-sm disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50/80 border border-emerald-300/80 text-emerald-700 rounded-2xl hover:bg-emerald-100/70 transition-all font-semibold shadow-sm cursor-pointer text-sm disabled:opacity-50"
                 >
-                  {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-emerald-600" />}
+                  {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> : <Upload className="w-4 h-4 text-emerald-600" />}
                   {isImportingTeachers ? "Importing..." : "Import Teachers"}
                 </button>
-                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 shadow-sm cursor-pointer text-sm">
-                  <UserPlus className="w-5 h-5" />
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-md shadow-green-600/20 cursor-pointer text-sm">
+                  <UserPlus className="w-4 h-4" />
                   Add Teacher
                 </button>
               </div>
