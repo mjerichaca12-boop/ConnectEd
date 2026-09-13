@@ -135,6 +135,19 @@ function TeacherManagement() {
   const [rejectionReasonInput, setRejectionReasonInput] = useState("");
   const [isProcessingRequest, setIsProcessingRequest] = useState(false);
 
+  // Teacher Bulk Registration Request States
+  const [selectedPendingRequestIds, setSelectedPendingRequestIds] = useState(new Set());
+  const [showBulkApproveConfirmModal, setShowBulkApproveConfirmModal] = useState(false);
+  const [showBulkApproveProgressModal, setShowBulkApproveProgressModal] = useState(false);
+  const [bulkApproveProgress, setBulkApproveProgress] = useState({ total: 0, current: 0, currentTeacherName: "" });
+  const [showBulkApproveResultsModal, setShowBulkApproveResultsModal] = useState(false);
+  const [bulkApproveResultsSummary, setBulkApproveResultsSummary] = useState({ total: 0, successCount: 0, emailSentCount: 0, emailFailedCount: 0, failures: [] });
+
+  const [showTeacherCreateRequestsModal, setShowTeacherCreateRequestsModal] = useState(false);
+  const [teacherCreateSummary, setTeacherCreateSummary] = useState({ totalSelected: 0, ready: [], missingEmail: [], duplicates: [] });
+  const [teacherCreateTab, setTeacherCreateTab] = useState("ready");
+  const [isCreatingTeacherRequests, setIsCreatingTeacherRequests] = useState(false);
+
   useEffect(() => {
     if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm || showResetPasswordModal || showViewRequestModal || showApproveRequestModal || showRejectRequestModal) {
       document.body.style.overflow = "hidden";
@@ -1166,6 +1179,204 @@ function TeacherManagement() {
     } finally {
       setIsProcessingRequest(false);
     }
+  };
+
+  const handlePrepareTeacherRegistrationRequests = () => {
+    const selectedRows = teachers.filter(t => selectedTeacherIds.has(t.id));
+    if (selectedRows.length === 0) {
+      toast.error("Please select at least one teacher.");
+      return;
+    }
+
+    const ready = [];
+    const missingEmail = [];
+    const duplicates = [];
+
+    const existingPendingEmailSet = new Set(
+      registrationRequests
+        .filter(r => r.status === "pending" || r.status === "approved")
+        .map(r => r.email ? String(r.email).trim().toLowerCase() : null)
+        .filter(Boolean)
+    );
+    const existingPendingEmpIdSet = new Set(
+      registrationRequests
+        .filter(r => r.status === "pending" || r.status === "approved")
+        .map(r => (r.employee_id || r.lrn) ? String(r.employee_id || r.lrn).trim().toLowerCase() : null)
+        .filter(Boolean)
+    );
+    const existingProfileEmailSet = new Set(
+      teachers.map(t => t.email ? String(t.email).trim().toLowerCase() : null).filter(Boolean)
+    );
+
+    selectedRows.forEach(teacher => {
+      const email = teacher.email ? String(teacher.email).trim().toLowerCase() : "";
+      const empId = (teacher.employee_id || teacher.lrn) ? String(teacher.employee_id || teacher.lrn).trim().toLowerCase() : "";
+      const fullName = formatTeacherFullName(teacher);
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        missingEmail.push({ ...teacher, fullName, reason: "Missing or invalid email address" });
+        return;
+      }
+
+      const isDuplicate =
+        (email && (existingPendingEmailSet.has(email) || existingProfileEmailSet.has(email))) ||
+        (empId && existingPendingEmpIdSet.has(empId));
+
+      if (isDuplicate) {
+        duplicates.push({ ...teacher, fullName, reason: "Pending/approved request or account already exists" });
+        return;
+      }
+
+      ready.push({ ...teacher, fullName, email, empId });
+    });
+
+    setTeacherCreateSummary({
+      totalSelected: selectedRows.length,
+      ready,
+      missingEmail,
+      duplicates
+    });
+    setTeacherCreateTab(ready.length > 0 ? "ready" : (missingEmail.length > 0 ? "missingEmail" : "duplicates"));
+    setShowTeacherCreateRequestsModal(true);
+  };
+
+  const handleConfirmCreateTeacherRegistrationRequests = async () => {
+    const { ready } = teacherCreateSummary;
+    if (ready.length === 0) {
+      toast.error("No eligible teachers to create registration requests.");
+      return;
+    }
+
+    setIsCreatingTeacherRequests(true);
+    try {
+      const recordsToInsert = ready.map(teacher => {
+        const { first_name, middle_name, last_name, suffix } = splitTeacherName(teacher);
+        return {
+          request_type: "teacher",
+          first_name: first_name || teacher.first_name || "Teacher",
+          middle_name: middle_name || teacher.middle_name || null,
+          last_name: last_name || teacher.last_name || "Account",
+          suffix: suffix || teacher.suffix || null,
+          email: teacher.email,
+          employee_id: teacher.empId || null,
+          lrn: teacher.empId || null,
+          grade_level: teacher.grade_level || null,
+          section: teacher.assigned_class || null,
+          subjects: Array.isArray(teacher.subjects) && teacher.subjects.length > 0 ? teacher.subjects : null,
+          status: "pending",
+          source: "masterlist",
+          external_request_id: `masterlist-teacher-${teacher.email}`
+        };
+      });
+
+      const { error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: recordsToInsert
+      });
+
+      if (error) throw error;
+
+      toast.success(`Successfully created ${recordsToInsert.length} teacher registration request(s)!`, { duration: 5000 });
+      setShowTeacherCreateRequestsModal(false);
+      setSelectedTeacherIds(new Set());
+
+      setActiveTab("RegistrationRequests");
+      setRegistrationSubTab("pending");
+      await refreshTeachers();
+    } catch (err) {
+      console.error("Create teacher registration requests error:", err);
+      toast.error(err.message || "Failed to create teacher registration requests.");
+    } finally {
+      setIsCreatingTeacherRequests(false);
+    }
+  };
+
+  const handleConfirmBulkTeacherApproval = async () => {
+    setShowBulkApproveConfirmModal(false);
+    const pendingReqs = registrationRequests.filter(r => r.status === "pending" && selectedPendingRequestIds.has(r.id));
+    
+    if (pendingReqs.length === 0) {
+      toast.error("No pending registration requests selected for approval.");
+      return;
+    }
+
+    const userData = localStorage.getItem("currentUser");
+    const adminUser = userData ? JSON.parse(userData) : null;
+    const adminId = adminUser?.id;
+
+    setShowBulkApproveProgressModal(true);
+    setBulkApproveProgress({
+      total: pendingReqs.length,
+      current: 0,
+      currentTeacherName: ""
+    });
+
+    const summary = {
+      total: pendingReqs.length,
+      successCount: 0,
+      emailSentCount: 0,
+      emailFailedCount: 0,
+      failures: []
+    };
+
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < pendingReqs.length; i += BATCH_SIZE) {
+      const batch = pendingReqs.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (req, bIdx) => {
+          const currentIdx = i + bIdx + 1;
+          const teacherName = [req.first_name, req.middle_name, req.last_name].filter(Boolean).join(" ");
+          
+          setBulkApproveProgress({
+            total: pendingReqs.length,
+            current: currentIdx,
+            currentTeacherName: teacherName
+          });
+
+          try {
+            const res = await adminApi.approveTeacherRegistration({
+              request_id: req.id,
+              reviewer_id: adminId
+            });
+
+            if (res.error) {
+              summary.failures.push({
+                id: req.id,
+                name: teacherName,
+                email: req.email,
+                error: res.error.message || "Failed to approve registration"
+              });
+            } else {
+              summary.successCount++;
+              if (res.emailSent || res.email_sent) {
+                summary.emailSentCount++;
+              } else {
+                summary.emailFailedCount++;
+                summary.failures.push({
+                  id: req.id,
+                  name: teacherName,
+                  email: req.email,
+                  error: res.emailNotice || res.notice || "Account created, but credentials email failed to send."
+                });
+              }
+            }
+          } catch (err) {
+            summary.failures.push({
+              id: req.id,
+              name: teacherName,
+              email: req.email,
+              error: err.message || "Unexpected exception during approval"
+            });
+          }
+        })
+      );
+    }
+
+    setShowBulkApproveProgressModal(false);
+    setBulkApproveResultsSummary(summary);
+    setShowBulkApproveResultsModal(true);
+    setSelectedPendingRequestIds(new Set());
+
+    await refreshTeachers();
   };
 
   useEffect(() => {
@@ -2221,13 +2432,34 @@ function TeacherManagement() {
                 </div>
               )}
               {activeTab === "Roster" && selectedTeacherIds.size > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePrepareTeacherRegistrationRequests}
+                    disabled={isCreatingTeacherRequests}
+                    className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer disabled:opacity-50"
+                  >
+                    {isCreatingTeacherRequests ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                    Create Registration Requests ({selectedTeacherIds.size})
+                  </button>
+                  <button
+                    onClick={() => setShowBulkDeleteConfirm(true)}
+                    disabled={isBulkDeleting}
+                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                  >
+                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedTeacherIds.size})`}
+                  </button>
+                </>
+              )}
+              {activeTab === "RegistrationRequests" && registrationSubTab === "pending" && selectedPendingRequestIds.size > 0 && (
                 <button
-                  onClick={() => setShowBulkDeleteConfirm(true)}
-                  disabled={isBulkDeleting}
-                  className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                  type="button"
+                  onClick={() => setShowBulkApproveConfirmModal(true)}
+                  className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
                 >
-                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedTeacherIds.size})`}
+                  <CheckCircle2 className="w-4 h-4" />
+                  Approve Selected ({selectedPendingRequestIds.size})
                 </button>
               )}
               {activeTab === "Roster" && (
@@ -2411,6 +2643,27 @@ function TeacherManagement() {
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
+                          {registrationSubTab === "pending" && (
+                            <th className="px-6 py-5 text-left w-12">
+                              <button
+                                onClick={() => {
+                                  const pendingReqs = filteredRegistrationRequests.filter(r => r.status === "pending");
+                                  if (selectedPendingRequestIds.size === pendingReqs.length && pendingReqs.length > 0) {
+                                    setSelectedPendingRequestIds(new Set());
+                                  } else {
+                                    setSelectedPendingRequestIds(new Set(pendingReqs.map(r => r.id)));
+                                  }
+                                }}
+                                className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                              >
+                                {selectedPendingRequestIds.size > 0 && selectedPendingRequestIds.size === filteredRegistrationRequests.filter(r => r.status === "pending").length ? (
+                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                  <Square className="w-5 h-5 text-gray-400" />
+                                )}
+                              </button>
+                            </th>
+                          )}
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher Name</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source</th>
@@ -2422,7 +2675,22 @@ function TeacherManagement() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {filteredRegistrationRequests.map((req) => (
-                          <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={req.id} className={`hover:bg-gray-50 transition-colors ${selectedPendingRequestIds.has(req.id) ? "bg-blue-50/50" : ""}`}>
+                            {registrationSubTab === "pending" && (
+                              <td className="px-6 py-5 text-left align-middle">
+                                <button
+                                  onClick={() => {
+                                    const newSet = new Set(selectedPendingRequestIds);
+                                    if (newSet.has(req.id)) newSet.delete(req.id);
+                                    else newSet.add(req.id);
+                                    setSelectedPendingRequestIds(newSet);
+                                  }}
+                                  className="flex items-center justify-center p-1 rounded hover:bg-gray-200 transition-colors"
+                                >
+                                  {selectedPendingRequestIds.has(req.id) ? <CheckSquare className="w-5 h-5 text-blue-600" /> : <Square className="w-5 h-5 text-gray-400" />}
+                                </button>
+                              </td>
+                            )}
                             <td className="px-6 py-5 align-middle">
                               <p className="font-semibold text-gray-900 truncate">
                                 {[req.first_name, req.middle_name, req.last_name, req.suffix].filter(Boolean).join(" ")}
@@ -2435,9 +2703,11 @@ function TeacherManagement() {
                               <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border ${
                                 req.source === "admin"
                                   ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : req.source === "masterlist"
+                                  ? "bg-sky-50 text-sky-700 border-sky-200"
                                   : "bg-purple-50 text-purple-700 border-purple-200"
                               }`}>
-                                {req.source === "admin" ? "Admin Added" : "Google Form"}
+                                {req.source === "admin" ? "Admin Added" : req.source === "masterlist" ? "Masterlist" : "Google Form"}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
@@ -3231,6 +3501,261 @@ function TeacherManagement() {
               >
                 {isProcessingRequest && <Loader2 className="w-4 h-4 animate-spin" />}
                 {isProcessingRequest ? "Rejecting..." : "Confirm Rejection"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEACHER CREATE REGISTRATION REQUESTS MODAL */}
+      {showTeacherCreateRequestsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Create Registration Requests from Teacher Roster</h3>
+                <p className="text-xs text-gray-500 mt-1">Staging teacher records for admin review</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTeacherCreateRequestsModal(false)}
+                disabled={isCreatingTeacherRequests}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase">Selected</p>
+                  <p className="text-lg font-bold text-gray-900 mt-0.5">{teacherCreateSummary.totalSelected}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                  <p className="text-[10px] text-emerald-700 font-bold uppercase">Ready</p>
+                  <p className="text-lg font-bold text-emerald-800 mt-0.5">{teacherCreateSummary.ready.length}</p>
+                </div>
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                  <p className="text-[10px] text-amber-700 font-bold uppercase">Missing Email</p>
+                  <p className="text-lg font-bold text-amber-800 mt-0.5">{teacherCreateSummary.missingEmail.length}</p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                  <p className="text-[10px] text-blue-700 font-bold uppercase">Duplicates</p>
+                  <p className="text-lg font-bold text-blue-800 mt-0.5">{teacherCreateSummary.duplicates.length}</p>
+                </div>
+              </div>
+
+              <div className="flex border-b border-gray-200 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTeacherCreateTab("ready")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherCreateTab === "ready" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}
+                >
+                  Ready ({teacherCreateSummary.ready.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherCreateTab("missingEmail")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherCreateTab === "missingEmail" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500"}`}
+                >
+                  Missing Email ({teacherCreateSummary.missingEmail.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherCreateTab("duplicates")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherCreateTab === "duplicates" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"}`}
+                >
+                  Duplicates ({teacherCreateSummary.duplicates.length})
+                </button>
+              </div>
+
+              {teacherCreateTab === "ready" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs">
+                  {teacherCreateSummary.ready.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No ready records to create requests.</p>
+                  ) : (
+                    teacherCreateSummary.ready.map((t, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                          <span className="font-bold text-gray-900">{t.fullName}</span>
+                          <span className="text-gray-500 ml-2">{t.empId ? `(ID: ${t.empId})` : ""}</span>
+                        </div>
+                        <div className="text-right font-mono text-gray-600">
+                          <span>{t.email}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {teacherCreateTab === "missingEmail" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-amber-800 bg-amber-50/50">
+                  {teacherCreateSummary.missingEmail.length === 0 ? (
+                    <p className="p-4 text-amber-700 text-center">No missing email rows.</p>
+                  ) : (
+                    teacherCreateSummary.missingEmail.map((m, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                        <span className="font-semibold">{m.fullName}</span>
+                        <span className="text-amber-700 text-[11px]">Flagged: Missing Email</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {teacherCreateTab === "duplicates" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-blue-800 bg-blue-50/50">
+                  {teacherCreateSummary.duplicates.length === 0 ? (
+                    <p className="p-4 text-blue-700 text-center">No duplicate rows.</p>
+                  ) : (
+                    teacherCreateSummary.duplicates.map((d, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                        <span className="font-semibold">{d.fullName} ({d.email})</span>
+                        <span className="text-blue-700 text-[11px]">{d.reason}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowTeacherCreateRequestsModal(false)}
+                disabled={isCreatingTeacherRequests}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCreateTeacherRegistrationRequests}
+                disabled={isCreatingTeacherRequests || teacherCreateSummary.ready.length === 0}
+                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm cursor-pointer"
+              >
+                {isCreatingTeacherRequests && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isCreatingTeacherRequests ? "Creating..." : `Create ${teacherCreateSummary.ready.length} Registration Request(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL CONFIRMATION MODAL */}
+      {showBulkApproveConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Approve Selected Teacher Requests?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              You are about to approve <span className="font-bold text-gray-900">{selectedPendingRequestIds.size}</span> pending teacher registration request(s).
+            </p>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 space-y-1 mb-6">
+              <p>• Accounts will be created in Supabase Auth & profiles table.</p>
+              <p>• Unique secure temporary passwords will be generated server-side.</p>
+              <p>• Individual credential emails will be sent via Resend API.</p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBulkApproveConfirmModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBulkTeacherApproval}
+                className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Confirm Bulk Approval
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL PROGRESS MODAL */}
+      {showBulkApproveProgressModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 text-center">
+            <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Creating Teacher Accounts & Sending Emails</h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Processing request <span className="font-semibold text-gray-900">{bulkApproveProgress.current}</span> of <span className="font-semibold text-gray-900">{bulkApproveProgress.total}</span>
+            </p>
+            {bulkApproveProgress.currentTeacherName && (
+              <p className="text-xs font-mono text-emerald-700 bg-emerald-50 py-1.5 px-3 rounded-lg border border-emerald-100 inline-block truncate max-w-full">
+                Processing: {bulkApproveProgress.currentTeacherName}
+              </p>
+            )}
+            <div className="w-full bg-gray-100 rounded-full h-2 mt-4 overflow-hidden">
+              <div
+                className="bg-emerald-600 h-2 transition-all duration-300"
+                style={{ width: `${Math.round((bulkApproveProgress.current / (bulkApproveProgress.total || 1)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK APPROVAL RESULTS MODAL */}
+      {showBulkApproveResultsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Teacher Bulk Approval Summary</h3>
+              <button onClick={() => setShowBulkApproveResultsModal(false)} type="button" className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 text-center mb-6">
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                <p className="text-[10px] text-gray-500 font-bold uppercase">Processed</p>
+                <p className="text-lg font-bold text-gray-900 mt-0.5">{bulkApproveResultsSummary.total}</p>
+              </div>
+              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                <p className="text-[10px] text-emerald-700 font-bold uppercase">Accounts</p>
+                <p className="text-lg font-bold text-emerald-800 mt-0.5">{bulkApproveResultsSummary.successCount}</p>
+              </div>
+              <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                <p className="text-[10px] text-blue-700 font-bold uppercase">Emails Sent</p>
+                <p className="text-lg font-bold text-blue-800 mt-0.5">{bulkApproveResultsSummary.emailSentCount}</p>
+              </div>
+              <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                <p className="text-[10px] text-amber-700 font-bold uppercase">Email Failures</p>
+                <p className="text-lg font-bold text-amber-800 mt-0.5">{bulkApproveResultsSummary.emailFailedCount}</p>
+              </div>
+            </div>
+
+            {bulkApproveResultsSummary.failures.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-bold text-red-600 uppercase tracking-wider mb-2">Notice / Failures ({bulkApproveResultsSummary.failures.length})</p>
+                <div className="max-h-48 overflow-y-auto border border-red-200 rounded-xl divide-y text-xs bg-red-50/40">
+                  {bulkApproveResultsSummary.failures.map((f, idx) => (
+                    <div key={idx} className="p-3">
+                      <p className="font-semibold text-gray-900">{f.name} <span className="text-gray-500 font-normal">({f.email})</span></p>
+                      <p className="text-red-700 text-[11px] mt-0.5">{f.error}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowBulkApproveResultsModal(false)}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-sm cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>

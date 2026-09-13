@@ -175,6 +175,17 @@ function StudentManagement() {
   });
   const [resultsTab, setResultsTab] = useState("success");
 
+  // Masterlist to Registration Requests Creation States
+  const [showMasterlistCreateRequestsModal, setShowMasterlistCreateRequestsModal] = useState(false);
+  const [masterlistCreateSummary, setMasterlistCreateSummary] = useState({
+    totalSelected: 0,
+    ready: [],
+    missingEmail: [],
+    duplicates: []
+  });
+  const [masterlistCreateTab, setMasterlistCreateTab] = useState("ready");
+  const [isCreatingMasterlistRequests, setIsCreatingMasterlistRequests] = useState(false);
+
   // Bulk section assignment states
   const [showBulkAssignSectionModal, setShowBulkAssignSectionModal] = useState(false);
   const [targetBulkSection, setTargetBulkSection] = useState("");
@@ -1535,6 +1546,154 @@ function StudentManagement() {
     await refreshStudents();
   };
 
+  const getMasterlistStudentAccountStatus = useCallback((masterlistStudent) => {
+    const normLrn = masterlistStudent.lrn ? String(masterlistStudent.lrn).replace(/\D/g, "") : "";
+    const normEmail = masterlistStudent.email ? String(masterlistStudent.email).trim().toLowerCase() : "";
+
+    // 1. Check enrolled profiles
+    const isEnrolled = students.some(s => 
+      (normLrn && s.lrn && String(s.lrn).replace(/\D/g, "") === normLrn) ||
+      (normEmail && s.email && String(s.email).trim().toLowerCase() === normEmail)
+    );
+
+    if (isEnrolled || masterlistStudent.account_created) {
+      return { label: "Account Created", badgeStyle: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+    }
+
+    // 2. Check pending_account_requests
+    const matchingReq = registrationRequests.find(r => 
+      (normLrn && r.lrn && String(r.lrn).replace(/\D/g, "") === normLrn) ||
+      (normEmail && r.email && String(r.email).trim().toLowerCase() === normEmail)
+    );
+
+    if (matchingReq) {
+      if (matchingReq.status === "pending") {
+        return { label: "Registration Pending", badgeStyle: "bg-blue-50 text-blue-700 border-blue-200" };
+      }
+      if (matchingReq.status === "approved") {
+        return { label: "Approved", badgeStyle: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+      }
+      if (matchingReq.status === "rejected") {
+        return { label: "Rejected", badgeStyle: "bg-red-50 text-red-700 border-red-200" };
+      }
+    }
+
+    // 3. Check for missing email
+    if (!normEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail)) {
+      return { label: "Missing Email", badgeStyle: "bg-amber-50 text-amber-700 border-amber-200" };
+    }
+
+    // 4. Default state
+    return { label: "Not Requested", badgeStyle: "bg-gray-100 text-gray-700 border-gray-200" };
+  }, [students, registrationRequests]);
+
+  const handlePrepareMasterlistRegistrationRequests = () => {
+    const selectedRows = masterlist.filter(m => selectedMasterlistIds.has(m.id));
+    if (selectedRows.length === 0) {
+      toast.error("Please select at least one student from the masterlist.");
+      return;
+    }
+
+    const ready = [];
+    const missingEmail = [];
+    const duplicates = [];
+
+    const existingPendingLrnSet = new Set(
+      registrationRequests
+        .filter(r => r.status === "pending" || r.status === "approved")
+        .map(r => r.lrn ? String(r.lrn).replace(/\D/g, "") : null)
+        .filter(Boolean)
+    );
+    const existingPendingEmailSet = new Set(
+      registrationRequests
+        .filter(r => r.status === "pending" || r.status === "approved")
+        .map(r => r.email ? String(r.email).trim().toLowerCase() : null)
+        .filter(Boolean)
+    );
+    const existingProfileLrnSet = new Set(
+      students.map(s => s.lrn ? String(s.lrn).replace(/\D/g, "") : null).filter(Boolean)
+    );
+    const existingProfileEmailSet = new Set(
+      students.map(s => s.email ? String(s.email).trim().toLowerCase() : null).filter(Boolean)
+    );
+
+    selectedRows.forEach(student => {
+      const email = student.email ? String(student.email).trim().toLowerCase() : "";
+      const lrn = student.lrn ? String(student.lrn).replace(/\D/g, "") : "";
+      const fullName = [student.first_name, student.middle_name, student.last_name].filter(Boolean).join(" ");
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        missingEmail.push({ ...student, fullName, reason: "Missing or invalid email address" });
+        return;
+      }
+
+      const isDuplicate =
+        (lrn && (existingPendingLrnSet.has(lrn) || existingProfileLrnSet.has(lrn))) ||
+        (email && (existingPendingEmailSet.has(email) || existingProfileEmailSet.has(email)));
+
+      if (isDuplicate) {
+        duplicates.push({ ...student, fullName, reason: "Pending/approved request or account already exists" });
+        return;
+      }
+
+      ready.push({ ...student, fullName, email, lrn });
+    });
+
+    setMasterlistCreateSummary({
+      totalSelected: selectedRows.length,
+      ready,
+      missingEmail,
+      duplicates
+    });
+    setMasterlistCreateTab(ready.length > 0 ? "ready" : (missingEmail.length > 0 ? "missingEmail" : "duplicates"));
+    setShowMasterlistCreateRequestsModal(true);
+  };
+
+  const handleConfirmCreateMasterlistRegistrationRequests = async () => {
+    const { ready } = masterlistCreateSummary;
+    if (ready.length === 0) {
+      toast.error("No eligible students to create registration requests.");
+      return;
+    }
+
+    setIsCreatingMasterlistRequests(true);
+    try {
+      const recordsToInsert = ready.map(student => ({
+        request_type: "student",
+        first_name: student.first_name?.trim() || "",
+        middle_name: student.middle_name?.trim() || null,
+        last_name: student.last_name?.trim() || "",
+        suffix: student.suffix?.trim() || null,
+        email: student.email,
+        lrn: student.lrn,
+        grade_level: normalizeYearLevel(student.year_level || student.grade_level) || "7",
+        section: formatSectionName(student.section) || null,
+        status: "pending",
+        source: "masterlist",
+        external_request_id: `masterlist-student-${student.lrn}`
+      }));
+
+      const { error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: recordsToInsert
+      });
+
+      if (error) throw error;
+
+      toast.success(`Successfully created ${recordsToInsert.length} registration request(s) from masterlist!`, { duration: 5000 });
+      setShowMasterlistCreateRequestsModal(false);
+      setSelectedMasterlistIds(new Set());
+
+      const reqs = await fetchRegistrationRequests();
+      if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+      await refreshStudents();
+    } catch (err) {
+      console.error("Create registration requests error:", err);
+      toast.error(err.message || "Failed to create registration requests.");
+    } finally {
+      setIsCreatingMasterlistRequests(false);
+    }
+  };
+
   const handleViewStudent = (student) => {
     setSelectedStudent(student);
     setShowViewModal(true);
@@ -2640,14 +2799,22 @@ function StudentManagement() {
                   <>
                     {selectedMasterlistIds.size > 0 && (
                       <>
-              
+                        <button
+                          type="button"
+                          onClick={handlePrepareMasterlistRegistrationRequests}
+                          disabled={isCreatingMasterlistRequests}
+                          className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer disabled:opacity-50"
+                        >
+                          {isCreatingMasterlistRequests ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                          Create Registration Requests ({selectedMasterlistIds.size})
+                        </button>
                         <button
                           type="button"
                           onClick={handleGenerateAccounts}
                           disabled={isGenerating || newCount === 0}
                           className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                         >
-                          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                          {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                           {isGenerating ? "Generating..." : `Generate Accounts (${newCount})`}
                         </button>
                       </>
@@ -2944,26 +3111,18 @@ function StudentManagement() {
                                     <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                                       <span className="truncate">{student.section || "Unassigned"}</span>
                                     </td>
-                                    <td className="px-6 py-5 text-right align-middle">
-                                      <div className="flex items-center justify-end gap-2">
-                                        <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${
-                                          student.account_created
-                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                            : "bg-amber-50 text-amber-700 border-amber-200"
-                                        }`}>
-                                          {student.account_created ? "Account Generated" : "Pending Account"}
-                                        </span>
-                                        {!student.account_created && (
-                                          <button
-                                            onClick={() => handleGenerateAccounts([student.id])}
-                                            disabled={isGenerating}
-                                            className="px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors shadow-sm cursor-pointer disabled:opacity-50"
-                                          >
-                                            Generate
-                                          </button>
-                                        )}
-                                      </div>
-                                    </td>
+                                     <td className="px-6 py-5 text-right align-middle">
+                                       {(() => {
+                                         const statusInfo = getMasterlistStudentAccountStatus(student);
+                                         return (
+                                           <div className="flex items-center justify-end gap-2">
+                                             <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border shadow-sm ${statusInfo.badgeStyle}`}>
+                                               {statusInfo.label}
+                                             </span>
+                                           </div>
+                                         );
+                                       })()}
+                                     </td>
                                   </tr>
                                 );
                               });
@@ -3048,11 +3207,13 @@ function StudentManagement() {
                               <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${
                                 req.source === "admin"
                                   ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : req.source === "masterlist"
+                                  ? "bg-sky-50 text-sky-700 border-sky-200"
                                   : req.source === "bulk_import"
                                   ? "bg-purple-50 text-purple-700 border-purple-200"
                                   : "bg-emerald-50 text-emerald-700 border-emerald-200"
                               }`}>
-                                {req.source === "admin" ? "Admin Added" : req.source === "bulk_import" ? "Bulk Import" : "Google Form"}
+                                {req.source === "admin" ? "Admin Added" : req.source === "masterlist" ? "Masterlist" : req.source === "bulk_import" ? "Bulk Import" : "Google Form"}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-500 align-middle whitespace-nowrap">
@@ -4423,6 +4584,143 @@ function StudentManagement() {
               >
                 {isSavingRegistrationImport && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {isSavingRegistrationImport ? "Importing..." : `Import ${registrationImportSummary.valid.length} Pending Request(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MASTERLIST CREATE REGISTRATION REQUESTS MODAL */}
+      {showMasterlistCreateRequestsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Create Registration Requests from Masterlist</h3>
+                <p className="text-xs text-gray-500 mt-1">Staging student records for admin review</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMasterlistCreateRequestsModal(false)}
+                disabled={isCreatingMasterlistRequests}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase">Selected</p>
+                  <p className="text-lg font-bold text-gray-900 mt-0.5">{masterlistCreateSummary.totalSelected}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                  <p className="text-[10px] text-emerald-700 font-bold uppercase">Ready</p>
+                  <p className="text-lg font-bold text-emerald-800 mt-0.5">{masterlistCreateSummary.ready.length}</p>
+                </div>
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                  <p className="text-[10px] text-amber-700 font-bold uppercase">Missing Email</p>
+                  <p className="text-lg font-bold text-amber-800 mt-0.5">{masterlistCreateSummary.missingEmail.length}</p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                  <p className="text-[10px] text-blue-700 font-bold uppercase">Duplicates</p>
+                  <p className="text-lg font-bold text-blue-800 mt-0.5">{masterlistCreateSummary.duplicates.length}</p>
+                </div>
+              </div>
+
+              <div className="flex border-b border-gray-200 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMasterlistCreateTab("ready")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${masterlistCreateTab === "ready" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}
+                >
+                  Ready ({masterlistCreateSummary.ready.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMasterlistCreateTab("missingEmail")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${masterlistCreateTab === "missingEmail" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500"}`}
+                >
+                  Missing Email ({masterlistCreateSummary.missingEmail.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMasterlistCreateTab("duplicates")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${masterlistCreateTab === "duplicates" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"}`}
+                >
+                  Duplicates ({masterlistCreateSummary.duplicates.length})
+                </button>
+              </div>
+
+              {masterlistCreateTab === "ready" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs">
+                  {masterlistCreateSummary.ready.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No ready records to create requests.</p>
+                  ) : (
+                    masterlistCreateSummary.ready.map((s, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                          <span className="font-bold text-gray-900">{s.fullName}</span>
+                          <span className="text-gray-500 ml-2">• Grade {s.year_level || s.grade_level || "7"} {s.section ? `(${s.section})` : ""}</span>
+                        </div>
+                        <div className="text-right font-mono text-gray-600">
+                          <span>{s.lrn}</span> | <span>{s.email}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {masterlistCreateTab === "missingEmail" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-amber-800 bg-amber-50/50">
+                  {masterlistCreateSummary.missingEmail.length === 0 ? (
+                    <p className="p-4 text-amber-700 text-center">No missing email rows.</p>
+                  ) : (
+                    masterlistCreateSummary.missingEmail.map((m, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                        <span className="font-semibold">{m.fullName} (LRN: {m.lrn || "N/A"})</span>
+                        <span className="text-amber-700 text-[11px]">Flagged: Missing Email</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {masterlistCreateTab === "duplicates" && (
+                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs text-blue-800 bg-blue-50/50">
+                  {masterlistCreateSummary.duplicates.length === 0 ? (
+                    <p className="p-4 text-blue-700 text-center">No duplicate rows.</p>
+                  ) : (
+                    masterlistCreateSummary.duplicates.map((d, idx) => (
+                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                        <span className="font-semibold">{d.fullName} ({d.lrn || d.email})</span>
+                        <span className="text-blue-700 text-[11px]">{d.reason}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowMasterlistCreateRequestsModal(false)}
+                disabled={isCreatingMasterlistRequests}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCreateMasterlistRegistrationRequests}
+                disabled={isCreatingMasterlistRequests || masterlistCreateSummary.ready.length === 0}
+                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm cursor-pointer"
+              >
+                {isCreatingMasterlistRequests && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isCreatingMasterlistRequests ? "Creating..." : `Create ${masterlistCreateSummary.ready.length} Registration Request(s)`}
               </button>
             </div>
           </div>
