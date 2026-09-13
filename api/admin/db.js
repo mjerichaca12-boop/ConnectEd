@@ -786,7 +786,13 @@ export default async function handler(req, res) {
         first_name,
         middle_name: request.middle_name || null,
         last_name,
+        suffix: request.suffix || null,
         email: normalizedEmail,
+        employee_id: request.employee_id || request.lrn || null,
+        phone: request.phone || null,
+        year_level: request.grade_level || request.year_level || null,
+        assigned_class: request.section || request.assigned_class || null,
+        subjects: request.subjects || null,
         status: "Active",
         must_change_password: true,
         is_verified: true,
@@ -800,6 +806,17 @@ export default async function handler(req, res) {
       if (profileErr) {
         console.error("[approve_teacher_registration] Profile error:", profileErr);
         return res.status(500).json({ error: `Failed to create teacher profile: ${profileErr.message}` });
+      }
+
+      if (Array.isArray(request.subjects) && request.subjects.length > 0) {
+        try {
+          await supabaseAdmin
+            .from("subjects")
+            .update({ teacher_id: userId })
+            .in("id", request.subjects);
+        } catch (subErr) {
+          console.warn("[approve_teacher_registration] Subject assignment warning:", subErr);
+        }
       }
 
       const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;

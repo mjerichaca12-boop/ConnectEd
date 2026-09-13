@@ -885,17 +885,28 @@ function TeacherManagement() {
       }
     }
 
-    if (excludeId !== null && trimmedEmail) {
-      const emailQuery = db.from("profiles").select("id").eq("email", trimmedEmail).limit(1);
-      const [emailResult] = await Promise.all([emailQuery.neq("id", excludeId)]);
+    if (!trimmedEmail) {
+      errors.email = "Email address is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.email = "Please enter a valid email address.";
+    } else if (trimmedEmail) {
+      try {
+        let emailQuery = db.from("profiles").select("id").ilike("email", trimmedEmail).limit(1);
+        if (excludeId) emailQuery = emailQuery.neq("id", excludeId);
+        const emailResult = await emailQuery;
 
-      if (emailResult.error) {
-        errors.form = emailResult.error.message;
-        return errors;
-      }
-
-      if ((emailResult.data ?? []).length > 0) {
-        errors.email = "Email already exists";
+        if (emailResult.data && emailResult.data.length > 0) {
+          errors.email = "An account with this email address already exists.";
+        } else {
+          let pendingEmailQuery = db.from("pending_account_requests").select("id").ilike("email", trimmedEmail).eq("status", "pending").limit(1);
+          if (excludeId) pendingEmailQuery = pendingEmailQuery.neq("id", excludeId);
+          const pendingResult = await pendingEmailQuery;
+          if (pendingResult.data && pendingResult.data.length > 0) {
+            errors.email = "A pending registration request with this email address already exists.";
+          }
+        }
+      } catch (e) {
+        console.warn("Email uniqueness check error:", e);
       }
     }
 
@@ -1196,7 +1207,7 @@ function TeacherManagement() {
 
     const channel = supabase
       ? supabase
-          .channel(`admin-teacher-profiles-${Math.random().toString(36).substring(7)}`)
+          .channel("admin-teacher-profiles-realtime-v1")
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async (payload) => {
             if (payload?.new?.role !== "teacher" && payload?.old?.role !== "teacher") {
               return;
@@ -1218,7 +1229,7 @@ function TeacherManagement() {
 
     const subjectsChannel = supabase
       ? supabase
-          .channel(`admin-teacher-subjects-${Math.random().toString(36).substring(7)}`)
+          .channel("admin-teacher-subjects-realtime-v1")
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, async () => {
             try {
               await fetchSubjects();
@@ -1409,149 +1420,71 @@ function TeacherManagement() {
 
       const addSectionsList = rawAddRows.map((r) => r.section).filter(Boolean);
       const addFormattedClass = [...new Set(addSectionsList)].join(", ");
-      const fullName = composeTeacherName(teacherFormData);
       
-      const firstNameLow = teacherFormData.first_name.trim().toLowerCase().replace(/\s+/g, "");
-      const middleNameLow = teacherFormData.middle_name.trim().toLowerCase().replace(/\s+/g, "");
-      const lastNameLow = teacherFormData.last_name.trim().toLowerCase().replace(/\s+/g, "");
-      
-      const tempPassword = `${firstNameLow}${middleNameLow}${lastNameLow}`;
-      const firstInitial = teacherFormData.first_name.charAt(0).toLowerCase().replace(/[^a-z]/g, "");
-      let baseUsername = (firstInitial + lastNameLow) || "teacher";
-      let username = `${baseUsername}01`;
-      let suffix = 1;
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      const externalRequestId = `admin-teacher-${timestamp}-${randomStr}`;
 
-      while (true) {
-        const { data: existing } = await db.from("profiles").select("id").eq("username", username).maybeSingle();
-        if (!existing) break;
-        suffix++;
-        username = `${baseUsername}${suffix.toString().padStart(2, "0")}`;
-      }
-
-      const tempEmail = `${username}.${Date.now().toString(36)}@temp.local`;
-
-      let resolvedId = null;
-
-      const { data: authData, error: authError } = await adminApi.createUser({
-        email: tempEmail,
-        password: tempPassword,
-        email_confirm: true
-      });
-
-      if (authError) {
-        if (authError.message?.includes("already") || authError.message?.includes("registered") || authError.status === 422) {
-          const { data: retryList } = await adminApi.listUsers();
-          const retryUser = (retryList?.users || []).find((u) => u.email?.toLowerCase() === tempEmail.toLowerCase());
-          if (retryUser?.id) {
-            resolvedId = retryUser.id;
-          } else {
-            throw authError;
-          }
-        } else {
-          throw authError;
-        }
-      } else if (authData?.user?.id) {
-        resolvedId = authData.user.id;
-      }
-
-      if (!resolvedId) {
-        resolvedId = generateUUID();
-      }
-
-      const payload = {
-        id: resolvedId,
-        role: "teacher",
+      const requestPayload = {
+        request_type: "teacher",
         first_name: teacherFormData.first_name.trim(),
         middle_name: teacherFormData.middle_name.trim() || null,
-        last_name: teacherFormData.last_name.trim() || null,
+        last_name: teacherFormData.last_name.trim(),
         suffix: teacherFormData.suffix.trim() || null,
+        email: teacherFormData.email.trim().toLowerCase(),
         employee_id: teacherFormData.employee_id.trim() || null,
-        email: tempEmail,
-        username: username,
-        phone: normalizePhone(teacherFormData.phone),
-        status: normalizeTeacherStatus(teacherFormData.status),
-        year_level: teacherFormData.grade_level?.trim() || null,
-        assigned_class: addFormattedClass || null,
-        must_change_password: true,
-        is_verified: false
+        phone: normalizePhone(teacherFormData.phone) || null,
+        grade_level: teacherFormData.grade_level?.trim() || null,
+        section: addFormattedClass || null,
+        subjects: selectedSubjectIds.length > 0 ? selectedSubjectIds : null,
+        lrn: null,
+        status: "pending",
+        source: "admin",
+        external_request_id: externalRequestId
       };
-      if (!teacherFormData.suffix.trim()) delete payload.suffix;
-      if (!teacherFormData.employee_id.trim()) delete payload.employee_id;
 
-      let { data, error } = await adminApi.db("profiles", "insert", {
-        payload,
+      const { data, error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: requestPayload,
         single: true
       });
 
-      if (error && (error.message?.includes("assigned_class_unique") || error.message?.includes("profiles_teacher_assigned_class_unique") || error.code === "23505")) {
-        const fallbackPayload = { ...payload };
-        delete fallbackPayload.assigned_class;
-        const retryRes = await adminApi.db("profiles", "insert", {
-          payload: fallbackPayload,
-          single: true
-        });
-        data = retryRes.data;
-        error = retryRes.error;
-      }
-
       if (error) {
-        await adminApi.deleteUser(resolvedId).catch(() => {});
-        throw error;
+        throw new Error(error.message || "Failed to create teacher registration request.");
       }
 
-      createdTeacherId = data.id;
-
-      const nextTeacher = { 
-        ...data, 
-        grade_level: data.grade_level || data.year_level || "",
-        subjects: normalizeSubjects(data.subjects) 
-      };
-      await syncTeacherSubjectAssignments({
-        teacherId: nextTeacher.id,
-        previousSubjectIds: [],
-        nextSubjectIds: selectedSubjectIds
-      });
-
-      await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
-      const nextTeacherName = getTeacherName(nextTeacher);
+      const teacherName = composeTeacherName(teacherFormData);
       logActivity({
-        actionType: selectedSubjectIds.length > 0 ? "assigned_subject_to_teacher" : "added",
+        actionType: "submitted_registration_request",
         entityType: "teacher",
-        entityId: nextTeacher.id,
-        entityName: nextTeacherName,
-        details: { email: nextTeacher.email, phone: nextTeacher.phone, subjects: formatSubjects(selectedSubjectIds) },
-        timestamp: nextTeacher.created_at
+        entityId: externalRequestId,
+        entityName: teacherName,
+        details: { email: teacherFormData.email, source: "admin" },
+        timestamp: new Date().toISOString()
       });
+
       notifyAdmin({
-        type: "teacher",
-        title: "Teacher Account Created",
-        message: `New teacher account created for ${nextTeacherName}`,
-        relatedId: nextTeacher.id,
-        relatedType: "profiles",
+        type: "registration",
+        title: "Teacher Registration Request Submitted",
+        message: `Admin submitted a pending teacher registration for ${teacherName}`,
+        relatedId: externalRequestId,
+        relatedType: "pending_account_requests",
         path: "/admin/teachers"
       });
-      toast.success(`${nextTeacherName} added successfully.`, { duration: 6000 });
+
+      toast.success(`Registration request for ${teacherName} submitted. It is now pending approval in Registration Requests.`, { duration: 6000 });
       resetAddModal();
-      
-      setCreatedCredentials({
-        name: nextTeacherName,
-        employee_id: teacherFormData.employee_id.trim() || "N/A",
-        username: username,
-        password: tempPassword,
-        assignedSubjects: selectedSubjectIds.map(getSubjectLabel).filter(Boolean)
+
+      await fetchRegistrationRequests().then((reqs) => {
+        if (Array.isArray(reqs)) setRegistrationRequests(reqs);
       });
-      setShowCredentialsModal(true);
-      
+
+      setActiveTab("RegistrationRequests");
+      setRegistrationSubTab("pending");
     } catch (error) {
-      if (createdTeacherId) {
-        try {
-          await adminApi.db("profiles", "delete", { eq: { column: "id", value: createdTeacherId } });
-        } catch {
-        }
-      }
-      console.error("Add teacher error:", error);
-      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to add teacher.");
+      console.error("Add teacher request error:", error);
+      const errMsg = error?.message || (typeof error === 'string' ? error : "Unable to submit teacher request.");
       toast.error(errMsg);
+      setFormErrors((prev) => ({ ...prev, form: errMsg }));
     } finally {
       setIsSubmitting(false);
     }
@@ -2480,6 +2413,7 @@ function TeacherManagement() {
                         <tr>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Teacher Name</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email Address</th>
+                          <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee ID</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted Date</th>
                           <th className="px-6 py-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -2496,6 +2430,15 @@ function TeacherManagement() {
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                               <span className="truncate">{req.email || "-"}</span>
+                            </td>
+                            <td className="px-6 py-5 text-sm text-gray-600 align-middle whitespace-nowrap">
+                              <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border ${
+                                req.source === "admin"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-purple-50 text-purple-700 border-purple-200"
+                              }`}>
+                                {req.source === "admin" ? "Admin Added" : "Google Form"}
+                              </span>
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                               <span className="truncate">{req.employee_id || "-"}</span>
@@ -2623,6 +2566,17 @@ function TeacherManagement() {
                       className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.suffix ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
                     />
                     {formErrors.suffix && <p className="text-red-500 text-sm mt-1">{formErrors.suffix}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address <span className="text-red-500">*</span></label>
+                    <input
+                      type="email"
+                      value={teacherFormData.email}
+                      onChange={(e) => updateTeacherField(setTeacherFormData, setFormErrors, teacherFormData, "email", e.target.value)}
+                      placeholder="teacher@example.com"
+                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 ${formErrors.email ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-green-500"}`}
+                    />
+                    {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Identification / Employee ID</label>
@@ -3147,6 +3101,18 @@ function TeacherManagement() {
                 <div className="col-span-2">
                   <span className="text-gray-500 font-medium">Employee ID / Identification</span>
                   <p className="font-semibold text-gray-900">{selectedRequest.employee_id || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500 font-medium">Source</span>
+                  <p className="font-semibold text-gray-900 flex items-center gap-2 mt-0.5">
+                    <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold border ${
+                      selectedRequest.source === "admin"
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
+                        : "bg-purple-50 text-purple-700 border-purple-200"
+                    }`}>
+                      {selectedRequest.source === "admin" ? "Admin Added" : "Google Form"}
+                    </span>
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-gray-500 font-medium">Submitted Date</span>
