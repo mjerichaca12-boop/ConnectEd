@@ -307,18 +307,17 @@ function StudentManagement() {
   }, [navigate]);
 
   const fetchRegistrationRequests = useCallback(async () => {
-    if (!db) return [];
     try {
-      const { data, error } = await db
-        .from("pending_account_requests")
-        .select("*")
-        .eq("request_type", "student")
-        .order("created_at", { ascending: false });
-      if (error) {
-        console.error("Error fetching registration requests:", error);
+      const res = await adminApi.db("pending_account_requests", "select", {
+        payload: "*",
+        eq: { column: "request_type", value: "student" },
+        order: { column: "created_at", options: { ascending: false } }
+      });
+      if (res.error) {
+        console.error("Error fetching registration requests via adminApi:", res.error);
         return [];
       }
-      return data || [];
+      return res.data || [];
     } catch (err) {
       console.error("Fetch registration requests exception:", err);
       return [];
