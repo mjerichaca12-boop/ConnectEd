@@ -359,10 +359,12 @@ export function GoogleSheetsImportModal({
             </div>
             <div>
               <h3 className="text-xl font-bold text-gray-900">
-                Import {type === "student" ? "Student Masterlist" : "Teachers"}
+                Import {type === "student" ? "Student Masterlist" : "Teachers Masterlist"}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Choose import source: Upload CSV/Excel file or link Google Sheets
+                {step === "preview"
+                  ? `Review parsed ${type === "student" ? "student" : "teacher"} records before creating registration requests`
+                  : "Choose import source: Upload CSV/Excel file or link Google Sheets"}
               </p>
             </div>
           </div>
@@ -570,73 +572,95 @@ export function GoogleSheetsImportModal({
 
           {/* STEP 5: PREVIEW */}
           {step === "preview" && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="grid grid-cols-4 gap-3 text-center">
-                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
-                  <p className="text-[10px] text-gray-500 font-bold uppercase">Total Found</p>
-                  <p className="text-lg font-bold text-gray-900 mt-0.5">{previewSummary.total}</p>
+                <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-200">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">TOTAL PARSED</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{previewSummary.total}</p>
                 </div>
-                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
-                  <p className="text-[10px] text-emerald-700 font-bold uppercase">Valid</p>
-                  <p className="text-lg font-bold text-emerald-800 mt-0.5">{previewSummary.valid.length}</p>
+                <div className="bg-emerald-50/40 p-4 rounded-2xl border border-emerald-300">
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider">READY</p>
+                  <p className="text-2xl font-bold text-emerald-600 mt-1">{previewSummary.valid.length}</p>
                 </div>
-                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                  <p className="text-[10px] text-amber-700 font-bold uppercase">Missing Email</p>
-                  <p className="text-lg font-bold text-amber-800 mt-0.5">{previewSummary.missingEmail.length}</p>
+                <div className="bg-amber-50/40 p-4 rounded-2xl border border-amber-300">
+                  <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">MISSING EMAIL</p>
+                  <p className="text-2xl font-bold text-amber-700 mt-1">{previewSummary.missingEmail.length}</p>
                 </div>
-                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
-                  <p className="text-[10px] text-blue-700 font-bold uppercase">Duplicates</p>
-                  <p className="text-lg font-bold text-blue-800 mt-0.5">{previewSummary.duplicates.length}</p>
+                <div className="bg-blue-50/40 p-4 rounded-2xl border border-blue-300">
+                  <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">DUPLICATES</p>
+                  <p className="text-2xl font-bold text-blue-600 mt-1">{previewSummary.duplicates.length}</p>
                 </div>
               </div>
 
-              <div className="flex border-b border-gray-200 gap-2">
+              <div className="flex border-b border-gray-200 gap-6 px-1">
                 <button
                   type="button"
                   onClick={() => setPreviewTab("valid")}
-                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${previewTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}
+                  className={`pb-2.5 text-xs font-bold transition-all relative ${
+                    previewTab === "valid" ? "text-emerald-700" : "text-slate-500 hover:text-slate-700 font-medium"
+                  }`}
                 >
-                  Valid ({previewSummary.valid.length})
+                  Ready ({previewSummary.valid.length})
+                  {previewTab === "valid" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600 rounded-full" />
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setPreviewTab("missingEmail")}
-                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${previewTab === "missingEmail" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500"}`}
+                  className={`pb-2.5 text-xs font-bold transition-all relative ${
+                    previewTab === "missingEmail" ? "text-amber-700" : "text-slate-500 hover:text-slate-700 font-medium"
+                  }`}
                 >
                   Missing Email ({previewSummary.missingEmail.length})
+                  {previewTab === "missingEmail" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-full" />
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setPreviewTab("duplicates")}
-                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${previewTab === "duplicates" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"}`}
+                  className={`pb-2.5 text-xs font-bold transition-all relative ${
+                    previewTab === "duplicates" ? "text-blue-700" : "text-slate-500 hover:text-slate-700 font-medium"
+                  }`}
                 >
                   Duplicates ({previewSummary.duplicates.length})
+                  {previewTab === "duplicates" && (
+                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                  )}
                 </button>
                 {previewSummary.invalid.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setPreviewTab("invalid")}
-                    className={`px-3 py-2 text-xs font-semibold border-b-2 ${previewTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500"}`}
+                    className={`pb-2.5 text-xs font-bold transition-all relative ${
+                      previewTab === "invalid" ? "text-red-700" : "text-slate-500 hover:text-slate-700 font-medium"
+                    }`}
                   >
                     Invalid ({previewSummary.invalid.length})
+                    {previewTab === "invalid" && (
+                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-full" />
+                    )}
                   </button>
                 )}
               </div>
 
               {previewTab === "valid" && (
-                <div className="max-h-48 overflow-y-auto border rounded-xl divide-y text-xs">
+                <div className="max-h-56 overflow-y-auto border border-emerald-300 rounded-2xl divide-y divide-emerald-100 bg-white">
                   {previewSummary.valid.length === 0 ? (
-                    <p className="p-4 text-gray-500 text-center">No valid records found.</p>
+                    <p className="p-6 text-slate-500 text-center text-xs">No ready records found.</p>
                   ) : (
                     previewSummary.valid.map((r, idx) => (
-                      <div key={idx} className="p-2.5 flex justify-between items-center hover:bg-gray-50">
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-emerald-50/30 transition-colors">
                         <div>
-                          <span className="font-bold text-gray-900">{r.fullName}</span>
-                          <span className="text-gray-500 ml-2 font-mono">{r.lrn ? `(${r.lrn})` : ""}</span>
+                          <p className="font-bold text-slate-900 text-sm">{r.fullName}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                            {r.email} {r.lrn ? `• LRN: ${r.lrn}` : r.employee_id ? `• ID: ${r.employee_id}` : ""}
+                          </p>
                         </div>
-                        <div className="text-right font-mono text-gray-600">
-                          <span>{r.email}</span>
-                        </div>
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-md font-semibold text-xs shrink-0">
+                          Ready
+                        </span>
                       </div>
                     ))
                   )}
@@ -644,17 +668,17 @@ export function GoogleSheetsImportModal({
               )}
 
               {previewTab === "missingEmail" && (
-                <div className="max-h-48 overflow-y-auto border border-amber-200 rounded-xl divide-y text-xs bg-amber-50/30">
+                <div className="max-h-56 overflow-y-auto border border-amber-300 rounded-2xl divide-y divide-amber-100 bg-white">
                   {previewSummary.missingEmail.length === 0 ? (
-                    <p className="p-4 text-gray-500 text-center">No missing email records.</p>
+                    <p className="p-6 text-slate-500 text-center text-xs">No missing email records.</p>
                   ) : (
                     previewSummary.missingEmail.map((r, idx) => (
-                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-amber-50/30 transition-colors">
                         <div>
-                          <p className="font-bold text-gray-900">{r.fullName}</p>
-                          <p className="text-amber-700 text-[11px] mt-0.5">{r.reason}</p>
+                          <p className="font-bold text-slate-900 text-sm">{r.fullName}</p>
+                          <p className="text-xs text-amber-700 mt-0.5 font-normal">{r.reason || "Missing email address"}</p>
                         </div>
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-semibold text-[10px]">
+                        <span className="px-3 py-1 bg-amber-100 text-amber-800 font-semibold rounded-md text-xs shrink-0">
                           Missing Email
                         </span>
                       </div>
@@ -664,17 +688,17 @@ export function GoogleSheetsImportModal({
               )}
 
               {previewTab === "duplicates" && (
-                <div className="max-h-48 overflow-y-auto border border-blue-200 rounded-xl divide-y text-xs bg-blue-50/30">
+                <div className="max-h-56 overflow-y-auto border border-blue-300 rounded-2xl divide-y divide-blue-100 bg-white">
                   {previewSummary.duplicates.length === 0 ? (
-                    <p className="p-4 text-gray-500 text-center">No duplicate records.</p>
+                    <p className="p-6 text-slate-500 text-center text-xs">No duplicate records.</p>
                   ) : (
                     previewSummary.duplicates.map((r, idx) => (
-                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-blue-50/30 transition-colors">
                         <div>
-                          <p className="font-bold text-gray-900">{r.fullName} <span className="text-gray-500 font-normal">({r.email})</span></p>
-                          <p className="text-blue-700 text-[11px] mt-0.5">{r.reason}</p>
+                          <p className="font-bold text-slate-900 text-sm">{r.fullName}</p>
+                          <p className="text-xs text-blue-700 mt-0.5 font-normal">{r.reason || "Duplicate record"}</p>
                         </div>
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold text-[10px]">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 font-semibold rounded-md text-xs shrink-0">
                           Duplicate
                         </span>
                       </div>
@@ -684,17 +708,17 @@ export function GoogleSheetsImportModal({
               )}
 
               {previewTab === "invalid" && (
-                <div className="max-h-48 overflow-y-auto border border-red-200 rounded-xl divide-y text-xs bg-red-50/30">
+                <div className="max-h-56 overflow-y-auto border border-red-300 rounded-2xl divide-y divide-red-100 bg-white">
                   {previewSummary.invalid.length === 0 ? (
-                    <p className="p-4 text-gray-500 text-center">No invalid records.</p>
+                    <p className="p-6 text-slate-500 text-center text-xs">No invalid records.</p>
                   ) : (
                     previewSummary.invalid.map((r, idx) => (
-                      <div key={idx} className="p-2.5 flex justify-between items-center">
+                      <div key={idx} className="p-3.5 flex justify-between items-center hover:bg-red-50/30 transition-colors">
                         <div>
-                          <p className="font-bold text-gray-900">{r.fullName}</p>
-                          <p className="text-red-700 text-[11px] mt-0.5">{r.reason}</p>
+                          <p className="font-bold text-slate-900 text-sm">{r.fullName}</p>
+                          <p className="text-xs text-red-700 mt-0.5 font-normal">{r.reason || "Invalid format"}</p>
                         </div>
-                        <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded font-semibold text-[10px]">
+                        <span className="px-3 py-1 bg-red-100 text-red-800 font-semibold rounded-md text-xs shrink-0">
                           Invalid
                         </span>
                       </div>
@@ -703,24 +727,47 @@ export function GoogleSheetsImportModal({
                 </div>
               )}
 
-              <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setStep("column_mapping")}
-                  disabled={isLoading}
-                  className="px-4 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
+                  onClick={() => {
+                    const csvContent = type === "student"
+                      ? "First Name,Middle Name,Last Name,Suffix,Email,LRN,Grade Level,Section\nJuan,D,Dela Cruz,,juan.delacruz@student.edu.ph,123456789012,7,Rizal\nMaria,S,Santos,,maria.santos@student.edu.ph,123456789013,7,Bonifacio"
+                      : "First Name,Middle Name,Last Name,Suffix,Email,Employee ID\nJuan,D,Dela Cruz,,juan.delacruz@school.edu.ph,EMP-2026-001\nMaria,S,Santos,,maria.santos@school.edu.ph,EMP-2026-002";
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `${type}_masterlist_template.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  Back
+                  <Download className="w-4 h-4" />
+                  Download Sample CSV
                 </button>
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  disabled={isLoading || previewSummary.valid.length === 0}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                >
-                  {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {isLoading ? loadingText : `Import ${previewSummary.valid.length} Records`}
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={isLoading}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirm}
+                    disabled={isLoading || previewSummary.valid.length === 0}
+                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-all cursor-pointer"
+                  >
+                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {isLoading ? loadingText : `Confirm & Create ${previewSummary.valid.length} Registration Request(s)`}
+                  </button>
+                </div>
               </div>
             </div>
           )}
