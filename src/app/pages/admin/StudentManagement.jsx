@@ -364,6 +364,17 @@ function StudentManagement() {
     }
   }, [cachedStudentsData, isCachedLoading]);
 
+  // Fetch live registration requests whenever the Registration Requests tab is selected
+  useEffect(() => {
+    if (activeTab === "RegistrationRequests") {
+      fetchRegistrationRequests().then((reqs) => {
+        if (Array.isArray(reqs)) {
+          setRegistrationRequests(reqs);
+        }
+      });
+    }
+  }, [activeTab, fetchRegistrationRequests]);
+
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     navigate("/login");
@@ -2062,7 +2073,12 @@ function StudentManagement() {
               Masterlist
             </button>
             <button
-              onClick={() => setActiveTab("RegistrationRequests")}
+              onClick={() => {
+                setActiveTab("RegistrationRequests");
+                fetchRegistrationRequests().then((reqs) => {
+                  if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+                });
+              }}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
                 activeTab === "RegistrationRequests"
                   ? "border-green-600 text-green-600"
