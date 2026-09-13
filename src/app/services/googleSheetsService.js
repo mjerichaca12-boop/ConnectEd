@@ -60,6 +60,15 @@ export async function fetchGoogleSheetMetadata(spreadsheetId) {
     if (err.message && err.message.includes("Unable to access")) {
       throw err;
     }
+    // Fallback check via GViz endpoint if htmlview is blocked or restricted
+    try {
+      const gvizRes = await fetch(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`);
+      if (gvizRes.ok) {
+        return [{ gid: "0", name: "Sheet1" }];
+      }
+    } catch {
+      // ignore
+    }
     throw new Error(
       "Unable to access this Google Sheet.\n\nMake sure the sheet is accessible to the configured ConnectEd import process (e.g., 'Anyone with the link can view'), then try again."
     );
@@ -67,34 +76,52 @@ export async function fetchGoogleSheetMetadata(spreadsheetId) {
 }
 
 export async function fetchGoogleSheetCsv({ spreadsheetId, gid, sheetName }) {
-  let exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+  // Use Google Visualization API (GViz) CSV export which handles CORS directly from docs.google.com without 400 redirect errors
+  let primaryUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
   if (gid) {
-    exportUrl += `&gid=${gid}`;
+    primaryUrl += `&gid=${gid}`;
   } else if (sheetName) {
-    exportUrl += `&sheet=${encodeURIComponent(sheetName)}`;
+    primaryUrl += `&sheet=${encodeURIComponent(sheetName)}`;
   }
 
   try {
-    const res = await fetch(exportUrl, { redirect: "follow" });
+    const res = await fetch(primaryUrl, { redirect: "follow" });
 
-    if (!res.ok || res.url.includes("accounts.google.com")) {
+    if (res.ok && !res.url.includes("accounts.google.com")) {
+      const csvText = await res.text();
+      if (
+        !csvText.trim().startsWith("<!DOCTYPE html") &&
+        !csvText.includes("ServiceLogin") &&
+        !csvText.includes("Sign in - Google Accounts")
+      ) {
+        return csvText;
+      }
+    }
+
+    // Fallback to export endpoint if GViz returns error
+    let fallbackUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+    if (gid) fallbackUrl += `&gid=${gid}`;
+    else if (sheetName) fallbackUrl += `&sheet=${encodeURIComponent(sheetName)}`;
+
+    const fallbackRes = await fetch(fallbackUrl, { redirect: "follow" });
+    if (!fallbackRes.ok || fallbackRes.url.includes("accounts.google.com")) {
       throw new Error(
         "Unable to access this Google Sheet.\n\nMake sure the sheet is accessible to the configured ConnectEd import process (e.g., 'Anyone with the link can view'), then try again."
       );
     }
 
-    const csvText = await res.text();
+    const fallbackCsvText = await fallbackRes.text();
     if (
-      csvText.trim().startsWith("<!DOCTYPE html") ||
-      csvText.includes("ServiceLogin") ||
-      csvText.includes("Sign in - Google Accounts")
+      fallbackCsvText.trim().startsWith("<!DOCTYPE html") ||
+      fallbackCsvText.includes("ServiceLogin") ||
+      fallbackCsvText.includes("Sign in - Google Accounts")
     ) {
       throw new Error(
         "Unable to access this Google Sheet.\n\nMake sure the sheet is accessible to the configured ConnectEd import process (e.g., 'Anyone with the link can view'), then try again."
       );
     }
 
-    return csvText;
+    return fallbackCsvText;
   } catch (err) {
     if (err.message && err.message.includes("Unable to access")) {
       throw err;
