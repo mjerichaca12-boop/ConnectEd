@@ -1867,7 +1867,11 @@ function StudentManagement() {
         throw new Error(res.error.message || res.error || "Failed to approve registration request.");
       }
 
-      toast.success(`Registration request approved for ${selectedRequest.first_name} ${selectedRequest.last_name}. Account created!`);
+      if (res.emailSent) {
+        toast.success(`Registration request approved for ${selectedRequest.first_name} ${selectedRequest.last_name}. Account created & credentials emailed!`);
+      } else {
+        toast.warning(`Account created for ${selectedRequest.first_name} ${selectedRequest.last_name}, but email failed: ${res.emailNotice || "Check Resend domain setup."}`);
+      }
       setShowApproveRequestModal(false);
       setShowViewRequestModal(false);
       setSelectedRequest(null);
@@ -1900,7 +1904,11 @@ function StudentManagement() {
         throw new Error(res.error.message || res.error || "Failed to reject registration request.");
       }
 
-      toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}. Student was notified by email.`);
+      if (res.emailSent) {
+        toast.success(`Registration request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}. Student notified by email.`);
+      } else {
+        toast.warning(`Request rejected for ${selectedRequest.first_name} ${selectedRequest.last_name}, but email failed: ${res.emailNotice || "Check Resend domain setup."}`);
+      }
       setShowRejectRequestModal(false);
       setShowViewRequestModal(false);
       setSelectedRequest(null);

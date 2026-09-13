@@ -280,6 +280,7 @@ export default async function handler(req, res) {
       const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
       const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
       let emailSent = false;
+      let emailNotice = null;
 
       if (resendApiKey) {
         try {
@@ -319,12 +320,15 @@ export default async function handler(req, res) {
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            const errText = await emailRes.text();
-            console.warn("[approve_student_registration] Resend API notice:", errText);
+            emailNotice = await emailRes.text();
+            console.warn("[approve_student_registration] Resend API notice:", emailNotice);
           }
         } catch (e) {
-          console.warn("[approve_student_registration] Resend API exception:", e?.message);
+          emailNotice = e?.message || "Failed to reach Resend API";
+          console.warn("[approve_student_registration] Resend API exception:", emailNotice);
         }
+      } else {
+        emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
       }
 
       // 8. Update pending_account_requests conditionally
@@ -348,10 +352,13 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         success: true,
-        message: "Student account created successfully. Login credentials were sent to the student's email.",
+        message: emailSent
+          ? "Student account created successfully. Login credentials were sent to the student's email."
+          : "Student account created successfully, but approval email could not be sent.",
         created_user_id: userId,
         username,
-        emailSent
+        emailSent,
+        emailNotice
       });
     }
 
@@ -404,6 +411,7 @@ export default async function handler(req, res) {
       const resendApiKey = process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY;
       const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
       let emailSent = false;
+      let emailNotice = null;
 
       if (resendApiKey && request.email) {
         try {
@@ -443,15 +451,18 @@ export default async function handler(req, res) {
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            const errText = await emailRes.text();
-            console.warn("[reject_student_registration] Resend API notice:", errText);
+            emailNotice = await emailRes.text();
+            console.warn("[reject_student_registration] Resend API notice:", emailNotice);
           }
         } catch (e) {
-          console.warn("[reject_student_registration] Resend API exception:", e?.message);
+          emailNotice = e?.message || "Failed to reach Resend API";
+          console.warn("[reject_student_registration] Resend API exception:", emailNotice);
         }
+      } else {
+        emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
       }
 
-      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent });
+      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, emailNotice });
     }
 
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
