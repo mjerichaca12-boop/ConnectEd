@@ -334,7 +334,13 @@ export default async function handler(req, res) {
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            emailNotice = await emailRes.text();
+            const rawText = await emailRes.text();
+            try {
+              const parsed = JSON.parse(rawText);
+              emailNotice = parsed.message || rawText;
+            } catch (_) {
+              emailNotice = rawText;
+            }
             console.warn("[approve_student_registration] Resend API notice:", emailNotice);
           }
         } catch (e) {
@@ -465,7 +471,13 @@ export default async function handler(req, res) {
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            emailNotice = await emailRes.text();
+            const rawText = await emailRes.text();
+            try {
+              const parsed = JSON.parse(rawText);
+              emailNotice = parsed.message || rawText;
+            } catch (_) {
+              emailNotice = rawText;
+            }
             console.warn("[reject_student_registration] Resend API notice:", emailNotice);
           }
         } catch (e) {
