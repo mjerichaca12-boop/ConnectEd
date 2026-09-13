@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -13,13 +13,14 @@ import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
 import {
   Search,
-
   UserPlus,
   Eye,
   Edit,
   Trash2,
   BookOpen,
   Download,
+  Upload,
+  FileText,
   X,
   Mail,
   Phone,
@@ -47,6 +48,15 @@ const generateUUID = () => {
 const generateTempPassword = () => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+};
+
+const splitFullName = (fullNameStr) => {
+  const parts = String(fullNameStr || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: parts[0] };
+  const last_name = parts.pop();
+  const first_name = parts.join(" ");
+  return { first_name, last_name };
 };
 
 
@@ -148,8 +158,290 @@ function TeacherManagement() {
   const [teacherCreateTab, setTeacherCreateTab] = useState("ready");
   const [isCreatingTeacherRequests, setIsCreatingTeacherRequests] = useState(false);
 
+  // Teacher CSV / File Import States
+  const teacherFileInputRef = useRef(null);
+  const [showTeacherImportModal, setShowTeacherImportModal] = useState(false);
+  const [teacherImportSummary, setTeacherImportSummary] = useState({
+    total: 0,
+    valid: [],
+    missingEmail: [],
+    duplicates: [],
+    invalid: []
+  });
+  const [teacherImportTab, setTeacherImportTab] = useState("valid");
+  const [isSavingTeacherImport, setIsSavingTeacherImport] = useState(false);
+  const [isImportingTeachers, setIsImportingTeachers] = useState(false);
+
+  const handleDownloadTeacherSampleCsv = () => {
+    const headers = ["First Name", "Middle Name", "Last Name", "Suffix", "Email Address", "Employee ID"];
+    const sampleRows = [
+      ["Maria", "Santos", "Dela Cruz", "", "maria.delacruz@school.edu.ph", "EMP-2026-001"],
+      ["Juan", "Carlos", "Reyes", "Jr.", "juan.reyes@school.edu.ph", "EMP-2026-002"],
+      ["Elena", "", "Bautista", "", "elena.bautista@school.edu.ph", "EMP-2026-003"]
+    ];
+    const csvContent = [headers.join(","), ...sampleRows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.setAttribute("href", URL.createObjectURL(blob));
+    link.setAttribute("download", "Teacher_Registration_Import_Template.csv");
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleTeacherFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingTeachers(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result;
+        if (typeof text !== "string") throw new Error("Could not read file content");
+        processTeacherCsvText(text);
+      } catch (err) {
+        toast.error(err.message || "Failed to process CSV file.");
+      } finally {
+        setIsImportingTeachers(false);
+        if (teacherFileInputRef.current) teacherFileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const processTeacherCsvText = (text) => {
+    const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) {
+      toast.error("The file is empty.");
+      return;
+    }
+
+    const parseLine = (line) => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if ((char === ',' || char === '\t' || char === ';') && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const rawHeaderCols = parseLine(lines[0]);
+    const normHeader = rawHeaderCols.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+
+    const headerMap = {};
+    normHeader.forEach((h, idx) => {
+      if (h.includes("first") || h === "fname" || h === "given") headerMap.first_name = idx;
+      else if (h.includes("middle") || h === "mname") headerMap.middle_name = idx;
+      else if (h.includes("last") || h === "lname" || h === "surname") headerMap.last_name = idx;
+      else if (h.includes("suffix") || h === "ext") headerMap.suffix = idx;
+      else if (h.includes("email") || h.includes("mail")) headerMap.email = idx;
+      else if (h.includes("employee") || h.includes("empid") || h === "id" || h.includes("identification")) headerMap.employee_id = idx;
+      else if (h.includes("name") || h.includes("teacher")) headerMap.full_name = idx;
+    });
+
+    const dbEmailSet = new Set(teachers.map(t => (t.email || "").toLowerCase().trim()).filter(Boolean));
+    const dbEmpIdSet = new Set(teachers.map(t => (t.employee_id || t.lrn || "").toLowerCase().trim()).filter(Boolean));
+
+    (registrationRequests || []).forEach(r => {
+      if (r.email) dbEmailSet.add(r.email.toLowerCase().trim());
+      const emp = r.employee_id || r.lrn;
+      if (emp) dbEmpIdSet.add(emp.toLowerCase().trim());
+    });
+
+    const validRecords = [];
+    const missingEmailRecords = [];
+    const duplicateRecords = [];
+    const invalidRecords = [];
+    const fileEmailSet = new Set();
+    const fileEmpIdSet = new Set();
+
+    let hasHeader = headerMap.first_name !== undefined || headerMap.last_name !== undefined || headerMap.email !== undefined || headerMap.full_name !== undefined;
+    const startIndex = hasHeader ? 1 : 0;
+
+    for (let i = startIndex; i < lines.length; i++) {
+      const cols = parseLine(lines[i]);
+      if (!cols || cols.length === 0 || cols.every(c => !c || !c.trim())) continue;
+
+      let firstName = headerMap.first_name !== undefined ? cols[headerMap.first_name] : "";
+      let lastName = headerMap.last_name !== undefined ? cols[headerMap.last_name] : "";
+      let middleName = headerMap.middle_name !== undefined ? cols[headerMap.middle_name] : "";
+      let suffix = headerMap.suffix !== undefined ? cols[headerMap.suffix] : "";
+      let email = headerMap.email !== undefined ? cols[headerMap.email] : "";
+      let empId = headerMap.employee_id !== undefined ? cols[headerMap.employee_id] : "";
+
+      if (!hasHeader) {
+        firstName = cols[0] || "";
+        middleName = cols[1] || "";
+        lastName = cols[2] || "";
+        suffix = cols[3] || "";
+        email = cols[4] || "";
+        empId = cols[5] || "";
+      }
+
+      if ((!firstName || !lastName) && headerMap.full_name !== undefined && cols[headerMap.full_name]) {
+        const split = splitFullName(cols[headerMap.full_name]);
+        firstName = split.first_name;
+        lastName = split.last_name;
+      }
+
+      firstName = (firstName || "").trim();
+      lastName = (lastName || "").trim();
+      middleName = (middleName || "").trim();
+      suffix = (suffix || "").trim();
+      email = (email || "").trim();
+      empId = (empId || "").trim();
+
+      const rowNum = i + 1;
+      const fullName = [firstName, middleName, lastName, suffix].filter(Boolean).join(" ") || "N/A";
+
+      if (!firstName || !lastName) {
+        invalidRecords.push({
+          rowNum,
+          fullName,
+          email,
+          empId,
+          reason: "Missing teacher first or last name."
+        });
+        continue;
+      }
+
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        missingEmailRecords.push({
+          rowNum,
+          fullName,
+          email: email || "Missing",
+          empId,
+          reason: !email ? "Missing email address" : "Invalid email address format"
+        });
+        continue;
+      }
+
+      const emailLow = email.toLowerCase();
+      const empIdLow = empId.toLowerCase();
+
+      if (fileEmailSet.has(emailLow) || (empIdLow && fileEmpIdSet.has(empIdLow))) {
+        duplicateRecords.push({
+          rowNum,
+          fullName,
+          email,
+          empId,
+          reason: "Duplicate email or employee ID in file."
+        });
+        continue;
+      }
+
+      if (dbEmailSet.has(emailLow)) {
+        duplicateRecords.push({
+          rowNum,
+          fullName,
+          email,
+          empId,
+          reason: `Email ${email} already exists in database or pending requests.`
+        });
+        continue;
+      }
+
+      if (empIdLow && dbEmpIdSet.has(empIdLow)) {
+        duplicateRecords.push({
+          rowNum,
+          fullName,
+          email,
+          empId,
+          reason: `Employee ID ${empId} already exists in database or pending requests.`
+        });
+        continue;
+      }
+
+      fileEmailSet.add(emailLow);
+      if (empIdLow) fileEmpIdSet.add(empIdLow);
+
+      validRecords.push({
+        rowNum,
+        first_name: firstName,
+        middle_name: middleName || null,
+        last_name: lastName,
+        suffix: suffix || null,
+        email,
+        employee_id: empId || null,
+        fullName
+      });
+    }
+
+    const total = validRecords.length + missingEmailRecords.length + duplicateRecords.length + invalidRecords.length;
+    if (total === 0) {
+      toast.error("No valid records found in CSV content.");
+      return;
+    }
+
+    setTeacherImportSummary({
+      total,
+      valid: validRecords,
+      missingEmail: missingEmailRecords,
+      duplicates: duplicateRecords,
+      invalid: invalidRecords
+    });
+
+    setTeacherImportTab(validRecords.length > 0 ? "valid" : (missingEmailRecords.length > 0 ? "missingEmail" : "duplicates"));
+    setShowTeacherImportModal(true);
+  };
+
+  const handleConfirmTeacherImport = async () => {
+    if (teacherImportSummary.valid.length === 0) {
+      toast.error("No valid teacher records to import.");
+      return;
+    }
+
+    setIsSavingTeacherImport(true);
+    try {
+      const recordsToInsert = teacherImportSummary.valid.map(r => ({
+        request_type: "teacher",
+        first_name: r.first_name,
+        middle_name: r.middle_name || null,
+        last_name: r.last_name,
+        suffix: r.suffix || null,
+        email: r.email,
+        employee_id: r.employee_id || null,
+        lrn: r.employee_id || null,
+        status: "pending",
+        source: "masterlist"
+      }));
+
+      const { error } = await db.from("pending_account_requests").insert(recordsToInsert);
+      if (error) throw error;
+
+      toast.success(`Successfully imported ${recordsToInsert.length} teacher registration request(s)!`, { duration: 5000 });
+
+      setShowTeacherImportModal(false);
+      await fetchRegistrationRequests();
+      setActiveTab("RegistrationRequests");
+      setRegistrationSubTab("pending");
+    } catch (err) {
+      console.error("Error importing teacher registration requests:", err);
+      toast.error(getApiErrorMessage(err, "Failed to import teacher registration requests."));
+    } finally {
+      setIsSavingTeacherImport(false);
+    }
+  };
+
   useEffect(() => {
-    if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm || showResetPasswordModal || showViewRequestModal || showApproveRequestModal || showRejectRequestModal) {
+    if (showAddModal || showEditModal || showViewModal || showAssignModal || showDeleteConfirm || showResetPasswordModal || showViewRequestModal || showApproveRequestModal || showRejectRequestModal || showTeacherImportModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -157,7 +449,7 @@ function TeacherManagement() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm, showResetPasswordModal, showViewRequestModal, showApproveRequestModal, showRejectRequestModal]);
+  }, [showAddModal, showEditModal, showViewModal, showAssignModal, showDeleteConfirm, showResetPasswordModal, showViewRequestModal, showApproveRequestModal, showRejectRequestModal, showTeacherImportModal]);
 
   const isLettersOnly = (value) => /^[A-Za-z\s.\-]+$/.test(value);
   const isValidAssignedClass = (value) => /^[A-Za-z0-9][A-Za-z0-9\s./-]*$/.test(value);
@@ -2287,8 +2579,33 @@ function TeacherManagement() {
                 <h1 className="text-3xl font-bold mb-2 text-green-600">Teacher Management</h1>
                 <p className="text-gray-600">Teacher records are up to date</p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 shadow-sm cursor-pointer">
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <input
+                  type="file"
+                  ref={teacherFileInputRef}
+                  onChange={handleTeacherFileUpload}
+                  accept=".csv, .xlsx, .xls, .txt"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={handleDownloadTeacherSampleCsv}
+                  className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold shadow-sm cursor-pointer text-sm"
+                  title="Download Sample CSV Template"
+                >
+                  <Download className="w-4 h-4 text-gray-500" />
+                  Sample CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => teacherFileInputRef.current?.click()}
+                  disabled={isImportingTeachers}
+                  className="flex items-center gap-2 px-5 py-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors font-semibold shadow-sm cursor-pointer text-sm disabled:opacity-50"
+                >
+                  {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-emerald-600" />}
+                  {isImportingTeachers ? "Importing..." : "Import Teachers"}
+                </button>
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-lg shadow-green-600/20 shadow-sm cursor-pointer text-sm">
                   <UserPlus className="w-5 h-5" />
                   Add Teacher
                 </button>
@@ -2402,15 +2719,27 @@ function TeacherManagement() {
                     ))}
                   </div>
 
-                  <div className="flex-1 relative w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
-                    <input
-                      type="text"
-                      placeholder="Search registration requests by name, email, or employee ID..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
-                    />
+                  <div className="flex-1 relative w-full flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                      <input
+                        type="text"
+                        placeholder="Search registration requests by name, email, or employee ID..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => teacherFileInputRef.current?.click()}
+                      disabled={isImportingTeachers}
+                      className="px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors shadow-sm whitespace-nowrap disabled:opacity-50"
+                      title="Import Teachers CSV"
+                    >
+                      {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-emerald-600" />}
+                      <span>Import CSV</span>
+                    </button>
                   </div>
                 </>
               )}
@@ -3757,6 +4086,193 @@ function TeacherManagement() {
               >
                 Done
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEACHER IMPORT PREVIEW MODAL */}
+      {showTeacherImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between border-b border-gray-200 pb-4 mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Import Teachers Masterlist</h3>
+                <p className="text-xs text-gray-500 mt-1">Review parsed teacher records before creating registration requests</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTeacherImportModal(false)}
+                disabled={isSavingTeacherImport}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase">Total Parsed</p>
+                  <p className="text-lg font-bold text-gray-900 mt-0.5">{teacherImportSummary.total}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                  <p className="text-[10px] text-emerald-700 font-bold uppercase">Ready</p>
+                  <p className="text-lg font-bold text-emerald-800 mt-0.5">{teacherImportSummary.valid.length}</p>
+                </div>
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                  <p className="text-[10px] text-amber-700 font-bold uppercase">Missing Email</p>
+                  <p className="text-lg font-bold text-amber-800 mt-0.5">{teacherImportSummary.missingEmail.length}</p>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                  <p className="text-[10px] text-blue-700 font-bold uppercase">Duplicates</p>
+                  <p className="text-lg font-bold text-blue-800 mt-0.5">{teacherImportSummary.duplicates.length}</p>
+                </div>
+              </div>
+
+              <div className="flex border-b border-gray-200 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTeacherImportTab("valid")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherImportTab === "valid" ? "border-emerald-600 text-emerald-600" : "border-transparent text-gray-500"}`}
+                >
+                  Ready ({teacherImportSummary.valid.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherImportTab("missingEmail")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherImportTab === "missingEmail" ? "border-amber-600 text-amber-600" : "border-transparent text-gray-500"}`}
+                >
+                  Missing Email ({teacherImportSummary.missingEmail.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTeacherImportTab("duplicates")}
+                  className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherImportTab === "duplicates" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500"}`}
+                >
+                  Duplicates ({teacherImportSummary.duplicates.length})
+                </button>
+                {teacherImportSummary.invalid.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTeacherImportTab("invalid")}
+                    className={`px-3 py-2 text-xs font-semibold border-b-2 ${teacherImportTab === "invalid" ? "border-red-600 text-red-600" : "border-transparent text-gray-500"}`}
+                  >
+                    Invalid ({teacherImportSummary.invalid.length})
+                  </button>
+                )}
+              </div>
+
+              {teacherImportTab === "valid" && (
+                <div className="max-h-52 overflow-y-auto border rounded-xl divide-y text-xs">
+                  {teacherImportSummary.valid.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No ready records found.</p>
+                  ) : (
+                    teacherImportSummary.valid.map((t, idx) => (
+                      <div key={idx} className="p-3 flex justify-between items-center hover:bg-gray-50">
+                        <div>
+                          <span className="font-bold text-gray-900">{t.fullName}</span>
+                          <span className="text-gray-500 ml-2">{t.employee_id ? `(ID: ${t.employee_id})` : ""}</span>
+                        </div>
+                        <div className="text-right font-mono text-gray-600">
+                          <span>{t.email}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {teacherImportTab === "missingEmail" && (
+                <div className="max-h-52 overflow-y-auto border border-amber-200 rounded-xl divide-y text-xs bg-amber-50/30">
+                  {teacherImportSummary.missingEmail.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No missing email records.</p>
+                  ) : (
+                    teacherImportSummary.missingEmail.map((t, idx) => (
+                      <div key={idx} className="p-3 flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-gray-900">{t.fullName}</p>
+                          <p className="text-amber-700 text-[11px] mt-0.5">{t.reason}</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-semibold text-[10px]">
+                          Missing Email
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {teacherImportTab === "duplicates" && (
+                <div className="max-h-52 overflow-y-auto border border-blue-200 rounded-xl divide-y text-xs bg-blue-50/30">
+                  {teacherImportSummary.duplicates.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No duplicate records.</p>
+                  ) : (
+                    teacherImportSummary.duplicates.map((t, idx) => (
+                      <div key={idx} className="p-3 flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-gray-900">{t.fullName} <span className="text-gray-500 font-normal">({t.email})</span></p>
+                          <p className="text-blue-700 text-[11px] mt-0.5">{t.reason}</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold text-[10px]">
+                          Duplicate
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {teacherImportTab === "invalid" && (
+                <div className="max-h-52 overflow-y-auto border border-red-200 rounded-xl divide-y text-xs bg-red-50/30">
+                  {teacherImportSummary.invalid.length === 0 ? (
+                    <p className="p-4 text-gray-500 text-center">No invalid records.</p>
+                  ) : (
+                    teacherImportSummary.invalid.map((t, idx) => (
+                      <div key={idx} className="p-3 flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-gray-900">{t.fullName}</p>
+                          <p className="text-red-700 text-[11px] mt-0.5">{t.reason}</p>
+                        </div>
+                        <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded font-semibold text-[10px]">
+                          Invalid
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between items-center pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={handleDownloadTeacherSampleCsv}
+                  className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Sample CSV
+                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherImportModal(false)}
+                    disabled={isSavingTeacherImport}
+                    className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmTeacherImport}
+                    disabled={isSavingTeacherImport || teacherImportSummary.valid.length === 0}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingTeacherImport && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {isSavingTeacherImport ? "Importing..." : `Confirm & Create ${teacherImportSummary.valid.length} Registration Request(s)`}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
