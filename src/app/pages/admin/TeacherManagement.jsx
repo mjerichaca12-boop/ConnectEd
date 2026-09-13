@@ -35,7 +35,8 @@ import {
   CheckSquare,
   MinusSquare,
   Square,
-  CheckCircle2
+  CheckCircle2,
+  Plus
 } from "lucide-react";
 
 const db = supabase;
@@ -2638,8 +2639,8 @@ function TeacherManagement() {
                   {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> : <Upload className="w-4 h-4 text-emerald-600" />}
                   {isImportingTeachers ? "Importing..." : "Import Teachers"}
                 </button>
-                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-md shadow-green-600/20 cursor-pointer text-sm">
-                  <UserPlus className="w-4 h-4" />
+                <button data-tour="teachers-add-btn" onClick={() => { setTeacherFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-2xl transition-all font-bold shadow-md shadow-green-600/20 cursor-pointer text-sm">
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                   Add Teacher
                 </button>
               </div>

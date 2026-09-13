@@ -12,7 +12,7 @@ import { GoogleSheetsImportModal } from "@/app/components/admin/GoogleSheetsImpo
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
-import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen } from "lucide-react";
+import { Search, UserPlus, Eye, Edit, Trash2, Download, X, Mail, Phone, Hash, CalendarDays, Users, Loader2, AlertTriangle, Sparkles, Upload, CheckSquare, Square, Key, User, CheckCircle2, BookOpen, Plus } from "lucide-react";
 
 const db = supabase;
 const generateUUID = () => {
@@ -2671,8 +2671,8 @@ function StudentManagement() {
                   {isImporting ? <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> : <Upload className="w-4 h-4 text-emerald-600" />}
                   {isImporting ? "Importing..." : "Import Students"}
                 </button>
-                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-md shadow-green-600/20 cursor-pointer text-sm">
-                  <UserPlus className="w-4 h-4" />
+                <button data-tour="students-add-btn" onClick={() => { setStudentFormData((f) => ({ ...f, password: generateTempPassword() })); setShowAddModal(true); }} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-2xl transition-all font-bold shadow-md shadow-green-600/20 cursor-pointer text-sm">
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                   Add Student
                 </button>
               </div>
