@@ -1175,6 +1175,7 @@ function StudentManagement() {
         );
 
         const validRecords = [];
+        const missingEmailRecords = [];
         const alreadyExistingRecords = [];
         const invalidRecords = [];
         const duplicateRecords = [];
@@ -1260,6 +1261,19 @@ function StudentManagement() {
             continue;
           }
 
+          // Email Input Validation (Email is mandatory for account creation & credentials notification)
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            missingEmailRecords.push({
+              rowNum,
+              lrn: cleanLrn,
+              fullName: fullNameDisplay,
+              name: fullNameDisplay,
+              email: email || "Missing",
+              reason: !email ? "Missing email address." : `Invalid email address format (${email}).`
+            });
+            continue;
+          }
+
           if (fileLrnSet.has(cleanLrn)) {
             duplicateRecords.push({
               rowNum,
@@ -1320,7 +1334,7 @@ function StudentManagement() {
           }
         }
 
-        const totalRows = validRecords.length + alreadyExistingRecords.length + invalidRecords.length + duplicateRecords.length;
+        const totalRows = validRecords.length + missingEmailRecords.length + alreadyExistingRecords.length + invalidRecords.length + duplicateRecords.length;
 
         if (totalRows === 0) {
           toast.error("No data rows found in CSV file.");
@@ -1331,6 +1345,7 @@ function StudentManagement() {
         setImportPreviewSummary({
           total: totalRows,
           valid: validRecords,
+          missingEmail: missingEmailRecords,
           alreadyExisting: alreadyExistingRecords,
           invalid: invalidRecords,
           duplicates: duplicateRecords,
@@ -1338,7 +1353,7 @@ function StudentManagement() {
           newGradeSectionsToCreate,
           hasSectionColumn: headerMap.section !== undefined
         });
-        setPreviewTab(validRecords.length > 0 ? "valid" : (alreadyExistingRecords.length > 0 ? "alreadyExisting" : (duplicateRecords.length > 0 ? "duplicates" : "invalid")));
+        setPreviewTab(validRecords.length > 0 ? "valid" : (missingEmailRecords.length > 0 ? "missingEmail" : (alreadyExistingRecords.length > 0 ? "alreadyExisting" : (duplicateRecords.length > 0 ? "duplicates" : "invalid"))));
         setShowImportPreviewModal(true);
       } catch (err) {
         toast.error(err.message || "Failed to process CSV file.");
