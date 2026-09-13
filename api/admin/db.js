@@ -284,7 +284,7 @@ export default async function handler(req, res) {
       if (resendApiKey) {
         try {
           const studentFullName = [first_name, request.middle_name, last_name].filter(Boolean).join(" ");
-          const loginUrl = process.env.VITE_APP_URL || "https://connected.com/login";
+          const loginUrl = process.env.VITE_APP_URL || "https://getconnectedlms.online/login";
 
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
