@@ -97,6 +97,55 @@ export default async function handler(req, res) {
     const body = await readJsonBody(req);
     const { table, action, payload, onConflict, eq, neq, in: inArgs, select, single, order, countOption, head, or, is: isArgs, match } = body;
 
+    if (action === "bulk_delete_teachers") {
+      const { teacher_ids } = body;
+      if (!Array.isArray(teacher_ids) || teacher_ids.length === 0) {
+        return res.status(400).json({ error: "Missing or invalid teacher_ids array." });
+      }
+
+      const BATCH_SIZE = 200;
+      for (let i = 0; i < teacher_ids.length; i += BATCH_SIZE) {
+        const chunk = teacher_ids.slice(i, i + BATCH_SIZE);
+
+        await Promise.allSettled([
+          supabaseAdmin.from("subjects").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabaseAdmin.from("teacher_student_assignments").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabaseAdmin.from("lessons").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabaseAdmin.from("class_materials").update({ teacher_id: null }).in("teacher_id", chunk),
+          supabaseAdmin.from("class_announcements").update({ teacher_id: null }).in("teacher_id", chunk),
+        ]);
+
+        const tablesToDeleteFrom = [
+          { table: "teacher_student_grades", col: "teacher_id" },
+          { table: "teacher_assessment_submissions", col: "teacher_id" },
+          { table: "teacher_assessment_grades", col: "teacher_id" },
+          { table: "notifications", col: "user_id" },
+          { table: "password_reset_logs", col: "user_id" },
+          { table: "conversation_participants", col: "profile_id" },
+          { table: "conversation_reads", col: "user_id" },
+        ];
+
+        await Promise.allSettled(
+          tablesToDeleteFrom.map(item => supabaseAdmin.from(item.table).delete().in(item.col, chunk))
+        );
+
+        try {
+          await supabaseAdmin.from("messages").delete().or(`sender_id.in.(${chunk.join(",")}),receiver_id.in.(${chunk.join(",")})`);
+        } catch (msgErr) {
+          console.warn("[api/admin/db] Messages delete notice:", msgErr?.message);
+        }
+
+        const { error: profileErr } = await supabaseAdmin.from("profiles").delete().in("id", chunk);
+        if (profileErr) {
+          console.error("[api/admin/db] Profiles delete error:", profileErr);
+        }
+
+        await Promise.allSettled(chunk.map(id => supabaseAdmin.auth.admin.deleteUser(id)));
+      }
+
+      return res.status(200).json({ success: true, count: teacher_ids.length });
+    }
+
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
       return res.status(400).json({ error: "Missing table or action" });
     }
@@ -144,11 +193,10 @@ export default async function handler(req, res) {
     if (action === "insert" || action === "update" || action === "upsert") {
       query = query.select(select || "*");
     } else if (action === "delete") {
-    if (select) query = query.select(select);
+      if (select) query = query.select(select);
     }
     
     if (order) {
-      // order = { column: "created_at", options: { ascending: false } }
       query = query.order(order.column, order.options);
     }
 

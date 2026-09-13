@@ -137,10 +137,7 @@ export const adminApi = {
     if (!Array.isArray(teacherIds) || teacherIds.length === 0) {
       return { data: { success: true, count: 0 }, error: null };
     }
-    const res = await this.fetchWithToken("/api/admin/bulk-delete-teachers", {
-      method: "POST",
-      body: JSON.stringify({ teacher_ids: teacherIds }),
-    });
+    const res = await this.db(null, "bulk_delete_teachers", { teacher_ids: teacherIds });
 
     if (!res.error) {
       return res;
