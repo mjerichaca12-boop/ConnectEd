@@ -295,11 +295,13 @@ export default async function handler(req, res) {
       const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
       let emailSent = false;
       let emailNotice = null;
+      let safeDiagnostics = null;
 
       if (resendApiKey) {
         try {
           const studentFullName = [first_name, request.middle_name, last_name].filter(Boolean).join(" ");
           const loginUrl = process.env.VITE_APP_URL || "https://getconnectedlms.online/login";
+          const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -331,24 +333,58 @@ export default async function handler(req, res) {
             })
           });
 
+          const rawText = await emailRes.text();
+          let resendErrorName = null;
+          let resendErrorMessage = null;
+          try {
+            const parsed = JSON.parse(rawText);
+            resendErrorName = parsed.name || parsed.error || null;
+            resendErrorMessage = parsed.message || rawText;
+          } catch (_) {
+            resendErrorMessage = rawText;
+          }
+
+          safeDiagnostics = {
+            resendStatus: emailRes.status,
+            resendErrorName,
+            resendErrorMessage,
+            fromEmail: emailFrom,
+            recipientDomain,
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+
+          console.log("[approve_student_registration] Resend Safe Diagnostics:", safeDiagnostics);
+
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            const rawText = await emailRes.text();
-            try {
-              const parsed = JSON.parse(rawText);
-              emailNotice = parsed.message || rawText;
-            } catch (_) {
-              emailNotice = rawText;
-            }
-            console.warn("[approve_student_registration] Resend API notice:", emailNotice);
+            emailNotice = resendErrorMessage;
           }
         } catch (e) {
           emailNotice = e?.message || "Failed to reach Resend API";
-          console.warn("[approve_student_registration] Resend API exception:", emailNotice);
+          safeDiagnostics = {
+            resendStatus: 500,
+            resendErrorName: "NetworkError",
+            resendErrorMessage: emailNotice,
+            fromEmail: emailFrom,
+            recipientDomain: normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown",
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+          console.warn("[approve_student_registration] Resend API exception:", safeDiagnostics);
         }
       } else {
         emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
+        safeDiagnostics = {
+          resendStatus: null,
+          resendErrorName: "MissingApiKey",
+          resendErrorMessage: emailNotice,
+          fromEmail: emailFrom,
+          recipientDomain: normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown",
+          hasResendApiKeyEnv: false,
+          hasEmailFromEnv: !!process.env.EMAIL_FROM
+        };
       }
 
       // 8. Update pending_account_requests conditionally
@@ -378,7 +414,8 @@ export default async function handler(req, res) {
         created_user_id: userId,
         username,
         emailSent,
-        emailNotice
+        emailNotice,
+        resendDiagnostics: safeDiagnostics
       });
     }
 
@@ -432,11 +469,13 @@ export default async function handler(req, res) {
       const emailFrom = process.env.EMAIL_FROM || process.env.VITE_EMAIL_FROM || "ConnectEd LMS <onboarding@resend.dev>";
       let emailSent = false;
       let emailNotice = null;
+      let safeDiagnostics = null;
 
       if (resendApiKey && request.email) {
         try {
           const studentFullName = [request.first_name, request.middle_name, request.last_name].filter(Boolean).join(" ");
           const normalizedEmail = request.email.trim().toLowerCase();
+          const recipientDomain = normalizedEmail.includes("@") ? "@" + normalizedEmail.split("@")[1] : "unknown";
 
           const emailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
@@ -468,27 +507,61 @@ export default async function handler(req, res) {
             })
           });
 
+          const rawText = await emailRes.text();
+          let resendErrorName = null;
+          let resendErrorMessage = null;
+          try {
+            const parsed = JSON.parse(rawText);
+            resendErrorName = parsed.name || parsed.error || null;
+            resendErrorMessage = parsed.message || rawText;
+          } catch (_) {
+            resendErrorMessage = rawText;
+          }
+
+          safeDiagnostics = {
+            resendStatus: emailRes.status,
+            resendErrorName,
+            resendErrorMessage,
+            fromEmail: emailFrom,
+            recipientDomain,
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+
+          console.log("[reject_student_registration] Resend Safe Diagnostics:", safeDiagnostics);
+
           if (emailRes.ok) {
             emailSent = true;
           } else {
-            const rawText = await emailRes.text();
-            try {
-              const parsed = JSON.parse(rawText);
-              emailNotice = parsed.message || rawText;
-            } catch (_) {
-              emailNotice = rawText;
-            }
-            console.warn("[reject_student_registration] Resend API notice:", emailNotice);
+            emailNotice = resendErrorMessage;
           }
         } catch (e) {
           emailNotice = e?.message || "Failed to reach Resend API";
-          console.warn("[reject_student_registration] Resend API exception:", emailNotice);
+          safeDiagnostics = {
+            resendStatus: 500,
+            resendErrorName: "NetworkError",
+            resendErrorMessage: emailNotice,
+            fromEmail: emailFrom,
+            recipientDomain: request.email?.includes("@") ? "@" + request.email.split("@")[1] : "unknown",
+            hasResendApiKeyEnv: !!process.env.RESEND_API_KEY,
+            hasEmailFromEnv: !!process.env.EMAIL_FROM
+          };
+          console.warn("[reject_student_registration] Resend API exception:", safeDiagnostics);
         }
       } else {
         emailNotice = "RESEND_API_KEY environment variable is not configured in Vercel.";
+        safeDiagnostics = {
+          resendStatus: null,
+          resendErrorName: "MissingApiKey",
+          resendErrorMessage: emailNotice,
+          fromEmail: emailFrom,
+          recipientDomain: request?.email?.includes("@") ? "@" + request.email.split("@")[1] : "unknown",
+          hasResendApiKeyEnv: false,
+          hasEmailFromEnv: !!process.env.EMAIL_FROM
+        };
       }
 
-      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, emailNotice });
+      return res.status(200).json({ success: true, message: "Registration request rejected.", emailSent, emailNotice, resendDiagnostics: safeDiagnostics });
     }
 
     if ((!table && action !== "storage_upload" && action !== "storage_remove" && action !== "create_signed_upload_url") || !action) {
