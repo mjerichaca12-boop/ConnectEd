@@ -781,6 +781,12 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: "Failed to resolve Auth User ID for teacher account." });
       }
 
+      const subjectsValue = Array.isArray(request.subjects)
+        ? request.subjects
+        : typeof request.subjects === "string"
+        ? (request.subjects ? [request.subjects] : [])
+        : [];
+
       const teacherProfilePayload = {
         id: userId,
         role: "teacher",
@@ -794,16 +800,46 @@ export default async function handler(req, res) {
         phone: request.phone || null,
         year_level: request.grade_level || request.year_level || null,
         assigned_class: request.section || request.assigned_class || null,
-        subjects: request.subjects || null,
+        subjects: subjectsValue,
         status: "Active",
         must_change_password: true,
         is_verified: true,
         updated_at: new Date().toISOString()
       };
 
-      const { error: profileErr } = await supabaseAdmin
+      let { error: profileErr } = await supabaseAdmin
         .from("profiles")
         .upsert(teacherProfilePayload, { onConflict: "id" });
+
+      if (profileErr) {
+        console.warn("[approve_teacher_registration] Initial profile upsert error:", profileErr);
+        
+        if (
+          profileErr.code === "23502" ||
+          profileErr.message?.includes("subjects") ||
+          profileErr.message?.includes("not-null") ||
+          profileErr.message?.includes("null value in column")
+        ) {
+          const fallbackOptions = ["", [], null];
+          for (const fb of fallbackOptions) {
+            const retryPayload = { ...teacherProfilePayload };
+            if (fb === null) {
+              delete retryPayload.subjects;
+            } else {
+              retryPayload.subjects = fb;
+            }
+            const { error: retryErr } = await supabaseAdmin
+              .from("profiles")
+              .upsert(retryPayload, { onConflict: "id" });
+            if (!retryErr) {
+              profileErr = null;
+              break;
+            } else {
+              profileErr = retryErr;
+            }
+          }
+        }
+      }
 
       if (profileErr) {
         console.error("[approve_teacher_registration] Profile error:", profileErr);
