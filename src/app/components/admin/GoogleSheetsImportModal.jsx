@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Upload, Link, Loader2, AlertTriangle, CheckCircle2, FileSpreadsheet, ArrowRight, RefreshCw, Check } from "lucide-react";
+import { X, Upload, Link, Loader2, AlertTriangle, CheckCircle2, FileSpreadsheet, ArrowRight, RefreshCw, Check, Download } from "lucide-react";
 import {
   extractSpreadsheetDetails,
   fetchGoogleSheetMetadata,
