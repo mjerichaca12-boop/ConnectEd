@@ -1469,7 +1469,7 @@ function SubjectManagement() {
                     <button
                       onClick={() => setShowBulkArchiveConfirm(true)}
                       disabled={isBulkArchiving}
-                      className="flex items-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-xl hover:bg-amber-700 transition-colors border border-amber-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-2xl hover:bg-amber-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                     >
                       {isBulkArchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
                       {isBulkArchiving ? "Archiving..." : `Archive Selected (${selectedSubjectIds.size})`}
@@ -1479,7 +1479,7 @@ function SubjectManagement() {
                     <button
                       onClick={() => setShowBulkUnarchiveConfirm(true)}
                       disabled={isBulkUnarchiving}
-                      className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors border border-green-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                     >
                       {isBulkUnarchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                       {isBulkUnarchiving ? "Restoring..." : `Restore Selected (${selectedSubjectIds.size})`}
@@ -1488,15 +1488,15 @@ function SubjectManagement() {
                   <button
                     onClick={() => setShowBulkDeleteConfirm(true)}
                     disabled={isBulkDeleting}
-                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                   >
                     {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
                   </button>
                 </div>
               )}
-              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 cursor-pointer">
-                <Download className="w-4 h-4" />
+              <button onClick={handleExportToCSV} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-800 rounded-2xl hover:bg-gray-50 transition-all font-semibold shadow-sm text-sm cursor-pointer">
+                <Download className="w-4 h-4 text-gray-500" />
                 Export CSV
               </button>
             </div>

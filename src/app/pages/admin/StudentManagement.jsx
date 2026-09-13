@@ -2831,8 +2831,8 @@ function StudentManagement() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                   <input type="text" placeholder="Search by name, username, or LRN..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50" />
                 </div>
-                <button data-tour="students-export-btn" onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 w-full md:w-auto justify-center">
-                  <Download className="w-4 h-4" />
+                <button data-tour="students-export-btn" onClick={handleExportToCSV} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-800 rounded-2xl hover:bg-gray-50 transition-all font-semibold shadow-sm text-sm cursor-pointer w-full md:w-auto justify-center">
+                  <Download className="w-4 h-4 text-gray-500" />
                   Export
                 </button>
 
@@ -2842,7 +2842,7 @@ function StudentManagement() {
                     <button
                       type="button"
                       onClick={handleOpenBulkAssignSectionModal}
-                      className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center"
+                      className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all font-semibold shadow-sm text-sm cursor-pointer w-full md:w-auto justify-center"
                     >
                       <BookOpen className="w-4 h-4" />
                       Assign Section ({selectedStudentIds.size})
@@ -2851,7 +2851,7 @@ function StudentManagement() {
                   <button
                     onClick={() => setShowBulkDeleteConfirm(true)}
                     disabled={selectedStudentIds.size === 0 || isBulkDeleting}
-                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm cursor-pointer w-full md:w-auto justify-center disabled:opacity-50"
                   >
                     {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedStudentIds.size})`}
@@ -2872,7 +2872,7 @@ function StudentManagement() {
                           type="button"
                           onClick={handlePrepareMasterlistRegistrationRequests}
                           disabled={isCreatingMasterlistRequests}
-                          className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer disabled:opacity-50"
+                          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all font-semibold shadow-sm text-sm cursor-pointer disabled:opacity-50 w-full md:w-auto justify-center"
                         >
                           {isCreatingMasterlistRequests ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                           Create Registration Requests ({selectedMasterlistIds.size})
@@ -2881,7 +2881,7 @@ function StudentManagement() {
                           type="button"
                           onClick={handleGenerateAccounts}
                           disabled={isGenerating || newCount === 0}
-                          className="flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                          className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-sm text-sm disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed w-full md:w-auto justify-center"
                         >
                           {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                           {isGenerating ? "Generating..." : `Generate Accounts (${newCount})`}
@@ -2892,7 +2892,7 @@ function StudentManagement() {
                       <button
                         onClick={() => setShowClearMasterlistConfirm(true)}
                         disabled={isClearingMasterlist}
-                        className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                       >
                         {isClearingMasterlist ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                         {isClearingMasterlist ? "Clearing..." : "Clear Imported Masterlist"}
@@ -2909,16 +2909,16 @@ function StudentManagement() {
                       <button
                         type="button"
                         onClick={() => { setRegistrationImportText(""); setShowRegistrationBulkImportModal(true); }}
-                        className="flex items-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
+                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-50/80 border border-emerald-300/80 text-emerald-700 rounded-2xl hover:bg-emerald-100/70 transition-all font-semibold shadow-sm text-sm cursor-pointer w-full md:w-auto justify-center"
                       >
-                        <Upload className="w-4 h-4" />
+                        <Upload className="w-4 h-4 text-emerald-600" />
                         Import Students
                       </button>
                       {selectedPendingRequestIds.size > 0 && (
                         <button
                           type="button"
                           onClick={() => setShowBulkApproveConfirmModal(true)}
-                          className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
+                          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-semibold shadow-sm text-sm cursor-pointer w-full md:w-auto justify-center"
                         >
                           <CheckCircle2 className="w-4 h-4" />
                           Approve Selected ({selectedPendingRequestIds.size})

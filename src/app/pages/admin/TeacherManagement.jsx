@@ -2768,7 +2768,7 @@ function TeacherManagement() {
                       type="button"
                       onClick={() => setShowTeacherGoogleSheetsModal(true)}
                       disabled={isImportingTeachers}
-                      className="px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors shadow-sm whitespace-nowrap disabled:opacity-50"
+                      className="px-5 py-2.5 bg-emerald-50/80 border border-emerald-300/80 text-emerald-700 rounded-2xl hover:bg-emerald-100/70 transition-all font-semibold shadow-sm text-sm cursor-pointer whitespace-nowrap disabled:opacity-50"
                       title="Import Teachers Masterlist / Google Sheets"
                     >
                       {isImportingTeachers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4 text-emerald-600" />}
@@ -2780,7 +2780,7 @@ function TeacherManagement() {
 
               {activeTab === "Roster" && (
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-600 text-sm">Status</span>
+                  <span className="text-gray-600 text-sm font-medium">Status</span>
                   <CustomSelect
                     value={filterStatus}
                     onChange={setFilterStatus}
@@ -2800,7 +2800,7 @@ function TeacherManagement() {
                     type="button"
                     onClick={handlePrepareTeacherRegistrationRequests}
                     disabled={isCreatingTeacherRequests}
-                    className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center cursor-pointer disabled:opacity-50"
                   >
                     {isCreatingTeacherRequests ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                     Create Registration Requests ({selectedTeacherIds.size})
@@ -2808,7 +2808,7 @@ function TeacherManagement() {
                   <button
                     onClick={() => setShowBulkDeleteConfirm(true)}
                     disabled={isBulkDeleting}
-                    className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors border border-red-600 font-semibold shadow-sm w-full md:w-auto justify-center disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50"
                   >
                     {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedTeacherIds.size})`}
@@ -2819,15 +2819,15 @@ function TeacherManagement() {
                 <button
                   type="button"
                   onClick={() => setShowBulkApproveConfirmModal(true)}
-                  className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors font-semibold shadow-sm w-full md:w-auto justify-center cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Approve Selected ({selectedPendingRequestIds.size})
                 </button>
               )}
               {activeTab === "Roster" && (
-                <button onClick={handleExportToCSV} className="flex items-center gap-2 px-4 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-white/20 transition-colors border border-gray-200 cursor-pointer">
-                  <Download className="w-4 h-4" />
+                <button onClick={handleExportToCSV} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-800 rounded-2xl hover:bg-gray-50 transition-all font-semibold shadow-sm text-sm cursor-pointer">
+                  <Download className="w-4 h-4 text-gray-500" />
                   Export CSV
                 </button>
               )}
