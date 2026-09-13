@@ -453,9 +453,12 @@ function SubjectManagement() {
       setLoading(isCachedSubjectsLoading);
     }
 
+    const subChannelId = `admin-subject-table-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    const teachChannelId = `admin-subject-teachers-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
     const subjectChannel = supabase
       ? supabase
-          .channel("admin-subject-table-realtime-v1")
+          .channel(subChannelId)
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, async () => {
             try {
               await fetchSubjects();
@@ -468,7 +471,7 @@ function SubjectManagement() {
 
     const teacherChannel = supabase
       ? supabase
-          .channel("admin-subject-teachers-realtime-v1")
+          .channel(teachChannelId)
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, async (payload) => {
             if (payload.new?.role !== "teacher" && payload.old?.role !== "teacher") return;
 

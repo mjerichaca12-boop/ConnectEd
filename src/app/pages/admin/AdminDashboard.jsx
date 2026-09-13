@@ -361,7 +361,7 @@ export function AdminDashboard() {
 
     const profilesChannel = supabase
       ? supabase
-          .channel("admin-dashboard-profiles")
+          .channel(`admin-dashboard-profiles-${Date.now()}-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload) => {
             const isTeacher = payload.new?.role === "teacher" || payload.old?.role === "teacher";
             const isStudent = payload.new?.role === "student" || payload.old?.role === "student";
@@ -379,7 +379,7 @@ export function AdminDashboard() {
 
     const subjectChannel = supabase
       ? supabase
-          .channel("admin-dashboard-subject")
+          .channel(`admin-dashboard-subject-${Date.now()}-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "subjects" }, (payload) => {
             const nextActivity = toSubjectRealtimeActivityPayload(payload);
             if (nextActivity) {
@@ -392,7 +392,7 @@ export function AdminDashboard() {
 
     const academicChannel = supabase
       ? supabase
-          .channel("admin-dashboard-academic")
+          .channel(`admin-dashboard-academic-${Date.now()}-${Math.random().toString(36).substring(7)}`)
           .on("postgres_changes", { event: "*", schema: "public", table: "academic_settings" }, (payload) => {
             if (payload.new) {
               setAcademicSettings({ schoolYear: payload.new.current_school_year, quarter: payload.new.current_quarter });

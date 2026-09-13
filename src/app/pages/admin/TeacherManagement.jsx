@@ -1332,8 +1332,9 @@ function TeacherManagement() {
   useEffect(() => {
     if (!db) return;
 
+    const channelName = `admin-teachers-realtime-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const channel = db
-      .channel("admin-teachers-realtime-v1")
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pending_account_requests" },

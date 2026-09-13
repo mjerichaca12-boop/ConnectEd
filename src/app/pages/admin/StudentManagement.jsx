@@ -472,8 +472,9 @@ function StudentManagement() {
   useEffect(() => {
     if (!db) return;
 
+    const channelName = `admin-students-realtime-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const channel = db
-      .channel("admin-students-realtime-v1")
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pending_account_requests" },
