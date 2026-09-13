@@ -2695,6 +2695,7 @@ function StudentManagement() {
 
           <div className="flex gap-4 border-b border-gray-200">
             <button
+              data-tour="students-profiles-tab"
               onClick={() => setActiveTab("Profiles")}
               className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
                 activeTab === "Profiles"
@@ -2703,17 +2704,6 @@ function StudentManagement() {
               }`}
             >
               Enrolled Students
-            </button>
-            <button
-              data-tour="students-masterlist-tab"
-              onClick={() => setActiveTab("Masterlist")}
-              className={`px-4 py-3 text-sm font-semibold transition-colors border-b-2 ${
-                activeTab === "Masterlist"
-                  ? "border-green-600 text-green-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Masterlist
             </button>
             <button
               onClick={() => {
