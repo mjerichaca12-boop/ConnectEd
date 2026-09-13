@@ -174,7 +174,7 @@ function TeacherManagement() {
   const [isSavingTeacherImport, setIsSavingTeacherImport] = useState(false);
   const [isImportingTeachers, setIsImportingTeachers] = useState(false);
 
-  const handleConfirmTeacherGoogleSheetsImport = async ({ validRecords, spreadsheetId, sheetName }) => {
+  const handleConfirmTeacherGoogleSheetsImport = async ({ validRecords }) => {
     if (!db) throw new Error("Supabase client not configured");
 
     const recordsToInsert = validRecords.map(r => ({
@@ -184,16 +184,15 @@ function TeacherManagement() {
       last_name: r.last_name,
       suffix: r.suffix || null,
       email: r.email,
-      employee_id: r.employee_id || null,
       lrn: r.employee_id || null,
       status: "pending",
       source: "masterlist",
-      source_type: "google_sheet",
-      spreadsheet_id: spreadsheetId,
-      sheet_name: sheetName || null
+      external_request_id: `gsheet-teacher-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
     }));
 
-    const { error } = await db.from("pending_account_requests").insert(recordsToInsert);
+    const { error } = await adminApi.db("pending_account_requests", "insert", {
+      payload: recordsToInsert
+    });
     if (error) throw error;
 
     toast.success(`Successfully imported ${recordsToInsert.length} teacher registration request(s) from Google Sheets!`, { duration: 5000 });
@@ -448,13 +447,15 @@ function TeacherManagement() {
         last_name: r.last_name,
         suffix: r.suffix || null,
         email: r.email,
-        employee_id: r.employee_id || null,
         lrn: r.employee_id || null,
         status: "pending",
-        source: "masterlist"
+        source: "masterlist",
+        external_request_id: `csv-teacher-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
       }));
 
-      const { error } = await db.from("pending_account_requests").insert(recordsToInsert);
+      const { error } = await adminApi.db("pending_account_requests", "insert", {
+        payload: recordsToInsert
+      });
       if (error) throw error;
 
       toast.success(`Successfully imported ${recordsToInsert.length} teacher registration request(s)!`, { duration: 5000 });

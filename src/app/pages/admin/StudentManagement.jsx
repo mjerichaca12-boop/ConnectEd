@@ -129,7 +129,7 @@ function StudentManagement() {
   const [isSavingImport, setIsSavingImport] = useState(false);
   const [showGoogleSheetsModal, setShowGoogleSheetsModal] = useState(false);
 
-  const handleConfirmGoogleSheetsImport = async ({ validRecords, spreadsheetId, sheetName }) => {
+  const handleConfirmGoogleSheetsImport = async ({ validRecords }) => {
     if (!db) throw new Error("Supabase client not configured");
 
     const recordsToInsert = validRecords.map((r) => ({
@@ -141,13 +141,12 @@ function StudentManagement() {
       lrn: r.lrn,
       year_level: r.year_level || null,
       section: r.section || null,
-      account_created: false,
-      source_type: "google_sheet",
-      spreadsheet_id: spreadsheetId,
-      sheet_name: sheetName || null
+      account_created: false
     }));
 
-    const { error } = await db.from("student_masterlist").insert(recordsToInsert);
+    const { error } = await adminApi.db("student_masterlist", "insert", {
+      payload: recordsToInsert
+    });
     if (error) throw error;
 
     toast.success(`Successfully imported ${recordsToInsert.length} student record(s) from Google Sheets to Masterlist!`, { duration: 6000 });
