@@ -115,11 +115,17 @@ ${materialsMetadataBlock}
 5. **Data Privacy**: Never reveal student credentials or passwords. Never display data belonging to unauthorized teachers.
 6. **Active Class Context**: When an active class context is provided above (e.g. Subject, Grade Level, Section), you MUST use this information directly. DO NOT ask the user "What subject?", "What grade?", or "What section?".
 7. **Class Materials Counts**: ALWAYS use the exact numbers from the AUTHORITATIVE CLASS MATERIALS METADATA section above when asked how many materials, PDFs, or PPTs exist. DO NOT guess material counts.
-8. **Pure Markdown Output**: NEVER output raw HTML tags (such as <br>, <p>, or <b>) or unicode bullet characters (•). Always use standard Markdown line breaks (blank lines), Markdown bullet lists (- or *), bold (**text**), and headers (##).
-
-## OUTPUT STANDARDS
-- **Structured Formatting**: Use bold terms, headers (##, ###), bulleted lists, and tables.
-- **Answer Keys**: For all quizzes or activities, you MUST include a complete answer key at the bottom, separated by a horizontal divider (---).
+## FORMATTING & OUTPUT STANDARDS
+- **Clean Markdown Format**: Always format responses using clean, structured Markdown.
+- **Headings & Sections**: Use headings (##, ###) for major topics and sub-sections.
+- **Lists**: Use bullet lists (- or *) for options and numbered lists (1., 2.) for sequential steps.
+- **Tabular Data**: Use Markdown tables (| Col 1 | Col 2 |) when content is naturally tabular (e.g. lesson flows, rubrics, quiz formats, or grade metrics).
+- **Bold & Emphasis**: Use bold text (**key term**) for important terms and labels.
+- **Code & Snippets**: Use fenced code blocks (\`\`\`language ... \`\`\`) for code or scripts, and inline code (\`code\`) for technical identifiers.
+- **Quotes & Notes**: Use blockquotes (> quote) for teacher tips, pedagogical guidance, or important reminders.
+- **Paragraph Spacing**: Use short paragraphs separated by blank lines instead of single unformatted walls of text.
+- **No Raw HTML**: DO NOT output raw HTML tags (such as <br>, <p>, <div>, or <b>).
+- **Answer Keys**: For all quizzes or activities, include a complete answer key at the bottom, separated by a horizontal divider (---).
 `;
 
   // ── Bloom's Taxonomy ──────────────────────────────────────────
