@@ -693,6 +693,11 @@ function StudentManagement() {
 
   const normalizeLrn = (value) => value.replace(/\D/g, "").slice(0, 12);
   const normalizeYearLevel = (value) => value.replace(/\D/g, "").slice(0, 2);
+  const getStudentGradeLevel = (item) => {
+    if (!item) return "";
+    const raw = item.grade_level || item.year_level || item.gradeLevel || item.grade || "";
+    return String(raw).replace(/\D/g, "").slice(0, 2);
+  };
 
   const validateAddField = (field, value, formData) => {
     const trimmedValue = typeof value === "string" ? value.trim() : value;
@@ -821,38 +826,38 @@ function StudentManagement() {
     const trimmedLrn = normalizeLrn(formData.lrn);
     const trimmedEmail = (formData.email || "").trim().toLowerCase();
 
-    // 1. Check profiles table for duplicate LRN or Email
+    // 1 & 2. Check profiles and pending_account_requests tables in parallel for duplicate LRN or Email
     let lrnQuery = db.from("profiles").select("id").eq("lrn", trimmedLrn);
     if (excludeId) lrnQuery = lrnQuery.neq("id", excludeId);
-    const lrnResult = await lrnQuery;
+
+    let emailQuery = db.from("profiles").select("id").ilike("email", trimmedEmail);
+    if (excludeId) emailQuery = emailQuery.neq("id", excludeId);
+
+    const [lrnResult, emailResult, pendingLrnRes, pendingEmailRes] = await Promise.all([
+      lrnQuery,
+      emailQuery,
+      excludeId ? Promise.resolve({ data: [] }) : db.from("pending_account_requests").select("id").eq("lrn", trimmedLrn).eq("status", "pending").limit(1),
+      excludeId ? Promise.resolve({ data: [] }) : db.from("pending_account_requests").select("id").ilike("email", trimmedEmail).eq("status", "pending").limit(1)
+    ]);
 
     if (lrnResult.data && lrnResult.data.length > 0) {
       errors.lrn = "LRN is already registered to a student account";
       return errors;
     }
 
-    let emailQuery = db.from("profiles").select("id").ilike("email", trimmedEmail);
-    if (excludeId) emailQuery = emailQuery.neq("id", excludeId);
-    const emailResult = await emailQuery;
-
     if (emailResult.data && emailResult.data.length > 0) {
       errors.email = "Email address is already registered to an account";
       return errors;
     }
 
-    // 2. Check pending_account_requests table for duplicate LRN or Email
-    if (!excludeId) {
-      const pendingLrnRes = await db.from("pending_account_requests").select("id").eq("lrn", trimmedLrn).eq("status", "pending").limit(1);
-      if (pendingLrnRes.data && pendingLrnRes.data.length > 0) {
-        errors.lrn = "A pending registration request already exists for this LRN";
-        return errors;
-      }
+    if (pendingLrnRes?.data && pendingLrnRes.data.length > 0) {
+      errors.lrn = "A pending registration request already exists for this LRN";
+      return errors;
+    }
 
-      const pendingEmailRes = await db.from("pending_account_requests").select("id").ilike("email", trimmedEmail).eq("status", "pending").limit(1);
-      if (pendingEmailRes.data && pendingEmailRes.data.length > 0) {
-        errors.email = "A pending registration request already exists for this email address";
-        return errors;
-      }
+    if (pendingEmailRes?.data && pendingEmailRes.data.length > 0) {
+      errors.email = "A pending registration request already exists for this email address";
+      return errors;
     }
 
     if (formData.section && formData.year_level) {
@@ -917,6 +922,7 @@ function StudentManagement() {
       const randomStr = Math.random().toString(36).substring(2, 8);
       const externalRequestId = `admin-student-${timestamp}-${randomStr}`;
 
+      const normGrade = normalizeYearLevel(studentFormData.year_level);
       const requestPayload = {
         request_type: "student",
         first_name: studentFormData.first_name.trim(),
@@ -925,7 +931,8 @@ function StudentManagement() {
         suffix: studentFormData.suffix.trim() || null,
         email: studentFormData.email.trim().toLowerCase(),
         lrn: normalizeLrn(studentFormData.lrn),
-        grade_level: normalizeYearLevel(studentFormData.year_level),
+        grade_level: normGrade,
+        year_level: normGrade,
         section: formatSectionName(studentFormData.section) || null,
         status: "pending",
         source: "admin",
@@ -940,6 +947,14 @@ function StudentManagement() {
       if (error) {
         throw new Error(error.message || "Failed to create student registration request.");
       }
+
+      const createdRecord = {
+        ...requestPayload,
+        id: data?.id || externalRequestId,
+        created_at: new Date().toISOString()
+      };
+
+      setRegistrationRequests((current) => [createdRecord, ...current]);
 
       const studentName = [studentFormData.first_name, studentFormData.middle_name, studentFormData.last_name, studentFormData.suffix].filter(Boolean).join(" ");
       logActivity({
@@ -978,8 +993,9 @@ function StudentManagement() {
 
       toast.success("Student registration request submitted! The student has been queued for admin approval.", { duration: 5000 });
 
-      const reqs = await fetchRegistrationRequests();
-      if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+      fetchRegistrationRequests().then((reqs) => {
+        if (Array.isArray(reqs)) setRegistrationRequests(reqs);
+      });
     } catch (error) {
       console.error("Add student registration request error:", error);
       const errMsg = error?.message || (typeof error === "string" ? error : "Unable to submit student registration request.");
@@ -2278,7 +2294,7 @@ function StudentManagement() {
       if (req.status !== registrationSubTab) return false;
 
       if (yearLevelFilter !== "all") {
-        const normReqGrade = normalizeYearLevel(req.year_level);
+        const normReqGrade = getStudentGradeLevel(req);
         const normFilterGrade = normalizeYearLevel(yearLevelFilter);
         if (normReqGrade !== normFilterGrade) return false;
       }
@@ -3137,7 +3153,8 @@ function StudentManagement() {
                         {(() => {
                           const grouped = {};
                           filteredStudents.forEach(student => {
-                            const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                            const yearNum = getStudentGradeLevel(student);
+                            const year = yearNum ? `Grade ${yearNum}` : "Unassigned Year";
                             const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
                             const section = rawSec;
                             if (!grouped[year]) grouped[year] = {};
@@ -3202,7 +3219,7 @@ function StudentManagement() {
                                     <td className="px-6 py-5 align-middle">
                                       <div className="flex items-center gap-2 text-sm text-gray-600">
                                         <Hash className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                                        <span className="truncate">{student.year_level || "-"}</span>
+                                         <span className="truncate">{getStudentGradeLevel(student) ? `Grade ${getStudentGradeLevel(student)}` : "-"}</span>
                                       </div>
                                     </td>
                                     <td className="px-6 py-5 align-middle">
@@ -3274,7 +3291,8 @@ function StudentManagement() {
                         {(() => {
                           const grouped = {};
                           filteredMasterlist.forEach(student => {
-                            const year = student.year_level ? `Grade ${student.year_level.replace(/\D/g, '')}` : "Unassigned Year";
+                            const yearNum = getStudentGradeLevel(student);
+                            const year = yearNum ? `Grade ${yearNum}` : "Unassigned Year";
                             const rawSec = (student.section && student.section !== "Unassigned Section") ? student.section : "Unassigned";
                             const section = rawSec;
                             if (!grouped[year]) grouped[year] = {};
@@ -3326,7 +3344,7 @@ function StudentManagement() {
                                       <span className="truncate">{student.lrn || "-"}</span>
                                     </td>
                                     <td className="px-6 py-5 text-sm text-gray-600 align-middle">
-                                      <span className="truncate">{student.year_level || "-"}</span>
+                                       <span className="truncate">{getStudentGradeLevel(student) ? `Grade ${getStudentGradeLevel(student)}` : "-"}</span>
                                     </td>
                                     <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                                       <span className="truncate">{student.section || "Unassigned"}</span>
@@ -3420,7 +3438,7 @@ function StudentManagement() {
                             </td>
                             <td className="px-6 py-5 text-sm text-gray-600 align-middle">
                               <span className="truncate">
-                                Grade {req.grade_level || req.year_level || "-"} {req.section ? `• ${req.section}` : ""}
+                                Grade {getStudentGradeLevel(req) || "-"} {req.section ? `• ${req.section}` : ""}
                               </span>
                             </td>
                             <td className="px-6 py-5 text-sm align-middle whitespace-nowrap">
@@ -3790,7 +3808,7 @@ function StudentManagement() {
                     <label className="block text-sm font-medium text-gray-500 mb-1">Year Level</label>
                     <div className="flex items-center gap-2">
                       <Hash className="w-4 h-4 text-green-600" />
-                      <p className="text-gray-900">{selectedStudent.year_level || "Not set"}</p>
+                      <p className="text-gray-900">{getStudentGradeLevel(selectedStudent) ? `Grade ${getStudentGradeLevel(selectedStudent)}` : "Not set"}</p>
                     </div>
                   </div>
                   <div>
@@ -4003,7 +4021,7 @@ function StudentManagement() {
                             {[r.first_name, r.middle_name, r.last_name].filter(Boolean).join(" ")}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                            {r.email || "No Email"} • LRN: {r.lrn} {r.year_level ? `• Grade ${r.year_level}` : ""} {r.section ? `(${r.section})` : ""}
+                            {r.email || "No Email"} • LRN: {r.lrn} {getStudentGradeLevel(r) ? `• Grade ${getStudentGradeLevel(r)}` : ""} {r.section ? `(${r.section})` : ""}
                           </p>
                         </div>
                         <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-md font-semibold text-xs shrink-0">
@@ -4540,7 +4558,7 @@ function StudentManagement() {
                 </div>
                 <div>
                   <span className="text-gray-500 font-medium">Grade Level & Section</span>
-                  <p className="font-semibold text-gray-900">Grade {selectedRequest.year_level || "-"} {selectedRequest.section ? `• ${selectedRequest.section}` : ""}</p>
+                  <p className="font-semibold text-gray-900">Grade {getStudentGradeLevel(selectedRequest) || "-"} {selectedRequest.section ? `• ${selectedRequest.section}` : ""}</p>
                 </div>
                 <div className="col-span-2">
                   <span className="text-gray-500 font-medium">Submitted Date</span>
@@ -4596,7 +4614,7 @@ function StudentManagement() {
             
             <div className="bg-gray-50 rounded-xl p-3 border border-gray-200 mb-6 text-xs space-y-1 text-gray-700">
               <div><span className="font-semibold">LRN:</span> {selectedRequest.lrn}</div>
-              <div><span className="font-semibold">Grade & Section:</span> Grade {selectedRequest.year_level} - {selectedRequest.section}</div>
+              <div><span className="font-semibold">Grade & Section:</span> Grade {getStudentGradeLevel(selectedRequest) || "-"} {selectedRequest.section ? `- ${selectedRequest.section}` : ""}</div>
             </div>
 
             <div className="flex justify-end gap-3">
@@ -4794,7 +4812,7 @@ function StudentManagement() {
                             <div>
                               <p className="font-bold text-slate-900 text-sm">{r.first_name} {r.last_name}</p>
                               <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                                {r.email} • LRN: {r.lrn} • Grade {r.grade_level} {r.section ? `(${r.section})` : ""}
+                                {r.email} • LRN: {r.lrn} {getStudentGradeLevel(r) ? `• Grade ${getStudentGradeLevel(r)}` : ""} {r.section ? `(${r.section})` : ""}
                               </p>
                             </div>
                             <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-md font-semibold text-xs shrink-0">
@@ -4960,7 +4978,7 @@ function StudentManagement() {
                         <div>
                           <p className="font-bold text-slate-900 text-sm">{s.fullName}</p>
                           <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                            {s.email} • LRN: {s.lrn} • Grade {s.year_level || s.grade_level || "7"} {s.section ? `(${s.section})` : ""}
+                            {s.email} • LRN: {s.lrn} {getStudentGradeLevel(s) ? `• Grade ${getStudentGradeLevel(s)}` : ""} {s.section ? `(${s.section})` : ""}
                           </p>
                         </div>
                         <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-md font-semibold text-xs shrink-0">
