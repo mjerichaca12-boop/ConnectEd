@@ -222,6 +222,7 @@ function ClassContextDropdown({ teacherClasses = [], selectedClassId = "", onSel
 
 export function AIAssistant() {
   const navigate = useNavigate();
+  const { isDemoMode } = useTourPreview();
   const [searchParams] = useSearchParams();
   const inputRef = useRef(null);
   const storedUser = getStoredUser();
