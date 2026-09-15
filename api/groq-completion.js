@@ -14,10 +14,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Purely server-side environment variable
-  const apiKey = process.env.GROQ_API_KEY;
+  // Check server-side environment variables (GROQ_API_KEY or VITE_GROQ_API_KEY)
+  const apiKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
   if (!apiKey) {
-    console.error("[groq-completion-api] Server GROQ_API_KEY environment variable is missing.");
+    console.error("[groq-completion-api] Neither GROQ_API_KEY nor VITE_GROQ_API_KEY is configured in server environment.");
     return res.status(500).json({ error: "Server API key is not configured." });
   }
 
