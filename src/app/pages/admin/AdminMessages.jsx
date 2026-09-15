@@ -27,6 +27,7 @@ import {
   UserCog,
   Paperclip,
   Trash2,
+  Loader2,
 } from "lucide-react";
 
 const MESSAGE_ATTACHMENT_BUCKET = "message-attachments";
@@ -98,6 +99,7 @@ export function AdminMessages() {
   const [pageError, setPageError] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Group chat modal
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -278,6 +280,8 @@ export function AdminMessages() {
         await loadConversationsFromDB(allAdminIds);
       } catch (err) {
         console.error("[AdminMessages] Failed to resolve admin id:", err);
+      } finally {
+        setLoading(false);
       }
     };
     resolveAdmin();
@@ -831,6 +835,8 @@ const removeDismissedConvId = (userId, convId) => {
       saveConversations(filteredFinal);
     } catch (error) {
       console.error("[AdminMessages] Error loading conversations from DB:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1565,7 +1571,12 @@ const removeDismissedConvId = (userId, convId) => {
 
               {/* List */}
               <div className="flex-1 overflow-y-auto scrollbar-hide">
-                {filteredConvs.length === 0 ? (
+                {loading ? (
+                  <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
+                    <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
+                    <p className="text-sm font-medium text-gray-600">Loading conversations...</p>
+                  </div>
+                ) : filteredConvs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
                     <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
                       {activeFilter === "videomeet" ? (
