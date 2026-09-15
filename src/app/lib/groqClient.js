@@ -1,4 +1,3 @@
-import Groq from "groq-sdk";
 import { 
   GROQ_MODELS, 
   MAX_TOKENS, 
@@ -7,10 +6,7 @@ import {
   parseGroqError 
 } from "@/app/config/groqConfig";
 
-const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-const groq = apiKey ? new Groq({ apiKey, dangerouslyAllowBrowser: true }) : null;
-
-export const isGroqConfigured = () => !!groq || true; // Serverless endpoint or client SDK
+export const isGroqConfigured = () => true;
 
 // Proportional truncation helper to stay under character limits across multiple files
 const truncateFilesToLimit = (files, maxTotalChars) => {
@@ -210,20 +206,15 @@ export const streamMessage = async ({
     if (rawUser) {
       const parsedUser = JSON.parse(rawUser);
       if (parsedUser?.role !== "teacher") {
-        onError?.(new Error("Unauthorized: Role must be a teacher to use the AI Assistant."));
+        onError?.(parseGroqError(new Error("Unauthorized: Role must be a teacher to use the AI Assistant.")));
         return;
       }
     } else {
-      onError?.(new Error("Unauthorized: No active session."));
+      onError?.(parseGroqError(new Error("Unauthorized: No active session.")));
       return;
     }
   } catch (e) {
-    onError?.(new Error("Unauthorized access checking failed."));
-    return;
-  }
-
-  if (!groq) {
-    onError?.(new Error("Groq API key not configured. Add VITE_GROQ_API_KEY to .env"));
+    onError?.(parseGroqError(new Error("Unauthorized access checking failed.")));
     return;
   }
 
@@ -261,137 +252,65 @@ export const streamMessage = async ({
     ...validatedMessages.slice(-MAX_HISTORY_MESSAGES),
   ];
 
-  // Primary execution via Serverless endpoint with fallback to direct Client SDK
-  const executeCompletionCall = async (model) => {
-    // 1. Try Vercel Serverless Function /api/groq-completion first
-    try {
-      const response = await fetch("/api/groq-completion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: payloadMessages,
-          max_tokens: MAX_TOKENS,
-          temperature: 0.7,
-        }),
-      });
+  try {
+    const response = await fetch("/api/groq-completion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: GROQ_MODELS.PRIMARY,
+        messages: payloadMessages,
+        max_tokens: MAX_TOKENS,
+        temperature: 0.7,
+      }),
+    });
 
-      if (response.ok && response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = "";
+    if (response.ok && response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n");
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataStr = line.slice(6).trim();
-              if (dataStr === "[DONE]") break;
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.content) {
-                  fullText += parsed.content;
-                  onChunk(parsed.content);
-                } else if (parsed.errorType) {
-                  throw new Error(parsed.errorType);
-                }
-              } catch (parseErr) {
-                // Ignore chunk parse errors
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6).trim();
+            if (dataStr === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.content) {
+                fullText += parsed.content;
+                onChunk(parsed.content);
+              } else if (parsed.errorType || parsed.error) {
+                const errObj = new Error(parsed.error || "AI Stream error");
+                errObj.errorType = parsed.errorType;
+                throw errObj;
               }
+            } catch (parseErr) {
+              if (parseErr.errorType) throw parseErr;
             }
           }
         }
-
-        onDone?.(fullText);
-        return fullText;
       }
 
-      // If /api/groq-completion returned a non-200 status, check for JSON error type
-      const errJson = await response.json().catch(() => null);
-      if (errJson) {
-        const errObj = new Error(errJson.error || "Server API Error");
-        errObj.status = response.status;
-        errObj.errorType = errJson.errorType;
-        throw errObj;
-      }
-    } catch (apiError) {
-      // If serverless route is not configured or failed in local dev, fallback to client SDK if available
-      if (!groq) throw apiError;
+      onDone?.(fullText);
+      return fullText;
     }
 
-    // 2. Direct Groq Client SDK fallback (development mode)
-    if (!groq) {
-      throw new Error("Groq API key not configured.");
-    }
-
-    const stream = await groq.chat.completions.create({
-      model,
-      max_tokens: MAX_TOKENS,
-      temperature: 0.7,
-      stream: true,
-      messages: payloadMessages,
-    });
-
-    let fullText = "";
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || "";
-      if (delta) {
-        fullText += delta;
-        onChunk(delta);
-      }
-    }
-    onDone?.(fullText);
-    return fullText;
-  };
-
-  // Attempt 1: Primary Model
-  try {
-    await executeCompletionCall(GROQ_MODELS.PRIMARY);
-  } catch (error) {
-    console.error(`Groq Primary Model Error (${GROQ_MODELS.PRIMARY}):`, error);
-
-    const parsedErr = parseGroqError(error);
-
-    const shouldFallback = parsedErr.isRateLimit || 
-                           parsedErr.isDecommissioned || 
-                           error?.status === 503 || 
-                           error?.status === 404 || 
-                           error?.status === 400;
-
-    if (shouldFallback && GROQ_MODELS.FALLBACK_1) {
-      console.log(`Attempting controlled fallback to ${GROQ_MODELS.FALLBACK_1}...`);
-      
-      if (parsedErr.isTPM) {
-        await new Promise((res) => setTimeout(res, 1500));
-      }
-
-      try {
-        await executeCompletionCall(GROQ_MODELS.FALLBACK_1);
-      } catch (fallbackError) {
-        console.error(`Groq Fallback 1 Error (${GROQ_MODELS.FALLBACK_1}):`, fallbackError);
-        const parsedFallbackErr = parseGroqError(fallbackError);
-
-        if (GROQ_MODELS.FALLBACK_2) {
-          try {
-            console.log(`Attempting secondary fallback to ${GROQ_MODELS.FALLBACK_2}...`);
-            await executeCompletionCall(GROQ_MODELS.FALLBACK_2);
-          } catch (fb2Err) {
-            console.error(`Groq Fallback 2 Error (${GROQ_MODELS.FALLBACK_2}):`, fb2Err);
-            onError?.(parseGroqError(fb2Err));
-          }
-        } else {
-          onError?.(parsedFallbackErr);
-        }
-      }
-    } else {
-      onError?.(parsedErr);
-    }
+    const errJson = await response.json().catch(() => null);
+    const errObj = new Error(errJson?.error || "AI Service Server Error");
+    errObj.status = response.status;
+    errObj.errorType = errJson?.errorType;
+    throw errObj;
+  } catch (apiError) {
+    console.error("Groq AI API Error:", apiError);
+    onError?.(parseGroqError(apiError));
   }
 };
+
 
 // ── Quick action prompt builder ──────────────────────────────────
 export const buildQuickPrompt = (action, settings) => {

@@ -1,6 +1,6 @@
 import Groq from "groq-sdk";
 
-const apiKey = process.env.VITE_GROQ_API_KEY;
+const apiKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
 console.log("API Key found:", apiKey ? "Yes (length: " + apiKey.length + ")" : "No");
 
 if (!apiKey) {
@@ -14,7 +14,7 @@ async function main() {
   try {
     const chatCompletion = await groq.chat.completions.create({
       messages: [{ role: "user", content: "Say hello" }],
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
     });
     console.log("Success:", chatCompletion.choices[0].message.content);
   } catch (error) {
@@ -23,3 +23,4 @@ async function main() {
 }
 
 main();
+

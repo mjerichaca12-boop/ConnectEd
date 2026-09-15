@@ -14,14 +14,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const apiKey = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
+  // Purely server-side environment variable
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
+    console.error("[groq-completion-api] Server GROQ_API_KEY environment variable is missing.");
     return res.status(500).json({ error: "Server API key is not configured." });
   }
 
   try {
     const body = await readJsonBody(req);
-    const { messages, model, max_tokens, temperature } = body;
+    const { messages, max_tokens, temperature } = body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Messages array is required." });
@@ -35,9 +37,9 @@ export default async function handler(req, res) {
     res.setHeader("Connection", "keep-alive");
 
     const stream = await groq.chat.completions.create({
-      model: model || "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
       messages,
-      max_tokens: max_tokens || 2048,
+      max_tokens: max_tokens || 1500,
       temperature: typeof temperature === "number" ? temperature : 0.7,
       stream: true,
     });
@@ -52,19 +54,21 @@ export default async function handler(req, res) {
     res.write(`data: [DONE]\n\n`);
     res.end();
   } catch (error) {
-    console.error("[groq-completion-api]", error);
+    console.error("[groq-completion-api] Execution error:", error?.message || error);
     
     // Categorize error status & message safely
     const status = error?.status || 500;
-    const rawMsg = String(error?.message || "");
+    const rawMsg = String(error?.message || "").toLowerCase();
 
     let safeErrorType = "server_error";
-    if (status === 429 || rawMsg.includes("rate limit")) {
-      safeErrorType = rawMsg.includes("tokens per day") || rawMsg.includes("TPD")
-        ? "tpd_limit_exceeded"
-        : "tpm_limit_exceeded";
-    } else if (status === 400 && (rawMsg.includes("decommissioned") || rawMsg.includes("deprecated"))) {
-      safeErrorType = "model_decommissioned";
+    if (status === 429 || rawMsg.includes("rate limit") || rawMsg.includes("tpd") || rawMsg.includes("tpm")) {
+      safeErrorType = "rate_limit_exceeded";
+    } else if (status === 401 || rawMsg.includes("unauthorized") || rawMsg.includes("api key")) {
+      safeErrorType = "auth_error";
+    } else if (status === 408 || status === 504 || rawMsg.includes("timeout")) {
+      safeErrorType = "timeout_error";
+    } else if (status === 400 || status === 404) {
+      safeErrorType = "model_error";
     }
 
     if (!res.headersSent) {
@@ -79,3 +83,4 @@ export default async function handler(req, res) {
     }
   }
 }
+

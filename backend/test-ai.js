@@ -19,7 +19,7 @@ async function testGroq() {
                 { role: "system", content: "You are a helpful assistant." },
                 { role: "user", content: "Say hello!" }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: "openai/gpt-oss-20b",
             temperature: 0.7,
             max_tokens: 100,
         });

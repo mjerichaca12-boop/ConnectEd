@@ -2,15 +2,10 @@
  * Centralized Groq AI Configuration & Model Management
  */
 
-// Supported production models on Groq
+// Supported production model on Groq
 export const GROQ_MODELS = {
-  PRIMARY: "llama-3.3-70b-versatile",
-  FALLBACK_1: "llama-3.1-8b-instant",
-  FALLBACK_2: "mixtral-8x7b-32768",
+  PRIMARY: "openai/gpt-oss-20b",
 };
-
-// Maximum retry attempts per user request (Primary -> Fallback 1 -> Fallback 2 -> Stop)
-export const MAX_AI_ATTEMPTS = 3;
 
 // Token & Context Budgets
 export const MAX_TOKENS = 1500;
@@ -32,28 +27,27 @@ export const parseGroqError = (error) => {
                 message.includes("tokens per minute") || 
                 message.includes("tpm");
 
-  const isRateLimit = status === 429 || message.includes("rate limit") || isTPD || isTPM;
+  const isRateLimit = status === 429 || message.includes("rate limit") || message.includes("rate_limit_exceeded") || isTPD || isTPM;
+  const isAuthError = status === 401 || message.includes("auth") || message.includes("unauthorized") || message.includes("api key");
+  const isTimeout = status === 408 || status === 504 || message.includes("timeout");
 
-  const isDecommissioned = (status === 400 || status === 404) && (
-    message.includes("decommissioned") || 
-    message.includes("model_decommissioned") || 
-    message.includes("deprecated") ||
-    message.includes("does not exist") ||
-    message.includes("model_not_found")
-  );
+  let userMessage = "I couldn't process your request right now. Please try again later.";
+  if (isRateLimit) {
+    userMessage = "AI is temporarily busy. Please try again.";
+  } else if (isTimeout) {
+    userMessage = "The AI request timed out. Please try again.";
+  } else if (isAuthError) {
+    userMessage = "AI service authentication error. Please try again later.";
+  }
 
   return {
     status,
     isRateLimit,
     isTPD,
     isTPM,
-    isDecommissioned,
-    userMessage: isTPD
-      ? "AI usage limit has been reached temporarily. Please try again later."
-      : isTPM
-      ? "AI service is currently busy. Retrying momentarily..."
-      : isRateLimit
-      ? "AI usage limit reached. Please wait a moment before trying again."
-      : "I couldn't process your request right now. Please try again later.",
+    isAuthError,
+    isTimeout,
+    userMessage,
   };
 };
+
