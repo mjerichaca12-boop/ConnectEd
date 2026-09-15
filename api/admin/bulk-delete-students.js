@@ -141,6 +141,9 @@ export default async function handler(req, res) {
         console.error("[bulk-delete-students] Profiles delete error:", profileErr);
       }
 
+      await supabaseAdmin.from("student_masterlist").delete().in("id", chunk);
+      await supabaseAdmin.from("pending_account_requests").delete().in("id", chunk);
+
       // Delete Auth users
       await Promise.allSettled(chunk.map(id => supabaseAdmin.auth.admin.deleteUser(id)));
     }

@@ -1891,6 +1891,8 @@ function StudentManagement() {
     const studentId = studentToDelete.id;
     const studentName = getFullName(studentToDelete) || "this student";
     const previousStudents = students;
+    const previousMasterlist = masterlist;
+    const previousRequests = registrationRequests;
 
     if (!db) {
       setErrorMessage("Supabase client is not configured.");
@@ -1898,17 +1900,6 @@ function StudentManagement() {
     }
 
     setErrorMessage("");
-    setStudents((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
-    setSelectedStudentIds((prev) => {
-      const next = new Set(prev);
-      next.delete(studentId);
-      return next;
-    });
-    setSelectedMasterlistIds((prev) => {
-      const next = new Set(prev);
-      next.delete(studentId);
-      return next;
-    });
 
     if (selectedStudent?.id === studentId) {
       setSelectedStudent(null);
@@ -1923,25 +1914,70 @@ function StudentManagement() {
     setStudentToDelete(null);
 
     try {
+      const isMasterlistRecord = activeTab === "Masterlist" || masterlist.some((m) => m.id === studentId);
+      const isRequestRecord = activeTab === "RegistrationRequests" || registrationRequests.some((r) => r.id === studentId);
+
+      if (isMasterlistRecord) {
+        setMasterlist((current) => current.filter((item) => item.id !== studentId));
+        setSelectedMasterlistIds((prev) => {
+          const next = new Set(prev);
+          next.delete(studentId);
+          return next;
+        });
+
+        const { error } = await adminApi.db("student_masterlist", "delete", { eq: { column: "id", value: studentId }, select: "id" });
+        if (error) throw new Error(error.message || "Failed to delete masterlist record.");
+
+        toast.success(`Masterlist entry for ${studentName} deleted successfully.`);
+        await refreshStudents();
+        return;
+      }
+
+      if (isRequestRecord) {
+        setRegistrationRequests((current) => current.filter((item) => item.id !== studentId));
+
+        const { error } = await adminApi.db("pending_account_requests", "delete", { eq: { column: "id", value: studentId }, select: "id" });
+        if (error) throw new Error(error.message || "Failed to delete registration request.");
+
+        toast.success(`Registration request for ${studentName} deleted successfully.`);
+        await refreshStudents();
+        return;
+      }
+
+      // Deleting a Student Profile
+      setStudents((currentStudents) => currentStudents.filter((student) => student.id !== studentId));
+      setSelectedStudentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(studentId);
+        return next;
+      });
+
       const cleanupTables = [
         { name: "notifications", col: "user_id" },
         { name: "password_reset_logs", col: "user_id" },
         { name: "conversation_participants", col: "profile_id" },
         { name: "conversation_reads", col: "user_id" },
         { name: "messages", col: "sender_id" },
+        { name: "teacher_student_assignments", col: "student_id" },
         { name: "teacher_student_grades", col: "student_id" },
         { name: "teacher_assessment_submissions", col: "student_id" },
         { name: "teacher_assessment_grades", col: "student_id" },
+        { name: "student_attendance", col: "student_id" },
       ];
 
       for (const table of cleanupTables) {
-        await adminApi.db(table.name, "delete", { eq: { column: table.col, value: studentId } });
+        await adminApi.db(table.name, "delete", { eq: { column: table.col, value: studentId } }).catch(() => {});
       }
 
-      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: studentId } });
+      const { error } = await adminApi.db("profiles", "delete", { eq: { column: "id", value: studentId }, select: "id" });
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error(error.message || "Failed to delete student profile.");
+      }
+
+      if (studentToDelete.lrn) {
+        await adminApi.db("student_masterlist", "delete", { eq: { column: "lrn", value: studentToDelete.lrn } }).catch(() => {});
+        await adminApi.db("pending_account_requests", "delete", { eq: { column: "lrn", value: studentToDelete.lrn } }).catch(() => {});
       }
 
       try {
@@ -1962,6 +1998,8 @@ function StudentManagement() {
       toast.success(`${studentName} deleted successfully`);
     } catch (err) {
       setStudents(previousStudents);
+      setMasterlist(previousMasterlist);
+      setRegistrationRequests(previousRequests);
       const errMsg = err instanceof Error ? err.message : "Unable to delete student.";
       toast.error(errMsg);
     }
@@ -1985,16 +2023,24 @@ function StudentManagement() {
   };
 
   const handleBulkDeleteStudents = async () => {
-    if (selectedStudentIds.size === 0) return;
-    const idsToDelete = Array.from(selectedStudentIds);
+    const isMasterlistTab = activeTab === "Masterlist";
+    const isRequestsTab = activeTab === "RegistrationRequests";
+    const selectedSet = isMasterlistTab ? selectedMasterlistIds : selectedStudentIds;
+
+    if (selectedSet.size === 0) {
+      toast.error("No records selected for deletion.");
+      return;
+    }
+
+    const idsToDelete = Array.from(selectedSet);
     const total = idsToDelete.length;
     setShowBulkDeleteConfirm(false);
     setIsBulkDeleting(true);
 
     setBulkProgressModal({
       isOpen: true,
-      title: "Deleting Students",
-      status: `Deleting ${total} selected student record(s)...`,
+      title: isMasterlistTab ? "Deleting Masterlist Records" : (isRequestsTab ? "Deleting Registration Requests" : "Deleting Students"),
+      status: `Deleting ${total} selected record(s)...`,
       current: 0,
       total,
       isIndeterminate: true,
@@ -2008,35 +2054,46 @@ function StudentManagement() {
     try {
       const idsSet = new Set(idsToDelete);
 
-      const res = await adminApi.bulkDeleteStudents(idsToDelete);
-      if (res.error) {
-        throw res.error;
+      if (isMasterlistTab) {
+        const { error } = await adminApi.db("student_masterlist", "delete", { in: { column: "id", value: idsToDelete }, select: "id" });
+        if (error) throw error;
+        setMasterlist(prev => prev.filter(m => !idsSet.has(m.id)));
+        setSelectedMasterlistIds(new Set());
+      } else if (isRequestsTab) {
+        const { error } = await adminApi.db("pending_account_requests", "delete", { in: { column: "id", value: idsToDelete }, select: "id" });
+        if (error) throw error;
+        setRegistrationRequests(prev => prev.filter(r => !idsSet.has(r.id)));
+      } else {
+        const res = await adminApi.bulkDeleteStudents(idsToDelete);
+        if (res.error) {
+          throw res.error;
+        }
+        setStudents(prev => prev.filter(s => !idsSet.has(s.id)));
+        setSelectedStudentIds(new Set());
       }
 
-      const successCount = res.data?.count || idsToDelete.length;
+      const successCount = total;
 
       logActivity({
         actionType: "deleted",
         entityType: "student",
-        entityName: `${successCount} students`,
-        details: { action: "bulk_delete", student_ids: idsToDelete },
+        entityName: `${successCount} records`,
+        details: { action: "bulk_delete", record_ids: idsToDelete },
         timestamp: new Date().toISOString()
       });
 
-      // Optimistically update local state for instant UI responsiveness
-      setStudents(prev => prev.filter(s => !idsSet.has(s.id)));
-      setSelectedStudentIds(new Set());
+      await refreshStudents();
 
       setBulkProgressModal({
         isOpen: true,
-        title: "Deleting Students",
+        title: isMasterlistTab ? "Deleting Masterlist Records" : (isRequestsTab ? "Deleting Registration Requests" : "Deleting Students"),
         status: "Completed",
         current: successCount,
         total,
         isIndeterminate: false,
         currentItemName: "",
         isCompleted: true,
-        completionMessage: `Successfully deleted ${successCount} student record(s).`,
+        completionMessage: `Successfully deleted ${successCount} record(s).`,
         error: null,
         partialFailure: null,
       });
@@ -2052,7 +2109,7 @@ function StudentManagement() {
         currentItemName: "",
         isCompleted: false,
         completionMessage: "",
-        error: err.message || "Unable to bulk delete students.",
+        error: err.message || "Unable to bulk delete records.",
         partialFailure: null,
       });
     } finally {

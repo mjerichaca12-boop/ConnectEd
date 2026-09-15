@@ -124,6 +124,12 @@ export const adminApi = {
       for (let i = 0; i < studentIds.length; i += BATCH_SIZE) {
         const chunk = studentIds.slice(i, i + BATCH_SIZE);
         await Promise.allSettled(tablesToClean.map(item => supabase.from(item.table).delete().in(item.col, chunk)));
+        try {
+          await supabase.from("messages").delete().or(`sender_id.in.(${chunk.join(",")}),receiver_id.in.(${chunk.join(",")})`);
+        } catch (_) {}
+        await supabase.from("profiles").delete().in("id", chunk).eq("role", "student");
+        await supabase.from("student_masterlist").delete().in("id", chunk);
+        await supabase.from("pending_account_requests").delete().in("id", chunk);
       }
       return { data: { success: true, count: studentIds.length }, error: null };
     } catch (fallbackError) {
@@ -228,7 +234,7 @@ export const adminApi = {
         query = query.update(payload).select(select || "*");
       } else if (action === "delete") {
         query = query.delete();
-        if (select) query = query.select(select);
+        query = query.select(select || "id");
       } else if (action === "upsert") {
         query = query.upsert(payload).select(select || "*");
       }

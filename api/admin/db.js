@@ -1169,7 +1169,7 @@ export default async function handler(req, res) {
     if (action === "insert" || action === "update" || action === "upsert") {
       query = query.select(select || "*");
     } else if (action === "delete") {
-      if (select) query = query.select(select);
+      query = query.select(select || "id");
     }
     
     if (order) {
