@@ -1,6 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Copy, Check, RefreshCw, Sparkles, Loader2 } from "lucide-react";
+
+/**
+ * Preprocess markdown content to ensure inline tables, headers, and bullet lists
+ * formatted by AI models render cleanly into line-separated markdown tables and structures.
+ */
+function formatMarkdownText(text) {
+  if (!text || typeof text !== "string") return "";
+
+  let formatted = text;
+
+  // Fix markdown table rows compressed into a single line (e.g. "| col1 | col2 | |---|---| | val1 | val2 |")
+  formatted = formatted.replace(/\|\s*\|\s*(?=\|)/g, "|\n|");
+
+  // Fix table header separator line compressed into single line (e.g. "| col1 | col2 | |---|---|")
+  formatted = formatted.replace(/(\|[^\n]+\|)\s*(\|-+[-|:]*\|)/g, "$1\n$2");
+
+  // Ensure line breaks before section headers (##, ###) if missing
+  formatted = formatted.replace(/([^\n])\n(#{1,4}\s)/g, "$1\n\n$2");
+
+  return formatted;
+}
+
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -160,7 +183,66 @@ export function AIChat({
               {msg.role === "assistant" ? (
                 <>
                   <div className="prose prose-sm max-w-none text-gray-800 leading-relaxed space-y-2">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        table: ({ node, ...props }) => (
+                          <div className="overflow-x-auto my-3 border border-gray-200 rounded-xl shadow-2xs">
+                            <table className="min-w-full divide-y divide-gray-200 text-xs text-left" {...props} />
+                          </div>
+                        ),
+                        thead: ({ node, ...props }) => (
+                          <thead className="bg-gray-50/80 font-bold text-gray-700 uppercase tracking-wider text-[11px]" {...props} />
+                        ),
+                        th: ({ node, ...props }) => (
+                          <th className="px-3.5 py-2.5 font-semibold text-gray-700 border-b border-gray-200" {...props} />
+                        ),
+                        td: ({ node, ...props }) => (
+                          <td className="px-3.5 py-2.5 text-gray-700 border-b border-gray-100 whitespace-normal" {...props} />
+                        ),
+                        tr: ({ node, ...props }) => (
+                          <tr className="hover:bg-green-50/30 transition-colors odd:bg-white even:bg-slate-50/40" {...props} />
+                        ),
+                        h1: ({ node, ...props }) => (
+                          <h1 className="text-base font-extrabold text-gray-900 mt-4 mb-2 flex items-center gap-1.5" {...props} />
+                        ),
+                        h2: ({ node, ...props }) => (
+                          <h2 className="text-sm font-bold text-gray-800 mt-3.5 mb-1.5 flex items-center gap-1.5" {...props} />
+                        ),
+                        h3: ({ node, ...props }) => (
+                          <h3 className="text-xs font-bold text-gray-700 mt-2.5 mb-1" {...props} />
+                        ),
+                        p: ({ node, ...props }) => (
+                          <p className="mb-2 leading-relaxed text-gray-800" {...props} />
+                        ),
+                        ul: ({ node, ...props }) => (
+                          <ul className="list-disc list-inside space-y-1 my-2 pl-1 text-gray-800" {...props} />
+                        ),
+                        ol: ({ node, ...props }) => (
+                          <ol className="list-decimal list-inside space-y-1 my-2 pl-1 text-gray-800" {...props} />
+                        ),
+                        li: ({ node, ...props }) => (
+                          <li className="leading-relaxed" {...props} />
+                        ),
+                        hr: ({ node, ...props }) => (
+                          <hr className="my-4 border-gray-200" {...props} />
+                        ),
+                        blockquote: ({ node, ...props }) => (
+                          <blockquote className="border-l-4 border-green-500 pl-3.5 py-1.5 italic bg-green-50/50 rounded-r-lg my-2.5 text-gray-700 text-xs" {...props} />
+                        ),
+                        code: ({ node, inline, ...props }) => (
+                          inline ? (
+                            <code className="bg-gray-100 text-green-700 font-mono text-[12px] px-1.5 py-0.5 rounded border border-gray-200" {...props} />
+                          ) : (
+                            <div className="bg-slate-900 text-slate-100 p-3.5 rounded-xl font-mono text-xs overflow-x-auto my-3 border border-slate-800">
+                              <code {...props} />
+                            </div>
+                          )
+                        )
+                      }}
+                    >
+                      {formatMarkdownText(msg.content)}
+                    </ReactMarkdown>
                   </div>
 
                   {/* Choice option buttons */}
