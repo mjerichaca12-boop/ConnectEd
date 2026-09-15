@@ -932,7 +932,6 @@ function StudentManagement() {
         email: studentFormData.email.trim().toLowerCase(),
         lrn: normalizeLrn(studentFormData.lrn),
         grade_level: normGrade,
-        year_level: normGrade,
         section: formatSectionName(studentFormData.section) || null,
         status: "pending",
         source: "admin",
@@ -950,6 +949,7 @@ function StudentManagement() {
 
       const createdRecord = {
         ...requestPayload,
+        year_level: normGrade,
         id: data?.id || externalRequestId,
         created_at: new Date().toISOString()
       };
