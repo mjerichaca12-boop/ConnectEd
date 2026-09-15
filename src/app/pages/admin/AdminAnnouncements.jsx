@@ -576,10 +576,6 @@ function AdminAnnouncements() {
       "created_by_name",
       "school_id",
       "target_audience",
-      "audience_type",
-      "date_posted",
-      "datePosted",
-      "timestamp"
     ];
 
     setAnnouncementColumns(fallbackColumns);
@@ -893,6 +889,28 @@ function AdminAnnouncements() {
             payload,
             recordId: null
           };
+        }
+
+        const insertErr = fallbackInsert.error || error;
+        const missingColMatch = String(insertErr?.message || "").match(/Could not find the '([^']+)' column/i);
+        if (missingColMatch && missingColMatch[1] && payload[missingColMatch[1]] !== undefined) {
+          const cleanedPayload = { ...payload };
+          delete cleanedPayload[missingColMatch[1]];
+          const retryInsert = await adminApi.db(tableName, "insert", { payload: cleanedPayload, select: "id", single: true });
+          if (!retryInsert.error) {
+            notifyAdmin({
+              type: "announcement",
+              title: "Announcement Posted",
+              message: `School announcement posted: ${cleanedPayload.title}`,
+              relatedId: retryInsert.data?.id || null,
+              relatedType: "school_announcements",
+              path: "/admin/announcements"
+            });
+            return {
+              payload: cleanedPayload,
+              recordId: retryInsert.data?.id ?? null
+            };
+          }
         }
 
         attemptErrors.push({
