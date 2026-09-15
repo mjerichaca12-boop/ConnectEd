@@ -2234,7 +2234,15 @@ function GradesManagement() {
               <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h3 className="text-base font-semibold text-green-900">{selectedClassName || "Select a class to view grades"}</h3>
-                  <p className="text-xs text-gray-600 mt-0.5">{filteredByView.length} student{filteredByView.length !== 1 ? "s" : ""}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {isSwitchingTerm || (loading && !isDemoMode) ? (
+                      <span className="inline-flex items-center gap-1.5 text-gray-400">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-green-600" /> Updating grade records...
+                      </span>
+                    ) : (
+                      `${filteredByView.length} student${filteredByView.length !== 1 ? "s" : ""}`
+                    )}
+                  </p>
                 </div>
 
                 <div data-tour="teacher-grades-filters" className="flex items-center gap-3 flex-wrap">
@@ -2278,9 +2286,9 @@ function GradesManagement() {
                   {/* Pass/Fail filter tabs */}
                   <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
                     {[
-                      { key: "all", label: `All (${studentGrades.length})` },
-                      { key: "passed", label: `Passed (${passingCount})`, color: "text-green-600" },
-                      { key: "failed", label: `Failed (${failingCount})`, color: "text-red-600" },
+                      { key: "all", label: isSwitchingTerm || (loading && !isDemoMode) ? "All" : `All (${studentGrades.length})` },
+                      { key: "passed", label: isSwitchingTerm || (loading && !isDemoMode) ? "Passed" : `Passed (${passingCount})`, color: "text-green-600" },
+                      { key: "failed", label: isSwitchingTerm || (loading && !isDemoMode) ? "Failed" : `Failed (${failingCount})`, color: "text-red-600" },
                     ].map(({ key, label, color }) => (
                       <button
                         key={key}
@@ -2296,7 +2304,12 @@ function GradesManagement() {
                 </div>
               </div>
 
-              {filteredByView.length === 0 ? (
+              {isSwitchingTerm || (loading && !isDemoMode) ? (
+                <div className="p-16 text-center">
+                  <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600 font-medium">Loading student grades and quarterly evaluations...</p>
+                </div>
+              ) : filteredByView.length === 0 ? (
                 <div className="p-12 text-center">
                   <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                   <p className="text-gray-500">{!selectedClass ? "Select a class to load students" : "No students found"}</p>
@@ -2499,7 +2512,7 @@ function GradesManagement() {
                       disabled={!hasUnsavedChanges || !selectedClass || saving}
                       className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <Save className="w-4 h-4" />
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       {saving ? "Saving..." : "Save All"}
                     </button>
                   </div>
