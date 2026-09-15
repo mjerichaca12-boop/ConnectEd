@@ -389,6 +389,13 @@ function TeacherProfile() {
           </div>
         </div>
         <div className="p-8 max-w-6xl mx-auto space-y-8">
+          {loading ? (
+            <div className="bg-white rounded-3xl border border-gray-200 p-16 text-center shadow-sm flex flex-col items-center justify-center min-h-[350px]">
+              <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+              <p className="text-gray-600 font-medium">Loading profile information...</p>
+            </div>
+          ) : (
+            <>
           {/* Alert messages */}
           {errorMessage && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
@@ -649,6 +656,8 @@ function TeacherProfile() {
               </div>
 
             </div>
+          )}
+            </>
           )}
         </div>
       </main>

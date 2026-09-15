@@ -1631,35 +1631,42 @@ export function AIAssistant() {
 
             {/* Class & Lesson Context Selector */}
             <div data-tour="teacher-ai-class-context" className="bg-white border border-gray-150 rounded-2xl p-4.5 shadow-sm hover:shadow-md transition-all duration-300">
-              <ClassMaterialsLoader
-                teacherClasses={teacherClasses}
-                selectedClassId={settings.selectedClassId}
-                selectedLesson={selectedContextLesson}
-                selectedMaterial={selectedContextMaterial}
-                onSelectClass={(cls) => {
-                  if (cls) {
-                    setSettings((prev) => ({
-                      ...prev,
-                      selectedClassId: cls.id,
-                      subject: cls.name,
-                      gradeLevel: cls.gradeLevel,
-                      section: cls.section,
-                      classContext: {
-                        className: cls.name,
+              {isLoadingClasses && !isDemoMode ? (
+                <div className="flex items-center gap-2.5 text-xs text-gray-500 py-3">
+                  <Loader2 className="w-4 h-4 text-green-600 animate-spin shrink-0" />
+                  <span className="font-medium">Loading class context...</span>
+                </div>
+              ) : (
+                <ClassMaterialsLoader
+                  teacherClasses={teacherClasses}
+                  selectedClassId={settings.selectedClassId}
+                  selectedLesson={selectedContextLesson}
+                  selectedMaterial={selectedContextMaterial}
+                  onSelectClass={(cls) => {
+                    if (cls) {
+                      setSettings((prev) => ({
+                        ...prev,
+                        selectedClassId: cls.id,
                         subject: cls.name,
                         gradeLevel: cls.gradeLevel,
                         section: cls.section,
-                        teacherName: storedUser?.name || "",
-                      },
-                    }));
-                  } else {
-                    handleChangeContext();
-                  }
-                }}
-                onSelectLesson={(les) => setSelectedContextLesson(les)}
-                onSelectMaterial={(mat) => setSelectedContextMaterial(mat)}
-                setDbMaterialContents={setDbMaterialContents}
-              />
+                        classContext: {
+                          className: cls.name,
+                          subject: cls.name,
+                          gradeLevel: cls.gradeLevel,
+                          section: cls.section,
+                          teacherName: storedUser?.name || "",
+                        },
+                      }));
+                    } else {
+                      handleChangeContext();
+                    }
+                  }}
+                  onSelectLesson={(les) => setSelectedContextLesson(les)}
+                  onSelectMaterial={(mat) => setSelectedContextMaterial(mat)}
+                  setDbMaterialContents={setDbMaterialContents}
+                />
+              )}
             </div>
 
             {/* AI Customization Controls */}
