@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { GoogleSheetsImportModal } from "@/app/components/admin/GoogleSheetsImportModal";
+import { BulkOperationProgressModal } from "@/app/components/ui/BulkOperationProgressModal";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
@@ -129,6 +130,19 @@ function TeacherManagement() {
   const [selectedTeacherIds, setSelectedTeacherIds] = useState(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkProgressModal, setBulkProgressModal] = useState({
+    isOpen: false,
+    title: "",
+    status: "",
+    current: 0,
+    total: 0,
+    isIndeterminate: false,
+    currentItemName: "",
+    isCompleted: false,
+    completionMessage: "",
+    error: null,
+    partialFailure: null,
+  });
   const [isAdmin, setIsAdmin] = useState(false);
   const [gradeSectionsMap, setGradeSectionsMap] = useState({});
   const [loadingSectionsMap, setLoadingSectionsMap] = useState({});
@@ -1882,22 +1896,61 @@ function TeacherManagement() {
 
   const handleBulkDeleteTeachers = async () => {
     if (selectedTeacherIds.size === 0) return;
+    const idsToDelete = Array.from(selectedTeacherIds);
+    const total = idsToDelete.length;
+    setShowBulkDeleteConfirm(false);
     setIsBulkDeleting(true);
+
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Deleting Teachers",
+      status: `Deleting ${total} selected teacher record(s)...`,
+      current: 0,
+      total,
+      isIndeterminate: true,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
     try {
-      const idsToDelete = Array.from(selectedTeacherIds);
-      
       const { error } = await adminApi.bulkDeleteTeachers(idsToDelete);
       if (error) throw error;
 
-      setShowBulkDeleteConfirm(false);
       setSelectedTeacherIds(new Set());
       await fetchTeachers();
       await fetchSubjects();
 
-      toast.success(`Successfully deleted ${idsToDelete.length} teacher(s).`);
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Deleting Teachers",
+        status: "Completed",
+        current: total,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: true,
+        completionMessage: `Successfully deleted ${total} teacher record(s).`,
+        error: null,
+        partialFailure: null,
+      });
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred during bulk deletion: " + (err.message || "Unknown error"));
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Deleting Teachers",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: err.message || "An error occurred during bulk deletion.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -4343,6 +4396,21 @@ function TeacherManagement() {
         onTriggerFileUpload={() => teacherFileInputRef.current?.click()}
         existingDbRecords={teachers}
         existingPendingRequests={registrationRequests}
+      />
+
+      <BulkOperationProgressModal
+        isOpen={bulkProgressModal.isOpen}
+        title={bulkProgressModal.title}
+        status={bulkProgressModal.status}
+        current={bulkProgressModal.current}
+        total={bulkProgressModal.total}
+        isIndeterminate={bulkProgressModal.isIndeterminate}
+        currentItemName={bulkProgressModal.currentItemName}
+        isCompleted={bulkProgressModal.isCompleted}
+        completionMessage={bulkProgressModal.completionMessage}
+        error={bulkProgressModal.error}
+        partialFailure={bulkProgressModal.partialFailure}
+        onClose={() => setBulkProgressModal(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

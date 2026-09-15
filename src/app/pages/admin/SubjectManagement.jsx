@@ -7,6 +7,7 @@ import { CustomSelect } from "../../components/admin/CustomSelect";
 import { SectionDropdown } from "../../components/admin/SectionDropdown";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
+import { BulkOperationProgressModal } from "@/app/components/ui/BulkOperationProgressModal";
 import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
 import { useCallback } from "react";
@@ -72,6 +73,19 @@ function SubjectManagement() {
   const [selectedSubjectIds, setSelectedSubjectIds] = useState(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkProgressModal, setBulkProgressModal] = useState({
+    isOpen: false,
+    title: "",
+    status: "",
+    current: 0,
+    total: 0,
+    isIndeterminate: false,
+    currentItemName: "",
+    isCompleted: false,
+    completionMessage: "",
+    error: null,
+    partialFailure: null,
+  });
   const getCapacityStatus = (enrolled, capacity) => {
     if (!capacity || capacity === 0) return { label: "Available", color: "text-green-600", dot: "bg-green-500", bar: "bg-green-500", raw: "Available" };
     const percentage = enrolled / capacity;
@@ -693,9 +707,26 @@ function SubjectManagement() {
 
   const handleBulkArchiveSubjects = async () => {
     if (selectedSubjectIds.size === 0) return;
+    const idsToArchive = Array.from(selectedSubjectIds);
+    const total = idsToArchive.length;
+    setShowBulkArchiveConfirm(false);
     setIsBulkArchiving(true);
+
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Archiving Subjects",
+      status: `Archiving ${total} subject(s)...`,
+      current: 0,
+      total,
+      isIndeterminate: false,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
     try {
-      const idsToArchive = Array.from(selectedSubjectIds);
       const tableName = await getSubjectTableName();
       const affectedTeacherIds = [...new Set(
         subjects
@@ -704,8 +735,22 @@ function SubjectManagement() {
           .filter(Boolean)
       )];
 
-      const results = await Promise.allSettled(
-        idsToArchive.map(async (id) => {
+      let successCount = 0;
+      let failedItems = [];
+
+      for (let i = 0; i < idsToArchive.length; i++) {
+        const id = idsToArchive[i];
+        const subjectObj = subjects.find(s => s.id === id);
+        const subjectName = subjectObj ? `${subjectObj.code} - ${subjectObj.name}` : `Subject ID ${id}`;
+
+        setBulkProgressModal((prev) => ({
+          ...prev,
+          current: i + 1,
+          currentItemName: subjectName,
+          status: `Archiving (${i + 1}/${total}): ${subjectName}`,
+        }));
+
+        try {
           const { error } = await adminApi.db(tableName, "update", {
             payload: { status: "Archived", teacher_id: null },
             eq: { column: "id", value: id }
@@ -716,13 +761,16 @@ function SubjectManagement() {
             payload: { teacher_id: null },
             eq: { column: "subject_id", value: id }
           }).catch(() => {});
-        })
-      );
 
-      let successCount = 0;
-      results.forEach((res) => {
-        if (res.status === "fulfilled") successCount++;
-      });
+          successCount++;
+        } catch (err) {
+          failedItems.push({
+            id,
+            name: subjectName,
+            error: err?.message || "Failed to archive subject"
+          });
+        }
+      }
 
       setSubjects((prev) =>
         prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Archived", teacher_id: null } : s))
@@ -734,15 +782,54 @@ function SubjectManagement() {
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
 
       setSelectedSubjectIds(new Set());
-      setShowBulkArchiveConfirm(false);
 
-      if (successCount === idsToArchive.length) {
-        toast.success(`Successfully archived ${successCount} subject(s) and unassigned them from teachers.`);
+      if (failedItems.length === 0) {
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Archiving Subjects",
+          status: "Completed",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Successfully archived ${successCount} subject(s) and unassigned them from teachers.`,
+          error: null,
+          partialFailure: null,
+        });
       } else {
-        toast.warning(`Archived ${successCount} out of ${idsToArchive.length} subject(s).`);
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Archiving Subjects",
+          status: "Completed with warnings",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Archived ${successCount} out of ${total} subject(s).`,
+          error: null,
+          partialFailure: {
+            successCount,
+            failureCount: failedItems.length,
+            failedItems
+          }
+        });
       }
     } catch (err) {
-      toast.error("Failed to archive selected subjects.");
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Archiving Subjects",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: "Failed to archive selected subjects.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkArchiving(false);
     }
@@ -750,39 +837,110 @@ function SubjectManagement() {
 
   const handleBulkUnarchiveSubjects = async () => {
     if (selectedSubjectIds.size === 0) return;
+    const idsToUnarchive = Array.from(selectedSubjectIds);
+    const total = idsToUnarchive.length;
+    setShowBulkUnarchiveConfirm(false);
     setIsBulkUnarchiving(true);
-    try {
-      const idsToUnarchive = Array.from(selectedSubjectIds);
-      const tableName = await getSubjectTableName();
 
-      const results = await Promise.allSettled(
-        idsToUnarchive.map(async (id) => {
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Restoring Subjects",
+      status: `Restoring ${total} subject(s)...`,
+      current: 0,
+      total,
+      isIndeterminate: false,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
+    try {
+      const tableName = await getSubjectTableName();
+      let successCount = 0;
+      let failedItems = [];
+
+      for (let i = 0; i < idsToUnarchive.length; i++) {
+        const id = idsToUnarchive[i];
+        const subjectObj = subjects.find(s => s.id === id);
+        const subjectName = subjectObj ? `${subjectObj.code} - ${subjectObj.name}` : `Subject ID ${id}`;
+
+        setBulkProgressModal((prev) => ({
+          ...prev,
+          current: i + 1,
+          currentItemName: subjectName,
+          status: `Restoring (${i + 1}/${total}): ${subjectName}`,
+        }));
+
+        try {
           const { error } = await adminApi.db(tableName, "update", {
             payload: { status: "Active" },
             eq: { column: "id", value: id }
           });
           if (error) throw error;
-        })
-      );
-
-      let successCount = 0;
-      results.forEach((res) => {
-        if (res.status === "fulfilled") successCount++;
-      });
+          successCount++;
+        } catch (err) {
+          failedItems.push({
+            id,
+            name: subjectName,
+            error: err?.message || "Failed to restore subject"
+          });
+        }
+      }
 
       setSubjects((prev) =>
         prev.map((s) => (selectedSubjectIds.has(s.id) ? { ...s, status: "Active" } : s))
       );
       setSelectedSubjectIds(new Set());
-      setShowBulkUnarchiveConfirm(false);
 
-      if (successCount === idsToUnarchive.length) {
-        toast.success(`Successfully restored ${successCount} subject(s) to Active.`);
+      if (failedItems.length === 0) {
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Restoring Subjects",
+          status: "Completed",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Successfully restored ${successCount} subject(s) to Active.`,
+          error: null,
+          partialFailure: null,
+        });
       } else {
-        toast.warning(`Restored ${successCount} out of ${idsToUnarchive.length} subject(s).`);
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Restoring Subjects",
+          status: "Completed with warnings",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Restored ${successCount} out of ${total} subject(s).`,
+          error: null,
+          partialFailure: {
+            successCount,
+            failureCount: failedItems.length,
+            failedItems
+          }
+        });
       }
     } catch (err) {
-      toast.error("Failed to restore selected subjects.");
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Restoring Subjects",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: "Failed to restore selected subjects.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkUnarchiving(false);
     }
@@ -1025,39 +1183,108 @@ function SubjectManagement() {
 
   const handleBulkDeleteSubjects = async () => {
     if (selectedSubjectIds.size === 0) return;
+    const idsToDelete = Array.from(selectedSubjectIds);
+    const total = idsToDelete.length;
+    setShowBulkDeleteConfirm(false);
     setIsBulkDeleting(true);
-    setErrorMessage("");
+
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Deleting Subjects",
+      status: `Deleting ${total} subject(s)...`,
+      current: 0,
+      total,
+      isIndeterminate: false,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
     try {
-      const idsToDelete = Array.from(selectedSubjectIds);
       const tableName = await getSubjectTableName();
-      
-      const results = await Promise.allSettled(
-        idsToDelete.map(async (id) => {
+      let successCount = 0;
+      let failedItems = [];
+
+      for (let i = 0; i < idsToDelete.length; i++) {
+        const id = idsToDelete[i];
+        const subjectObj = subjects.find(s => s.id === id);
+        const subjectName = subjectObj ? `${subjectObj.code} - ${subjectObj.name}` : `Subject ID ${id}`;
+
+        setBulkProgressModal((prev) => ({
+          ...prev,
+          current: i + 1,
+          currentItemName: subjectName,
+          status: `Deleting (${i + 1}/${total}): ${subjectName}`,
+        }));
+
+        try {
           const { error } = await adminApi.db(tableName, "delete", { eq: { column: "id", value: id } });
           if (error) throw error;
-        })
-      );
+          successCount++;
+        } catch (err) {
+          failedItems.push({
+            id,
+            name: subjectName,
+            error: err?.message || "Failed to delete subject (may be referenced by other records)"
+          });
+        }
+      }
 
-      let successCount = 0;
-      results.forEach(result => {
-        if (result.status === "fulfilled") successCount++;
-      });
-
-      setShowBulkDeleteConfirm(false);
+      const idsSet = new Set(idsToDelete.filter(id => !failedItems.some(f => f.id === id)));
       setSubjects((current) => current.filter((item) => !idsSet.has(item.id)));
       setSelectedSubjectIds(new Set());
       await Promise.allSettled([fetchTeachers(), fetchSubjects()]);
 
-      if (successCount === idsToDelete.length) {
-        toast.success(`Successfully deleted ${successCount} subject(s).`);
-      } else if (successCount > 0) {
-        toast.warning(`Deleted ${successCount} out of ${idsToDelete.length} subjects. Some subjects might be referenced by other records.`);
+      if (failedItems.length === 0) {
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Deleting Subjects",
+          status: "Completed",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Successfully deleted ${successCount} subject(s).`,
+          error: null,
+          partialFailure: null,
+        });
       } else {
-        toast.error("Failed to delete any subjects. They might be referenced by other records.");
+        setBulkProgressModal({
+          isOpen: true,
+          title: "Deleting Subjects",
+          status: "Completed with warnings",
+          current: total,
+          total,
+          isIndeterminate: false,
+          currentItemName: "",
+          isCompleted: true,
+          completionMessage: `Deleted ${successCount} out of ${total} subjects.`,
+          error: null,
+          partialFailure: {
+            successCount,
+            failureCount: failedItems.length,
+            failedItems
+          }
+        });
       }
     } catch (err) {
       console.error(err);
-      toast.error("An error occurred during bulk deletion.");
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Deleting Subjects",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: "An error occurred during bulk deletion.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -2088,6 +2315,22 @@ function SubjectManagement() {
             </div>
           </div>
         </div>
+      )}
+      {bulkProgressModal.isOpen && (
+        <BulkOperationProgressModal
+          isOpen={bulkProgressModal.isOpen}
+          onClose={() => setBulkProgressModal((prev) => ({ ...prev, isOpen: false }))}
+          title={bulkProgressModal.title}
+          status={bulkProgressModal.status}
+          current={bulkProgressModal.current}
+          total={bulkProgressModal.total}
+          isIndeterminate={bulkProgressModal.isIndeterminate}
+          currentItemName={bulkProgressModal.currentItemName}
+          isCompleted={bulkProgressModal.isCompleted}
+          completionMessage={bulkProgressModal.completionMessage}
+          error={bulkProgressModal.error}
+          partialFailure={bulkProgressModal.partialFailure}
+        />
       )}
     </div>
   );

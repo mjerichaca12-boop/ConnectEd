@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { supabase } from "../../lib/supabaseClient";
 import { adminApi } from "@/app/lib/adminApi";
 import { GoogleSheetsImportModal } from "@/app/components/admin/GoogleSheetsImportModal";
+import { BulkOperationProgressModal } from "@/app/components/ui/BulkOperationProgressModal";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
@@ -116,6 +117,19 @@ function StudentManagement() {
   const [showClearMasterlistConfirm, setShowClearMasterlistConfirm] = useState(false);
   const [isClearingMasterlist, setIsClearingMasterlist] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkProgressModal, setBulkProgressModal] = useState({
+    isOpen: false,
+    title: "",
+    status: "",
+    current: 0,
+    total: 0,
+    isIndeterminate: false,
+    currentItemName: "",
+    isCompleted: false,
+    completionMessage: "",
+    error: null,
+    partialFailure: null,
+  });
   const [isImporting, setIsImporting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showImportPreviewModal, setShowImportPreviewModal] = useState(false);
@@ -1486,7 +1500,24 @@ function StudentManagement() {
       return;
     }
 
+    const total = selectedSet.size;
+    setShowBulkAssignSectionModal(false);
     setIsBulkAssigning(true);
+
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Assigning Section",
+      status: `Assigning ${total} student(s) to Section ${cleanSection}...`,
+      current: 0,
+      total,
+      isIndeterminate: true,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
     try {
       const selectedIds = Array.from(selectedSet);
       const isMasterlist = activeTab !== "Profiles";
@@ -1503,20 +1534,43 @@ function StudentManagement() {
       }
 
       if (isMasterlist) {
-        toast.success(`Successfully assigned ${selectedIds.length} masterlist record(s) to Section ${cleanSection}.`);
         setSelectedMasterlistIds(new Set());
       } else {
-        toast.success(`Successfully assigned ${selectedIds.length} student(s) to Section ${cleanSection}.`);
         setSelectedStudentIds(new Set());
       }
 
-      setShowBulkAssignSectionModal(false);
       setTargetBulkSection("");
       setSectionCapacityInfo(null);
       await refreshStudents();
+
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Assigning Section",
+        status: "Completed",
+        current: total,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: true,
+        completionMessage: `Successfully assigned ${total} record(s) to Section ${cleanSection}.`,
+        error: null,
+        partialFailure: null,
+      });
     } catch (err) {
       console.error("Bulk section assignment error:", err);
-      toast.error(err.message || "Failed to assign section to selected students.");
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Assigning Section",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: err.message || "Failed to assign section to selected students.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkAssigning(false);
     }
@@ -1932,9 +1986,26 @@ function StudentManagement() {
 
   const handleBulkDeleteStudents = async () => {
     if (selectedStudentIds.size === 0) return;
+    const idsToDelete = Array.from(selectedStudentIds);
+    const total = idsToDelete.length;
+    setShowBulkDeleteConfirm(false);
     setIsBulkDeleting(true);
+
+    setBulkProgressModal({
+      isOpen: true,
+      title: "Deleting Students",
+      status: `Deleting ${total} selected student record(s)...`,
+      current: 0,
+      total,
+      isIndeterminate: true,
+      currentItemName: "",
+      isCompleted: false,
+      completionMessage: "",
+      error: null,
+      partialFailure: null,
+    });
+
     try {
-      const idsToDelete = Array.from(selectedStudentIds);
       const idsSet = new Set(idsToDelete);
 
       const res = await adminApi.bulkDeleteStudents(idsToDelete);
@@ -1955,12 +2026,35 @@ function StudentManagement() {
       // Optimistically update local state for instant UI responsiveness
       setStudents(prev => prev.filter(s => !idsSet.has(s.id)));
       setSelectedStudentIds(new Set());
-      setShowBulkDeleteConfirm(false);
 
-      toast.success(`Successfully deleted ${successCount} student(s).`);
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Deleting Students",
+        status: "Completed",
+        current: successCount,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: true,
+        completionMessage: `Successfully deleted ${successCount} student record(s).`,
+        error: null,
+        partialFailure: null,
+      });
     } catch (err) {
       console.error("Bulk delete error:", err);
-      toast.error(err.message || "Unable to bulk delete students.");
+      setBulkProgressModal({
+        isOpen: true,
+        title: "Deleting Students",
+        status: "Failed",
+        current: 0,
+        total,
+        isIndeterminate: false,
+        currentItemName: "",
+        isCompleted: false,
+        completionMessage: "",
+        error: err.message || "Unable to bulk delete students.",
+        partialFailure: null,
+      });
     } finally {
       setIsBulkDeleting(false);
     }
@@ -5032,6 +5126,21 @@ function StudentManagement() {
         onTriggerFileUpload={() => fileInputRef.current?.click()}
         existingDbRecords={masterlist}
         existingPendingRequests={registrationRequests}
+      />
+
+      <BulkOperationProgressModal
+        isOpen={bulkProgressModal.isOpen}
+        title={bulkProgressModal.title}
+        status={bulkProgressModal.status}
+        current={bulkProgressModal.current}
+        total={bulkProgressModal.total}
+        isIndeterminate={bulkProgressModal.isIndeterminate}
+        currentItemName={bulkProgressModal.currentItemName}
+        isCompleted={bulkProgressModal.isCompleted}
+        completionMessage={bulkProgressModal.completionMessage}
+        error={bulkProgressModal.error}
+        partialFailure={bulkProgressModal.partialFailure}
+        onClose={() => setBulkProgressModal(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );
