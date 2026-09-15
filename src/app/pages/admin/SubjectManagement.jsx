@@ -1747,7 +1747,12 @@ function SubjectManagement() {
             </label>
           </div>
 
-          {filteredSubjects.length === 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+              <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+              <p className="text-gray-600 font-medium">Loading subjects...</p>
+            </div>
+          ) : filteredSubjects.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
               <BookOpen className="w-12 h-12 text-gray-600 mx-auto mb-4" />
               <p className="text-gray-600">No subjects found.</p>
