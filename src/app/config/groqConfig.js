@@ -4,9 +4,9 @@
 
 // Supported production models on Groq
 export const GROQ_MODELS = {
-  PRIMARY: "groq/compound-mini",
-  FALLBACK_1: "groq/compound",
-  FALLBACK_2: "qwen/qwen3.8-27b",
+  PRIMARY: "llama-3.3-70b-versatile",
+  FALLBACK_1: "llama-3.1-8b-instant",
+  FALLBACK_2: "mixtral-8x7b-32768",
 };
 
 // Maximum retry attempts per user request (Primary -> Fallback 1 -> Fallback 2 -> Stop)

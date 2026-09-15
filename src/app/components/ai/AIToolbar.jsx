@@ -9,15 +9,14 @@ import {
   Target,
   MessagesSquare,
   HelpCircle,
-  ClipboardCheck,
-  Languages,
-  Volume2,
-  MailOpen
+  BarChart3,
+  Megaphone
 } from "lucide-react";
 
 const CATEGORIES = [
   { id: "assessments", label: "Assessments" },
   { id: "lesson_prep", label: "Lesson Prep" },
+  { id: "class_copilot", label: "Class Insights" },
 ];
 
 const TEACHER_ACTIONS = [
@@ -103,7 +102,29 @@ const TEACHER_ACTIONS = [
     description: "Build discussion guides",
     prompt: (s) =>
       `Generate discussion questions for Grade ${s.gradeLevel} ${s.subject}${s.section ? ` – Section ${s.section}` : ""} based on the uploaded learning materials.`,
-  }
+  },
+
+  // Class Insights
+  {
+    category: "class_copilot",
+    icon: BarChart3,
+    iconColor: "text-blue-500 bg-blue-50 border-blue-100",
+    label: "Analyze Performance",
+    action: "analyzePerformance",
+    description: "Class scores & metrics analysis",
+    prompt: (s) =>
+      `Analyze student performance data for Grade ${s.gradeLevel} ${s.subject}${s.section ? ` – Section ${s.section}` : ""} based on actual retrieved ConnectEd grades and submission data.`,
+  },
+  {
+    category: "class_copilot",
+    icon: Megaphone,
+    iconColor: "text-rose-500 bg-rose-50 border-rose-100",
+    label: "Draft Announcement",
+    action: "generateAnnouncement",
+    description: "Draft class announcement notice",
+    prompt: (s) =>
+      `Draft a class announcement for Grade ${s.gradeLevel} ${s.subject}${s.section ? ` – Section ${s.section}` : ""}.`,
+  },
 ];
 
 const STUDENT_ACTIONS = [

@@ -407,6 +407,15 @@ export const buildQuickPrompt = (action, settings) => {
 
   const prompts = {
     // ── New specialized actions ───────────────────────
+    analyzePerformance: `Analyze student performance data for ${classCtx} based ONLY on actual retrieved ConnectEd grades and submission data.
+
+Instructions:
+- Provide an objective summary of student performance across quizzes, activities, and assignments.
+- Highlight areas of high mastery and specific struggle topics.
+- Recommend targeted classroom interventions and remediation steps for struggling students.
+
+CRITICAL RULE: Base ALL findings strictly on the actual retrieved student performance data provided in the system context. DO NOT fabricate student scores, rankings, completion rates, or names. If no student performance data was retrieved, explicitly state that performance data is unavailable.`,
+
     generateQuiz: `Generate a ${itemCount}-item quiz for ${classCtx} using ONLY content from the uploaded learning materials.
 
 **Quiz Types to include:** ${typesStr}

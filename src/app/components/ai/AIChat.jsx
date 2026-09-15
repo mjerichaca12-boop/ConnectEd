@@ -196,15 +196,29 @@ export function AIChat({
                     </div>
                   )}
 
+                  {/* Error & Retry Row */}
+                  {(msg.isError || (msg.content && msg.content.startsWith("⚠️"))) && onRegenerate && (
+                    <div className="mt-3 pt-2.5 border-t border-red-100 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-red-600 font-medium">Generation stopped due to error</span>
+                      <button
+                        onClick={onRegenerate}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Retry Request
+                      </button>
+                    </div>
+                  )}
+
                   {/* Actions row for last assistant message */}
-                  {index === lastAssistantIdx && !isStreaming && msg.content && (
+                  {index === lastAssistantIdx && !isStreaming && msg.content && !msg.isError && !msg.content.startsWith("⚠️") && (
                     <div className="mt-3 pt-2 border-t border-gray-100 flex items-center gap-3">
                       <CopyButton text={msg.content} />
                       {onRegenerate && !msg.choices && (
                         <button
                           onClick={onRegenerate}
                           title="Regenerate response"
-                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors px-1.5 py-0.5 rounded hover:bg-green-50"
+                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors px-1.5 py-0.5 rounded hover:bg-green-50 cursor-pointer"
                         >
                           <RefreshCw className="w-3 h-3" /> Regenerate
                         </button>
