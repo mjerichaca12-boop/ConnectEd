@@ -2191,7 +2191,12 @@ function GradesManagement() {
                   <Filter className="w-4 h-4" />
                   Select Subject / Section
                 </label>
-                {activeClassesList.length === 0 ? (
+                {loading && !isDemoMode ? (
+                  <div className="w-full h-12 px-4 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 text-green-600 animate-spin" />
+                    <span>Loading classes...</span>
+                  </div>
+                ) : activeClassesList.length === 0 ? (
                   <div className="w-full h-12 px-4 border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm flex items-center">No classes available</div>
                 ) : (
                   <CustomSelect
@@ -2221,13 +2226,13 @@ function GradesManagement() {
           </div>
 
           {/* Grade Table */}
-          {selectedClass && (
+          {(selectedClass || (loading && !isDemoMode)) && (
             <>
             <div data-tour="teacher-grades-table" className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
               {/* Table header row */}
               <div className="p-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-semibold text-green-900">{selectedClassName || "Select a class to view grades"}</h3>
+                  <h3 className="text-base font-semibold text-green-900">{selectedClassName || (loading ? "Loading class grades..." : "Select a class to view grades")}</h3>
                   <p className="text-xs text-gray-600 mt-0.5">
                     {isSwitchingTerm || (loading && !isDemoMode) ? (
                       <span className="inline-flex items-center gap-1.5 text-gray-400">
@@ -2859,7 +2864,7 @@ function GradesManagement() {
           )}
 
           {/* Empty state when no class selected */}
-          {!selectedClass && (
+          {!selectedClass && !loading && (
             <div className="bg-gray-50 rounded-2xl border border-gray-200 p-16 text-center shadow-sm">
               <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Award className="w-8 h-8 text-green-600" />
