@@ -1690,38 +1690,43 @@ function SubjectManagement() {
                   className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
                 />
               </div>
-              {selectedSubjectIds.size > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeTab !== "archived" && (
+              {selectedSubjectIds.size > 0 && (() => {
+                const selectedActiveCount = subjects.filter(s => selectedSubjectIds.has(s.id) && String(s.status || "Active").toLowerCase() !== "archived").length;
+                const selectedArchivedCount = subjects.filter(s => selectedSubjectIds.has(s.id) && String(s.status || "").toLowerCase() === "archived").length;
+
+                return (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeTab !== "archived" && selectedActiveCount > 0 && (
+                      <button
+                        onClick={() => setShowBulkArchiveConfirm(true)}
+                        disabled={isBulkArchiving}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-2xl hover:bg-amber-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      >
+                        {isBulkArchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                        {isBulkArchiving ? "Archiving..." : `Archive Selected (${selectedActiveCount})`}
+                      </button>
+                    )}
+                    {activeTab !== "active" && selectedArchivedCount > 0 && (
+                      <button
+                        onClick={() => setShowBulkUnarchiveConfirm(true)}
+                        disabled={isBulkUnarchiving}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      >
+                        {isBulkUnarchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                        {isBulkUnarchiving ? "Restoring..." : `Restore Selected (${selectedArchivedCount})`}
+                      </button>
+                    )}
                     <button
-                      onClick={() => setShowBulkArchiveConfirm(true)}
-                      disabled={isBulkArchiving}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-2xl hover:bg-amber-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
+                      onClick={() => setShowBulkDeleteConfirm(true)}
+                      disabled={isBulkDeleting}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
                     >
-                      {isBulkArchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-                      {isBulkArchiving ? "Archiving..." : `Archive Selected (${selectedSubjectIds.size})`}
+                      {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
                     </button>
-                  )}
-                  {activeTab !== "active" && (
-                    <button
-                      onClick={() => setShowBulkUnarchiveConfirm(true)}
-                      disabled={isBulkUnarchiving}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-2xl hover:bg-green-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
-                    >
-                      {isBulkUnarchiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                      {isBulkUnarchiving ? "Restoring..." : `Restore Selected (${selectedSubjectIds.size})`}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowBulkDeleteConfirm(true)}
-                    disabled={isBulkDeleting}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-2xl hover:bg-red-700 transition-all font-semibold shadow-sm text-sm w-full md:w-auto justify-center disabled:opacity-50 cursor-pointer"
-                  >
-                    {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    {isBulkDeleting ? "Deleting..." : `Delete Selected (${selectedSubjectIds.size})`}
-                  </button>
-                </div>
-              )}
+                  </div>
+                );
+              })()}
               <button onClick={handleExportToCSV} className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-800 rounded-2xl hover:bg-gray-50 transition-all font-semibold shadow-sm text-sm cursor-pointer">
                 <Download className="w-4 h-4 text-gray-500" />
                 Export CSV
