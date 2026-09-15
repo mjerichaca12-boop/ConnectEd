@@ -2527,7 +2527,7 @@ function GradesManagement() {
                 </p>
               </div>
 
-              {loading && !isDemoMode ? (
+              {isSwitchingTerm || (loading && !isDemoMode) ? (
                 <div className="p-12 text-center">
                   <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
                   <p className="text-gray-600 font-medium">Loading evaluation data...</p>
