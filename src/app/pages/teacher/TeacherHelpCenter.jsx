@@ -180,13 +180,7 @@ export function TeacherHelpCenter() {
         </div>
 
         {/* Content Body */}
-        {loading ? (
-          <div className="p-16 text-center flex flex-col items-center justify-center min-h-[400px]">
-            <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">Loading Help Center guides...</p>
-          </div>
-        ) : (
-          <div className="p-6 space-y-8 max-w-6xl mx-auto">
+        <div className="p-6 space-y-8 max-w-6xl mx-auto">
             {/* Onboarding Welcome Notice (Only shown when coming from First Login Onboarding) */}
             {isFromOnboarding && (
               <div className="bg-gradient-to-r from-green-500/10 via-teal-500/10 to-emerald-500/10 border border-green-200 rounded-2xl p-5 flex items-center justify-between gap-4 animate-in fade-in zoom-in-95">
@@ -360,7 +354,6 @@ export function TeacherHelpCenter() {
               </div>
             </div>
           </div>
-        )}
       </main>
     </div>
   );

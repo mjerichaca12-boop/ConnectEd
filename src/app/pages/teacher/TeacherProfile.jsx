@@ -388,14 +388,7 @@ function TeacherProfile() {
             )}
           </div>
         </div>
-
-        {loading ? (
-          <div className="p-16 text-center flex flex-col items-center justify-center min-h-[400px]">
-            <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600 font-medium">Loading profile details...</p>
-          </div>
-        ) : (
-          <div className="p-8 max-w-6xl mx-auto space-y-8">
+        <div className="p-8 max-w-6xl mx-auto space-y-8">
           {/* Alert messages */}
           {errorMessage && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
@@ -658,7 +651,6 @@ function TeacherProfile() {
             </div>
           )}
         </div>
-        )}
       </main>
     </div>
   );
