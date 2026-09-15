@@ -26,7 +26,8 @@ import {
   FolderOpen,
   Calendar,
   BookOpen,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 
 const STORAGE_BUCKET = "class-materials";
@@ -631,7 +632,10 @@ function ClassMaterials() {
 
               <div className="grid grid-cols-1 gap-4">
                 {loadingMaterials ? (
-                  <div className="bg-white rounded-xl p-6 border border-gray-200 text-gray-600">Loading materials...</div>
+                  <div className="bg-white rounded-xl p-16 border border-gray-200 text-center">
+                    <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">Loading materials...</p>
+                  </div>
                 ) : materials.length === 0 ? (
                   <div className="bg-white rounded-xl p-6 border border-gray-200 text-gray-600">No materials uploaded yet.</div>
                 ) : (
@@ -864,8 +868,9 @@ function ClassMaterials() {
                 <button
                   onClick={handleUploadMaterial}
                   disabled={isUploadingMaterial}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-600 to-teal-600 text-gray-900 rounded-lg hover:from-green-700 hover:to-teal-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-medium"
                 >
+                  {isUploadingMaterial && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isUploadingMaterial ? "Uploading..." : "Upload Material"}
                 </button>
               </div>

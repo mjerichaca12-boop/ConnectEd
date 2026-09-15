@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, Calendar, Clock, AlertCircle, CheckCircle, ChevronRight, FileText } from 'lucide-react';
+import { ClipboardCheck, Calendar, Clock, AlertCircle, CheckCircle, ChevronRight, FileText, Loader2 } from 'lucide-react';
 import { supabase } from '@/app/lib/supabaseClient';
 import { useAcademic } from "@/app/context/AcademicContext";
 import { useTourPreview } from "@/app/hooks/useTourPreview";
@@ -250,9 +250,9 @@ export function TeacherTasksAndDeadlines({ teacherId, assignedSubjects = [] }) {
   if (loading) {
     return (
       <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm flex items-center justify-center h-[400px]">
-        <div className="flex flex-col items-center">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-gray-500 text-sm font-medium">Loading tasks...</p>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-2" />
+          <p className="text-gray-600 font-medium">Loading tasks...</p>
         </div>
       </div>
     );

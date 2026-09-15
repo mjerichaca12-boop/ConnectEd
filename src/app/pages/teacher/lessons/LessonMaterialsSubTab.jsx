@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { Upload, FileText, X, File, Image as ImageIcon, Video, Trash2, Download } from "lucide-react";
+import { Upload, FileText, X, File, Image as ImageIcon, Video, Trash2, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
 import { DeleteConfirmationModal } from "@/app/components/ui/DeleteConfirmationModal";
@@ -170,15 +170,18 @@ export function LessonMaterialsSubTab({ lesson }) {
           disabled={isUploading}
           accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.mp4,.mov,.avi"
         />
-        <button 
-          className="px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg shadow-sm pointer-events-none"
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors disabled:opacity-60 flex items-center gap-2"
         >
+          {isUploading && <Loader2 className="w-4 h-4 animate-spin" />}
           {isUploading ? "Uploading..." : "Select Files"}
         </button>
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center p-8"><div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div></div>
+        <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 text-green-600 animate-spin" /></div>
       ) : materials.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm">
           No materials uploaded for this lesson yet.

@@ -4,7 +4,7 @@ import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import {
   BookOpen, Users, Megaphone, TrendingUp, Calendar,
   MessageSquare, ClipboardCheck, Plus, ArrowRight,
-  GraduationCap, BarChart2, Bell, X
+  GraduationCap, BarChart2, Bell, X, Loader2
 } from "lucide-react";
 import { DashboardCalendar } from "@/app/components/DashboardCalendar";
 import { NotificationDropdown } from "@/app/components/NotificationDropdown";
@@ -647,7 +647,13 @@ export function TeacherDashboard() {
                   <div className={`w-12 h-12 ${c.bg} rounded-xl flex items-center justify-center mb-4`}>
                     <Icon className={`w-5 h-5 ${c.icon}`} />
                   </div>
-                  <p className="text-3xl font-bold text-gray-900">{stat.value}</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {loading && !isDemoMode ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                    ) : (
+                      stat.value
+                    )}
+                  </p>
                   <p className="text-sm text-gray-500 font-medium">{stat.label}</p>
                 </div>
               );
@@ -676,7 +682,12 @@ export function TeacherDashboard() {
                     </h3>
                   </div>
                   <div className="p-6">
-                    {(isDemoMode ? [
+                    {loading && !isDemoMode ? (
+                      <div className="text-center py-8">
+                        <Loader2 className="w-8 h-8 text-green-600 animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-gray-500 font-medium">Loading grades...</p>
+                      </div>
+                    ) : (isDemoMode ? [
                       { id: "demo-rg-1", studentName: "Juan Dela Cruz", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 91 },
                       { id: "demo-rg-2", studentName: "Maria Santos", subject: "Araling Panlipunan 10", dateRecorded: new Date().toISOString(), grade: 96 },
                       { id: "demo-rg-3", studentName: "John Reyes", subject: "Mathematics 7", dateRecorded: new Date().toISOString(), grade: 87 },
@@ -727,7 +738,12 @@ export function TeacherDashboard() {
                     </div>
                   )}
 
-                  {(isDemoMode ? mockData.announcements : visibleAnnouncements).length === 0 ? (
+                  {loading && !isDemoMode ? (
+                    <div className="text-center py-8">
+                      <Loader2 className="w-8 h-8 text-green-600 animate-spin mx-auto mb-2" />
+                      <p className="text-xs text-gray-500 font-medium">Loading announcements...</p>
+                    </div>
+                  ) : (isDemoMode ? mockData.announcements : visibleAnnouncements).length === 0 ? (
                     <div className="text-center py-6 text-gray-500">No teacher announcements yet</div>
                   ) : (
                     <div className="space-y-3">

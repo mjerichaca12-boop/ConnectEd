@@ -3,7 +3,7 @@ import { supabase } from "@/app/lib/supabaseClient";
 import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
 import { scheduleTargetedReloadTimers } from "@/app/services/scheduledReloadService";
 import { isColumnMissingError } from "@/app/lib/teacherHelpers";
-import { Plus, BookOpen, Clock, ChevronRight, ArrowLeft, FileText, CheckCircle, Video, Image as ImageIcon, Archive, Trash2, Edit, RefreshCw, FolderArchive } from "lucide-react";
+import { Plus, BookOpen, Clock, ChevronRight, ArrowLeft, FileText, CheckCircle, Video, Image as ImageIcon, Archive, Trash2, Edit, RefreshCw, FolderArchive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { LessonBuilderModal } from "./LessonBuilderModal";
 import { DeleteConfirmationModal } from "@/app/components/ui/DeleteConfirmationModal";
@@ -391,8 +391,9 @@ export function TeacherLessonsTab({ subjectId, teacherId, onLessonsChange }) {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex flex-col items-center justify-center h-48 gap-3">
+          <Loader2 className="w-10 h-10 text-green-600 animate-spin" />
+          <p className="text-gray-600 font-medium">Loading lessons...</p>
         </div>
       ) : lessons.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center shadow-sm">

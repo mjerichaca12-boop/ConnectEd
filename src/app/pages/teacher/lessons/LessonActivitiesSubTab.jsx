@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { CheckCircle, FileText, Settings, Trash2, Edit } from "lucide-react";
+import { CheckCircle, FileText, Settings, Trash2, Edit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { QuizBuilderModal } from "./QuizBuilderModal";
 import { AssignmentBuilderModal } from "./AssignmentBuilderModal";
@@ -161,7 +161,7 @@ export function LessonActivitiesSubTab({ lesson, onActivitiesChange }) {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center p-8"><div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div></div>
+        <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 text-green-600 animate-spin" /></div>
       ) : activities.length === 0 ? (
         <div className="text-center py-8 text-gray-500 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
           No activities added to this lesson yet.

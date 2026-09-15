@@ -2510,7 +2510,12 @@ function GradesManagement() {
                 </p>
               </div>
 
-              {assessmentItems.length === 0 ? (
+              {loading && !isDemoMode ? (
+                <div className="p-12 text-center">
+                  <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600 font-medium">Loading evaluation data...</p>
+                </div>
+              ) : assessmentItems.length === 0 ? (
                 <div className="p-8 text-center">
                   <EmptyStateIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
                   <p className="text-gray-400 text-sm">No seatworks found for this class yet.</p>

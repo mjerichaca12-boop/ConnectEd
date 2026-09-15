@@ -13,7 +13,8 @@ import {
   User,
   BookMarked,
   Calendar,
-  Megaphone
+  Megaphone,
+  Loader2
 } from "lucide-react";
 import {
   resolveCurrentUserId,
@@ -270,9 +271,9 @@ export function AdminNotifications() {
           <div className="flex-1 min-h-[500px]">
             {loading ? (
               <div className="h-full flex items-center justify-center p-12">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-gray-500 font-medium">Loading notifications...</p>
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-2" />
+                  <p className="text-gray-600 font-medium">Loading notifications...</p>
                 </div>
               </div>
             ) : filtered.length === 0 ? (

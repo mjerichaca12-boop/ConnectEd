@@ -21,7 +21,8 @@ import {
   Download,
   Trash2,
   BookOpen,
-  File
+  File,
+  Loader2
 } from "lucide-react";
 
 let announcementAttachmentsTableStatus = "unknown";
@@ -561,7 +562,12 @@ function TeacherAnnouncements() {
                 const activeAnnouncements = isDemoMode ? MOCK_DEMO_ANNOUNCEMENTS : filteredAnnouncements;
                 return (
                   <div className="space-y-4">
-                    {activeAnnouncements.length === 0 ? (
+                    {loading && !isDemoMode ? (
+                      <div className="text-center py-16">
+                        <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                        <p className="text-gray-600 font-medium">Loading announcements...</p>
+                      </div>
+                    ) : activeAnnouncements.length === 0 ? (
                       <div className="text-center py-12">
                         <Megaphone className="w-12 h-12 text-gray-700 mx-auto mb-3" />
                         <p className="text-gray-500">No announcements yet</p>
@@ -617,7 +623,12 @@ function TeacherAnnouncements() {
                 const activeAssignments = isDemoMode ? MOCK_DEMO_ASSIGNMENTS : assignments;
                 return (
                   <div className="space-y-4">
-                    {activeAssignments.length === 0 ? (
+                    {loading && !isDemoMode ? (
+                      <div className="text-center py-16">
+                        <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                        <p className="text-gray-600 font-medium">Loading assignments...</p>
+                      </div>
+                    ) : activeAssignments.length === 0 ? (
                       <div className="text-center py-12">
                         <FileText className="w-12 h-12 text-gray-700 mx-auto mb-3" />
                         <p className="text-gray-500">No assignments yet</p>
@@ -651,7 +662,12 @@ function TeacherAnnouncements() {
                 const activeFiles = isDemoMode ? MOCK_DEMO_FILES : files;
                 return (
                   <div className="space-y-4">
-                    {activeFiles.length === 0 ? (
+                    {loading && !isDemoMode ? (
+                      <div className="text-center py-16">
+                        <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                        <p className="text-gray-600 font-medium">Loading files...</p>
+                      </div>
+                    ) : activeFiles.length === 0 ? (
                       <div className="text-center py-12">
                         <Upload className="w-12 h-12 text-gray-700 mx-auto mb-3" />
                         <p className="text-gray-500">No files uploaded yet</p>

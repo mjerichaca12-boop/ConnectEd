@@ -12,6 +12,7 @@ import {
   MapPin,
   ChevronRight,
   GraduationCap,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "@/app/lib/supabaseClient";
 import { isColumnMissingError, resolveTeacherIdByEmail, getTeacherAssignedClasses } from "@/app/lib/teacherHelpers";
@@ -381,7 +382,12 @@ function Classes() {
             </div>
           </div>
 
-          {filteredClasses.length === 0 ? (
+          {loading && !isDemoMode ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+              <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+              <p className="text-gray-600 font-medium">Loading classes...</p>
+            </div>
+          ) : filteredClasses.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
               <div className="w-16 h-16 bg-green-50 rounded-2xl border border-green-200 flex items-center justify-center mx-auto mb-4">
                 <BookOpen className="w-8 h-8 text-green-600" />

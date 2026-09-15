@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
-import { FileText, Download, CheckCircle, Image as ImageIcon, Video, File, Clock, BookOpen } from "lucide-react";
+import { FileText, Download, CheckCircle, Image as ImageIcon, Video, File, Clock, BookOpen, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function LessonReviewSubTab({ lesson }) {
@@ -135,7 +135,7 @@ export function LessonReviewSubTab({ lesson }) {
   };
 
   if (isLoading) {
-    return <div className="flex justify-center p-12"><div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div></div>;
+    return <div className="flex justify-center p-12"><Loader2 className="w-10 h-10 text-green-600 animate-spin" /></div>;
   }
 
   return (
