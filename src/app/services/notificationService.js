@@ -1,4 +1,5 @@
 import { supabase } from "@/app/lib/supabaseClient";
+import { adminApi } from "@/app/lib/adminApi";
 import { triggerScheduledPublishingProcess } from "@/app/services/scheduledPublishingService";
 
 const isValidUuid = (value) =>
@@ -7,12 +8,25 @@ const isValidUuid = (value) =>
 
 export const ADMIN_ALLOWED_TYPES = new Set([
   "account",
+  "accounts",
   "user",
+  "users",
   "student",
+  "students",
   "teacher",
+  "teachers",
+  "registration",
+  "registrations",
+  "registration_request",
+  "registration_requests",
+  "pending_account_requests",
+  "pending_account_request",
+  "request",
+  "requests",
   "announcement",
   "announcements",
   "event",
+  "events",
   "calendar",
   "subject",
   "subjects",
@@ -107,7 +121,26 @@ export const notifyAdmin = async ({ type, title, message, relatedId = null, rela
         created_at: new Date().toISOString()
       };
 
-      const { data, error } = await supabase.from("notifications").insert([payload]).select().single();
+      let data = null;
+      let error = null;
+
+      try {
+        const res = await adminApi.db("notifications", "insert", {
+          payload,
+          single: true
+        });
+        data = res.data;
+        error = res.error;
+      } catch (apiErr) {
+        error = apiErr;
+      }
+
+      if (error) {
+        const fallbackRes = await supabase.from("notifications").insert([payload]).select().single();
+        data = fallbackRes.data;
+        error = fallbackRes.error;
+      }
+
       if (!error) {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("connected_notification_change", {
@@ -337,9 +370,15 @@ export const syncAnnouncementsToUserNotifications = async (userId, userRole) => 
       }));
 
     if (missingNotifs.length > 0) {
-      const { error: insertErr } = await supabase.from("notifications").insert(missingNotifs);
-      if (insertErr) {
-        console.warn("[notificationService] Error inserting announcement notifications:", insertErr);
+      try {
+        const { error: apiErr } = await adminApi.db("notifications", "insert", {
+          payload: missingNotifs
+        });
+        if (apiErr) {
+          await supabase.from("notifications").insert(missingNotifs);
+        }
+      } catch {
+        await supabase.from("notifications").insert(missingNotifs);
       }
     }
   } catch (err) {

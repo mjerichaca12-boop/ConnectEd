@@ -2208,12 +2208,18 @@ function StudentManagement() {
 
       if (logError) console.error("Failed to log password reset:", logError);
 
-      await db.from("notifications").insert({
+      const notifPayload = {
         user_id: selectedStudent.id,
         title: "Password Reset",
         message: `Your password has been reset by the administrator. Temporary Password: ${resetSettings.tempPassword}. You will be required to change your password after login.`,
         type: "system"
-      });
+      };
+
+      try {
+        await adminApi.db("notifications", "insert", { payload: notifPayload });
+      } catch {
+        await db.from("notifications").insert(notifPayload).catch(() => {});
+      }
 
       toast.success("Temporary password generated and saved.");
       setShowResetPasswordModal(false);
