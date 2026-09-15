@@ -1,28 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { Copy, Check, RefreshCw, Sparkles, Loader2 } from "lucide-react";
 
 /**
- * Preprocess markdown content to ensure inline tables, headers, and bullet lists
- * formatted by AI models render cleanly into line-separated markdown tables and structures.
+ * Preprocess markdown content to ensure inline tables, headers, HTML breaks (<br>),
+ * bullet symbols (•), and compressed structures render cleanly as standard Markdown.
  */
 function formatMarkdownText(text) {
   if (!text || typeof text !== "string") return "";
 
   let formatted = text;
 
-  // Fix markdown table rows compressed into a single line (e.g. "| col1 | col2 | |---|---| | val1 | val2 |")
+  // 1. Replace raw HTML line breaks (<br>, <br/>, <br />) with actual newlines
+  formatted = formatted.replace(/<br\s*\/?>/gi, "\n");
+
+  // 2. Replace non-breaking space HTML entity
+  formatted = formatted.replace(/&nbsp;/gi, " ");
+
+  // 3. Convert bullet point symbol '•' into clean Markdown bullet list items '- '
+  formatted = formatted.replace(/(?:^|\n)\s*•\s*/g, "\n- ");
+  formatted = formatted.replace(/•\s*/g, "\n- ");
+
+  // 4. Fix markdown table rows compressed into a single line (e.g. "| col1 | col2 | |---|---| | val1 | val2 |")
   formatted = formatted.replace(/\|\s*\|\s*(?=\|)/g, "|\n|");
 
-  // Fix table header separator line compressed into single line (e.g. "| col1 | col2 | |---|---|")
+  // 5. Fix table header separator line compressed into single line (e.g. "| col1 | col2 | |---|---|")
   formatted = formatted.replace(/(\|[^\n]+\|)\s*(\|-+[-|:]*\|)/g, "$1\n$2");
 
-  // Ensure line breaks before section headers (##, ###) if missing
+  // 6. Ensure line breaks before section headers (##, ###) if missing
   formatted = formatted.replace(/([^\n])\n(#{1,4}\s)/g, "$1\n\n$2");
+
+  // 7. Clean up 3+ consecutive newlines into double newlines
+  formatted = formatted.replace(/\n{3,}/g, "\n\n");
 
   return formatted;
 }
+
 
 
 function CopyButton({ text }) {
@@ -185,6 +200,7 @@ export function AIChat({
                   <div className="prose prose-sm max-w-none text-gray-800 leading-relaxed space-y-2">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw]}
                       components={{
                         table: ({ node, ...props }) => (
                           <div className="overflow-x-auto my-3 border border-gray-200 rounded-xl shadow-2xs">
