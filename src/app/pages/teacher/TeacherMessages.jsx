@@ -27,6 +27,7 @@ import {
   AtSign,
   CheckCheck,
   Circle,
+  Loader2,
 } from "lucide-react";
 
 const MESSAGE_TABLE = "messages";
@@ -1689,7 +1690,12 @@ function TeacherMessages() {
               </div>
 
               <div className="flex-1 overflow-y-auto scrollbar-hide">
-                {filteredConvs.length === 0 ? (
+                {loading && !isDemoMode ? (
+                  <div className="flex flex-col items-center justify-center h-full py-16 px-4 text-center">
+                    <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">Loading messages...</p>
+                  </div>
+                ) : filteredConvs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full py-12 px-4 text-center">
                     <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center mb-3">
                       <MessageSquare className="w-6 h-6 text-green-600" />

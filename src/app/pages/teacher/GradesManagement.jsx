@@ -2161,10 +2161,15 @@ function GradesManagement() {
               <NotificationDropdown />
             </div>
           </div>
-          
         </div>
 
-        <div className="p-6 space-y-6">
+        {loading && !isDemoMode ? (
+          <div className="p-16 text-center flex flex-col items-center justify-center min-h-[400px]">
+            <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading gradebook and student records...</p>
+          </div>
+        ) : (
+          <div className="p-6 space-y-6">
           {/* Hero */}
           <div data-tour="teacher-grades-header" className="bg-gradient-to-r from-green-600 via-teal-600 to-cyan-600 rounded-2xl p-8 text-white shadow-sm relative overflow-hidden">
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle at 80% 50%, white 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
@@ -2857,6 +2862,7 @@ function GradesManagement() {
             </div>
           )}
         </div>
+        )}
       </main>
 
       {/* Gradebook Modal */}

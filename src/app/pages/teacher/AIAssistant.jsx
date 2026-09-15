@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
-import { BookOpen, ChevronDown, Check, GraduationCap } from "lucide-react";
+import { BookOpen, ChevronDown, Check, GraduationCap, Loader2 } from "lucide-react";
 import { TeacherSidebar } from "@/app/components/TeacherSidebar";
 import { FileUploadZone } from "@/app/components/ai/FileUploadZone";
 import { ClassMaterialsLoader } from "@/app/components/ai/ClassMaterialsLoader";
@@ -1614,7 +1614,15 @@ export function AIAssistant() {
         </div>
 
         {/* Two-panel content */}
-        <div className="flex-1 flex gap-5 p-6 overflow-hidden min-h-0">
+        {isLoadingClasses && !isDemoMode ? (
+          <div className="flex-1 flex items-center justify-center p-16">
+            <div className="text-center">
+              <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+              <p className="text-gray-600 font-medium">Loading AI workspace and class context...</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex gap-5 p-6 overflow-hidden min-h-0">
 
           {/* LEFT PANEL */}
           <div className="w-80 flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 select-scrollbar">
@@ -1689,8 +1697,8 @@ export function AIAssistant() {
               onChangeContext={handleChangeContext}
             />
           </div>
-
         </div>
+      )}
       </div>
 
       <AIEvaluationPanel

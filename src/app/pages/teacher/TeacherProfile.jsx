@@ -7,7 +7,7 @@ import { supabase } from "@/app/lib/supabaseClient";
 import { buildSupabaseErrorMessage, isColumnMissingError, sanitizeFileName } from "@/app/lib/teacherHelpers";
 import {
   User, Mail, Phone, Edit3, Save, X, Eye, EyeOff, Lock, Upload,
-  Shield, BadgeCheck, Camera, CheckCircle, AlertTriangle, Key, Activity, Clock, Compass
+  Shield, BadgeCheck, Camera, CheckCircle, AlertTriangle, Key, Activity, Clock, Compass, Loader2
 } from "lucide-react";
 import { useTeacherTour } from "@/app/context/TeacherTourContext";
 
@@ -381,7 +381,7 @@ function TeacherProfile() {
                   Cancel
                 </button>
                 <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-all text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
-                  <Save className="w-4 h-4" />
+                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   {isSaving ? "Saving…" : "Save Changes"}
                 </button>
               </div>
@@ -389,7 +389,13 @@ function TeacherProfile() {
           </div>
         </div>
 
-        <div className="p-8 max-w-6xl mx-auto space-y-8">
+        {loading ? (
+          <div className="p-16 text-center flex flex-col items-center justify-center min-h-[400px]">
+            <Loader2 className="w-10 h-10 text-green-600 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading profile details...</p>
+          </div>
+        ) : (
+          <div className="p-8 max-w-6xl mx-auto space-y-8">
           {/* Alert messages */}
           {errorMessage && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3 shadow-sm">
@@ -652,6 +658,7 @@ function TeacherProfile() {
             </div>
           )}
         </div>
+        )}
       </main>
     </div>
   );
