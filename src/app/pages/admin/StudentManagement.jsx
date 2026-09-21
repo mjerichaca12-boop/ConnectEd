@@ -552,8 +552,36 @@ function StudentManagement() {
     }
 
     const fetchedProfiles = profilesRes.data ?? [];
+    const reqList = requestsData ?? [];
+
+    // Auto-heal pending registration requests that already have active profiles in DB
+    if (fetchedProfiles.length > 0 && reqList.length > 0) {
+      const activeLrns = new Set(fetchedProfiles.map(s => s.lrn ? String(s.lrn).replace(/\D/g, "") : null).filter(Boolean));
+      const activeEmails = new Set(fetchedProfiles.map(s => s.email ? String(s.email).trim().toLowerCase() : null).filter(Boolean));
+
+      const orphanedPendingReqIds = reqList.filter(r => {
+        if (r.status !== "pending") return false;
+        const cLrn = r.lrn ? String(r.lrn).replace(/\D/g, "") : null;
+        const cEmail = r.email ? String(r.email).trim().toLowerCase() : null;
+        return (cLrn && activeLrns.has(cLrn)) || (cEmail && activeEmails.has(cEmail));
+      }).map(r => r.id);
+
+      if (orphanedPendingReqIds.length > 0) {
+        adminApi.db("pending_account_requests", "update", {
+          payload: { status: "approved", updated_at: new Date().toISOString() },
+          in: { column: "id", value: orphanedPendingReqIds }
+        }).catch(err => console.warn("[autoHeal] Error updating orphaned pending requests:", err));
+
+        reqList.forEach(r => {
+          if (orphanedPendingReqIds.includes(r.id)) {
+            r.status = "approved";
+          }
+        });
+      }
+    }
+
     setStudents(fetchedProfiles);
-    setRegistrationRequests(requestsData ?? []);
+    setRegistrationRequests(reqList);
 
     // Auto-backfill missing usernames for existing student profiles efficiently
     const missingUsernameStudents = fetchedProfiles.filter(s => !s.username);
@@ -2296,8 +2324,29 @@ function StudentManagement() {
   }, [masterlist, searchQuery, yearLevelFilter, sectionFilter, courseFilter]);
 
   const filteredRegistrationRequests = useMemo(() => {
+    const activeStudentLrnsSet = new Set(
+      students.map((s) => (s.lrn ? String(s.lrn).replace(/\D/g, "") : null)).filter(Boolean)
+    );
+    const activeStudentEmailsSet = new Set(
+      students.map((s) => (s.email ? String(s.email).trim().toLowerCase() : null)).filter(Boolean)
+    );
+
     return registrationRequests.filter((req) => {
-      if (req.status !== registrationSubTab) return false;
+      const cleanReqLrn = req.lrn ? String(req.lrn).replace(/\D/g, "") : null;
+      const normReqEmail = req.email ? String(req.email).trim().toLowerCase() : null;
+      const isAlreadyActiveStudent = Boolean(
+        (cleanReqLrn && activeStudentLrnsSet.has(cleanReqLrn)) ||
+        (normReqEmail && activeStudentEmailsSet.has(normReqEmail))
+      );
+
+      if (registrationSubTab === "pending") {
+        if (isAlreadyActiveStudent) return false;
+        if (req.status !== "pending") return false;
+      } else if (registrationSubTab === "approved") {
+        if (req.status !== "approved" && !isAlreadyActiveStudent) return false;
+      } else {
+        if (req.status !== registrationSubTab) return false;
+      }
 
       if (yearLevelFilter !== "all") {
         const normReqGrade = getStudentGradeLevel(req);
@@ -2321,7 +2370,7 @@ function StudentManagement() {
 
       return true;
     });
-  }, [registrationRequests, registrationSubTab, yearLevelFilter, sectionFilter, searchQuery]);
+  }, [registrationRequests, registrationSubTab, students, yearLevelFilter, sectionFilter, searchQuery]);
 
   const handleApproveRegistrationRequest = async () => {
     if (!selectedRequest) return;

@@ -334,12 +334,27 @@ export default async function handler(req, res) {
         supabaseAdmin.from("profiles").select("id, email").ilike("email", normalizedEmail).maybeSingle()
       ]);
 
-      if (existingLrnProfile) {
-        return res.status(400).json({ error: `Cannot approve this request because LRN ${cleanLrn} is already registered.` });
-      }
+      const existingProfile = existingLrnProfile || existingEmailProfile;
+      if (existingProfile) {
+        const nowIso = new Date().toISOString();
+        await supabaseAdmin
+          .from("pending_account_requests")
+          .update({
+            status: "approved",
+            reviewed_at: nowIso,
+            reviewed_by: reviewer_id || null,
+            created_user_id: existingProfile.id,
+            updated_at: nowIso
+          })
+          .eq("id", request_id)
+          .eq("request_type", "student");
 
-      if (existingEmailProfile) {
-        return res.status(400).json({ error: `Cannot approve this request because email ${normalizedEmail} already has a ConnectEd account.` });
+        return res.status(200).json({
+          success: true,
+          alreadyApproved: true,
+          message: "Student account is already registered and active. Registration request updated to approved.",
+          created_user_id: existingProfile.id
+        });
       }
 
       // 3. Generate Unique Username
@@ -731,7 +746,25 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (existingEmailProfile) {
-        return res.status(400).json({ error: `Cannot approve this request because email ${normalizedEmail} already has a ConnectEd account.` });
+        const nowIso = new Date().toISOString();
+        await supabaseAdmin
+          .from("pending_account_requests")
+          .update({
+            status: "approved",
+            reviewed_at: nowIso,
+            reviewed_by: reviewer_id || null,
+            created_user_id: existingEmailProfile.id,
+            updated_at: nowIso
+          })
+          .eq("id", request_id)
+          .eq("request_type", "teacher");
+
+        return res.status(200).json({
+          success: true,
+          alreadyApproved: true,
+          message: `Teacher account for ${normalizedEmail} is already registered and active. Registration request updated to approved.`,
+          created_user_id: existingEmailProfile.id
+        });
       }
 
       const firstInitial = (first_name || "").charAt(0).toLowerCase().replace(/[^a-z]/g, "");
