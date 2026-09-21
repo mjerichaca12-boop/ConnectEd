@@ -55,6 +55,70 @@ const splitFullName = (fullNameStr) => {
   return { first_name, last_name };
 };
 
+const deduplicateRegistrationRequests = async (requestsData, activeProfiles = []) => {
+  if (!Array.isArray(requestsData) || requestsData.length === 0) return [];
+
+  const activeLrns = new Set((activeProfiles || []).map(s => s.lrn ? String(s.lrn).replace(/\D/g, "") : null).filter(Boolean));
+  const activeEmails = new Set((activeProfiles || []).map(s => s.email ? String(s.email).trim().toLowerCase() : null).filter(Boolean));
+
+  const uniqueMap = new Map();
+  const duplicateIdsToDelete = [];
+
+  const sorted = [...requestsData].sort((a, b) => {
+    const aCleanLrn = a.lrn ? String(a.lrn).replace(/\D/g, "") : null;
+    const bCleanLrn = b.lrn ? String(b.lrn).replace(/\D/g, "") : null;
+    const aCleanEmail = a.email ? String(a.email).trim().toLowerCase() : null;
+    const bCleanEmail = b.email ? String(b.email).trim().toLowerCase() : null;
+
+    const aApproved = a.status === "approved" || (aCleanLrn && activeLrns.has(aCleanLrn)) || (aCleanEmail && activeEmails.has(aCleanEmail));
+    const bApproved = b.status === "approved" || (bCleanLrn && activeLrns.has(bCleanLrn)) || (bCleanEmail && activeEmails.has(bCleanEmail));
+
+    if (aApproved && !bApproved) return -1;
+    if (!aApproved && bApproved) return 1;
+
+    if (a.status !== "pending" && b.status === "pending") return -1;
+    if (a.status === "pending" && b.status !== "pending") return 1;
+
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  for (const req of sorted) {
+    const cleanLrn = req.lrn ? String(req.lrn).replace(/\D/g, "") : null;
+    const cleanEmail = req.email ? String(req.email).trim().toLowerCase() : null;
+    const cleanName = `${(req.first_name || "").trim().toLowerCase()}_${(req.last_name || "").trim().toLowerCase()}`;
+
+    const key = cleanLrn ? `lrn:${cleanLrn}` : (cleanEmail ? `email:${cleanEmail}` : `name:${cleanName}`);
+
+    if (uniqueMap.has(key)) {
+      if (req.id) duplicateIdsToDelete.push(req.id);
+    } else {
+      const isAlreadyActive = (cleanLrn && activeLrns.has(cleanLrn)) || (cleanEmail && activeEmails.has(cleanEmail));
+      if (isAlreadyActive && req.status !== "approved") {
+        req.status = "approved";
+        if (req.id) {
+          adminApi.db("pending_account_requests", "update", {
+            payload: { status: "approved", updated_at: new Date().toISOString() },
+            eq: { column: "id", value: req.id }
+          }).catch(() => {});
+        }
+      }
+      uniqueMap.set(key, req);
+    }
+  }
+
+  if (duplicateIdsToDelete.length > 0) {
+    adminApi.db("pending_account_requests", "delete", {
+      in: { column: "id", value: duplicateIdsToDelete }
+    }).then(() => {
+      console.log(`[dedupe] Cleaned up ${duplicateIdsToDelete.length} duplicate registration request(s).`);
+    }).catch(err => console.warn("[dedupe] Error deleting duplicate requests:", err));
+  }
+
+  return Array.from(uniqueMap.values());
+};
+
 function StudentManagement() {
   const navigate = useNavigate();
   const { logActivity } = useActivity();
@@ -414,7 +478,7 @@ function StudentManagement() {
     setAdminName(user.name);
   }, [navigate]);
 
-  const fetchRegistrationRequests = useCallback(async () => {
+  const fetchRegistrationRequests = useCallback(async (activeProfiles = []) => {
     try {
       const res = await adminApi.db("pending_account_requests", "select", {
         payload: "*",
@@ -425,7 +489,7 @@ function StudentManagement() {
         console.error("Error fetching registration requests via adminApi:", res.error);
         return [];
       }
-      return res.data || [];
+      return await deduplicateRegistrationRequests(res.data || [], activeProfiles);
     } catch (err) {
       console.error("Fetch registration requests exception:", err);
       return [];
@@ -440,20 +504,22 @@ function StudentManagement() {
       order: { column: "created_at", options: { ascending: false } }
     });
 
+    if (profilesRes.error) {
+      throw new Error(profilesRes.error.message);
+    }
+
+    const fetchedProfiles = profilesRes.data ?? [];
+
     const [masterlistRes, requestsData] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
         payload: "*",
         order: { column: "created_at", options: { ascending: false } }
       }),
-      fetchRegistrationRequests()
+      fetchRegistrationRequests(fetchedProfiles)
     ]);
 
-    if (profilesRes.error) {
-      throw new Error(profilesRes.error.message);
-    }
-
     return {
-      students: profilesRes.data ?? [],
+      students: fetchedProfiles,
       masterlist: masterlistRes.data ?? [],
       registrationRequests: requestsData ?? []
     };
@@ -474,13 +540,13 @@ function StudentManagement() {
 
   useEffect(() => {
     if (activeTab === "RegistrationRequests") {
-      fetchRegistrationRequests().then((reqs) => {
+      fetchRegistrationRequests(students).then((reqs) => {
         if (Array.isArray(reqs)) {
           setRegistrationRequests(reqs);
         }
       });
     }
-  }, [activeTab, fetchRegistrationRequests]);
+  }, [activeTab, fetchRegistrationRequests, students]);
 
   // Realtime subscription for student data, registrations, and masterlist
   useEffect(() => {
@@ -496,7 +562,7 @@ function StudentManagement() {
           if (payload.eventType === "INSERT" && payload.new?.request_type === "student") {
             toast.info("New student registration received");
           }
-          fetchRegistrationRequests().then((reqs) => {
+          fetchRegistrationRequests(students).then((reqs) => {
             if (Array.isArray(reqs)) setRegistrationRequests(reqs);
           });
         }
@@ -522,7 +588,7 @@ function StudentManagement() {
     return () => {
       db.removeChannel(channel);
     };
-  }, [fetchRegistrationRequests]);
+  }, [fetchRegistrationRequests, students]);
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
@@ -538,47 +604,22 @@ function StudentManagement() {
       order: { column: "created_at", options: { ascending: false } }
     });
 
+    if (profilesRes.error) {
+      throw new Error(profilesRes.error.message);
+    }
+
+    const fetchedProfiles = profilesRes.data ?? [];
+
     const [masterlistRes, gradeSectionsRes, requestsData] = await Promise.all([
       adminApi.db("student_masterlist", "select", {
         payload: "*",
         order: { column: "created_at", options: { ascending: false } }
       }),
       adminApi.db("grade_sections", "select", { payload: "*" }),
-      fetchRegistrationRequests()
+      fetchRegistrationRequests(fetchedProfiles)
     ]);
 
-    if (profilesRes.error) {
-      throw new Error(profilesRes.error.message);
-    }
-
-    const fetchedProfiles = profilesRes.data ?? [];
     const reqList = requestsData ?? [];
-
-    // Auto-heal pending registration requests that already have active profiles in DB
-    if (fetchedProfiles.length > 0 && reqList.length > 0) {
-      const activeLrns = new Set(fetchedProfiles.map(s => s.lrn ? String(s.lrn).replace(/\D/g, "") : null).filter(Boolean));
-      const activeEmails = new Set(fetchedProfiles.map(s => s.email ? String(s.email).trim().toLowerCase() : null).filter(Boolean));
-
-      const orphanedPendingReqIds = reqList.filter(r => {
-        if (r.status !== "pending") return false;
-        const cLrn = r.lrn ? String(r.lrn).replace(/\D/g, "") : null;
-        const cEmail = r.email ? String(r.email).trim().toLowerCase() : null;
-        return (cLrn && activeLrns.has(cLrn)) || (cEmail && activeEmails.has(cEmail));
-      }).map(r => r.id);
-
-      if (orphanedPendingReqIds.length > 0) {
-        adminApi.db("pending_account_requests", "update", {
-          payload: { status: "approved", updated_at: new Date().toISOString() },
-          in: { column: "id", value: orphanedPendingReqIds }
-        }).catch(err => console.warn("[autoHeal] Error updating orphaned pending requests:", err));
-
-        reqList.forEach(r => {
-          if (orphanedPendingReqIds.includes(r.id)) {
-            r.status = "approved";
-          }
-        });
-      }
-    }
 
     setStudents(fetchedProfiles);
     setRegistrationRequests(reqList);

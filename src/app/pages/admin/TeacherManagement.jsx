@@ -62,6 +62,66 @@ const splitFullName = (fullNameStr) => {
   return { first_name, last_name };
 };
 
+const deduplicateTeacherRegistrationRequests = async (requestsData, activeProfiles = []) => {
+  if (!Array.isArray(requestsData) || requestsData.length === 0) return [];
+
+  const activeEmails = new Set((activeProfiles || []).map(t => t.email ? String(t.email).trim().toLowerCase() : null).filter(Boolean));
+
+  const uniqueMap = new Map();
+  const duplicateIdsToDelete = [];
+
+  const sorted = [...requestsData].sort((a, b) => {
+    const aCleanEmail = a.email ? String(a.email).trim().toLowerCase() : null;
+    const bCleanEmail = b.email ? String(b.email).trim().toLowerCase() : null;
+
+    const aApproved = a.status === "approved" || (aCleanEmail && activeEmails.has(aCleanEmail));
+    const bApproved = b.status === "approved" || (bCleanEmail && activeEmails.has(bCleanEmail));
+
+    if (aApproved && !bApproved) return -1;
+    if (!aApproved && bApproved) return 1;
+
+    if (a.status !== "pending" && b.status === "pending") return -1;
+    if (a.status === "pending" && b.status !== "pending") return 1;
+
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  for (const req of sorted) {
+    const cleanEmail = req.email ? String(req.email).trim().toLowerCase() : null;
+    const cleanName = `${(req.first_name || "").trim().toLowerCase()}_${(req.last_name || "").trim().toLowerCase()}`;
+
+    const key = cleanEmail ? `email:${cleanEmail}` : `name:${cleanName}`;
+
+    if (uniqueMap.has(key)) {
+      if (req.id) duplicateIdsToDelete.push(req.id);
+    } else {
+      const isAlreadyActive = cleanEmail && activeEmails.has(cleanEmail);
+      if (isAlreadyActive && req.status !== "approved") {
+        req.status = "approved";
+        if (req.id) {
+          adminApi.db("pending_account_requests", "update", {
+            payload: { status: "approved", updated_at: new Date().toISOString() },
+            eq: { column: "id", value: req.id }
+          }).catch(() => {});
+        }
+      }
+      uniqueMap.set(key, req);
+    }
+  }
+
+  if (duplicateIdsToDelete.length > 0) {
+    adminApi.db("pending_account_requests", "delete", {
+      in: { column: "id", value: duplicateIdsToDelete }
+    }).then(() => {
+      console.log(`[dedupe] Cleaned up ${duplicateIdsToDelete.length} duplicate teacher registration request(s).`);
+    }).catch(err => console.warn("[dedupe] Error deleting duplicate teacher requests:", err));
+  }
+
+  return Array.from(uniqueMap.values());
+};
+
 
 const emptyTeacherForm = {
   first_name: "",
@@ -1265,7 +1325,7 @@ function TeacherManagement() {
     return errors;
   };
 
-  const fetchRegistrationRequests = useCallback(async () => {
+  const fetchRegistrationRequests = useCallback(async (activeProfiles = []) => {
     try {
       const res = await adminApi.db("pending_account_requests", "select", {
         payload: "*",
@@ -1276,7 +1336,7 @@ function TeacherManagement() {
         console.error("Error fetching teacher registration requests via adminApi:", res.error);
         return [];
       }
-      return res.data || [];
+      return await deduplicateTeacherRegistrationRequests(res.data || [], activeProfiles);
     } catch (err) {
       console.error("Fetch teacher registration requests exception:", err);
       return [];
@@ -1287,15 +1347,17 @@ function TeacherManagement() {
     if (!db) return null;
     let teachersRes = await db.from("profiles").select("*").eq("role", "teacher").order("created_at", { ascending: false });
 
+    if (teachersRes.error) throw new Error(teachersRes.error.message);
+
+    const rawTeachers = teachersRes.data ?? [];
+
     const [subjectsRes, requestsData] = await Promise.all([
       db.from("subjects").select("*").order("code", { ascending: true }),
-      fetchRegistrationRequests()
+      fetchRegistrationRequests(rawTeachers)
     ]);
     const allSubjects = (subjectsRes.data ?? []).filter((s) => String(s.status || "Active").toLowerCase() !== "archived");
 
-    if (teachersRes.error) throw new Error(teachersRes.error.message);
-
-    const formattedTeachers = (teachersRes.data ?? []).map((teacher) => {
+    const formattedTeachers = rawTeachers.map((teacher) => {
       const dbTeacherSubjs = allSubjects.filter((s) => String(s.teacher_id || "") === String(teacher.id));
       const dbSubjIds = dbTeacherSubjs.map((s) => s.id);
       const dbSections = [...new Set(dbTeacherSubjs.map((s) => s.section).filter(Boolean))].join(", ");
