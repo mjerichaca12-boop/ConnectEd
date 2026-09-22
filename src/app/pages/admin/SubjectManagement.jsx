@@ -38,6 +38,8 @@ function SubjectManagement() {
   const [adminName, setAdminName] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [yearLevelFilter, setYearLevelFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("active");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -580,10 +582,56 @@ function SubjectManagement() {
   const activeSubjectsCount = subjects.filter((s) => String(s.status || "Active").toLowerCase() !== "archived").length;
   const archivedSubjectsCount = subjects.filter((s) => String(s.status || "Active").toLowerCase() === "archived").length;
 
+  const availableYearLevels = useMemo(() => {
+    const set = new Set();
+    subjects.forEach(s => {
+      const raw = s.grade_level || s.year_level;
+      if (raw) {
+        const norm = String(raw).replace(/\D/g, "");
+        if (norm) set.add(norm);
+        else set.add(String(raw).trim());
+      }
+    });
+
+    return Array.from(set)
+      .sort((a, b) => {
+        const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+        return numA - numB || String(a).localeCompare(String(b));
+      })
+      .map(yl => String(yl).toLowerCase().includes("grade") ? yl : `Grade ${yl}`);
+  }, [subjects]);
+
+  const availableSections = useMemo(() => {
+    const set = new Set();
+    const normFilterGrade = yearLevelFilter === "all" ? null : yearLevelFilter.replace(/\D/g, "");
+
+    subjects.forEach(s => {
+      const sGradeNorm = (s.grade_level || s.year_level) ? String(s.grade_level || s.year_level).replace(/\D/g, "") : null;
+      if (!normFilterGrade || sGradeNorm === normFilterGrade) {
+        if (s.section && s.section.toLowerCase() !== "unassigned") set.add(s.section.trim());
+      }
+    });
+
+    return Array.from(set).sort();
+  }, [subjects, yearLevelFilter]);
+
   const filteredSubjects = subjects.filter((subject) => {
     const isArchived = String(subject.status || "Active").toLowerCase() === "archived";
     if (activeTab === "active" && isArchived) return false;
     if (activeTab === "archived" && !isArchived) return false;
+
+    if (yearLevelFilter !== "all") {
+      const normFilter = yearLevelFilter.replace(/\D/g, "");
+      const subjGradeNorm = (subject.grade_level || subject.year_level) ? String(subject.grade_level || subject.year_level).replace(/\D/g, "") : null;
+      if (subjGradeNorm !== normFilter) return false;
+    }
+
+    if (sectionFilter !== "all") {
+      const normSecFilter = sectionFilter.trim().toLowerCase();
+      const subjSec = String(subject.section || "").trim().toLowerCase();
+      if (subjSec !== normSecFilter) return false;
+    }
 
     const search = searchQuery.toLowerCase();
     return (
@@ -1679,8 +1727,8 @@ function SubjectManagement() {
           </div>
 
           <div data-tour="subjects-list" className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div data-tour="subjects-search" className="flex-1 relative">
+            <div className="flex flex-col md:flex-row gap-4 items-center">
+              <div data-tour="subjects-search" className="flex-1 relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
                 <input
                   type="text"
@@ -1689,6 +1737,36 @@ function SubjectManagement() {
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-green-500/50"
                 />
+              </div>
+
+              <div className="flex flex-wrap gap-3 w-full md:w-auto">
+                <div className="min-w-[180px]">
+                  <CustomSelect
+                    value={yearLevelFilter}
+                    onChange={(val) => {
+                      setYearLevelFilter(val);
+                      setSectionFilter("all");
+                    }}
+                    options={[
+                      { value: "all", label: "All Year Levels" },
+                      ...availableYearLevels.map(yl => ({ value: yl, label: yl }))
+                    ]}
+                    placeholder="All Year Levels"
+                  />
+                </div>
+
+                <div className="min-w-[180px]">
+                  <CustomSelect
+                    value={sectionFilter}
+                    onChange={(val) => setSectionFilter(val)}
+                    disabled={yearLevelFilter === "all" || availableSections.length === 0}
+                    options={[
+                      { value: "all", label: "All Sections" },
+                      ...availableSections.map(sec => ({ value: sec, label: sec }))
+                    ]}
+                    placeholder="All Sections"
+                  />
+                </div>
               </div>
               {selectedSubjectIds.size > 0 && (() => {
                 const selectedActiveCount = subjects.filter(s => selectedSubjectIds.has(s.id) && String(s.status || "Active").toLowerCase() !== "archived").length;

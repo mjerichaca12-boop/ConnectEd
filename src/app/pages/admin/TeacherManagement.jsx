@@ -168,6 +168,8 @@ function TeacherManagement() {
   const [teachers, setTeachers] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [yearLevelFilter, setYearLevelFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -2030,6 +2032,72 @@ function TeacherManagement() {
     setShowAssignModal(true);
   };
 
+  const availableYearLevels = useMemo(() => {
+    const set = new Set();
+    (availableSubjects || []).forEach(s => {
+      const raw = s.grade_level || s.year_level;
+      if (raw) {
+        const norm = String(raw).replace(/\D/g, "");
+        if (norm) set.add(norm);
+        else set.add(String(raw).trim());
+      }
+    });
+    (teachers || []).forEach(t => {
+      const raw = t.grade_level || t.year_level;
+      if (raw) {
+        const norm = String(raw).replace(/\D/g, "");
+        if (norm) set.add(norm);
+        else set.add(String(raw).trim());
+      }
+      const assignments = getTeacherAssignments(t);
+      assignments.forEach(a => {
+        const label = a.classLabel || a.gradeLevel || "";
+        const numMatch = label.match(/\d+/);
+        if (numMatch) set.add(numMatch[0]);
+      });
+    });
+
+    return Array.from(set)
+      .sort((a, b) => {
+        const numA = parseInt(String(a).replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(String(b).replace(/\D/g, ""), 10) || 0;
+        return numA - numB || String(a).localeCompare(String(b));
+      })
+      .map(yl => String(yl).toLowerCase().includes("grade") ? yl : `Grade ${yl}`);
+  }, [availableSubjects, teachers]);
+
+  const availableSections = useMemo(() => {
+    const set = new Set();
+    const normFilterGrade = yearLevelFilter === "all" ? null : yearLevelFilter.replace(/\D/g, "");
+
+    (availableSubjects || []).forEach(s => {
+      const sGradeNorm = s.grade_level ? String(s.grade_level).replace(/\D/g, "") : null;
+      if (!normFilterGrade || sGradeNorm === normFilterGrade) {
+        if (s.section && s.section.toLowerCase() !== "unassigned") set.add(s.section.trim());
+      }
+    });
+
+    (teachers || []).forEach(t => {
+      const tGradeNorm = (t.grade_level || t.year_level) ? String(t.grade_level || t.year_level).replace(/\D/g, "") : null;
+      const assignments = getTeacherAssignments(t);
+      const matchesGrade = !normFilterGrade || tGradeNorm === normFilterGrade || assignments.some(a => {
+        const numMatch = (a.classLabel || a.gradeLevel || "").match(/\d+/);
+        return numMatch && numMatch[0] === normFilterGrade;
+      });
+
+      if (matchesGrade) {
+        if (t.assigned_class && t.assigned_class.toLowerCase() !== "unassigned") {
+          t.assigned_class.split(",").forEach(sec => {
+            const clean = sec.trim();
+            if (clean && clean.toLowerCase() !== "unassigned") set.add(clean);
+          });
+        }
+      }
+    });
+
+    return Array.from(set).sort();
+  }, [availableSubjects, teachers, yearLevelFilter]);
+
   const filteredTeachers = teachers.filter((teacher) => {
     const search = (searchQuery || "").toLowerCase();
     const assignments = getTeacherAssignments(teacher);
@@ -2042,7 +2110,34 @@ function TeacherManagement() {
       subjectText.includes(search) ||
       sectionText.includes(search);
     const matchesFilter = filterStatus === "all" || normalizeTeacherStatus(teacher.status).toLowerCase() === filterStatus;
-    return matchesSearch && matchesFilter;
+
+    let matchesYearLevel = true;
+    if (yearLevelFilter !== "all") {
+      const normFilter = yearLevelFilter.replace(/\D/g, "");
+      const teacherGradeNorm = (teacher.grade_level || teacher.year_level) ? String(teacher.grade_level || teacher.year_level).replace(/\D/g, "") : null;
+      const assignmentGrades = assignments.map(a => (a.classLabel || a.gradeLevel || "").match(/\d+/)?.[0]).filter(Boolean);
+      const teacherSubjGrades = (teacher.subjects || []).map(sId => {
+        const subj = availableSubjects.find(item => String(item.id) === String(sId) || String(item.code || "").toLowerCase() === String(sId).toLowerCase());
+        return subj?.grade_level ? String(subj.grade_level).replace(/\D/g, "") : null;
+      }).filter(Boolean);
+
+      matchesYearLevel = teacherGradeNorm === normFilter || assignmentGrades.includes(normFilter) || teacherSubjGrades.includes(normFilter);
+    }
+
+    let matchesSection = true;
+    if (sectionFilter !== "all") {
+      const normSecFilter = sectionFilter.trim().toLowerCase();
+      const teacherSections = (teacher.assigned_class || "").toLowerCase();
+      const assignmentSections = assignments.map(a => (a.classLabel || "").toLowerCase());
+      const teacherSubjSections = (teacher.subjects || []).map(sId => {
+        const subj = availableSubjects.find(item => String(item.id) === String(sId) || String(item.code || "").toLowerCase() === String(sId).toLowerCase());
+        return subj?.section ? String(subj.section).toLowerCase() : null;
+      }).filter(Boolean);
+
+      matchesSection = teacherSections.includes(normSecFilter) || assignmentSections.some(s => s.includes(normSecFilter)) || teacherSubjSections.includes(normSecFilter);
+    }
+
+    return matchesSearch && matchesFilter && matchesYearLevel && matchesSection;
   });
 
   const handleAddTeacher = async (event) => {
@@ -2833,16 +2928,46 @@ function TeacherManagement() {
           <div className="bg-white rounded-xl p-4 border border-gray-200">
             <div className="flex flex-col md:flex-row gap-4 items-center">
               {activeTab === "Roster" && (
-                <div data-tour="teachers-search" className="flex-1 relative w-full">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
-                  <input
-                    type="text"
-                    placeholder="Search by teacher, subject, or class/section..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
-                  />
-                </div>
+                <>
+                  <div data-tour="teachers-search" className="flex-1 relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+                    <input
+                      type="text"
+                      placeholder="Search by teacher, subject, or class/section..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-gray-50 text-gray-900 placeholder-gray-500 pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500/50"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-3 w-full md:w-auto">
+                    <div className="min-w-[180px]">
+                      <CustomSelect
+                        value={yearLevelFilter}
+                        onChange={(val) => {
+                          setYearLevelFilter(val);
+                          setSectionFilter("all");
+                        }}
+                        options={[
+                          { value: "all", label: "All Year Levels" },
+                          ...availableYearLevels.map(yl => ({ value: yl, label: yl }))
+                        ]}
+                        placeholder="All Year Levels"
+                      />
+                    </div>
+                    <div className="min-w-[180px]">
+                      <CustomSelect
+                        value={sectionFilter}
+                        onChange={(val) => setSectionFilter(val)}
+                        disabled={yearLevelFilter === "all" || availableSections.length === 0}
+                        options={[
+                          { value: "all", label: "All Sections" },
+                          ...availableSections.map(sec => ({ value: sec, label: sec }))
+                        ]}
+                        placeholder="All Sections"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
 
               {activeTab === "RegistrationRequests" && (
