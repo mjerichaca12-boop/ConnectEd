@@ -1594,12 +1594,11 @@ function SubjectManagement() {
     const dateStr = new Date().toISOString().split("T")[0];
     const fileName = `Course_Subjects_List_${gradeContext}_${sectionContext}_${dateStr}.csv`;
 
-    const headers = ["Subject Code", "Name", "Description", "Credits", "Teacher", "Grade Level", "Section", "Capacity", "Enrolled"];
+    const headers = ["Subject Code", "Name", "Description", "Teacher", "Grade Level", "Section", "Capacity", "Enrolled"];
     const rows = filteredSubjects.map((subject) => [
       subject.code,
       subject.name,
       subject.description || "",
-      String(subject.credits),
       getTeacherNameById(subject.teacher_id),
       subject.grade_level || "No grade assigned",
       subject.section || "No section assigned",

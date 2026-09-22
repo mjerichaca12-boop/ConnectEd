@@ -2594,9 +2594,8 @@ function TeacherManagement() {
     const dateStr = new Date().toISOString().split("T")[0];
     const fileName = `Teacher_Masterlist_${yearContext}_${sectionContext}_${statusContext}_${dateStr}.csv`;
 
-    const headers = ["Teacher ID", "Teacher Name", "Assigned Subject", "Assigned Class/Section", "Status"];
+    const headers = ["Teacher Name", "Assigned Subject", "Assigned Class/Section", "Status"];
     const rows = filteredTeachers.map((teacher) => [
-      teacher.id,
       getTeacherName(teacher),
       getTeacherAssignments(teacher).length > 0 ? getTeacherAssignments(teacher).map((item) => item.subjectLabel).join(" | ") : "No assignments yet.",
       getTeacherAssignments(teacher).length > 0 ? getTeacherAssignments(teacher).map((item) => item.classLabel).join(" | ") : "No assignments yet.",
