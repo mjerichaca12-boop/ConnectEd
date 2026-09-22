@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { AdminSidebar } from "../../components/AdminSidebar";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -10,7 +10,6 @@ import { adminApi } from "@/app/lib/adminApi";
 import { BulkOperationProgressModal } from "@/app/components/ui/BulkOperationProgressModal";
 import { DEPED_SUBJECT_CATEGORIES, normalizeSubjectCategory } from "../../lib/depedGrading";
 import { toast } from "sonner";
-import { useCallback } from "react";
 import { useActivity } from "../../lib/ActivityContext";
 import { useCachedFetch } from "@/app/hooks/useCachedFetch";
 import { notifyAdmin } from "@/app/services/notificationService";
