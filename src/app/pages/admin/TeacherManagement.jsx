@@ -2588,9 +2588,11 @@ function TeacherManagement() {
   };
 
   const handleExportToCSV = () => {
-    const statusContext = statusFilter !== "All" ? String(statusFilter).replace(/[^a-zA-Z0-9_\-]/g, "_") : "AllStatus";
+    const yearContext = yearLevelFilter && yearLevelFilter !== "all" ? `Grade${yearLevelFilter}` : "AllGrades";
+    const sectionContext = sectionFilter && sectionFilter !== "all" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const statusContext = filterStatus && filterStatus !== "all" ? String(filterStatus).replace(/[^a-zA-Z0-9_\-]/g, "_") : "AllStatus";
     const dateStr = new Date().toISOString().split("T")[0];
-    const fileName = `Teacher_Masterlist_${statusContext}_${dateStr}.csv`;
+    const fileName = `Teacher_Masterlist_${yearContext}_${sectionContext}_${statusContext}_${dateStr}.csv`;
 
     const headers = ["Teacher ID", "Teacher Name", "Assigned Subject", "Assigned Class/Section", "Status"];
     const rows = filteredTeachers.map((teacher) => [

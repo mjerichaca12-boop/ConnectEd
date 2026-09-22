@@ -2835,8 +2835,8 @@ function StudentManagement() {
   };
 
   const handleExportToCSV = () => {
-    const yearContext = yearFilter !== "All" ? `Grade${yearFilter}` : "AllGrades";
-    const sectionContext = sectionFilter !== "All" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const yearContext = yearLevelFilter && yearLevelFilter !== "all" ? `Grade${yearLevelFilter}` : "AllGrades";
+    const sectionContext = sectionFilter && sectionFilter !== "all" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
     const dateStr = new Date().toISOString().split("T")[0];
 
     if (activeTab === "Profiles") {

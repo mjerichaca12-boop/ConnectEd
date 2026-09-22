@@ -1589,8 +1589,8 @@ function SubjectManagement() {
   };
 
   const handleExportToCSV = () => {
-    const gradeContext = selectedGradeLevel !== "All" ? `Grade${selectedGradeLevel}` : "AllGrades";
-    const sectionContext = selectedSection !== "All" ? `Section_${String(selectedSection).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
+    const gradeContext = yearLevelFilter && yearLevelFilter !== "all" ? `Grade${yearLevelFilter}` : "AllGrades";
+    const sectionContext = sectionFilter && sectionFilter !== "all" ? `Section_${String(sectionFilter).replace(/[^a-zA-Z0-9_\-]/g, "_")}` : "AllSections";
     const dateStr = new Date().toISOString().split("T")[0];
     const fileName = `Course_Subjects_List_${gradeContext}_${sectionContext}_${dateStr}.csv`;
 
